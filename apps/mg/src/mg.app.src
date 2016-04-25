@@ -1,0 +1,16 @@
+{application, mg , [
+    {description, "A service that does something"},
+    {vsn, "1"},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib
+    ]},
+    {env, []},
+    {modules, []},
+    {maintainers, [
+        "Petr Kozorezov <petr.kozorezov@gmail.com>"
+    ]},
+    {licenses, []},
+    {links, []}
+]}.
