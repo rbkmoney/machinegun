@@ -14,167 +14,350 @@
 %%%  - format_state
 %%% ?
 %%%
+%%% Реализует понятие тэгов.
+%%% При падении хендлера переводит машину в error состояние.
+%%%
+%%% Что ещё тут хочется сделать:
+%%%
+%%%  - подписку на эвенты
+%%%  - время жизни
+%%%
 -module(mg_machine).
+-behaviour(supervisor).
+-behaviour(mg_machine_server).
 
 %% API
--export([child_spec /2]).
--export([start_link /3]).
--export([call       /2]).
--export([cast       /2]).
+-export_type([event_id/0]).
+-export_type([history /0]).
+-export_type([status  /0]).
+-export_type([tags    /0]).
+-export_type([timeout_/0]).
+-export_type([ref     /0]).
+-export_type([signal  /0]).
+-export_type([actions /0]).
 
-%% gen_server callbacks
--export([init/1, handle_info/2, handle_cast/2, handle_call/3, code_change/3, terminate/2]).
+-export([child_spec/2]).
+-export([start_link/1]).
+-export([init      /1]).
 
--callback handle_load(_ID, _Args) ->
-    _Event.
+-export([start         /2]).
+-export([start         /3]).
+-export([call          /3]).
+-export([repair        /3]).
+-export([handle_timeout/2]).
+-export([touch         /3]).
 
--callback handle_unload(_State) ->
-    ok.
-
--callback handle_call(_Call, _State) ->
-    {_Replay, _Event}.
-
--callback handle_cast(_Cast, _State) ->
-    _Event.
-
--callback apply_event(_Event, _State) ->
-    _State.
+%% mg_machine_server callbacks
+-export([handle_load/2, handle_call/2, handle_cast/2, handle_unload/1]).
 
 %%
 %% API
 %%
--spec child_spec(module(), _Args) ->
-    supervisor:child_spec().
-child_spec(Mod, Args) ->
+-type options () :: {mg_utils:mod_opts(), mg_utils:mod_opts()}.
+-type event_id() :: mg_machine_db:event_id().
+-type history () :: mg_machine_db:history ().
+-type status  () :: mg_machine_db:status  ().
+-type tags    () :: mg_machine_db:tags    ().
+-type timeout_() :: {absolute, calendar:datetime()} | {relative, Seconds::non_neg_integer()} | undefined.
+-type ref     () :: {id, _ID} | {tag, _Tag}.
+-type signal  () :: timeout | {init, _Args} | {repair, _Args}.
+-type actions () ::
     #{
-        id       => machine,
-        start    => {?MODULE, start_link, [Mod, Args]},
-        restart  => temporary,
+        timeout => timeout_(),
+        tag     => _Tag
+    }.
+
+%%
+%% behaviour
+%%
+-callback process_signal(signal(), history()) ->
+    {_Event, actions()}.
+-callback process_call(_Call, history()) ->
+    {_Response, _Event, actions()}.
+
+%%
+
+-spec child_spec(atom(), options()) ->
+    supervisor:child_spec().
+child_spec(ChildID, Options) ->
+    #{
+        id       => ChildID,
+        start    => {?MODULE, start_link, [Options]},
+        restart  => permanent,
+        type     => supervisor,
         shutdown => brutal_kill
     }.
 
--spec start_link(atom(), _Args, _ID) ->
+
+-spec start_link(options()) ->
     mg_utils:gen_start_ret().
-start_link(Mod, Args, ID) ->
-    gen_server:start_link(self_reg_name(ID), ?MODULE, {ID, Mod, Args}, []).
+start_link(Options) ->
+    supervisor:start_link(?MODULE, Options).
 
--spec call(_ID, _Call) ->
-    _Result.
-call(ID, Call) ->
-    gen_server:call(self_ref(ID), {call, Call}).
+%%
 
--spec cast(_ID, _Cast) ->
+-spec init(options()) ->
+    mg_utils:supervisor_ret().
+init(Options) ->
+    {DBMod, DBOpts} = mg_utils:separate_mod_opts(get_mod(db, Options)),
+    SupFlags = #{strategy => one_for_all},
+    {ok, {SupFlags, [
+        mg_machine_manager:child_spec(manager, manager_options(Options)),
+        DBMod:child_spec(db, DBOpts)
+    ]}}.
+
+%%
+
+-spec start(options(), _Args) ->
+    _ID.
+start(Options, Args) ->
+    start(Options, Args, sync).
+
+-spec start(options(), _Args, sync | async) ->
+    _ID.
+start(Options, Args, Type) ->
+    % создать в бд
+    % TODO перенести в сам процесс, иначе при коллизии может быть гонка (?)
+    ID = call_db(create_machine, [Args], Options),
+    % зафорсить загрузку
+    ok = touch(Options, ID, Type),
+    ID.
+
+% sync
+-spec call(options(), ref(), _Args) ->
+    _Resp.
+call(Options, Ref, Args) ->
+    case mg_machine_manager:call(manager_options(Options), ref2id(Options, Ref), {call, Args}) of
+        {error, {Class, Reason, Stacktrace}} ->
+            erlang:raise(Class, Reason, Stacktrace);
+        {error, Reason} ->
+            erlang:error(Reason);
+        {ok, R} ->
+            R
+    end.
+
+% async (?)
+-spec repair(options(), ref(), _Args) ->
     ok.
-cast(ID, Cast) ->
-    gen_server:cast(self_ref(ID), {cast, Cast}).
+repair(Options, Ref, Args) ->
+    ok = mg_machine_manager:cast(manager_options(Options), ref2id(Options, Ref), {repair, Args}).
 
+% -spec get_history(mg_fsm:ref(), _From, _To) ->
+%     mg_fsm:history().
+% get_history(Ref, From, To) ->
+%     mg_db:get_history(ref2pid(Ref), From, To).
 
 %%
-%% gen_server callbacks
+%% Internal API
 %%
--type state() ::
-    #{
-        id                => _ID,
-        mod               => module(),
-        state             => loading | {working, _State},
-        unload_tref       => reference() | undefined,
-        hibernate_timeout => timeout(),
-        unload_timeout    => timeout()
-    }.
+-spec handle_timeout(options(), _ID) ->
+    ok.
+handle_timeout(Options, ID) ->
+    ok = mg_machine_manager:cast(manager_options(Options), ID, timeout).
 
--spec init(_) ->
-    mg_utils:gen_server_init_ret(state()).
-init({ID, Mod, Args}) ->
-    ok = gen_server:cast(erlang:self(), load),
+-spec touch(_ID, options(), sync | async) ->
+    ok.
+touch(Options, ID, async) ->
+    ok = mg_machine_manager:cast(manager_options(Options), ID, touch);
+touch(Options, ID, sync) ->
+    ok = mg_machine_manager:call(manager_options(Options), ID, touch).
+
+%%
+%% mg_machine callbacks
+%%
+-type state() :: #{
+    id       => _,
+    options => _,
+    status   => status(),
+    history  => history(),
+    tags     => tags()
+}.
+
+-spec handle_load(_ID, module()) ->
+    state().
+handle_load(ID, Options) ->
+    {ID, Status, History, Tags} = call_db(get_machine, [ID], Options),
     State =
         #{
-            id                => ID,
-            mod               => Mod,
-            state             => {loading, Args},
-            unload_tref       => undefined,
-            hibernate_timeout => 5000,
-            unload_timeout    => 5 * 60 * 1000
+            id       => ID,
+            options => Options,
+            status   => Status,
+            history  => History,
+            tags     => Tags
         },
-    {ok, State}.
+    transit_state(State, handle_load_(State)).
 
--spec handle_call(_Call, mg_utils:gen_server_from(), state()) ->
-    mg_utils:gen_server_handle_call_ret(state()).
-handle_call({call, Call}, _, State=#{mod:=Mod, state:={working, ModState}}) ->
-    {Reply, Event} = Mod:handle_call(Call, ModState),
-    NewState = State#{state:={working, Mod:apply_event(Event, ModState)}},
-    {reply, Reply, schedule_unload_timer(NewState), hibernate_timeout(NewState)};
-handle_call(Call, From, State) ->
-    ok = error_logger:error_msg("unexpected call received: ~p from ~p", [Call, From]),
-    {noreply, schedule_unload_timer(State), hibernate_timeout(State)}.
+-spec handle_call(_Call, state()) ->
+    {_Resp, state()}.
+handle_call(Call, State) ->
+    {Resp, NewState} = handle_call_(Call, State),
+    {Resp, transit_state(State, NewState)}.
 
 -spec handle_cast(_Cast, state()) ->
-    mg_utils:gen_server_handle_cast_ret(state()).
-handle_cast(load, State=#{id:=ID, mod:=Mod, state:={loading, Args}}) ->
-    Event = Mod:handle_load(ID, Args),
-    NewState = State#{state:={working, Mod:apply_event(Event, undefined)}},
-    {noreply, schedule_unload_timer(NewState), hibernate_timeout(NewState)};
-handle_cast({cast, Cast}, State=#{mod:=Mod, state:={working, ModState}}) ->
-    Event = Mod:handle_cast(Cast, ModState),
-    NewState = State#{state:={working, Mod:apply_event(Event, ModState)}},
-    {noreply, schedule_unload_timer(NewState), hibernate_timeout(NewState)};
-handle_cast(Cast, State) ->
-    ok = error_logger:error_msg("unexpected cast received: ~p", [Cast]),
-    {noreply, schedule_unload_timer(State), hibernate_timeout(State)}.
-
--spec handle_info(_Info, state()) ->
-    mg_utils:gen_server_handle_info_ret(state()).
-handle_info(timeout, State) ->
-    {noreply, State, hibernate};
-handle_info({timeout, unload}, State=#{mod:=Mod, state:={working, ModState}}) ->
-    _ = Mod:handle_unload(ModState),
-    {stop, normal, State};
-handle_info(Info, State) ->
-    ok = error_logger:error_msg("unexpected info ~p", [Info]),
-    {noreply, schedule_unload_timer(State), hibernate_timeout(State)}.
-
--spec code_change(_, state(), _) ->
-    mg_utils:gen_server_code_change_ret(state()).
-code_change(_, State, _) ->
-    {ok, State}.
-
--spec terminate(_Reason, state()) ->
-    ok.
-terminate(_, _) ->
-    ok.
-
-%%
-%% local
-%%
--spec hibernate_timeout(state()) ->
-    timeout().
-hibernate_timeout(#{hibernate_timeout:=Timeout}) ->
-    Timeout.
-
--spec unload_timeout(state()) ->
-    timeout().
-unload_timeout(#{unload_timeout:=Timeout}) ->
-    Timeout.
-
--spec schedule_unload_timer(state()) ->
     state().
-schedule_unload_timer(State=#{unload_tref:=UnloadTRef}) ->
-    _ = case UnloadTRef of
-            undefined -> ok;
-            TRef      -> erlang:cancel_timer(TRef)
-        end,
-    State#{unload_tref:=start_timer(State)}.
+handle_cast(Cast, State) ->
+    NewState = handle_cast_(Cast, State),
+    transit_state(State, NewState).
 
--spec start_timer(state()) ->
-    reference().
-start_timer(State) ->
-    erlang:start_timer(unload_timeout(State), erlang:self(), unload).
+-spec handle_unload(state()) ->
+    ok.
+handle_unload(_) ->
+    ok.
 
--spec self_ref(_ID) ->
-    mg_utils:gen_ref().
-self_ref(ID) ->
-    {via, gproc, {n, l, {?MODULE, ID}}}.
+%%
 
--spec self_reg_name(_ID) ->
-    mg_utils:gen_reg_name().
-self_reg_name(ID) ->
-    {via, gproc, {n, l, {?MODULE, ID}}}.
+-spec transit_state(state(), state()) ->
+    state().
+transit_state(OldState=#{id:=OldID}, NewState=#{id:=NewID, options:=Options}) when NewID =:= OldID ->
+    ok = call_db(
+            update_machine,
+            [state_to_machine(OldState), state_to_machine(NewState), {?MODULE, handle_timeout, [Options]}],
+            Options
+        ),
+    NewState.
+
+-spec state_to_machine(state()) ->
+    mg_machine_db:machine().
+state_to_machine(#{id:=ID, status:=Status, history:=History, tags:=Tags}) ->
+    {ID, Status, History, Tags}.
+
+%%
+
+-spec handle_load_(state()) ->
+    state().
+handle_load_(State=#{status:={created, Args}}) ->
+    process_signal({init, Args}, State);
+handle_load_(State) ->
+    State.
+
+-spec handle_call_(_Call, state()) ->
+    {_Replay, state()}.
+handle_call_({call, Call}, State=#{status:={working, _}}) ->
+    process_call(Call, State);
+handle_call_(touch, State) ->
+    {ok, State};
+handle_call_(Call, State) ->
+    ok = error_logger:error_msg("unexpected mg_machine_server call received: ~p", [Call]),
+    {{error, badarg}, State}.
+
+-spec handle_cast_(_Cast, state()) ->
+    state().
+handle_cast_(Cast=timeout, State=#{status:={working, _}}) ->
+    process_signal(Cast, State);
+handle_cast_(Cast={repair, _}, State=#{status:={error, _}}) ->
+    process_signal(Cast, State);
+handle_cast_(touch, State) ->
+    State;
+handle_cast_(Cast, State) ->
+    ok = error_logger:error_msg("unexpected mg_machine_server cast received: ~p", [Cast]),
+    State.
+
+%%
+
+-spec process_call(_Call, state()) ->
+    {_Resp, state()}.
+process_call(Call, State=#{options:=Options, history:=History}) ->
+    try
+        {Resp, Event, Actions} = call_processing(Options, process_call, [Call, History]),
+        {{ok, Resp}, handle_processing_result(Event, Actions, State)}
+    catch Class:Reason ->
+        Exception = {Class, Reason, erlang:get_stacktrace()},
+        {{error, Exception}, handle_processing_error({error, Exception}, State)}
+    end.
+
+-spec process_signal(signal(), state()) ->
+    state().
+process_signal(Signal, State=#{options:=Options, history:=History}) ->
+    try
+        {Event, Actions} = call_processing(Options, process_signal, [Signal, History]),
+        handle_processing_result(Event, Actions, State)
+    catch Class:Reason ->
+        Exception = {Class, Reason, erlang:get_stacktrace()},
+        handle_processing_error({error, Exception}, State)
+    end.
+
+%%
+
+-spec handle_processing_result(_Event, actions(), state()) ->
+    state().
+handle_processing_result(Event, Actions, State) ->
+    do_actions(Actions, append_event_to_history(Event, State)).
+
+-spec handle_processing_error(_Reason, state()) ->
+    state().
+handle_processing_error(Reason, State) ->
+    set_status({error, Reason}, State).
+
+-spec append_event_to_history(_Event, state()) ->
+    state().
+append_event_to_history(Event, State=#{history:=History}) ->
+    State#{history:=maps:put(make_event_id(History), Event, History)}.
+
+-spec make_event_id(history()) ->
+    event_id().
+make_event_id(History) when erlang:map_size(History) =:= 0 ->
+    1;
+make_event_id(History) ->
+    lists:max(maps:keys(History)) + 1.
+
+-spec do_actions(actions(), state()) ->
+    state().
+do_actions(Actions, State) ->
+    Timeout = maps:get(timeout, Actions, undefined),
+    Tag     = maps:get(tag    , Actions, undefined),
+    set_tag(Tag, set_status({working, get_timeout_datetime(Timeout)}, State)).
+
+%%
+%% utils
+%%
+-spec manager_options(options()) ->
+    _TODO.
+manager_options(Options) ->
+    {?MODULE, Options}.
+
+-spec set_tag(undefined | _Tag, state()) ->
+    state().
+set_tag(undefined, State) ->
+    State;
+set_tag(Tag, State=#{tags:=Tags}) ->
+    % TODO детектор коллизий тэгов
+    State#{tags:=[Tag|Tags]}.
+
+-spec set_status(status(), state()) ->
+    state().
+set_status(NewStatus, State) ->
+    State#{status:=NewStatus}.
+
+-spec ref2id(options(), ref()) ->
+    _ID.
+ref2id(Options, {tag, Tag}) ->
+    call_db(resolve_tag, [Tag], Options);
+ref2id(_, {id, ID}) ->
+    ID.
+
+-spec call_processing(options(), atom(), list(_Arg)) ->
+    _Result.
+call_processing(Options, Function, Args) ->
+    {Mod, _Args} = mg_utils:separate_mod_opts(get_mod(machine, Options)),
+    erlang:apply(Mod, Function, Args).
+
+-spec call_db(atom(), list(_Arg), options()) ->
+    _Result.
+call_db(FunName, Args, Options) ->
+    mg_utils:apply_mod_opts(get_mod(db, Options), FunName, Args).
+
+-spec get_mod(machine | db, options()) ->
+    mg_utils:mod_opts().
+get_mod(machine, {ModOpts, _}) -> ModOpts;
+get_mod(db     , {_, ModOpts}) -> ModOpts.
+
+-spec get_timeout_datetime(timeout_()) ->
+    calendar:datetime() | undefined.
+get_timeout_datetime(undefined) ->
+    undefined;
+get_timeout_datetime({absolute, DateTime}) ->
+    DateTime;
+get_timeout_datetime({relative, Period}) ->
+    calendar:gregorian_seconds_to_datetime(
+        calendar:datetime_to_gregorian_seconds(calendar:universal_time()) + Period
+    ).

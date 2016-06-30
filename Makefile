@@ -32,3 +32,6 @@ distclean:
 
 dialyze:
 	$(REBAR) dialyzer
+
+lint:
+	elvis rock

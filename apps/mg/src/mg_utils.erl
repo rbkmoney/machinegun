@@ -17,9 +17,11 @@
 -export_type([gen_server_handle_info_ret/1]).
 -export_type([gen_server_code_change_ret/1]).
 -export_type([supervisor_ret            /0]).
+-export([gen_reg_name2_ref/1]).
 
--export([gen_reg_name_2_ref/1]).
-
+-export_type([mod_opts/0]).
+-export([apply_mod_opts   /3]).
+-export([separate_mod_opts/1]).
 
 %%
 %% API
@@ -95,7 +97,22 @@
 .
 
 -spec
-gen_reg_name_2_ref(gen_reg_name()) -> gen_ref().
-gen_reg_name_2_ref({local, Name}) -> Name;
-gen_reg_name_2_ref(V={global, _}) -> V;
-gen_reg_name_2_ref(V={via, _, _}) -> V. % Is this correct?
+gen_reg_name2_ref(gen_reg_name()) -> gen_ref().
+gen_reg_name2_ref({local, Name}) -> Name;
+gen_reg_name2_ref(V={global, _}) -> V;
+gen_reg_name2_ref(V={via, _, _}) -> V. % Is this correct?
+
+
+-type mod_opts() :: {module(), _Opts} | module().
+-spec apply_mod_opts(mod_opts(), atom(), list(_Arg)) ->
+    _Result.
+apply_mod_opts(ModOpts, Function, Args) ->
+    {Mod, Arg} = separate_mod_opts(ModOpts),
+    erlang:apply(Mod, Function, [Arg | Args]).
+
+-spec separate_mod_opts(mod_opts()) ->
+    {module(), _Arg}.
+separate_mod_opts(ModOpts={_, _}) ->
+    ModOpts;
+separate_mod_opts(Mod) ->
+    {Mod, undefined}.
