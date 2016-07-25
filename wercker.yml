@@ -1,0 +1,25 @@
+box: erlang:18
+
+dev:
+    steps:
+      - internal/shell:
+        code: make compile
+
+build:
+    steps:
+      - script:
+        name: rebar update
+        code: make rebar-update
+      - script:
+        name: run xref
+        code: make xref
+      - script:
+        name: run test suite
+        code: make test
+      - script:
+        name: run dialyzer
+        code: make dialyze
+    after-steps:
+      - slack-notifier:
+        url: ${SLACK_WEBHOOK_URL}
+        username: "wercker"
