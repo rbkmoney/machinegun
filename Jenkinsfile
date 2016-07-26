@@ -23,7 +23,7 @@ pipeline("machinegun", 'docker-host', "_build/") {
   }
 
   runStage('test') {
-    sh "make w_compose_test"
+    sh "make w_container_test"
   }
 
   runStage('dialyze') {
