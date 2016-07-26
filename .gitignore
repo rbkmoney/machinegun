@@ -6,10 +6,3 @@ erl_crash.dump
 .tags*
 *.sublime-workspace
 .DS_Store
-
-# wercker
-/_builds/
-/_cache/
-/_projects/
-/_steps/
-/_temp/

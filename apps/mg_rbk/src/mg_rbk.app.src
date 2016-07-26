@@ -1,10 +1,12 @@
-{application, mg , [
-    {description, "Machinegun FSM processor"},
+{application, mg_rbk, [
+    {description, "RBKmoney specific part of machinegun"},
     {vsn, "1"},
     {registered, []},
+    {mod, {mg_rbk, []}},
     {applications, [
         kernel,
-        stdlib
+        stdlib,
+        mg
     ]},
     {env, []},
     {modules, []},
