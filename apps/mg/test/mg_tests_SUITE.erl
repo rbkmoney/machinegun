@@ -1,10 +1,10 @@
 -module(mg_tests_SUITE).
 -include_lib("common_test/include/ct.hrl").
 
--export([all           /0]).
--export([init_per_suite/1]).
--export([end_per_suite /1]).
--export([machine_test  /1]).
+-export([all              /0]).
+-export([init_per_testcase/2]).
+-export([end_per_testcase /2]).
+-export([machine_test     /1]).
 
 -type test_name() :: atom().
 -type config() :: [{atom(), _}].
@@ -22,22 +22,35 @@ all() ->
 %%
 %% starting/stopping
 %%
--spec init_per_suite(config()) ->
+-spec init_per_testcase(_, config()) ->
     config().
-init_per_suite(C) ->
-    % dbg:tracer(), dbg:p(all,c),
+init_per_testcase(machine_test, C) ->
+    dbg:tracer(), dbg:p(all,c),
     % dbg:tpl(mg_machine, x),
-    % dbg:tpl(mg_machine_db_test, x),
-    % dbg:tpl(mg_machine_test_door, x),
+    dbg:tpl(mg_db_test, x),
+    % dbg:tpl({mg_machine_test_door, apply_events, '_'}, x),
+    % dbg:tpl({mg_machine_test_door, handle_signal_, '_'}, x),
+    % dbg:tpl({mg_machine_test_door, handle_action, '_'}, x),
     % dbg:tpl(mg_timers, x),
-    % dbg:tpl(mg_machine_server, x),
-    {ok, Apps } = application:ensure_all_started(gproc),
-    {ok, Apps1} = application:ensure_all_started(sasl ),
-    [{apps, Apps ++ Apps1} | C].
+    % dbg:tpl(mg_machine_worker, x),
 
--spec end_per_suite(config()) ->
+    _ = application:load(lager),
+    application:set_env(lager, handlers, [
+        {lager_common_test_backend, debug}
+    ]),
+    _ = application:load(woody),
+    application:set_env(woody, acceptors_pool_size, 1),
+    _ = application:load(mg),
+    application:set_env(mg, nss, [
+        {<<"mg_test_ns">> , <<"http://localhost:8821/processor">>}
+    ]),
+    {ok, Apps } = application:ensure_all_started(mg  ),
+    % {ok, Apps1} = application:ensure_all_started(sasl),
+    [{apps, Apps} | C].
+
+-spec end_per_testcase(_, config()) ->
     ok.
-end_per_suite(C) ->
+end_per_testcase(_, C) ->
     [application_stop(App) || App <- proplists:get_value(apps, C)].
 
 -spec application_stop(atom()) ->
@@ -59,21 +72,23 @@ application_stop(App) ->
 -spec machine_test(config()) ->
     ok.
 machine_test(_C) ->
-    {ok, _} = mg_machine_test_door:start_link(),
+    ProcessorOptions = {{0,0,0,0}, 8821, "/processor"},
+    AutomatonOptions = {"http://localhost:8820", <<"mg_test_ns">>},
 
-    % mg_machine_sup:start_link({mg_machine_test_door, mg_machine_db_test}).
+    {ok, _} = mg_machine_test_door:start_link(ProcessorOptions),
 
     % запустить автомат
-    % прогнать по стейтам
     Tag = <<"hello">>,
-    _ID = mg_machine_test_door:start (Tag),
-    ok = mg_machine_test_door:close (Tag),
-    ok = mg_machine_test_door:open  (Tag),
-    ok = mg_machine_test_door:close (Tag),
-    ok = mg_machine_test_door:open  (Tag),
-    ok = timer:sleep(1000),
-    ok = mg_machine_test_door:lock  (Tag, <<"123">>),
-    {error, bad_passwd} = mg_machine_test_door:unlock(Tag, <<"12">>),
-    ok = mg_machine_test_door:unlock(Tag, <<"123">>),
-    ok.
+    _ID = mg_machine_test_door:start(AutomatonOptions, Tag),
 
+    % прогнать по стейтам
+    ok = mg_machine_test_door:do_action(AutomatonOptions, close, Tag),
+    ok = mg_machine_test_door:do_action(AutomatonOptions, open , Tag),
+    ok = mg_machine_test_door:do_action(AutomatonOptions, close, Tag),
+    ok = mg_machine_test_door:do_action(AutomatonOptions, open , Tag),
+    ok = timer:sleep(2000),
+    ok = mg_machine_test_door:do_action(AutomatonOptions, {lock, <<"123">>}, Tag),
+    {error, bad_passwd} =
+        mg_machine_test_door:do_action(AutomatonOptions, {unlock, <<"12">>}, Tag),
+    ok = mg_machine_test_door:do_action(AutomatonOptions, {unlock, <<"123">>}, Tag),
+    ok.

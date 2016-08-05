@@ -2,9 +2,14 @@
     {description, "Machinegun FSM processor"},
     {vsn, "1"},
     {registered, []},
+    {mod, {mg, []}},
     {applications, [
         kernel,
-        stdlib
+        stdlib,
+        lager,
+        gproc,
+        mg_proto,
+        woody
     ]},
     {env, []},
     {modules, []},

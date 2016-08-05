@@ -5,6 +5,7 @@
 -module(mg_utils).
 
 %% API
+%% OTP
 -export_type([reason                    /0]).
 -export_type([gen_timeout               /0]).
 -export_type([gen_start_ret             /0]).
@@ -19,12 +20,17 @@
 -export_type([supervisor_ret            /0]).
 -export([gen_reg_name2_ref/1]).
 
+%% Woody
+-export_type([woody_handlers/0]).
+
+%% Other
 -export_type([mod_opts/0]).
 -export([apply_mod_opts   /3]).
 -export([separate_mod_opts/1]).
 
 %%
 %% API
+%% OTP
 %%
 -type reason() ::
       normal
@@ -103,6 +109,14 @@ gen_reg_name2_ref(V={global, _}) -> V;
 gen_reg_name2_ref(V={via, _, _}) -> V. % Is this correct?
 
 
+%%
+%% Woody
+%%
+-type woody_handlers() :: _.
+
+%%
+%% Other
+%%
 -type mod_opts() :: {module(), _Opts} | module().
 -spec apply_mod_opts(mod_opts(), atom(), list(_Arg)) ->
     _Result.

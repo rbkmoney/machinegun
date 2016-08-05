@@ -6,76 +6,56 @@
 %%% В будущем планируется реплицировать эвенты между своими инстансами на разных нодах.
 %%% Не падает при получении неожиданных запросов, и пишет их в error_logger.
 %%%
-%%% Возможно стоит ещё:
+%%% Возможно стоит ещё сделать
 %%%  - прокинуть ID во все запросы
 %%%  - attach/detach
 %%%  - init/teminate
 %%%  - handle_info
 %%%  - format_state
+%%%  - подписку на эвенты
+%%%  - время жизни
 %%% ?
 %%%
 %%% Реализует понятие тэгов.
 %%% При падении хендлера переводит машину в error состояние.
 %%%
-%%% Что ещё тут хочется сделать:
-%%%
-%%%  - подписку на эвенты
-%%%  - время жизни
-%%%
 -module(mg_machine).
--behaviour(supervisor).
--behaviour(mg_machine_server).
+-include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 %% API
--export_type([event_id/0]).
--export_type([history /0]).
--export_type([status  /0]).
--export_type([tags    /0]).
--export_type([timeout_/0]).
--export_type([ref     /0]).
--export_type([signal  /0]).
--export_type([actions /0]).
+-export([child_spec /2]).
+-export([start_link /1]).
+-export([start      /3]).
+-export([repair     /3]).
+-export([call       /3]).
+-export([get_history/3]).
 
--export([child_spec/2]).
--export([start_link/1]).
--export([init      /1]).
-
--export([start         /2]).
--export([start         /3]).
--export([call          /3]).
--export([repair        /3]).
+%% Internal API
 -export([handle_timeout/2]).
 -export([touch         /3]).
 
-%% mg_machine_server callbacks
+%% supervisor
+-behaviour(supervisor).
+-export([init      /1]).
+
+
+%% mg_machine_worker
+-behaviour(mg_machine_worker).
 -export([handle_load/2, handle_call/2, handle_cast/2, handle_unload/1]).
 
 %%
 %% API
 %%
--type options () :: {mg_utils:mod_opts(), mg_utils:mod_opts()}.
--type event_id() :: mg_machine_db:event_id().
--type history () :: mg_machine_db:history ().
--type status  () :: mg_machine_db:status  ().
--type tags    () :: mg_machine_db:tags    ().
--type timeout_() :: {absolute, calendar:datetime()} | {relative, Seconds::non_neg_integer()} | undefined.
--type ref     () :: {id, _ID} | {tag, _Tag}.
--type signal  () :: timeout | {init, _Args} | {repair, _Args}.
--type actions () ::
-    #{
-        timeout => timeout_(),
-        tag     => _Tag
-    }.
+-type options () :: {ProcessorUrl::binary(), mg_utils:mod_opts()}.
 
 %%
 %% behaviour
 %%
--callback process_signal(signal(), history()) ->
-    {_Event, actions()}.
--callback process_call(_Call, history()) ->
-    {_Response, _Event, actions()}.
+-callback process_signal(_Options, mg:signal_args()) ->
+    mg:signal_result().
+-callback process_call(_Options, mg:call_args()) ->
+    mg:call_result().
 
-%%
 
 -spec child_spec(atom(), options()) ->
     supervisor:child_spec().
@@ -94,40 +74,24 @@ child_spec(ChildID, Options) ->
 start_link(Options) ->
     supervisor:start_link(?MODULE, Options).
 
-%%
-
--spec init(options()) ->
-    mg_utils:supervisor_ret().
-init(Options) ->
-    {DBMod, DBOpts} = mg_utils:separate_mod_opts(get_mod(db, Options)),
-    SupFlags = #{strategy => one_for_all},
-    {ok, {SupFlags, [
-        mg_machine_manager:child_spec(manager, manager_options(Options)),
-        DBMod:child_spec(db, DBOpts)
-    ]}}.
-
-%%
-
--spec start(options(), _Args) ->
-    _ID.
-start(Options, Args) ->
-    start(Options, Args, sync).
-
--spec start(options(), _Args, sync | async) ->
-    _ID.
-start(Options, Args, Type) ->
+-spec start(options(), mg:id(), mg:args()) ->
+    ok.
+start(Options, ID, Args) ->
     % создать в бд
     % TODO перенести в сам процесс, иначе при коллизии может быть гонка (?)
-    ID = call_db(create_machine, [Args], Options),
+    ok = call_db(create_machine, [ID, Args], Options),
     % зафорсить загрузку
-    ok = touch(Options, ID, Type),
-    ID.
+    ok = touch(Options, ID, sync).
 
-% sync
--spec call(options(), ref(), _Args) ->
+-spec repair(options(), mg:reference(), mg:args()) ->
+    ok.
+repair(Options, Ref, Args) ->
+    ok = mg_machine_workers_manager:cast(manager_options(Options), ref2id(Options, Ref), {repair, Args}).
+
+-spec call(options(), mg:reference(), mg:args()) ->
     _Resp.
-call(Options, Ref, Args) ->
-    case mg_machine_manager:call(manager_options(Options), ref2id(Options, Ref), {call, Args}) of
+call(Options, Ref, Call) ->
+    case mg_machine_workers_manager:call(manager_options(Options), ref2id(Options, Ref), {call, Call}) of
         {error, {Class, Reason, Stacktrace}} ->
             erlang:raise(Class, Reason, Stacktrace);
         {error, Reason} ->
@@ -136,16 +100,12 @@ call(Options, Ref, Args) ->
             R
     end.
 
-% async (?)
--spec repair(options(), ref(), _Args) ->
-    ok.
-repair(Options, Ref, Args) ->
-    ok = mg_machine_manager:cast(manager_options(Options), ref2id(Options, Ref), {repair, Args}).
-
-% -spec get_history(mg_fsm:ref(), _From, _To) ->
-%     mg_fsm:history().
-% get_history(Ref, From, To) ->
-%     mg_db:get_history(ref2pid(Ref), From, To).
+-spec get_history(options, mg:reference(), mg:history_range()) ->
+    mg:history().
+get_history(_Options, _Ref, _Range) ->
+    % TODO
+    % mg_db:get_history(ref2pid(Ref), From, To).
+    [].
 
 %%
 %% Internal API
@@ -153,14 +113,27 @@ repair(Options, Ref, Args) ->
 -spec handle_timeout(options(), _ID) ->
     ok.
 handle_timeout(Options, ID) ->
-    ok = mg_machine_manager:cast(manager_options(Options), ID, timeout).
+    ok = mg_machine_workers_manager:cast(manager_options(Options), ID, timeout).
 
 -spec touch(_ID, options(), sync | async) ->
     ok.
 touch(Options, ID, async) ->
-    ok = mg_machine_manager:cast(manager_options(Options), ID, touch);
+    ok = mg_machine_workers_manager:cast(manager_options(Options), ID, touch);
 touch(Options, ID, sync) ->
-    ok = mg_machine_manager:call(manager_options(Options), ID, touch).
+    ok = mg_machine_workers_manager:call(manager_options(Options), ID, touch).
+
+%%
+%% supervisor
+%%
+-spec init(options()) ->
+    mg_utils:supervisor_ret().
+init(Options) ->
+    {DBMod, DBOpts} = mg_utils:separate_mod_opts(get_options(db, Options)),
+    SupFlags = #{strategy => one_for_all},
+    {ok, {SupFlags, [
+        mg_machine_workers_manager:child_spec(manager, manager_options(Options)),
+        DBMod:child_spec(db, DBOpts)
+    ]}}.
 
 %%
 %% mg_machine callbacks
@@ -168,9 +141,9 @@ touch(Options, ID, sync) ->
 -type state() :: #{
     id       => _,
     options => _,
-    status   => status(),
-    history  => history(),
-    tags     => tags()
+    status   => mg_db:status(),
+    history  => mg:history(),
+    tags     => [mg:tag()]
 }.
 
 -spec handle_load(_ID, module()) ->
@@ -179,15 +152,15 @@ handle_load(ID, Options) ->
     {ID, Status, History, Tags} = call_db(get_machine, [ID], Options),
     State =
         #{
-            id       => ID,
+            id      => ID,
             options => Options,
-            status   => Status,
-            history  => History,
-            tags     => Tags
+            status  => Status,
+            history => History,
+            tags    => Tags
         },
     transit_state(State, handle_load_(State)).
 
--spec handle_call(_Call, state()) ->
+-spec handle_call(mg:call(), state()) ->
     {_Resp, state()}.
 handle_call(Call, State) ->
     {Resp, NewState} = handle_call_(Call, State),
@@ -217,7 +190,7 @@ transit_state(OldState=#{id:=OldID}, NewState=#{id:=NewID, options:=Options}) wh
     NewState.
 
 -spec state_to_machine(state()) ->
-    mg_machine_db:machine().
+    mg_db:machine().
 state_to_machine(#{id:=ID, status:=Status, history:=History, tags:=Tags}) ->
     {ID, Status, History, Tags}.
 
@@ -225,8 +198,8 @@ state_to_machine(#{id:=ID, status:=Status, history:=History, tags:=Tags}) ->
 
 -spec handle_load_(state()) ->
     state().
-handle_load_(State=#{status:={created, Args}}) ->
-    process_signal({init, Args}, State);
+handle_load_(State=#{id:=ID, status:={created, Args}}) ->
+    process_signal({init, #'InitSignal'{id=ID, arg=Args}}, State);
 handle_load_(State) ->
     State.
 
@@ -237,75 +210,101 @@ handle_call_({call, Call}, State=#{status:={working, _}}) ->
 handle_call_(touch, State) ->
     {ok, State};
 handle_call_(Call, State) ->
-    ok = error_logger:error_msg("unexpected mg_machine_server call received: ~p", [Call]),
+    ok = error_logger:error_msg("unexpected mg_machine_worker call received: ~p", [Call]),
     {{error, badarg}, State}.
 
 -spec handle_cast_(_Cast, state()) ->
     state().
-handle_cast_(Cast=timeout, State=#{status:={working, _}}) ->
-    process_signal(Cast, State);
-handle_cast_(Cast={repair, _}, State=#{status:={error, _}}) ->
-    process_signal(Cast, State);
+handle_cast_(timeout, State=#{status:={working, _}}) ->
+    process_signal({timeout, #'TimeoutSignal'{}}, State);
+handle_cast_({repair, Args}, State=#{status:={error, _}}) ->
+    process_signal({repair, #'RepairSignal'{arg=Args}}, State);
 handle_cast_(touch, State) ->
     State;
 handle_cast_(Cast, State) ->
-    ok = error_logger:error_msg("unexpected mg_machine_server cast received: ~p", [Cast]),
+    ok = error_logger:error_msg("unexpected mg_machine_worker cast received: ~p", [Cast]),
     State.
 
 %%
 
--spec process_call(_Call, state()) ->
+-spec process_call(mg:call(), state()) ->
     {_Resp, state()}.
 process_call(Call, State=#{options:=Options, history:=History}) ->
     try
-        {Resp, Event, Actions} = call_processing(Options, process_call, [Call, History]),
-        {{ok, Resp}, handle_processing_result(Event, Actions, State)}
+        #'CallResult'{
+            events   = EventsBodies,
+            action   = ComplexAction,
+            response = Response
+        } = call_processing(Options, process_call, [#'CallArgs'{call=Call, history=History}]),
+        {{ok, Response}, handle_processing_result(EventsBodies, ComplexAction, State)}
     catch Class:Reason ->
         Exception = {Class, Reason, erlang:get_stacktrace()},
-        {{error, Exception}, handle_processing_error({error, Exception}, State)}
+        {{error, Exception}, handle_processing_error(Exception, State)}
     end.
 
--spec process_signal(signal(), state()) ->
+-spec process_signal(mg:signal(), state()) ->
     state().
 process_signal(Signal, State=#{options:=Options, history:=History}) ->
     try
-        {Event, Actions} = call_processing(Options, process_signal, [Signal, History]),
-        handle_processing_result(Event, Actions, State)
+        #'SignalResult'{
+            events   = EventsBodies,
+            action   = ComplexAction
+        } = call_processing(Options, process_signal, [#'SignalArgs'{signal=Signal, history=History}]),
+        handle_processing_result(EventsBodies, ComplexAction, State)
     catch Class:Reason ->
         Exception = {Class, Reason, erlang:get_stacktrace()},
-        handle_processing_error({error, Exception}, State)
+        handle_processing_error(Exception, State)
     end.
 
 %%
 
--spec handle_processing_result(_Event, actions(), state()) ->
+-spec handle_processing_result(mg:events_bodies(), mg:complex_action(), state()) ->
     state().
-handle_processing_result(Event, Actions, State) ->
-    do_actions(Actions, append_event_to_history(Event, State)).
+handle_processing_result(EventsBodies, ComplexAction, State) ->
+    do_complex_action(ComplexAction, append_events_to_history(EventsBodies, State)).
 
 -spec handle_processing_error(_Reason, state()) ->
     state().
 handle_processing_error(Reason, State) ->
     set_status({error, Reason}, State).
 
--spec append_event_to_history(_Event, state()) ->
+-spec append_events_to_history(mg:events_bodies(), state()) ->
     state().
-append_event_to_history(Event, State=#{history:=History}) ->
-    State#{history:=maps:put(make_event_id(History), Event, History)}.
+append_events_to_history(EventsBodies, State) ->
+    lists:foldr(fun append_event_to_history/2, State, EventsBodies).
 
--spec make_event_id(history()) ->
-    event_id().
-make_event_id(History) when erlang:map_size(History) =:= 0 ->
+-spec append_event_to_history(mg:event_body(), state()) ->
+    state().
+append_event_to_history(EventBody, State=#{history:=History}) ->
+    State#{history:=[
+        #'Event'{
+            id            = get_next_event_id(get_last_event_id(State)),
+            created_at    = <<"TODO timestamp">>,
+            event_payload = EventBody
+        }
+        |
+        History
+    ]}.
+
+
+-spec get_last_event_id(state()) ->
+    mg:event_id() | undefined.
+get_last_event_id(#{history:=[]}) ->
+    undefined;
+get_last_event_id(#{history:=[#'Event'{id=ID}|_]}) ->
+    ID.
+
+-spec get_next_event_id(undefined | mg:event_id()) ->
+    mg:event_id().
+get_next_event_id(undefined) ->
     1;
-make_event_id(History) ->
-    lists:max(maps:keys(History)) + 1.
+get_next_event_id(N) ->
+    N + 1.
 
--spec do_actions(actions(), state()) ->
+-spec do_complex_action(mg:complex_action(), state()) ->
     state().
-do_actions(Actions, State) ->
-    Timeout = maps:get(timeout, Actions, undefined),
-    Tag     = maps:get(tag    , Actions, undefined),
-    set_tag(Tag, set_status({working, get_timeout_datetime(Timeout)}, State)).
+do_complex_action(#'ComplexAction'{set_timer=SetTimerAction, tag=TagAction}, State) ->
+    do_set_timer_action(SetTimerAction, do_tag_action(TagAction, State)).
 
 %%
 %% utils
@@ -315,20 +314,26 @@ do_actions(Actions, State) ->
 manager_options(Options) ->
     {?MODULE, Options}.
 
--spec set_tag(undefined | _Tag, state()) ->
+-spec do_tag_action(undefined | mg:tag_action(), state()) ->
     state().
-set_tag(undefined, State) ->
+do_tag_action(undefined, State) ->
     State;
-set_tag(Tag, State=#{tags:=Tags}) ->
+do_tag_action(#'TagAction'{tag=Tag}, State=#{tags:=Tags}) ->
     % TODO детектор коллизий тэгов
     State#{tags:=[Tag|Tags]}.
 
--spec set_status(status(), state()) ->
+
+-spec do_set_timer_action(undefined | mg:set_timer_action(), state()) ->
+    state().
+do_set_timer_action(TimerAction, State) ->
+    set_status({working, get_timeout_datetime(TimerAction)}, State).
+
+-spec set_status(mg_db:status(), state()) ->
     state().
 set_status(NewStatus, State) ->
     State#{status:=NewStatus}.
 
--spec ref2id(options(), ref()) ->
+-spec ref2id(options(), mg:reference()) ->
     _ID.
 ref2id(Options, {tag, Tag}) ->
     call_db(resolve_tag, [Tag], Options);
@@ -338,26 +343,31 @@ ref2id(_, {id, ID}) ->
 -spec call_processing(options(), atom(), list(_Arg)) ->
     _Result.
 call_processing(Options, Function, Args) ->
-    {Mod, _Args} = mg_utils:separate_mod_opts(get_mod(machine, Options)),
-    erlang:apply(Mod, Function, Args).
+    % {Mod, _Args} = mg_utils:separate_mod_opts(get_options(machine, Options)),
+    % erlang:apply(Mod, Function, Args).
+    mg_utils:apply_mod_opts(get_options(machine, Options), Function, Args).
 
 -spec call_db(atom(), list(_Arg), options()) ->
-    _Result.
-call_db(FunName, Args, Options) ->
-    mg_utils:apply_mod_opts(get_mod(db, Options), FunName, Args).
+    _.
+call_db(Function, Args, Options) ->
+    mg_utils:apply_mod_opts(get_options(db, Options), Function, Args).
 
--spec get_mod(machine | db, options()) ->
+-spec get_options(machine | db, options()) ->
     mg_utils:mod_opts().
-get_mod(machine, {ModOpts, _}) -> ModOpts;
-get_mod(db     , {_, ModOpts}) -> ModOpts.
+get_options(machine, {Options, _}) -> Options;
+get_options(db     , {_, Options}) -> Options.
 
--spec get_timeout_datetime(timeout_()) ->
+-spec get_timeout_datetime(mg:timer()) ->
     calendar:datetime() | undefined.
 get_timeout_datetime(undefined) ->
     undefined;
-get_timeout_datetime({absolute, DateTime}) ->
-    DateTime;
-get_timeout_datetime({relative, Period}) ->
-    calendar:gregorian_seconds_to_datetime(
-        calendar:datetime_to_gregorian_seconds(calendar:universal_time()) + Period
-    ).
+get_timeout_datetime(#'SetTimerAction'{timer=Timer}) ->
+    case Timer of
+        {deadline, Timestamp} ->
+            % TODO
+            Timestamp;
+        {timeout, Timeout} ->
+        calendar:gregorian_seconds_to_datetime(
+            calendar:datetime_to_gregorian_seconds(calendar:universal_time()) + Timeout
+        )
+    end.

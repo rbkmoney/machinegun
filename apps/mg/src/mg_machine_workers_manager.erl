@@ -4,7 +4,7 @@
 %%% Могут обращаться друг к другу.
 %%% Регистрируются по идентификатору.
 %%%
--module(mg_machine_manager).
+-module(mg_machine_workers_manager).
 -behaviour(supervisor).
 
 %% API
@@ -53,13 +53,13 @@ start_link(Options) ->
 -spec call(_Options, _ID, _Call) ->
     _Reply.
 call(Options, ID, Call) ->
-    ?START_IF_NEEDED(Options, ID, mg_machine_server:call(ID, Call)).
+    ?START_IF_NEEDED(Options, ID, mg_machine_worker:call(ID, Call)).
 
 % async
 -spec cast(_Options, _ID, _Cast) ->
     ok.
 cast(Options, ID, Cast) ->
-    ok = ?START_IF_NEEDED(Options, ID, mg_machine_server:cast(ID, Cast)).
+    ok = ?START_IF_NEEDED(Options, ID, mg_machine_worker:cast(ID, Cast)).
 
 
 %%
@@ -69,7 +69,7 @@ cast(Options, ID, Cast) ->
     {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init(Options) ->
     SupFlags = #{strategy => simple_one_for_one},
-    {ok, {SupFlags, [mg_machine_server:child_spec(machine, Options)]}}.
+    {ok, {SupFlags, [mg_machine_worker:child_spec(machine, Options)]}}.
 
 %%
 %% local

@@ -22,12 +22,12 @@ pipeline("machinegun", 'docker-host', "_build/") {
     sh 'make w_container_xref'
   }
 
-  runStage('test') {
-    sh "make w_container_test"
-  }
-
   runStage('dialyze') {
     sh 'make w_container_dialyze'
+  }
+
+  runStage('test') {
+    sh "make w_container_test"
   }
 
   if (env.BRANCH_NAME == 'master') {

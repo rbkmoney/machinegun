@@ -1,11 +1,11 @@
--module(mg_machine_db_test_server).
+-module(mg_db_test_server).
 
 -behaviour(gen_server).
 
 -include_lib("stdlib/include/ms_transform.hrl").
 
 %% API
--export([child_spec/2, start_link/1, create_machine/2, get_machine/2, update_machine/4,
+-export([child_spec/2, start_link/1, create_machine/3, get_machine/2, update_machine/4,
     resolve_tag/2, remove_machine/2]).
 
 %% gen_server callbacks
@@ -31,27 +31,25 @@ start_link(Options) ->
 
 %%
 
--spec create_machine(_Options, _MachineArgs) ->
+-spec create_machine(_Options, mg:id(), mg:args()) ->
     % тут не должно быть рейсов
-    _ID.
-create_machine(Options, MachineArgs) ->
-    ID = erlang:make_ref(),
-    ok = write_machine(make_ets_name(Options), {ID, {created, MachineArgs}, #{}, []}),
-    ID.
+    mg:id().
+create_machine(Options, ID, Args) ->
+    ok = write_machine(make_ets_name(Options), {ID, {created, Args}, [], []}).
 
--spec get_machine(_Options, _ID) ->
-    mg_machine_db:machine().
+-spec get_machine(_Options, mg:id()) ->
+    mg_db:machine().
 get_machine(Options, ID) ->
     read_machine(make_ets_name(Options), ID).
 
--spec update_machine(_Options, mg_machine_db:machine(), mg_machine_db:machine(), mg_machine_db:timer_handler()) ->
+-spec update_machine(_Options, mg_db:machine(), mg_db:machine(), mg_db:timer_handler()) ->
     ok.
 update_machine(Options, _OldMachine, NewMachine, TimerHandler) ->
     ok = write_machine(make_ets_name(Options), NewMachine),
     try_set_timer(Options, NewMachine, TimerHandler).
 
 
--spec try_set_timer(_Options, mg_machine_db:machine(), mg_machine_db:timer_handler()) ->
+-spec try_set_timer(_Options, mg_db:machine(), mg_db:timer_handler()) ->
     ok.
 try_set_timer(_Options, {ID, {working, TimerDateTime}, _, _}, TimerHandler) when TimerDateTime =/= undefined ->
     mg_timers:set(timers, ID, TimerDateTime, TimerHandler);
@@ -60,8 +58,8 @@ try_set_timer(_Options, {_, _, _, _}, _) ->
 
 
 %% TODO not_found
--spec resolve_tag(_Options, _Tag) ->
-    _ID.
+-spec resolve_tag(_Options, mg:tag()) ->
+    mg:id().
 resolve_tag(Options, Tag) ->
     ets:foldl(
         fun
@@ -77,7 +75,7 @@ resolve_tag(Options, Tag) ->
         make_ets_name(Options)
     ).
 
--spec remove_machine(_Options, _ID) ->
+-spec remove_machine(_Options, mg:id()) ->
     ok.
 remove_machine(Options, ID) ->
     true = ets:delete(make_ets_name(Options), ID),
@@ -127,11 +125,6 @@ terminate(_, _) ->
 %%
 %% local
 %%
-% -spec self_ref(_Options) ->
-%     mg_utils:gen_ref().
-% self_ref(_Options) ->
-%     {local, ?MODULE}.
-
 -spec self_reg_name(_Options) ->
     mg_utils:gen_reg_name().
 self_reg_name(_Options) ->
@@ -142,53 +135,14 @@ self_reg_name(_Options) ->
 make_ets_name(_Options) ->
     ?MODULE.
 
--spec read_machine(atom(), _ID) ->
-    mg_machine_db:machine().
+-spec read_machine(atom(), mg:id()) ->
+    mg_db:machine().
 read_machine(ETS, ID) ->
     [Machine] = ets:lookup(ETS, ID),
     Machine.
 
--spec write_machine(atom(), mg_machine_db:machine()) ->
+-spec write_machine(atom(), mg_db:machine()) ->
     ok.
 write_machine(ETS, Machine) ->
     true = ets:insert(ETS, [Machine]),
     ok.
-
-%% TODO вариант с разными таблицами
-% -spec make_ets_name(states | events | tags, _Options) ->
-%     atom().
-% make_ets_name(Type, _Options) ->
-%     erlang:list_to_atom(erlang:atom_to_list(?MODULE) ++ "_" ++ erlang:atom_to_list(Type)).
-
-
-% read_state(ID) ->
-%     [State] = ets:lookup(make_ets_name(states), ID),
-%     State.
-
-% read_tags(ETS, ID, LastTagID) ->
-%     Tags = ets:lookup(make_ets_name(tags), ID),
-%     [Tag || Tag={ID, _} <- Tags, ID =< LastTagID].
-
-% read_history(ETS, ID, LastEventID) ->
-%     Events = ets:lookup(make_ets_name(events), ID),
-%     [Event || Event={ID, _} <- Events, ID =< LastEventID].
-
-% -spec get_machine(_Options, _ID) ->
-%     mg_machine_db:machine().
-% get_machine(Options, ID) ->
-%     {Status, LastEventID, LastTagID} = read_state  (ID),
-%     Tags                             = read_tags   (ID, LastTagID),
-%     History                          = read_history(ID, LastEventID),
-%     {Status, History, Tags}.
-
-% -spec update_machine(_Options, mg_machine_db:machine(), mg_machine_db:machine()) ->
-%     ok.
-% update_machine(Options, OldMachine, NewMachine) ->
-%     % TODO найти дельту
-%     ok  = write_tags(),
-%     ok  = write_history(),
-%     ok  = write_state(NewMachine)
-%     ok.
-
-% _ = [ets:new(make_ets_name(Type, Options), [set, public, named_table]) || Type <- [states, events, tags]],
-
