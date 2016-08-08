@@ -26,6 +26,8 @@
 -export_type([signal_result/0]).
 -export_type([call_result  /0]).
 
+-export_type([history_range/0]).
+
 -export_type([config/0]).
 
 -type ns      () :: mg_proto_base_thrift            :'Namespace'().
@@ -51,6 +53,7 @@
 -type signal_result() :: mg_proto_state_processing_thrift:'SignalResult'().
 -type call_result  () :: mg_proto_state_processing_thrift:'CallResult'  ().
 
+-type history_range() :: mg_proto_state_processing_thrift:'HistoryRange'().
 
 %% config
 -type config_ns() ::

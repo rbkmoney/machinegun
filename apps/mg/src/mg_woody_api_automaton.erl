@@ -39,10 +39,8 @@ handle_function('Call', {NS, Ref, Call}, WoodyContext, Options) ->
     Response = mg_machine:call(get_options(NS, Options), Ref, Call),
     {{ok, Response}, WoodyContext};
 
-handle_function('GetHistory', {_NS, _Ref, _Range}, WoodyContext, _Options) ->
-    % TODO
-    % mg_db:get_history(ref2pid(Ref), From, To).
-    History = [],
+handle_function('GetHistory', {NS, Ref, Range}, WoodyContext, Options) ->
+    History = mg_machine:get_history(get_options(NS, Options), Ref, Range),
     {{ok, History}, WoodyContext}.
 
 %%

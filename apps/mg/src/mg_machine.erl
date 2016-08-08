@@ -102,10 +102,10 @@ call(Options, Ref, Call) ->
 
 -spec get_history(options, mg:reference(), mg:history_range()) ->
     mg:history().
-get_history(_Options, _Ref, _Range) ->
-    % TODO
-    % mg_db:get_history(ref2pid(Ref), From, To).
-    [].
+get_history(Options, Ref, Range) ->
+    %% TODO error
+    {_, _, History, _} = check_status(call_db(get_machine, [ref2id(Options, Ref), Range], Options)),
+    History.
 
 %%
 %% Internal API
@@ -149,7 +149,7 @@ init(Options) ->
 -spec handle_load(_ID, module()) ->
     state().
 handle_load(ID, Options) ->
-    {ID, Status, History, Tags} = call_db(get_machine, [ID], Options),
+    {ID, Status, History, Tags} = call_db(get_machine, [ID, undefined], Options),
     State =
         #{
             id      => ID,
@@ -371,3 +371,9 @@ get_timeout_datetime(#'SetTimerAction'{timer=Timer}) ->
             calendar:datetime_to_gregorian_seconds(calendar:universal_time()) + Timeout
         )
     end.
+
+-spec check_status(mg_db:machine()) ->
+    mg_db:machine() | no_return().
+check_status(Machine) ->
+    % TODO error handling
+    Machine.

@@ -20,7 +20,7 @@
     % Тут должна гарантироваться атомарность! (?)
     ok.
 
--callback get_machine(_Options, mg:id()) ->
+-callback get_machine(_Options, mg:id(), mg:history_range() | undefined) ->
     machine().
 
 -callback update_machine(_Options, Old::machine(), New::machine(), timer_handler()) ->

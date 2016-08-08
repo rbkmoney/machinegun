@@ -3,9 +3,10 @@
 -behaviour(gen_server).
 
 -include_lib("stdlib/include/ms_transform.hrl").
+-include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 %% API
--export([child_spec/2, start_link/1, create_machine/3, get_machine/2, update_machine/4,
+-export([child_spec/2, start_link/1, create_machine/3, get_machine/3, update_machine/4,
     resolve_tag/2, remove_machine/2]).
 
 %% gen_server callbacks
@@ -37,10 +38,10 @@ start_link(Options) ->
 create_machine(Options, ID, Args) ->
     ok = write_machine(make_ets_name(Options), {ID, {created, Args}, [], []}).
 
--spec get_machine(_Options, mg:id()) ->
+-spec get_machine(_Options, mg:id(), mg:history_range() | undefined) ->
     mg_db:machine().
-get_machine(Options, ID) ->
-    read_machine(make_ets_name(Options), ID).
+get_machine(Options, ID, Range) ->
+    filter_machine_history(read_machine(make_ets_name(Options), ID), Range).
 
 -spec update_machine(_Options, mg_db:machine(), mg_db:machine(), mg_db:timer_handler()) ->
     ok.
@@ -146,3 +147,38 @@ read_machine(ETS, ID) ->
 write_machine(ETS, Machine) ->
     true = ets:insert(ETS, [Machine]),
     ok.
+
+%%
+%% history filtering
+%%
+-spec filter_machine_history(mg_db:machine(), mg:history_range() | undefined) ->
+    mg_db:machine().
+filter_machine_history(Machine, undefined) ->
+    Machine;
+filter_machine_history({ID, Status, History, Tags}, #'HistoryRange'{'after'=After, limit=Limit}) ->
+    {ID, Status, filter_history(History, After, Limit), Tags}.
+
+-spec filter_history(mg:history(), mg:event_id(), pos_integer()) ->
+    ok.
+filter_history(History, After, Limit) ->
+    filter_history_iter(lists:reverse(History), After, Limit, []).
+
+-spec filter_history_iter(mg:history(), mg:event_id(), non_neg_integer(), mg:history()) ->
+    mg:history().
+filter_history_iter([], _, _, Result) ->
+    Result;
+filter_history_iter(_, _, 0, Result) ->
+    Result;
+filter_history_iter([Event|HistoryTail], undefined, Limit, Result) ->
+    filter_history_iter(HistoryTail, undefined, decrease_limit(Limit), [Event|Result]);
+filter_history_iter([#'Event'{id=ID}|HistoryTail], After, Limit, []) when ID =:= After ->
+    filter_history_iter(HistoryTail, undefined, Limit, []);
+filter_history_iter([_|HistoryTail], After, Limit, []) ->
+    filter_history_iter(HistoryTail, After, Limit, []).
+
+-spec decrease_limit(undefined | pos_integer()) ->
+    non_neg_integer().
+decrease_limit(undefined) ->
+    undefined;
+decrease_limit(N) ->
+    N - 1.

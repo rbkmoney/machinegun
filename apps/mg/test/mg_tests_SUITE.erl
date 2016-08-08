@@ -26,26 +26,20 @@ all() ->
     config().
 init_per_testcase(machine_test, C) ->
     dbg:tracer(), dbg:p(all,c),
-    % dbg:tpl(mg_machine, x),
-    dbg:tpl(mg_db_test, x),
-    % dbg:tpl({mg_machine_test_door, apply_events, '_'}, x),
-    % dbg:tpl({mg_machine_test_door, handle_signal_, '_'}, x),
-    % dbg:tpl({mg_machine_test_door, handle_action, '_'}, x),
-    % dbg:tpl(mg_timers, x),
-    % dbg:tpl(mg_machine_worker, x),
+    % dbg:tpl(mg_db_test_server, x),
 
+    % TODO сделать через genlib
     _ = application:load(lager),
-    application:set_env(lager, handlers, [
-        {lager_common_test_backend, debug}
-    ]),
+    application:set_env(lager, handlers, [{lager_common_test_backend, debug}]),
+
     _ = application:load(woody),
     application:set_env(woody, acceptors_pool_size, 1),
+
     _ = application:load(mg),
-    application:set_env(mg, nss, [
-        {<<"mg_test_ns">> , <<"http://localhost:8821/processor">>}
-    ]),
-    {ok, Apps } = application:ensure_all_started(mg  ),
-    % {ok, Apps1} = application:ensure_all_started(sasl),
+    application:set_env(mg, nss, [{<<"mg_test_ns">> , <<"http://localhost:8821/processor">>}]),
+
+    {ok, Apps } = application:ensure_all_started(mg),
+
     [{apps, Apps} | C].
 
 -spec end_per_testcase(_, config()) ->
@@ -72,6 +66,7 @@ application_stop(App) ->
 -spec machine_test(config()) ->
     ok.
 machine_test(_C) ->
+    % TODO сделать нормальный тест автомата, как вариант, через пропер
     ProcessorOptions = {{0,0,0,0}, 8821, "/processor"},
     AutomatonOptions = {"http://localhost:8820", <<"mg_test_ns">>},
 
@@ -80,15 +75,23 @@ machine_test(_C) ->
     % запустить автомат
     Tag = <<"hello">>,
     _ID = mg_machine_test_door:start(AutomatonOptions, Tag),
+    CS0 = #{last_event_id => undefined, state => undefined},
+    CS1 = #{state:=open} = mg_machine_test_door:update_state(AutomatonOptions, Tag, CS0),
 
     % прогнать по стейтам
     ok = mg_machine_test_door:do_action(AutomatonOptions, close, Tag),
+    CS2 = #{state:=closed} = mg_machine_test_door:update_state(AutomatonOptions, Tag, CS1),
+
     ok = mg_machine_test_door:do_action(AutomatonOptions, open , Tag),
+    CS3 = #{state:=open} = mg_machine_test_door:update_state(AutomatonOptions, Tag, CS2),
     ok = mg_machine_test_door:do_action(AutomatonOptions, close, Tag),
+
+    CS4 = #{state:=closed} = mg_machine_test_door:update_state(AutomatonOptions, Tag, CS3),
     ok = mg_machine_test_door:do_action(AutomatonOptions, open , Tag),
     ok = timer:sleep(2000),
     ok = mg_machine_test_door:do_action(AutomatonOptions, {lock, <<"123">>}, Tag),
     {error, bad_passwd} =
         mg_machine_test_door:do_action(AutomatonOptions, {unlock, <<"12">>}, Tag),
     ok = mg_machine_test_door:do_action(AutomatonOptions, {unlock, <<"123">>}, Tag),
+    _CS5 = #{state:=closed} = mg_machine_test_door:update_state(AutomatonOptions, Tag, CS4),
     ok.

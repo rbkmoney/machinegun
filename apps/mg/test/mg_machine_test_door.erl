@@ -3,8 +3,9 @@
 %% API
 -export([start_link/1]).
 
--export([start    /2]).
--export([do_action/3]).
+-export([start       /2]).
+-export([do_action   /3]).
+-export([update_state/3]).
 
 %% supervisor callbacks
 -behaviour(supervisor).
@@ -22,6 +23,36 @@
 %%
 %% API
 %%
+-type event() ::
+      {creating, _Tag}
+    | repairing
+    | opening
+    | closing
+    | {locking, _Passwd}
+    | unlocking
+.
+-type events() :: [event()].
+
+-type state() ::
+      undefined
+    | open
+    | closed
+    | {locked, _Passwd}
+.
+
+-type action() ::
+       open
+    |  close
+    | {lock  , _Passwd}
+    | {unlock, _Passwd}
+.
+
+-type client_state() :: #{
+    last_event_id => mg:event_id(),
+    state         => state()
+}.
+
+
 -spec start_link(processor_options()) ->
     mg_utils:gen_start_ret().
 start_link(Options) ->
@@ -32,11 +63,23 @@ start_link(Options) ->
 start(Options, Tag) ->
     ID = <<"42">>,
     automation_start(Options, ID, Tag),
-    ID.
+    {ID, #{}}.
 
 -spec do_action(automaton_options(), mg:tag(), action()) -> ok | {error, bad_state | bad_passwd}.
 do_action(Options, Action, Tag) ->
     unpack(resp, automation_call(Options, {tag, Tag}, pack(action, Action))).
+
+-spec update_state(automaton_options(), mg:tag(), client_state()) ->
+    client_state().
+update_state(Options, Tag, ClientState=#{last_event_id:=LastEventID, state:=State}) ->
+    History = automation_getHistory(Options, {tag, Tag}, #'HistoryRange'{'after'=LastEventID, limit=1}),
+    case History of
+        [] ->
+            ClientState;
+        [#'Event'{id=EventID, event_payload=Event}] ->
+            NewState = apply_events([unpack(event, Event)], State),
+            update_state(Options, Tag, ClientState#{last_event_id:=EventID, state:=NewState})
+    end.
 
 %%
 %% Supervisor callbacks
@@ -73,30 +116,6 @@ handle_function('processCall', {CallArgs}, WoodyContext, Options) ->
 %%
 %% local
 %%
--type event() ::
-      {creating, _Tag}
-    | repairing
-    | opening
-    | closing
-    | {locking, _Passwd}
-    | unlocking
-.
--type events() :: [event()].
-
--type state() ::
-      undefined
-    | opened
-    | closed
-    | {locked, _Passwd}
-.
-
--type action() ::
-       open
-    |  close
-    | {lock  , _Passwd}
-    | {unlock, _Passwd}
-.
-
 -spec process_signal(_, mg_machine:signal_args()) ->
     mg:signal_result().
 process_signal(_, #'SignalArgs'{signal=Signal, history=History}) ->
@@ -122,7 +141,7 @@ process_call(_, #'CallArgs'{call=Action, history=History}) ->
     event().
 handle_signal_({init, #'InitSignal'{arg=Tag}}, undefined) ->
     [{creating, Tag}];
-handle_signal_({timeout, #'TimeoutSignal'{}}, opened) ->
+handle_signal_({timeout, #'TimeoutSignal'{}}, open) ->
     [closing];
 handle_signal_({repair, #'RepairSignal'{}}, _) ->
     [repairing].
@@ -131,7 +150,7 @@ handle_signal_({repair, #'RepairSignal'{}}, _) ->
     {_Resp, event()}.
 handle_action(open, closed) ->
     {ok, [opening]};
-handle_action(close, opened) ->
+handle_action(close, open) ->
     {ok, [closing]};
 handle_action({lock, Passwd}, closed) ->
     {ok, [{locking, Passwd}]};
@@ -155,10 +174,10 @@ apply_events(Events, State) ->
 
 -spec
 apply_event( event()         , state()    ) -> state().
-apply_event({creating, _}    , undefined  ) -> opened;
-apply_event( repairing       , _          ) -> opened;
-apply_event( opening         , closed     ) -> opened;
-apply_event( closing         , opened     ) -> closed;
+apply_event({creating, _}    , undefined  ) -> open;
+apply_event( repairing       , _          ) -> open;
+apply_event( opening         , closed     ) -> open;
+apply_event( closing         , open       ) -> closed;
 apply_event({locking, Passwd}, closed     ) -> {locked, Passwd};
 apply_event( unlocking       , {locked, _}) -> closed.
 
@@ -175,7 +194,7 @@ actions_from_events(Events=[Event], OldState) ->
 
 -spec set_timer(state()) ->
     mg:set_timer_action().
-set_timer(opened) ->
+set_timer(open) ->
     #'SetTimerAction'{timer = {timeout, 1}};
 set_timer(_) ->
     undefined.
@@ -220,10 +239,10 @@ automation_start({BaseURL, NS}, ID, Args) ->
 automation_call({BaseURL, NS}, Ref, Call) ->
     call_automation_service(BaseURL, 'Call', [NS, Ref, Call]).
 
-% -spec automation_getHistory(_Options, mg:reference(), mg:history_range()) ->
-%     mg:history().
-% automation_getHistory({BaseURL, NS}, Ref, Range) ->
-%     call_automation_service(BaseURL, 'GetHistory', [NS, Ref, Range]).
+-spec automation_getHistory(_Options, mg:reference(), mg:history_range()) ->
+    mg:history().
+automation_getHistory({BaseURL, NS}, Ref, Range) ->
+    call_automation_service(BaseURL, 'GetHistory', [NS, Ref, Range]).
 
 %%
 

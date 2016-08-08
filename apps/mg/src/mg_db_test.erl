@@ -6,7 +6,7 @@
 -export([init/1]).
 
 %% mg_persist_machine_db callbacks
--export([child_spec/2, start_link/1, create_machine/3, get_machine/2, update_machine/4,
+-export([child_spec/2, start_link/1, create_machine/3, get_machine/3, update_machine/4,
     resolve_tag/2, remove_machine/2]).
 
 %%
@@ -44,10 +44,10 @@ start_link(Options) ->
 create_machine(Options, ID, Args) ->
     mg_db_test_server:create_machine(Options, ID, Args).
 
--spec get_machine(_Options, mg:id()) ->
+-spec get_machine(_Options, mg:id(), mg:history_range() | undefined) ->
     mg_db:machine().
-get_machine(Options, ID) ->
-    mg_db_test_server:get_machine(Options, ID).
+get_machine(Options, ID, Range) ->
+    mg_db_test_server:get_machine(Options, ID, Range).
 
 -spec update_machine(_Options, mg_db:machine(), mg_db:machine(), mg_db:timer_handler()) ->
     ok.
