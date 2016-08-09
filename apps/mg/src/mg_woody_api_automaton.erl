@@ -36,8 +36,8 @@ handle_function('Repair', {NS, Ref, Args}, WoodyContext, Options) ->
     {ok, WoodyContext};
 
 handle_function('Call', {NS, Ref, Call}, WoodyContext, Options) ->
-    Response = mg_machine:call(get_options(NS, Options), Ref, Call),
-    {{ok, Response}, WoodyContext};
+    {Response, NewWoodyContext} = mg_machine:call(get_options(NS, Options), Ref, Call, WoodyContext),
+    {{ok, Response}, NewWoodyContext};
 
 handle_function('GetHistory', {NS, Ref, Range}, WoodyContext, Options) ->
     History = mg_machine:get_history(get_options(NS, Options), Ref, Range),

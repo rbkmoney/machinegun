@@ -3,7 +3,7 @@
 
 %% mg_machine handler
 -behaviour(mg_machine).
--export([process_signal/2, process_call/2]).
+-export([process_signal/2, process_call/3]).
 
 %%
 %% mg_machine handler
@@ -11,23 +11,35 @@
 -spec process_signal(_Options, mg:signal_args()) ->
     mg:signal_result().
 process_signal(Options, SignalArgs) ->
-    call_processor(Options, processSignal, [SignalArgs]).
+    {R, _} =
+        call_processor(
+            Options,
+            woody_client:new_context(woody_client:make_id(<<"mg">>), mg_woody_api_event_handler),
+            processSignal,
+            [SignalArgs]
+        ),
+    R.
 
--spec process_call(_Options, mg:call_args()) ->
+-spec process_call(_Options, mg:call_args(), mg:call_context()) ->
     mg:call_result().
-process_call(Options, CallArgs) ->
-    call_processor(Options, processCall, [CallArgs]).
+process_call(Options, Call, WoodyContext) ->
+    call_processor(
+        Options,
+        WoodyContext,
+        processCall,
+        [Call]
+    ).
 
 %%
 %% local
 %%
--spec call_processor(_URL, atom(), list(_)) ->
+-spec call_processor(_URL, woody_client:context(), atom(), list(_)) ->
     _.
-call_processor(URL, Function, Args) ->
-    {{ok, R}, _} =
+call_processor(URL, WoodyContext, Function, Args) ->
+    {{ok, Result}, NewWoodyContext} =
         woody_client:call(
-            woody_client:new_context(woody_client:make_id(<<"mg">>), mg_woody_api_event_handler),
+            WoodyContext,
             {{mg_proto_state_processing_thrift, 'Processor'}, Function, Args},
             #{url => URL}
         ),
-    R.
+    {Result, NewWoodyContext}.

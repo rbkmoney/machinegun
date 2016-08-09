@@ -28,18 +28,13 @@ init_per_testcase(machine_test, C) ->
     dbg:tracer(), dbg:p(all,c),
     % dbg:tpl(mg_db_test_server, x),
 
-    % TODO сделать через genlib
-    _ = application:load(lager),
-    application:set_env(lager, handlers, [{lager_common_test_backend, debug}]),
-
-    _ = application:load(woody),
-    application:set_env(woody, acceptors_pool_size, 1),
-
-    _ = application:load(mg),
-    application:set_env(mg, nss, [{<<"mg_test_ns">> , <<"http://localhost:8821/processor">>}]),
-
-    {ok, Apps } = application:ensure_all_started(mg),
-
+    Apps =
+        genlib_app:start_application_with(lager, [{handlers, [{lager_common_test_backend, debug}]}])
+        ++
+        genlib_app:start_application_with(woody, [{acceptors_pool_size, 1}])
+        ++
+        genlib_app:start_application_with(mg, [{nss, [{<<"mg_test_ns">> , <<"http://localhost:8821/processor">>}]}])
+    ,
     [{apps, Apps} | C].
 
 -spec end_per_testcase(_, config()) ->

@@ -27,7 +27,7 @@
 -export([start_link /1]).
 -export([start      /3]).
 -export([repair     /3]).
--export([call       /3]).
+-export([call       /4]).
 -export([get_history/3]).
 
 %% Internal API
@@ -53,8 +53,8 @@
 %%
 -callback process_signal(_Options, mg:signal_args()) ->
     mg:signal_result().
--callback process_call(_Options, mg:call_args()) ->
-    mg:call_result().
+-callback process_call(_Options, mg:call_args(), mg:call_context()) ->
+    {mg:call_result(), mg:call_context()}.
 
 
 -spec child_spec(atom(), options()) ->
@@ -88,10 +88,10 @@ start(Options, ID, Args) ->
 repair(Options, Ref, Args) ->
     ok = mg_machine_workers_manager:cast(manager_options(Options), ref2id(Options, Ref), {repair, Args}).
 
--spec call(options(), mg:reference(), mg:args()) ->
-    _Resp.
-call(Options, Ref, Call) ->
-    case mg_machine_workers_manager:call(manager_options(Options), ref2id(Options, Ref), {call, Call}) of
+-spec call(options(), mg:reference(), mg:args(), mg:call_context()) ->
+    {_Resp, mg:context()}.
+call(Options, Ref, Call, Context) ->
+    case mg_machine_workers_manager:call(manager_options(Options), ref2id(Options, Ref), {call, Call, Context}) of
         {error, {Class, Reason, Stacktrace}} ->
             erlang:raise(Class, Reason, Stacktrace);
         {error, Reason} ->
@@ -205,8 +205,8 @@ handle_load_(State) ->
 
 -spec handle_call_(_Call, state()) ->
     {_Replay, state()}.
-handle_call_({call, Call}, State=#{status:={working, _}}) ->
-    process_call(Call, State);
+handle_call_({call, Call, Context}, State=#{status:={working, _}}) ->
+    process_call(Call, Context, State);
 handle_call_(touch, State) ->
     {ok, State};
 handle_call_(Call, State) ->
@@ -227,16 +227,18 @@ handle_cast_(Cast, State) ->
 
 %%
 
--spec process_call(mg:call(), state()) ->
-    {_Resp, state()}.
-process_call(Call, State=#{options:=Options, history:=History}) ->
+-spec process_call(mg:call(), mg:call_context(), state()) ->
+    {{ok, {_Resp, mg:context()}}, state()}.
+process_call(Call, Context, State=#{options:=Options, history:=History}) ->
     try
+        {CallResult, NewContext} =
+            call_processing(Options, process_call, [#'CallArgs'{call=Call, history=History}, Context]),
         #'CallResult'{
             events   = EventsBodies,
             action   = ComplexAction,
             response = Response
-        } = call_processing(Options, process_call, [#'CallArgs'{call=Call, history=History}]),
-        {{ok, Response}, handle_processing_result(EventsBodies, ComplexAction, State)}
+        } = CallResult,
+        {{ok, {Response, NewContext}}, handle_processing_result(EventsBodies, ComplexAction, State)}
     catch Class:Reason ->
         Exception = {Class, Reason, erlang:get_stacktrace()},
         {{error, Exception}, handle_processing_error(Exception, State)}
@@ -276,10 +278,11 @@ append_events_to_history(EventsBodies, State) ->
 -spec append_event_to_history(mg:event_body(), state()) ->
     state().
 append_event_to_history(EventBody, State=#{history:=History}) ->
+    {ok, CreatedAt} = rfc3339:format(erlang:system_time()),
     State#{history:=[
         #'Event'{
             id            = get_next_event_id(get_last_event_id(State)),
-            created_at    = <<"TODO timestamp">>,
+            created_at    = CreatedAt,
             event_payload = EventBody
         }
         |
@@ -343,8 +346,6 @@ ref2id(_, {id, ID}) ->
 -spec call_processing(options(), atom(), list(_Arg)) ->
     _Result.
 call_processing(Options, Function, Args) ->
-    % {Mod, _Args} = mg_utils:separate_mod_opts(get_options(machine, Options)),
-    % erlang:apply(Mod, Function, Args).
     mg_utils:apply_mod_opts(get_options(machine, Options), Function, Args).
 
 -spec call_db(atom(), list(_Arg), options()) ->
@@ -364,12 +365,12 @@ get_timeout_datetime(undefined) ->
 get_timeout_datetime(#'SetTimerAction'{timer=Timer}) ->
     case Timer of
         {deadline, Timestamp} ->
-            % TODO
-            Timestamp;
+            {ok, {Date, Time, _, undefined}} = rfc3339:parse(Timestamp),
+            {Date, Time};
         {timeout, Timeout} ->
-        calendar:gregorian_seconds_to_datetime(
-            calendar:datetime_to_gregorian_seconds(calendar:universal_time()) + Timeout
-        )
+            calendar:gregorian_seconds_to_datetime(
+                calendar:datetime_to_gregorian_seconds(calendar:universal_time()) + Timeout
+            )
     end.
 
 -spec check_status(mg_db:machine()) ->
