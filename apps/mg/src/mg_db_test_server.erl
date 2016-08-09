@@ -7,13 +7,13 @@
 
 %% API
 -export([child_spec/2, start_link/1, create_machine/3, get_machine/3, update_machine/4,
-    resolve_tag/2, remove_machine/2]).
+    resolve_tag/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3, code_change/3, terminate/2]).
 
 %%
-%% mg_persist_machine_db callbacks
+%% API
 %%
 -spec child_spec(atom(), _Options) ->
     supervisor:child_spec().
@@ -75,12 +75,6 @@ resolve_tag(Options, Tag) ->
         undefined,
         make_ets_name(Options)
     ).
-
--spec remove_machine(_Options, mg:id()) ->
-    ok.
-remove_machine(Options, ID) ->
-    true = ets:delete(make_ets_name(Options), ID),
-    ok.
 
 %%
 %% gen_server callbacks

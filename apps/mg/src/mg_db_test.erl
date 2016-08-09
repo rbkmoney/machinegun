@@ -5,9 +5,9 @@
 %% supervisor callbacks
 -export([init/1]).
 
-%% mg_persist_machine_db callbacks
+%% mg_db callbacks
 -export([child_spec/2, start_link/1, create_machine/3, get_machine/3, update_machine/4,
-    resolve_tag/2, remove_machine/2]).
+    resolve_tag/2]).
 
 %%
 %% supervisor callbacks
@@ -22,11 +22,11 @@ init(Options) ->
     ]}}.
 
 %%
-%% mg_persist_machine_db callbacks
+%% mg_db callbacks
 %%
--spec child_spec(atom(), _Options) ->
+-spec child_spec(_Options, atom()) ->
     supervisor:child_spec().
-child_spec(ChildID, Options) ->
+child_spec(Options, ChildID) ->
     #{
         id       => ChildID,
         start    => {?MODULE, start_link, [Options]},
@@ -59,8 +59,3 @@ update_machine(Options, OldMachine, NewMachine, TimerHandler) ->
     mg:id().
 resolve_tag(Options, Tag) ->
     mg_db_test_server:resolve_tag(Options, Tag).
-
--spec remove_machine(_Options, mg:id()) ->
-    ok.
-remove_machine(Options, ID) ->
-    mg_db_test_server:remove_machine(Options, ID).

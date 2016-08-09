@@ -70,7 +70,7 @@ start_link(Options) ->
 start(Options, ID, Args) ->
     % создать в бд
     % TODO перенести в сам процесс, иначе при коллизии может быть гонка (?)
-    ok = call_db(create_machine, [ID, Args], Options),
+    ok = mg_db:create_machine(get_options(db, Options), ID, Args),
     % зафорсить загрузку
     ok = touch(Options, ID, sync).
 
@@ -95,7 +95,7 @@ call(Options, Ref, Call, Context) ->
     mg:history().
 get_history(Options, Ref, Range) ->
     %% TODO error
-    {_, _, History, _} = check_status(call_db(get_machine, [ref2id(Options, Ref), Range], Options)),
+    {_, _, History, _} = check_status(mg_db:get_machine(get_options(db, Options), ref2id(Options, Ref), Range)),
     History.
 
 %%
@@ -119,11 +119,10 @@ touch(Options, ID, sync) ->
 -spec init(options()) ->
     mg_utils:supervisor_ret().
 init(Options) ->
-    {DBMod, DBOpts} = mg_utils:separate_mod_opts(get_options(db, Options)),
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags, [
         mg_workers_manager:child_spec(manager, manager_options(Options)),
-        DBMod:child_spec(db, DBOpts)
+        mg_db:child_spec(get_options(db, Options), db)
     ]}}.
 
 %%
@@ -140,7 +139,7 @@ init(Options) ->
 -spec handle_load(_ID, module()) ->
     state().
 handle_load(ID, Options) ->
-    {ID, Status, History, Tags} = call_db(get_machine, [ID, undefined], Options),
+    {ID, Status, History, Tags} = mg_db:get_machine(get_options(db, Options), ID, undefined),
     State =
         #{
             id      => ID,
@@ -173,10 +172,11 @@ handle_unload(_) ->
 -spec transit_state(state(), state()) ->
     state().
 transit_state(OldState=#{id:=OldID}, NewState=#{id:=NewID, options:=Options}) when NewID =:= OldID ->
-    ok = call_db(
-            update_machine,
-            [state_to_machine(OldState), state_to_machine(NewState), {?MODULE, handle_timeout, [Options]}],
-            Options
+    ok = mg_db:update_machine(
+            get_options(db, Options),
+            state_to_machine(OldState),
+            state_to_machine(NewState),
+            {?MODULE, handle_timeout, [Options]}
         ),
     NewState.
 
@@ -339,19 +339,9 @@ set_status(NewStatus, State) ->
 -spec ref2id(options(), mg:reference()) ->
     _ID.
 ref2id(Options, {tag, Tag}) ->
-    call_db(resolve_tag, [Tag], Options);
+    mg_db:resolve_tag(get_options(db, Options), Tag);
 ref2id(_, {id, ID}) ->
     ID.
-
--spec call_db(atom(), list(_Arg), options()) ->
-    _.
-call_db(Function, Args, Options) ->
-    call_mod(db, Function, Args, Options).
-
--spec call_mod(db | processor, atom(), list(_Arg), options()) ->
-    _.
-call_mod(Subj, Function, Args, Options) ->
-    mg_utils:apply_mod_opts(get_options(Subj, Options), Function, Args).
 
 -spec get_options(processor | db, options()) ->
     mg_utils:mod_opts().
