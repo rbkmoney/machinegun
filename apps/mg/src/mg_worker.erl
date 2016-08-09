@@ -2,10 +2,10 @@
 -behaviour(gen_server).
 
 %% API
--export([child_spec /2]).
--export([start_link /2]).
--export([call       /2]).
--export([cast       /2]).
+-export([child_spec/2]).
+-export([start_link/2]).
+-export([call      /2]).
+-export([cast      /2]).
 
 %% gen_server callbacks
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3, code_change/3, terminate/2]).
@@ -14,7 +14,7 @@
 %% API
 %%
 -callback handle_load(_ID, _Args) ->
-    _State.
+    {ok, _State} | {error, _Error}.
 
 -callback handle_unload(_State) ->
     ok.
@@ -24,6 +24,7 @@
 
 -callback handle_cast(_Cast, _State) ->
     _State.
+
 
 -type options() :: mg_utils:mod_opts().
 
@@ -40,7 +41,12 @@ child_spec(ChildID, Options) ->
 -spec start_link(options(), _ID) ->
     mg_utils:gen_start_ret().
 start_link(Options, ID) ->
-    gen_server:start_link(self_reg_name(ID), ?MODULE, {ID, Options}, []).
+    case gen_server:start_link(self_reg_name(ID), ?MODULE, {ID, Options}, []) of
+        {ok, Pid} ->
+            gen_server:call(Pid, load);
+        Error = {error, _} ->
+            Error
+    end.
 
 -spec call(_ID, _Call) ->
     _Result.
@@ -86,6 +92,14 @@ init({ID, Options}) ->
 
 -spec handle_call(_Call, mg_utils:gen_server_from(), state()) ->
     mg_utils:gen_server_handle_call_ret(state()).
+handle_call(load, _, State=#{id:=ID, mod:=Mod, state:={loading, Args}}) ->
+    case Mod:handle_load(ID, Args) of
+        {ok, ModState} ->
+            NewState = State#{state:={working, ModState}},
+            {reply, {ok, self()}, schedule_unload_timer(NewState), hibernate_timeout(NewState)};
+        {error, Reason} ->
+            {stop, Reason, State}
+    end;
 handle_call({call, Call}, _, State=#{mod:=Mod, state:={working, ModState}}) ->
     {Reply, NewModState} = Mod:handle_call(Call, ModState),
     NewState = State#{state:={working, NewModState}},
@@ -96,9 +110,6 @@ handle_call(Call, From, State) ->
 
 -spec handle_cast(_Cast, state()) ->
     mg_utils:gen_server_handle_cast_ret(state()).
-handle_cast(load, State=#{id:=ID, mod:=Mod, state:={loading, Args}}) ->
-    NewState = State#{state:={working, Mod:handle_load(ID, Args)}},
-    {noreply, schedule_unload_timer(NewState), hibernate_timeout(NewState)};
 handle_cast({cast, Cast}, State=#{mod:=Mod, state:={working, ModState}}) ->
     NewState = State#{state:={working, Mod:handle_cast(Cast, ModState)}},
     {noreply, schedule_unload_timer(NewState), hibernate_timeout(NewState)};

@@ -148,7 +148,7 @@ handle_load(ID, Options) ->
             history => History,
             tags    => Tags
         },
-    transit_state(State, handle_load_(State)).
+    {ok, transit_state(State, handle_load_(State))}.
 
 -spec handle_call(mg:call(), state()) ->
     {_Resp, state()}.

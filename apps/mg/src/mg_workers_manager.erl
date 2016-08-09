@@ -1,8 +1,8 @@
 %%%
 %%% Запускаемые по требованию именнованные процессы.
-%%% Распределяются по кластеру и реплицируют свой стейт через эвенты.
 %%% Могут обращаться друг к другу.
 %%% Регистрируются по идентификатору.
+%%% При невозможности загрузить падает с exit:loading, Error}
 %%%
 -module(mg_workers_manager).
 -behaviour(supervisor).
@@ -27,8 +27,7 @@ child_spec(ChildID, Options) ->
         id       => ChildID,
         start    => {?MODULE, start_link, [Options]},
         restart  => permanent,
-        type     => supervisor,
-        shutdown => brutal_kill
+        type     => supervisor
     }.
 
 -spec start_link(_Options) ->
@@ -36,31 +35,17 @@ child_spec(ChildID, Options) ->
 start_link(Options) ->
     supervisor:start_link(self_reg_name(Options), ?MODULE, Options).
 
--define(START_IF_NEEDED(Options, ID, Expr),
-    try
-        Expr
-    catch exit:{noproc, _} ->
-        case start_child(Options, ID) of
-            {ok, _} ->
-                Expr;
-            {error, {already_started, _}} ->
-                Expr
-        end
-    end
-).
-
 % sync
 -spec call(_Options, _ID, _Call) ->
     _Reply.
 call(Options, ID, Call) ->
-    ?START_IF_NEEDED(Options, ID, mg_worker:call(ID, Call)).
+    start_if_needed(Options, ID, fun() -> mg_worker:call(ID, Call) end).
 
 % async
 -spec cast(_Options, _ID, _Cast) ->
     ok.
 cast(Options, ID, Cast) ->
-    ok = ?START_IF_NEEDED(Options, ID, mg_worker:cast(ID, Cast)).
-
+    ok = start_if_needed(Options, ID, fun() -> mg_worker:cast(ID, Cast) end).
 
 %%
 %% supervisor callbacks
@@ -74,6 +59,31 @@ init(Options) ->
 %%
 %% local
 %%
+-spec start_if_needed(_Options, _ID, fun()) ->
+    _.
+start_if_needed(Options, ID, Expr) ->
+    start_if_needed_iter(Options, ID, Expr, 10).
+
+-spec start_if_needed_iter(_Options, _ID, fun(), non_neg_integer()) ->
+    _.
+start_if_needed_iter(_, _, _, 0) ->
+    % такого быть не должно
+    exit(unexpected_behaviour);
+start_if_needed_iter(Options, ID, Expr, Attempts) ->
+    try
+        Expr()
+    catch exit:{noproc, _} ->
+        case start_child(Options, ID) of
+            {ok, _} ->
+                start_if_needed_iter(Options, ID, Expr, Attempts - 1);
+            {error, {already_started, _}} ->
+                start_if_needed_iter(Options, ID, Expr, Attempts - 1);
+            Error={error, _} ->
+                exit({loading, Error})
+        end
+    end.
+
+
 -spec start_child(_Options, _ID) ->
     {ok, pid()} | {error, term()}.
 start_child(Options, ID) ->
