@@ -1,4 +1,4 @@
--module(mg_machine_worker).
+-module(mg_worker).
 -behaviour(gen_server).
 
 %% API

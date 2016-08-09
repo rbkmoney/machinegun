@@ -1,12 +1,12 @@
--module(mg_woody_api_machine).
+-module(mg_woody_api_processor).
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
-%% mg_machine handler
--behaviour(mg_machine).
+%% mg_processor handler
+-behaviour(mg_processor).
 -export([process_signal/2, process_call/3]).
 
 %%
-%% mg_machine handler
+%% mg_processor handler
 %%
 -spec process_signal(_Options, mg:signal_args()) ->
     mg:signal_result().
@@ -33,9 +33,10 @@ process_call(Options, Call, WoodyContext) ->
 %%
 %% local
 %%
--spec call_processor(_URL, woody_client:context(), atom(), list(_)) ->
+-spec call_processor(_Options, woody_client:context(), atom(), list(_)) ->
     _.
-call_processor(URL, WoodyContext, Function, Args) ->
+call_processor(Options, WoodyContext, Function, Args) ->
+    URL = Options,
     {{ok, Result}, NewWoodyContext} =
         woody_client:call(
             WoodyContext,

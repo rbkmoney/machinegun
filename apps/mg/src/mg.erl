@@ -151,7 +151,7 @@ make_automaton_options(ConfigNSs) ->
 -spec make_ns_options(config_ns()) ->
     mg_machine:options().
 make_ns_options({NS, URL}) ->
-    {{mg_woody_api_machine, URL}, {mg_db_test, NS}}.
+    {{mg_woody_api_processor, URL}, {mg_db_test, NS}}.
 
 -spec get_config_nss() ->
     config_nss().

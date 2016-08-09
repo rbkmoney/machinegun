@@ -38,23 +38,14 @@
 -behaviour(supervisor).
 -export([init      /1]).
 
-
-%% mg_machine_worker
--behaviour(mg_machine_worker).
+%% mg_worker
+-behaviour(mg_worker).
 -export([handle_load/2, handle_call/2, handle_cast/2, handle_unload/1]).
 
 %%
 %% API
 %%
 -type options () :: {ProcessorUrl::binary(), mg_utils:mod_opts()}.
-
-%%
-%% behaviour
-%%
--callback process_signal(_Options, mg:signal_args()) ->
-    mg:signal_result().
--callback process_call(_Options, mg:call_args(), mg:call_context()) ->
-    {mg:call_result(), mg:call_context()}.
 
 
 -spec child_spec(atom(), options()) ->
@@ -86,12 +77,12 @@ start(Options, ID, Args) ->
 -spec repair(options(), mg:reference(), mg:args()) ->
     ok.
 repair(Options, Ref, Args) ->
-    ok = mg_machine_workers_manager:cast(manager_options(Options), ref2id(Options, Ref), {repair, Args}).
+    ok = mg_workers_manager:cast(manager_options(Options), ref2id(Options, Ref), {repair, Args}).
 
 -spec call(options(), mg:reference(), mg:args(), mg:call_context()) ->
     {_Resp, mg:context()}.
 call(Options, Ref, Call, Context) ->
-    case mg_machine_workers_manager:call(manager_options(Options), ref2id(Options, Ref), {call, Call, Context}) of
+    case mg_workers_manager:call(manager_options(Options), ref2id(Options, Ref), {call, Call, Context}) of
         {error, {Class, Reason, Stacktrace}} ->
             erlang:raise(Class, Reason, Stacktrace);
         {error, Reason} ->
@@ -113,14 +104,14 @@ get_history(Options, Ref, Range) ->
 -spec handle_timeout(options(), _ID) ->
     ok.
 handle_timeout(Options, ID) ->
-    ok = mg_machine_workers_manager:cast(manager_options(Options), ID, timeout).
+    ok = mg_workers_manager:cast(manager_options(Options), ID, timeout).
 
 -spec touch(_ID, options(), sync | async) ->
     ok.
 touch(Options, ID, async) ->
-    ok = mg_machine_workers_manager:cast(manager_options(Options), ID, touch);
+    ok = mg_workers_manager:cast(manager_options(Options), ID, touch);
 touch(Options, ID, sync) ->
-    ok = mg_machine_workers_manager:call(manager_options(Options), ID, touch).
+    ok = mg_workers_manager:call(manager_options(Options), ID, touch).
 
 %%
 %% supervisor
@@ -131,7 +122,7 @@ init(Options) ->
     {DBMod, DBOpts} = mg_utils:separate_mod_opts(get_options(db, Options)),
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags, [
-        mg_machine_workers_manager:child_spec(manager, manager_options(Options)),
+        mg_workers_manager:child_spec(manager, manager_options(Options)),
         DBMod:child_spec(db, DBOpts)
     ]}}.
 
@@ -210,7 +201,7 @@ handle_call_({call, Call, Context}, State=#{status:={working, _}}) ->
 handle_call_(touch, State) ->
     {ok, State};
 handle_call_(Call, State) ->
-    ok = error_logger:error_msg("unexpected mg_machine_worker call received: ~p", [Call]),
+    ok = error_logger:error_msg("unexpected mg_worker call received: ~p", [Call]),
     {{error, badarg}, State}.
 
 -spec handle_cast_(_Cast, state()) ->
@@ -222,7 +213,7 @@ handle_cast_({repair, Args}, State=#{status:={error, _}}) ->
 handle_cast_(touch, State) ->
     State;
 handle_cast_(Cast, State) ->
-    ok = error_logger:error_msg("unexpected mg_machine_worker cast received: ~p", [Cast]),
+    ok = error_logger:error_msg("unexpected mg_worker cast received: ~p", [Cast]),
     State.
 
 %%
@@ -232,16 +223,20 @@ handle_cast_(Cast, State) ->
 process_call(Call, Context, State=#{options:=Options, history:=History}) ->
     try
         {CallResult, NewContext} =
-            call_processing(Options, process_call, [#'CallArgs'{call=Call, history=History}, Context]),
+            mg_processor:process_call(
+                get_options(processor, Options),
+                #'CallArgs'{call=Call, history=History},
+                Context
+            ),
         #'CallResult'{
             events   = EventsBodies,
             action   = ComplexAction,
             response = Response
         } = CallResult,
-        {{ok, {Response, NewContext}}, handle_processing_result(EventsBodies, ComplexAction, State)}
+        {{ok, {Response, NewContext}}, handle_processor_result(EventsBodies, ComplexAction, State)}
     catch Class:Reason ->
         Exception = {Class, Reason, erlang:get_stacktrace()},
-        {{error, Exception}, handle_processing_error(Exception, State)}
+        {{error, Exception}, handle_processor_error(Exception, State)}
     end.
 
 -spec process_signal(mg:signal(), state()) ->
@@ -251,23 +246,28 @@ process_signal(Signal, State=#{options:=Options, history:=History}) ->
         #'SignalResult'{
             events   = EventsBodies,
             action   = ComplexAction
-        } = call_processing(Options, process_signal, [#'SignalArgs'{signal=Signal, history=History}]),
-        handle_processing_result(EventsBodies, ComplexAction, State)
+        } =
+            mg_processor:process_signal(
+                get_options(processor, Options),
+                #'SignalArgs'{signal=Signal, history=History}
+            ),
+        handle_processor_result(EventsBodies, ComplexAction, State)
     catch Class:Reason ->
         Exception = {Class, Reason, erlang:get_stacktrace()},
-        handle_processing_error(Exception, State)
+        handle_processor_error(Exception, State)
     end.
 
 %%
 
--spec handle_processing_result(mg:events_bodies(), mg:complex_action(), state()) ->
+-spec handle_processor_result(mg:events_bodies(), mg:complex_action(), state()) ->
     state().
-handle_processing_result(EventsBodies, ComplexAction, State) ->
+handle_processor_result(EventsBodies, ComplexAction, State) ->
     do_complex_action(ComplexAction, append_events_to_history(EventsBodies, State)).
 
--spec handle_processing_error(_Reason, state()) ->
+-spec handle_processor_error(_Reason, state()) ->
     state().
-handle_processing_error(Reason, State) ->
+handle_processor_error(Reason, State) ->
+    ok = error_logger:error_msg("processor call error: ~p", [Reason]),
     set_status({error, Reason}, State).
 
 -spec append_events_to_history(mg:events_bodies(), state()) ->
@@ -343,20 +343,20 @@ ref2id(Options, {tag, Tag}) ->
 ref2id(_, {id, ID}) ->
     ID.
 
--spec call_processing(options(), atom(), list(_Arg)) ->
-    _Result.
-call_processing(Options, Function, Args) ->
-    mg_utils:apply_mod_opts(get_options(machine, Options), Function, Args).
-
 -spec call_db(atom(), list(_Arg), options()) ->
     _.
 call_db(Function, Args, Options) ->
-    mg_utils:apply_mod_opts(get_options(db, Options), Function, Args).
+    call_mod(db, Function, Args, Options).
 
--spec get_options(machine | db, options()) ->
+-spec call_mod(db | processor, atom(), list(_Arg), options()) ->
+    _.
+call_mod(Subj, Function, Args, Options) ->
+    mg_utils:apply_mod_opts(get_options(Subj, Options), Function, Args).
+
+-spec get_options(processor | db, options()) ->
     mg_utils:mod_opts().
-get_options(machine, {Options, _}) -> Options;
-get_options(db     , {_, Options}) -> Options.
+get_options(processor, {Options, _}) -> Options;
+get_options(db       , {_, Options}) -> Options.
 
 -spec get_timeout_datetime(mg:timer()) ->
     calendar:datetime() | undefined.
