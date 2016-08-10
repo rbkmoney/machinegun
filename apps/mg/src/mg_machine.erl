@@ -45,8 +45,17 @@
 %%
 %% API
 %%
--type options () :: {ProcessorUrl::binary(), mg_utils:mod_opts()}.
+-type options () :: {mg_utils:mod_opts(), mg_utils:mod_opts()}.
 
+-define(safe(Expr),
+    try
+        Expr
+    catch
+        Class:Reason ->
+            Stacktrace = erlang:get_stacktrace(),
+            handle_error({Class, Reason, Stacktrace})
+    end
+).
 
 -spec child_spec(atom(), options()) ->
     supervisor:child_spec().
@@ -55,8 +64,7 @@ child_spec(ChildID, Options) ->
         id       => ChildID,
         start    => {?MODULE, start_link, [Options]},
         restart  => permanent,
-        type     => supervisor,
-        shutdown => brutal_kill
+        type     => supervisor
     }.
 
 
@@ -68,34 +76,52 @@ start_link(Options) ->
 -spec start(options(), mg:id(), mg:args()) ->
     ok.
 start(Options, ID, Args) ->
-    % создать в бд
-    % TODO перенести в сам процесс, иначе при коллизии может быть гонка (?)
-    ok = mg_db:create_machine(get_options(db, Options), ID, Args),
-    % зафорсить загрузку
-    ok = touch(Options, ID, sync).
+    ?safe(
+        begin
+            % создать в бд
+            ok = mg_db:create_machine(get_options(db, Options), ID, Args),
+            % зафорсить загрузку
+            ok = touch(Options, ID, sync)
+        end
+    ).
 
 -spec repair(options(), mg:reference(), mg:args()) ->
     ok.
 repair(Options, Ref, Args) ->
-    ok = mg_workers_manager:cast(manager_options(Options), ref2id(Options, Ref), {repair, Args}).
+    ?safe(
+        ok = mg_workers_manager:cast(
+                manager_options(Options),
+                ref2id(Options, Ref),
+                {repair, Args}
+            )
+    ).
 
 -spec call(options(), mg:reference(), mg:args(), mg:call_context()) ->
     {_Resp, mg:context()}.
 call(Options, Ref, Call, Context) ->
-    case mg_workers_manager:call(manager_options(Options), ref2id(Options, Ref), {call, Call, Context}) of
-        {error, {Class, Reason, Stacktrace}} ->
-            erlang:raise(Class, Reason, Stacktrace);
-        {error, Reason} ->
-            erlang:error(Reason);
-        {ok, R} ->
-            R
-    end.
+    ?safe(
+        reraise(
+            mg_workers_manager:call(
+                manager_options(Options),
+                ref2id(Options, Ref),
+                {call, Call, Context}
+            )
+        )
+    ).
 
 -spec get_history(options, mg:reference(), mg:history_range()) ->
     mg:history().
 get_history(Options, Ref, Range) ->
-    %% TODO error
-    {_, _, History, _} = check_status(mg_db:get_machine(get_options(db, Options), ref2id(Options, Ref), Range)),
+    {_, _, History, _} =
+        ?safe(
+            check_machine_status(
+                mg_db:get_machine(
+                    get_options(db, Options),
+                    ref2id(Options, Ref),
+                    Range
+                )
+            )
+        ),
     History.
 
 %%
@@ -126,29 +152,33 @@ init(Options) ->
     ]}}.
 
 %%
-%% mg_machine callbacks
+%% mg_worker callbacks
 %%
 -type state() :: #{
-    id       => _,
+    id      => _,
     options => _,
-    status   => mg_db:status(),
-    history  => mg:history(),
-    tags     => [mg:tag()]
+    status  => mg_db:status(),
+    history => mg:history(),
+    tags    => [mg:tag()]
 }.
 
 -spec handle_load(_ID, module()) ->
-    state().
+    {ok, state()} | {error, mg_db:error()}.
 handle_load(ID, Options) ->
-    {ID, Status, History, Tags} = mg_db:get_machine(get_options(db, Options), ID, undefined),
-    State =
-        #{
-            id      => ID,
-            options => Options,
-            status  => Status,
-            history => History,
-            tags    => Tags
-        },
-    {ok, transit_state(State, handle_load_(State))}.
+    try
+        {ID, Status, History, Tags} = mg_db:get_machine(get_options(db, Options), ID, undefined),
+        State =
+            #{
+                id      => ID,
+                options => Options,
+                status  => Status,
+                history => History,
+                tags    => Tags
+            },
+        {ok, transit_state(State, handle_load_(State))}
+    catch throw:DBError ->
+        {error, DBError}
+    end.
 
 -spec handle_call(mg:call(), state()) ->
     {_Resp, state()}.
@@ -336,6 +366,12 @@ do_set_timer_action(TimerAction, State) ->
 set_status(NewStatus, State) ->
     State#{status:=NewStatus}.
 
+-spec check_machine_status(mg_db:machine()) ->
+    mg_db:machine() | no_return().
+check_machine_status(Machine) ->
+    % TODO error handling
+    Machine.
+
 -spec ref2id(options(), mg:reference()) ->
     _ID.
 ref2id(Options, {tag, Tag}) ->
@@ -363,8 +399,33 @@ get_timeout_datetime(#'SetTimerAction'{timer=Timer}) ->
             )
     end.
 
--spec check_status(mg_db:machine()) ->
-    mg_db:machine() | no_return().
-check_status(Machine) ->
-    % TODO error handling
-    Machine.
+%%
+%% error handling
+%%
+handle_error(Error={Class=throw, Reason, _}) ->
+    _ = log_error(Error),
+    erlang:throw(map_error(Class, Reason));
+handle_error({Class, Reason, Stacktrace}) ->
+    erlang:raise(Class, Reason, Stacktrace).
+
+map_error(throw, {workers, {loading, Error={db, _}}}) ->
+    map_error(throw, Error);
+map_error(throw, {db, not_found}) ->
+    #'MachineNotFound'{};
+map_error(throw, {db, already_exist}) ->
+    #'MachineAlreadyExists'{};
+map_error(throw, {db, _}) ->
+    % TODO
+    exit(todo);
+map_error(throw, {processing, _}) ->
+    #'MachineFailed'{}.
+
+log_error({Class, Reason, Stacktrace}) ->
+    ok = error_logger:error_msg("machine error ~p:~p ~p", [Class, Reason, Stacktrace]).
+
+reraise({ok, R}) ->
+    R;
+reraise({error, {Class, Reason, Stacktrace}}) ->
+    erlang:raise(Class, Reason, Stacktrace);
+reraise({error, Reason}) ->
+    erlang:error(Reason).

@@ -6,8 +6,7 @@
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 %% API
--export([child_spec/2, start_link/1, create_machine/3, get_machine/3, update_machine/4,
-    resolve_tag/2]).
+-export([child_spec/2, start_link/1, create_machine/3, get_machine/3, update_machine/4, resolve_tag/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3, code_change/3, terminate/2]).
@@ -36,7 +35,7 @@ start_link(Options) ->
     % тут не должно быть рейсов
     mg:id().
 create_machine(Options, ID, Args) ->
-    ok = write_machine(make_ets_name(Options), {ID, {created, Args}, [], []}).
+    insert_machine(make_ets_name(Options), {ID, {created, Args}, [], []}).
 
 -spec get_machine(_Options, mg:id(), mg:history_range() | undefined) ->
     mg_db:machine().
@@ -46,7 +45,7 @@ get_machine(Options, ID, Range) ->
 -spec update_machine(_Options, mg_db:machine(), mg_db:machine(), mg_db:timer_handler()) ->
     ok.
 update_machine(Options, _OldMachine, NewMachine, TimerHandler) ->
-    ok = write_machine(make_ets_name(Options), NewMachine),
+    write_machine(make_ets_name(Options), NewMachine),
     try_set_timer(Options, NewMachine, TimerHandler).
 
 
@@ -62,19 +61,23 @@ try_set_timer(_Options, {_, _, _, _}, _) ->
 -spec resolve_tag(_Options, mg:tag()) ->
     mg:id().
 resolve_tag(Options, Tag) ->
-    ets:foldl(
-        fun
-            ({ID, _Status, _History, Tags}, undefined) ->
-                case lists:member(Tag, Tags) of
-                    true  -> ID;
-                    false -> undefined
-                end;
-            (_, Result) ->
-                Result
-        end,
-        undefined,
-        make_ets_name(Options)
-    ).
+    ID = ets:foldl(
+            fun
+                ({ID, _Status, _History, Tags}, undefined) ->
+                    case lists:member(Tag, Tags) of
+                        true  -> ID;
+                        false -> undefined
+                    end;
+                (_, Result) ->
+                    Result
+            end,
+            undefined,
+            make_ets_name(Options)
+        ),
+    case ID of
+        undefined -> mg_db:throw_error(not_found);
+        _         -> ID
+    end.
 
 %%
 %% gen_server callbacks
@@ -133,14 +136,31 @@ make_ets_name(_Options) ->
 -spec read_machine(atom(), mg:id()) ->
     mg_db:machine().
 read_machine(ETS, ID) ->
-    [Machine] = ets:lookup(ETS, ID),
-    Machine.
+    case ets:lookup(ETS, ID) of
+        [Machine] ->
+            Machine;
+        [] ->
+            mg_db:throw_error(not_found)
+    end.
+
+-spec insert_machine(atom(), mg_db:machine()) ->
+    ok.
+insert_machine(ETS, Machine) ->
+    case ets:insert_new(ETS, [Machine]) of
+        true  -> ok;
+        false -> mg_db:throw_error(already_exist)
+    end.
 
 -spec write_machine(atom(), mg_db:machine()) ->
     ok.
-write_machine(ETS, Machine) ->
-    true = ets:insert(ETS, [Machine]),
-    ok.
+write_machine(ETS, Machine={ID, _, _, _}) ->
+    case ets:member(ETS, ID) of
+        true ->
+            true = ets:insert(ETS, [Machine]),
+            ok;
+        false ->
+            mg_db:throw_error(not_found)
+    end.
 
 %%
 %% history filtering

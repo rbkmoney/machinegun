@@ -24,29 +24,54 @@ handler(Options) ->
 %% woody handler
 %%
 %% TODO errors
+-define(safe_handle(Expr, WoodyContext),
+    try
+        Expr
+    catch throw:Exception ->
+        throw({Exception, WoodyContext})
+    end
+).
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), _Options) ->
     {{ok, term()}, woody_client:context()} | no_return().
 
 handle_function('Start', {NS, ID, Args}, WoodyContext, Options) ->
-    ok = mg_machine:start(get_options(NS, Options), ID, Args),
+    ok = ?safe_handle(
+            mg_machine:start(get_ns_options(NS, Options), ID, Args),
+            WoodyContext
+        ),
     {ok, WoodyContext};
 
 handle_function('Repair', {NS, Ref, Args}, WoodyContext, Options) ->
-    ok = mg_machine:repair(get_options(NS, Options), Ref, Args),
+    ok = ?safe_handle(
+            mg_machine:repair(get_ns_options(NS, Options), Ref, Args),
+            WoodyContext
+        ),
     {ok, WoodyContext};
 
 handle_function('Call', {NS, Ref, Call}, WoodyContext, Options) ->
-    {Response, NewWoodyContext} = mg_machine:call(get_options(NS, Options), Ref, Call, WoodyContext),
+    {Response, NewWoodyContext} =
+        ?safe_handle(
+            mg_machine:call(get_ns_options(NS, Options), Ref, Call, WoodyContext),
+            WoodyContext
+        ),
     {{ok, Response}, NewWoodyContext};
 
 handle_function('GetHistory', {NS, Ref, Range}, WoodyContext, Options) ->
-    History = mg_machine:get_history(get_options(NS, Options), Ref, Range),
+    History =
+        ?safe_handle(
+            mg_machine:get_history(get_ns_options(NS, Options), Ref, Range),
+            WoodyContext
+        ),
     {{ok, History}, WoodyContext}.
 
 %%
 %% local
 %%
--spec get_options(_,_) ->
+-spec get_ns_options(_, _) ->
     _.
-get_options(NS, Options) ->
-    maps:get(NS, Options).
+get_ns_options(NS, Options) ->
+    try
+        maps:get(NS, Options)
+    catch error:{badkey, NS} ->
+        throw(#'NamespaceNotFound'{})
+    end.

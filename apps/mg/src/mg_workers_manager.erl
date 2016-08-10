@@ -8,6 +8,9 @@
 -behaviour(supervisor).
 
 %% API
+-export_type([error       /0]).
+-export_type([thrown_error/0]).
+
 -export([child_spec /2]).
 -export([start_link /1]).
 -export([call       /3]).
@@ -20,6 +23,10 @@
 %%
 %% API
 %%
+%% кидаемая ожидаемая ошибка
+-type error       () :: {loading, _Error}.
+-type thrown_error() :: {workers, error()}.
+
 -spec child_spec(atom(), _Options) ->
     supervisor:child_spec().
 child_spec(ChildID, Options) ->
@@ -68,7 +75,7 @@ start_if_needed(Options, ID, Expr) ->
     _.
 start_if_needed_iter(_, _, _, 0) ->
     % такого быть не должно
-    exit(unexpected_behaviour);
+    erlang:exit(unexpected_behaviour);
 start_if_needed_iter(Options, ID, Expr, Attempts) ->
     try
         Expr()
@@ -78,8 +85,8 @@ start_if_needed_iter(Options, ID, Expr, Attempts) ->
                 start_if_needed_iter(Options, ID, Expr, Attempts - 1);
             {error, {already_started, _}} ->
                 start_if_needed_iter(Options, ID, Expr, Attempts - 1);
-            Error={error, _} ->
-                exit({loading, Error})
+            {error, Error} ->
+                throw_error({loading, Error})
         end
     end.
 
@@ -104,3 +111,8 @@ self_reg_name(Options) ->
     term().
 wrap(V) ->
     {?MODULE, V}.
+
+-spec throw_error(error()) ->
+    no_return().
+throw_error(Error) ->
+    erlang:throw({workers, Error}).

@@ -3,7 +3,7 @@
 %% API
 -export([start_link/1]).
 
--export([start       /2]).
+-export([start       /3]).
 -export([do_action   /3]).
 -export([update_state/3]).
 
@@ -58,27 +58,33 @@
 start_link(Options) ->
     supervisor:start_link(?MODULE, Options).
 
--spec start(automaton_options(), mg:tag()) ->
-    mg:id().
-start(Options, Tag) ->
-    ID = <<"42">>,
+-spec start(automaton_options(), mg:id(), mg:tag()) ->
+    ok.
+start(Options, ID, Tag) ->
     automation_start(Options, ID, Tag),
-    {ID, #{}}.
+    ok.
 
--spec do_action(automaton_options(), mg:tag(), action()) -> ok | {error, bad_state | bad_passwd}.
-do_action(Options, Action, Tag) ->
-    unpack(resp, automation_call(Options, {tag, Tag}, pack(action, Action))).
+-spec do_action(automaton_options(), mg:reference(), action()) -> ok | {error, bad_state | bad_passwd}.
+do_action(Options, Action, Ref) ->
+    unpack(resp, automation_call(Options, Ref, pack(action, Action))).
 
--spec update_state(automaton_options(), mg:tag(), client_state()) ->
+% do_incorrect_action() ->
+%     ok.
+
+% do_incorrect_action() ->
+%     ok.
+
+
+-spec update_state(automaton_options(), mg:reference(), client_state()) ->
     client_state().
-update_state(Options, Tag, ClientState=#{last_event_id:=LastEventID, state:=State}) ->
-    History = automation_getHistory(Options, {tag, Tag}, #'HistoryRange'{'after'=LastEventID, limit=1}),
+update_state(Options, Ref, ClientState=#{last_event_id:=LastEventID, state:=State}) ->
+    History = automation_getHistory(Options, Ref, #'HistoryRange'{'after'=LastEventID, limit=1}),
     case History of
         [] ->
             ClientState;
         [#'Event'{id=EventID, event_payload=Event}] ->
             NewState = apply_events([unpack(event, Event)], State),
-            update_state(Options, Tag, ClientState#{last_event_id:=EventID, state:=NewState})
+            update_state(Options, Ref, ClientState#{last_event_id:=EventID, state:=NewState})
     end.
 
 %%
@@ -249,13 +255,17 @@ automation_getHistory({BaseURL, NS}, Ref, Range) ->
 -spec call_automation_service(_BaseURL, atom(), [_arg]) ->
     _.
 call_automation_service(BaseURL, Function, Args) ->
-    {R, _} =
-        woody_client:call(
-            woody_client:new_context(woody_client:make_id(<<"mg">>), mg_woody_api_event_handler),
-            {{mg_proto_state_processing_thrift, 'Automaton'}, Function, Args},
-            #{url => BaseURL ++ "/v1/automaton"}
-        ),
-    case R of
-        {ok, V} -> V;
-         ok     -> ok
+    try
+        {R, _} =
+            woody_client:call(
+                woody_client:new_context(woody_client:make_id(<<"mg">>), mg_woody_api_event_handler),
+                {{mg_proto_state_processing_thrift, 'Automaton'}, Function, Args},
+                #{url => BaseURL ++ "/v1/automaton"}
+            ),
+        case R of
+            {ok, V} -> V;
+             ok     -> ok
+        end
+    catch throw:{{exception, Exception}, _} ->
+        throw(Exception)
     end.

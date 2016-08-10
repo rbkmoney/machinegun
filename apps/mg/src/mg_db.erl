@@ -8,11 +8,16 @@
 -export_type([machine      /0]).
 -export_type([timer_handler/0]).
 
+-export_type([error       /0]).
+-export_type([thrown_error/0]).
+
 -export([child_spec    /2]).
 -export([create_machine/3]).
 -export([get_machine   /3]).
 -export([update_machine/4]).
 -export([resolve_tag   /2]).
+
+-export([throw_error   /1]).
 
 %%
 %% API
@@ -21,10 +26,15 @@
 -type machine      () :: {mg:id(), mg:status(), mg:history(), [mg:tag()]}.
 -type timer_handler() :: {module(), atom(), [_Arg]}.
 
+-type error       () :: term().
+-type thrown_error() :: {db, error()}.
+
+
 -callback child_spec(_Options, atom()) ->
     supervisor:child_spec().
 
 -callback create_machine(_Options, mg:id(), _Args) ->
+    % Тут должна гарантироваться атомарность! (?)
     ok.
 
 -callback get_machine(_Options, mg:id(), mg:history_range() | undefined) ->
@@ -61,3 +71,10 @@ update_machine(Options, OldMachine, NewMachine, TimerHandler) ->
     mg:id().
 resolve_tag(Options, Tag) ->
     mg_utils:apply_mod_opts(Options, resolve_tag, [Tag]).
+
+
+%% все ошибки из модулей с поведением mg_db должны кидаться через эту функцию
+-spec throw_error(error()) ->
+    no_return().
+throw_error(Error) ->
+    erlang:throw({db, Error}).

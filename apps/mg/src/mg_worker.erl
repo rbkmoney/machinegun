@@ -75,7 +75,6 @@ cast(ID, Cast) ->
 -spec init(_) ->
     mg_utils:gen_server_init_ret(state()).
 init({ID, Options}) ->
-    ok = gen_server:cast(erlang:self(), load),
     {Mod, Args} = mg_utils:separate_mod_opts(Options),
     State =
         #{
@@ -98,7 +97,7 @@ handle_call(load, _, State=#{id:=ID, mod:=Mod, state:={loading, Args}}) ->
             NewState = State#{state:={working, ModState}},
             {reply, {ok, self()}, schedule_unload_timer(NewState), hibernate_timeout(NewState)};
         {error, Reason} ->
-            {stop, Reason, State}
+            {stop, normal, {error, Reason}, State}
     end;
 handle_call({call, Call}, _, State=#{mod:=Mod, state:={working, ModState}}) ->
     {Reply, NewModState} = Mod:handle_call(Call, ModState),
