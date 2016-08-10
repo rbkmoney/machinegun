@@ -417,7 +417,7 @@ map_error(throw, {db, already_exist}) ->
 map_error(throw, {db, _}) ->
     % TODO
     exit(todo);
-map_error(throw, {processing, _}) ->
+map_error(throw, {processor, _}) ->
     #'MachineFailed'{}.
 
 log_error({Class, Reason, Stacktrace}) ->

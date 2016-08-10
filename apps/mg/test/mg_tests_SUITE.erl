@@ -5,55 +5,126 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
--export([all              /0]).
--export([init_per_testcase/2]).
--export([end_per_testcase /2]).
+%% tests descriptions
+-export([all           /0]).
+-export([groups        /0]).
+-export([init_per_suite/1]).
+-export([end_per_suite /1]).
+-export([init_per_group/2]).
+-export([end_per_group /2]).
 
--export([machine_test               /1]).
--export([namespace_not_found_test   /1]).
--export([machine_already_exists_test/1]).
--export([machine_id_not_found       /1]).
--export([machine_tag_not_found      /1]).
+%% base group tests
+-export([namespace_not_found   /1]).
+-export([machine_start         /1]).
+-export([machine_already_exists/1]).
+-export([machine_call_by_id    /1]).
+-export([machine_id_not_found  /1]).
+-export([machine_tag_not_found /1]).
+-export([machine_call_by_tag   /1]).
 
--type test_name() :: atom().
--type config() :: [{atom(), _}].
+%% repair group tests
+-export([machine_processor_error/1]).
+
+%% test_door group tests
+-export([machine_test_door/1]).
+
 
 %%
 %% tests descriptions
 %%
+-type group_name() :: atom().
+-type test_name () :: atom().
+-type config    () :: [{atom(), _}].
+
+
 -spec all() ->
-    [test_name()].
+    [test_name() | {group, group_name()}].
 all() ->
     [
-        machine_test,
-        namespace_not_found_test,
-        machine_already_exists_test,
-        machine_id_not_found,
-        machine_tag_not_found
+        {group, base     },
+        {group, repair   },
+        {group, test_door}
     ].
+
+-spec groups() ->
+    [{group_name(), list(_), test_name()}].
+groups() ->
+    [
+        {base, [sequence], [
+            namespace_not_found,
+            machine_start,
+            machine_already_exists,
+            machine_call_by_id,
+            machine_id_not_found,
+            machine_tag_not_found,
+
+            % machine_tag_action,
+            machine_call_by_tag
+
+            % machine_timer_action
+            % machine_get_history_by,
+
+            % machine_get_unexisted_event
+            % machine_double_tagging
+        ]},
+
+        {repair, [sequence], [
+            machine_processor_error
+            % failed_machine_call
+            % failed_machine_repair_error
+            % failed_machine_repair
+        ]},
+
+        {test_door, [sequence], [
+            machine_test_door
+        ]}
+    ].
+
 
 %%
 %% starting/stopping
 %%
--spec init_per_testcase(_, config()) ->
+-spec init_per_suite(config()) ->
     config().
-init_per_testcase(_, C) ->
+init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all,c),
     % dbg:tpl(mg_worker, x),
+    C.
 
+-spec end_per_suite(config()) ->
+    ok.
+end_per_suite(_C) ->
+    ok.
+
+-spec init_per_group(group_name(), config()) ->
+    config().
+init_per_group(_, C) ->
+    %% TODO сделать нормальную генерацию урлов
+    NS = <<"mg_test_ns">>,
     Apps =
         % genlib_app:start_application_with(lager, [{handlers, [{lager_common_test_backend, debug}]}])
         genlib_app:start_application_with(lager, [{handlers, [{lager_common_test_backend, error}]}])
         ++
         genlib_app:start_application_with(woody, [{acceptors_pool_size, 1}])
         ++
-        genlib_app:start_application_with(mg, [{nss, [{<<"mg_test_ns">> , <<"http://localhost:8821/processor">>}]}])
+        genlib_app:start_application_with(mg, [{nss, [{NS , <<"http://localhost:8821/processor">>}]}])
     ,
-    [{apps, Apps} | C].
 
--spec end_per_testcase(_, config()) ->
+    {ok, ProcessorPid} = mg_machine_test_door:start_link({{0,0,0,0}, 8821, "/processor"}),
+    true = erlang:unlink(ProcessorPid),
+
+    [
+        {apps             , Apps                         },
+        {processor_pid    , ProcessorPid                 },
+        {automaton_options, {"http://localhost:8820", NS}}
+    |
+        C
+    ].
+
+-spec end_per_group(group_name(), config()) ->
     ok.
-end_per_testcase(_, C) ->
+end_per_group(_, C) ->
+    true = erlang:exit(?config(processor_pid, C), kill),
     [application_stop(App) || App <- proplists:get_value(apps, C)].
 
 -spec application_stop(atom()) ->
@@ -69,97 +140,93 @@ application_stop(App) ->
     application:stop(App).
 
 
+-define(ID, <<"ID">>).
+-define(Tag, <<"Tag">>).
+-define(Ref, {tag, ?Tag}).
+
 %%
-%% tests
+%% base group tests
 %%
--spec machine_test(config()) ->
-    ok.
-machine_test(_C) ->
-    ProcessorOptions = {{0,0,0,0}, 8821, "/processor"},
-    AutomatonOptions = {"http://localhost:8820", <<"mg_test_ns">>},
+-spec namespace_not_found(config()) -> _.
+namespace_not_found(C) ->
+    {URL, _NS} = a_opts(C),
+    #'NamespaceNotFound'{} = (catch mg_machine_test_door:start({URL, <<"incorrect_NS">>}, ?ID, ?Tag)).
 
-    {ok, _} = mg_machine_test_door:start_link(ProcessorOptions),
+-spec machine_start(config()) -> _.
+machine_start(C) ->
+    ok = mg_machine_test_door:start(a_opts(C), ?ID, ?Tag).
 
-    % запустить автомат
-    Tag = <<"hello">>,
-    _ID = mg_machine_test_door:start(AutomatonOptions, <<"ID">>, Tag),
-    Ref = {tag, Tag},
-    CS0 = #{last_event_id => undefined, state => undefined},
-    CS1 = #{state:=open} = mg_machine_test_door:update_state(AutomatonOptions, Ref, CS0),
+-spec machine_already_exists(config()) -> _.
+machine_already_exists(C) ->
+    #'MachineAlreadyExists'{} = (catch mg_machine_test_door:start(a_opts(C), ?ID, <<"another_Tag">>)).
 
-    % прогнать по стейтам
-    ok = mg_machine_test_door:do_action(AutomatonOptions, close, Ref),
-    CS2 = #{state:=closed} = mg_machine_test_door:update_state(AutomatonOptions, Ref, CS1),
+-spec machine_call_by_id(config()) -> _.
+machine_call_by_id(C) ->
+    ok = mg_machine_test_door:do_action(a_opts(C), touch, {id, ?ID}).
 
-    ok = mg_machine_test_door:do_action(AutomatonOptions, open , Ref),
-    CS3 = #{state:=open} = mg_machine_test_door:update_state(AutomatonOptions, Ref, CS2),
-    ok = mg_machine_test_door:do_action(AutomatonOptions, close, Ref),
+-spec machine_id_not_found(config()) -> _.
+machine_id_not_found(C) ->
+    #'MachineNotFound'{} = (catch mg_machine_test_door:do_action(a_opts(C), touch, {id, <<"incorrect_ID">>})).
 
-    CS4 = #{state:=closed} = mg_machine_test_door:update_state(AutomatonOptions, Ref, CS3),
-    ok = mg_machine_test_door:do_action(AutomatonOptions, open , Ref),
-    ok = timer:sleep(2000),
-    ok = mg_machine_test_door:do_action(AutomatonOptions, {lock, <<"123">>}, Ref),
-    {error, bad_passwd} =
-        mg_machine_test_door:do_action(AutomatonOptions, {unlock, <<"12">>}, Ref),
-    ok = mg_machine_test_door:do_action(AutomatonOptions, {unlock, <<"123">>}, Ref),
-    _CS5 = #{state:=closed} = mg_machine_test_door:update_state(AutomatonOptions, Ref, CS4),
-    ok.
 
-%% некорректный namespace
--spec namespace_not_found_test(config()) ->
-    ok.
-namespace_not_found_test(_C) ->
-    AutomatonOptions = {"http://localhost:8820", <<"incorrect_ns">>},
-    #'NamespaceNotFound'{} = (catch mg_machine_test_door:start(AutomatonOptions, <<"ID">>, <<"Tag">>)),
-    ok.
+-spec machine_call_by_tag(config()) -> _.
+machine_call_by_tag(C) ->
+    ok = mg_machine_test_door:do_action(a_opts(C), touch, {tag, ?Tag}).
 
-%% некорректный id при старте
--spec machine_already_exists_test(config()) ->
-    ok.
-machine_already_exists_test(_C) ->
-    ProcessorOptions = {{0,0,0,0}, 8821, "/processor"},
-    AutomatonOptions = {"http://localhost:8820", <<"mg_test_ns">>},
+-spec machine_tag_not_found(config()) -> _.
+machine_tag_not_found(C) ->
+    #'MachineNotFound'{} = (catch mg_machine_test_door:do_action(a_opts(C), touch, {tag, <<"incorrect_Tag">>})).
 
-    {ok, _} = mg_machine_test_door:start_link(ProcessorOptions),
-    ok                         =        mg_machine_test_door:start(AutomatonOptions, <<"ID">>, <<"Tag0">>),
-    #'MachineAlreadyExists'{}  = (catch mg_machine_test_door:start(AutomatonOptions, <<"ID">>, <<"Tag1">>)),
-
-    ok.
-
-%% некорректный id
--spec machine_id_not_found(config()) ->
-    ok.
-machine_id_not_found(_C) ->
-    ProcessorOptions = {{0,0,0,0}, 8821, "/processor"},
-    AutomatonOptions = {"http://localhost:8820", <<"mg_test_ns">>},
-
-    {ok, _} = mg_machine_test_door:start_link(ProcessorOptions),
-    ok = mg_machine_test_door:start(AutomatonOptions, <<"ID">>, <<"Tag">>),
-    #'MachineNotFound'{} =
-        (catch mg_machine_test_door:do_action(AutomatonOptions, close, {id, <<"incorrect_ID">>})),
-
-    ok.
-
-%% некорректный tag
--spec machine_tag_not_found(config()) ->
-    ok.
-machine_tag_not_found(_C) ->
-    ProcessorOptions = {{0,0,0,0}, 8821, "/processor"},
-    AutomatonOptions = {"http://localhost:8820", <<"mg_test_ns">>},
-
-    {ok, _} = mg_machine_test_door:start_link(ProcessorOptions),
-    ok = mg_machine_test_door:start(AutomatonOptions, <<"ID">>, <<"Tag">>),
-    #'MachineNotFound'{} =
-        (catch mg_machine_test_door:do_action(AutomatonOptions, close, {tag, <<"incorrect_Tag">>})),
-
-    ok.
-
-%% TODO
 %% get history к несущестующему эвенту
-
 %% двойное тэгирование
 
+%%
+%% repair group tests
+%%
 %% падение машины
+-spec machine_processor_error(config()) ->
+    _.
+machine_processor_error(C) ->
+    ok = mg_machine_test_door:start(a_opts(C), ?ID, ?Tag),
+    Ref = {tag, <<"Tag">>},
+    #'MachineFailed'{} =
+        (catch mg_machine_test_door:do_action(a_opts(C), fail, Ref)).
+
 %% запрос к упавшей машине
-%% восстановление машины
 %% упавший запрос на восстановление
+%% восстановление машины
+
+%%
+%% test_door group tests
+%%
+-spec machine_test_door(config()) ->
+    ok.
+machine_test_door(C) ->
+    % запустить автомат
+    _ID = mg_machine_test_door:start(a_opts(C), ?ID, ?Tag),
+    CS0 = #{last_event_id => undefined, state => undefined},
+    CS1 = #{state:=open} = mg_machine_test_door:update_state(a_opts(C), ?Ref, CS0),
+
+    % прогнать по стейтам
+    ok = mg_machine_test_door:do_action(a_opts(C), close, ?Ref),
+    CS2 = #{state:=closed} = mg_machine_test_door:update_state(a_opts(C), ?Ref, CS1),
+
+    ok = mg_machine_test_door:do_action(a_opts(C), open , ?Ref),
+    CS3 = #{state:=open} = mg_machine_test_door:update_state(a_opts(C), ?Ref, CS2),
+    ok = mg_machine_test_door:do_action(a_opts(C), close, ?Ref),
+
+    CS4 = #{state:=closed} = mg_machine_test_door:update_state(a_opts(C), ?Ref, CS3),
+    ok = mg_machine_test_door:do_action(a_opts(C), open , ?Ref),
+    ok = timer:sleep(2000),
+    ok = mg_machine_test_door:do_action(a_opts(C), {lock, <<"123">>}, ?Ref),
+    {error, bad_passwd} =
+        mg_machine_test_door:do_action(a_opts(C), {unlock, <<"12">>}, ?Ref),
+    ok = mg_machine_test_door:do_action(a_opts(C), {unlock, <<"123">>}, ?Ref),
+    _CS5 = #{state:=closed} = mg_machine_test_door:update_state(a_opts(C), ?Ref, CS4),
+    ok.
+
+
+%%
+%% utils
+%%
+a_opts(C) -> ?config(automaton_options, C).

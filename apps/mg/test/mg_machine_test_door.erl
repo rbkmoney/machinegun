@@ -5,6 +5,7 @@
 
 -export([start       /3]).
 -export([do_action   /3]).
+-export([repair      /3]).
 -export([update_state/3]).
 
 %% supervisor callbacks
@@ -45,6 +46,8 @@
     |  close
     | {lock  , _Passwd}
     | {unlock, _Passwd}
+    |  fail
+    |  touch
 .
 
 -type client_state() :: #{
@@ -67,6 +70,12 @@ start(Options, ID, Tag) ->
 -spec do_action(automaton_options(), mg:reference(), action()) -> ok | {error, bad_state | bad_passwd}.
 do_action(Options, Action, Ref) ->
     unpack(resp, automation_call(Options, Ref, pack(action, Action))).
+
+-spec repair(automaton_options(), mg:reference(), ok | error) ->
+    ok.
+repair(Options, Ref, RepairResult) ->
+    automation_repair(Options, Ref, pack(repair_result, RepairResult)).
+
 
 % do_incorrect_action() ->
 %     ok.
@@ -149,8 +158,13 @@ handle_signal_({init, #'InitSignal'{arg=Tag}}, undefined) ->
     [{creating, Tag}];
 handle_signal_({timeout, #'TimeoutSignal'{}}, open) ->
     [closing];
-handle_signal_({repair, #'RepairSignal'{}}, _) ->
-    [repairing].
+handle_signal_({repair, #'RepairSignal'{arg=Args}}, _) ->
+    case unpack(repair_result, Args) of
+        ok ->
+            [repairing];
+        error ->
+            exit(1)
+    end.
 
 -spec handle_action(_Call, state()) ->
     {_Resp, event()}.
@@ -165,6 +179,10 @@ handle_action({unlock, Passwd0}, {locked, Passwd1}) ->
         true  -> { ok                , [unlocking]};
         false -> {{error, bad_passwd}, [         ]}
     end;
+handle_action(fail, _State) ->
+    exit(action_fail);
+handle_action(touch, _State) ->
+    {ok, []};
 handle_action(_, _State) ->
     {{error, bad_state}, []}.
 
@@ -235,10 +253,10 @@ unpack(_, V) ->
 automation_start({BaseURL, NS}, ID, Args) ->
     call_automation_service(BaseURL, 'Start', [NS, ID, Args]).
 
-% -spec automation_repair(_Options, mg:reference(), mg:args()) ->
-%     ok.
-% automation_repair({BaseURL, NS}, Ref, Args) ->
-%     call_automation_service(BaseURL, 'Repair', [NS, Ref, Args]).
+-spec automation_repair(_Options, mg:reference(), mg:args()) ->
+    ok.
+automation_repair({BaseURL, NS}, Ref, Args) ->
+    call_automation_service(BaseURL, 'Repair', [NS, Ref, Args]).
 
 -spec automation_call(_Options, mg:reference(), mg:args()) ->
     mg:call_resp().
