@@ -67,11 +67,11 @@ start(Options, ID, Tag) ->
     automation_start(Options, ID, Tag),
     ok.
 
--spec do_action(automaton_options(), mg:reference(), action()) -> ok | {error, bad_state | bad_passwd}.
+-spec do_action(automaton_options(), mg:ref(), action()) -> ok | {error, bad_state | bad_passwd}.
 do_action(Options, Action, Ref) ->
     unpack(resp, automation_call(Options, Ref, pack(action, Action))).
 
--spec repair(automaton_options(), mg:reference(), ok | error) ->
+-spec repair(automaton_options(), mg:ref(), ok | error) ->
     ok.
 repair(Options, Ref, RepairResult) ->
     automation_repair(Options, Ref, pack(repair_result, RepairResult)).
@@ -84,7 +84,7 @@ repair(Options, Ref, RepairResult) ->
 %     ok.
 
 
--spec update_state(automaton_options(), mg:reference(), client_state()) ->
+-spec update_state(automaton_options(), mg:ref(), client_state()) ->
     client_state().
 update_state(Options, Ref, ClientState=#{last_event_id:=LastEventID, state:=State}) ->
     History = automation_get_history(Options, Ref, #'HistoryRange'{'after'=LastEventID, limit=1}),
@@ -253,17 +253,17 @@ unpack(_, V) ->
 automation_start({BaseURL, NS}, ID, Args) ->
     call_automation_service(BaseURL, 'Start', [NS, ID, Args]).
 
--spec automation_repair(_Options, mg:reference(), mg:args()) ->
+-spec automation_repair(_Options, mg:ref(), mg:args()) ->
     ok.
 automation_repair({BaseURL, NS}, Ref, Args) ->
     call_automation_service(BaseURL, 'Repair', [NS, Ref, Args]).
 
--spec automation_call(_Options, mg:reference(), mg:args()) ->
+-spec automation_call(_Options, mg:ref(), mg:args()) ->
     mg:call_resp().
 automation_call({BaseURL, NS}, Ref, Call) ->
     call_automation_service(BaseURL, 'Call', [NS, Ref, Call]).
 
--spec automation_get_history(_Options, mg:reference(), mg:history_range()) ->
+-spec automation_get_history(_Options, mg:ref(), mg:history_range()) ->
     mg:history().
 automation_get_history({BaseURL, NS}, Ref, Range) ->
     call_automation_service(BaseURL, 'GetHistory', [NS, Ref, Range]).

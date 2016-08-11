@@ -33,7 +33,7 @@ start_link(Options) ->
 
 -spec create_machine(_Options, mg:id(), mg:args()) ->
     % тут не должно быть рейсов
-    mg:id().
+    ok.
 create_machine(Options, ID, Args) ->
     insert_machine(make_ets_name(Options), {ID, {created, Args}, [], []}).
 
@@ -172,12 +172,12 @@ filter_machine_history(Machine, undefined) ->
 filter_machine_history({ID, Status, History, Tags}, #'HistoryRange'{'after'=After, limit=Limit}) ->
     {ID, Status, filter_history(History, After, Limit), Tags}.
 
--spec filter_history(mg:history(), mg:event_id(), pos_integer()) ->
-    ok.
+-spec filter_history(mg:history(), mg:event_id() | undefined, pos_integer()) ->
+    mg:history().
 filter_history(History, After, Limit) ->
     filter_history_iter(lists:reverse(History), After, Limit, []).
 
--spec filter_history_iter(mg:history(), mg:event_id(), non_neg_integer(), mg:history()) ->
+-spec filter_history_iter(mg:history(), mg:event_id() | undefined, non_neg_integer(), mg:history()) ->
     mg:history().
 filter_history_iter([], _, _, Result) ->
     Result;

@@ -28,14 +28,16 @@
 
 -export_type([history_range/0]).
 
+-export_type([call_context/0]).
+
 -export_type([config/0]).
 
 -type ns      () :: mg_proto_base_thrift            :'Namespace'().
 -type id      () :: mg_proto_base_thrift            :'ID'       ().
--type tag     () :: mg_proto_state_processing_thrift:'Tag'      ().
+-type tag     () :: mg_proto_base_thrift            :'Tag'      ().
 -type args    () :: mg_proto_state_processing_thrift:'Args'     ().
 -type history () :: mg_proto_state_processing_thrift:'History'  ().
--type timer   () :: mg_proto_state_processing_thrift:'Timer'    ().
+-type timer   () :: mg_proto_base_thrift            :'Timer'    ().
 -type ref     () :: mg_proto_state_processing_thrift:'Reference'().
 -type signal  () :: mg_proto_state_processing_thrift:'Signal'   ().
 
@@ -54,6 +56,8 @@
 -type call_result  () :: mg_proto_state_processing_thrift:'CallResult'  ().
 
 -type history_range() :: mg_proto_state_processing_thrift:'HistoryRange'().
+
+-type call_context() :: term().
 
 %% config
 -type config_ns() ::
@@ -129,7 +133,7 @@ mg_machines_child_specs(ConfigNSs) ->
     [mg_machine_child_spec(ConfigNS) || ConfigNS <- ConfigNSs].
 
 -spec mg_machine_child_spec(config_ns()) ->
-    [supervisor:child_spec()].
+    supervisor:child_spec().
 mg_machine_child_spec(ConfigNS={NS, _}) ->
     mg_machine:child_spec(NS, make_ns_options(ConfigNS)).
 

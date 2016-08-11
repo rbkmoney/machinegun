@@ -22,6 +22,7 @@
 
 %% Woody
 -export_type([woody_handlers/0]).
+-export_type([woody_handler /0]).
 
 %% Other
 -export_type([mod_opts/0]).
@@ -112,7 +113,8 @@ gen_reg_name2_ref(V={via, _, _}) -> V. % Is this correct?
 %%
 %% Woody
 %%
--type woody_handlers() :: _.
+-type woody_handlers() :: [woody_handler()].
+-type woody_handler () :: _.
 
 %%
 %% Other

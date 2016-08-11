@@ -31,7 +31,11 @@ handler(Options) ->
         throw({Exception, WoodyContext})
     end
 ).
--spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), _Options) ->
+
+
+%% в вуди сейчас Options — это list()
+-dialyzer({nowarn_function, handle_function/4}).
+-spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), options()) ->
     {{ok, term()}, woody_client:context()} | no_return().
 
 handle_function('Start', {NS, ID, Args}, WoodyContext, Options) ->
@@ -67,8 +71,8 @@ handle_function('GetHistory', {NS, Ref, Range}, WoodyContext, Options) ->
 %%
 %% local
 %%
--spec get_ns_options(_, _) ->
-    _.
+-spec get_ns_options(mg:ns(), options()) ->
+    mg_machine:options().
 get_ns_options(NS, Options) ->
     try
         maps:get(NS, Options)

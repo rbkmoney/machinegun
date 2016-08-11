@@ -6,6 +6,8 @@
     {applications, [
         kernel,
         stdlib,
+        genlib,
+        rfc3339,
         lager,
         gproc,
         mg_proto,

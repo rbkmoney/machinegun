@@ -63,6 +63,8 @@ resolve_tag(Options, Tag) ->
     _ = try_throw_random_error(),
     mg_db_test_server:resolve_tag(Options, Tag).
 
+-spec try_throw_random_error() ->
+    ok | no_return().
 try_throw_random_error() ->
     % TODO
     ok.

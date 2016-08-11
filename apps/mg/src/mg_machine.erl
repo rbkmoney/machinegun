@@ -23,6 +23,8 @@
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 %% API
+-export_type([options/0]).
+
 -export([child_spec /2]).
 -export([start_link /1]).
 -export([start      /3]).
@@ -85,7 +87,7 @@ start(Options, ID, Args) ->
         end
     ).
 
--spec repair(options(), mg:reference(), mg:args()) ->
+-spec repair(options(), mg:ref(), mg:args()) ->
     ok.
 repair(Options, Ref, Args) ->
     ?safe(
@@ -96,8 +98,8 @@ repair(Options, Ref, Args) ->
             )
     ).
 
--spec call(options(), mg:reference(), mg:args(), mg:call_context()) ->
-    {_Resp, mg:context()}.
+-spec call(options(), mg:ref(), mg:args(), mg:call_context()) ->
+    {_Resp, mg:call_context()}.
 call(Options, Ref, Call, Context) ->
     ?safe(
         reraise(
@@ -109,7 +111,7 @@ call(Options, Ref, Call, Context) ->
         )
     ).
 
--spec get_history(options, mg:reference(), mg:history_range()) ->
+-spec get_history(options, mg:ref(), mg:history_range()) ->
     mg:history().
 get_history(Options, Ref, Range) ->
     {_, _, History, _} =
@@ -132,7 +134,7 @@ get_history(Options, Ref, Range) ->
 handle_timeout(Options, ID) ->
     ok = mg_workers_manager:cast(manager_options(Options), ID, timeout).
 
--spec touch(_ID, options(), sync | async) ->
+-spec touch(options(), _ID, sync | async) ->
     ok.
 touch(Options, ID, async) ->
     ok = mg_workers_manager:cast(manager_options(Options), ID, touch);
@@ -180,7 +182,7 @@ handle_load(ID, Options) ->
         {error, DBError}
     end.
 
--spec handle_call(mg:call(), state()) ->
+-spec handle_call(_Call, state()) ->
     {_Resp, state()}.
 handle_call(Call, State) ->
     {Resp, NewState} = handle_call_(Call, State),
@@ -229,7 +231,7 @@ handle_load_(State) ->
 handle_call_({call, Call, Context}, State=#{status:={working, _}}) ->
     process_call(Call, Context, State);
 handle_call_({call, _Call, _Context}, State=#{status:={error, _}}) ->
-    {{throw, {internal, machine_failed}}, State};
+    {{throw, {internal, {machine_failed, bad_machine_state}}}, State};
 handle_call_(touch, State) ->
     {ok, State};
 handle_call_(Call, State) ->
@@ -250,8 +252,8 @@ handle_cast_(Cast, State) ->
 
 %%
 
--spec process_call(mg:call(), mg:call_context(), state()) ->
-    {{ok, {_Resp, mg:context()}}, state()}.
+-spec process_call(_Call, mg:call_context(), state()) ->
+    {{ok, {_Resp, mg:call_context()}}, state()}.
 process_call(Call, Context, State=#{options:=Options, history:=History}) ->
     try
         {CallResult, NewContext} =
@@ -374,7 +376,7 @@ check_machine_status(Machine) ->
     % TODO error handling
     Machine.
 
--spec ref2id(options(), mg:reference()) ->
+-spec ref2id(options(), mg:ref()) ->
     _ID.
 ref2id(Options, {tag, Tag}) ->
     mg_db:resolve_tag(get_options(db, Options), Tag);
@@ -386,30 +388,46 @@ ref2id(_, {id, ID}) ->
 get_options(processor, {Options, _}) -> Options;
 get_options(db       , {_, Options}) -> Options.
 
--spec get_timeout_datetime(mg:timer()) ->
+-spec get_timeout_datetime(undefined | mg:timer()) ->
     calendar:datetime() | undefined.
 get_timeout_datetime(undefined) ->
     undefined;
 get_timeout_datetime(#'SetTimerAction'{timer=Timer}) ->
     case Timer of
         {deadline, Timestamp} ->
-            {ok, {Date, Time, _, undefined}} = rfc3339:parse(Timestamp),
-            {Date, Time};
+            parse_rfc3339_timespamp(Timestamp);
         {timeout, Timeout} ->
             calendar:gregorian_seconds_to_datetime(
                 calendar:datetime_to_gregorian_seconds(calendar:universal_time()) + Timeout
             )
     end.
 
+%% rfc3339:parse имеет некорретный спек, поэтому диалайзер всегда ругается
+-dialyzer({nowarn_function, parse_rfc3339_timespamp/1}).
+-spec parse_rfc3339_timespamp(binary()) ->
+    calendar:datetime() | no_return().
+parse_rfc3339_timespamp(Timestamp) ->
+    case rfc3339:parse(Timestamp) of
+        {ok, {Date, Time, _, undefined}} ->
+            {Date, Time};
+        InvalidReturn ->
+            erlang:throw({internal, {machine_failed, {bad_timestamp, Timestamp, InvalidReturn}}})
+    end.
+
 %%
 %% error handling
 %%
+%% TODO поправить спеки
+-spec handle_error(_) ->
+    _.
 handle_error(Error={Class=throw, Reason, _}) ->
     _ = log_error(Error),
     erlang:throw(map_error(Class, Reason));
 handle_error({Class, Reason, Stacktrace}) ->
     erlang:raise(Class, Reason, Stacktrace).
 
+-spec map_error(_, _) ->
+    _.
 map_error(throw, {workers, {loading, Error={db, _}}}) ->
     map_error(throw, Error);
 map_error(throw, {db, not_found}) ->
@@ -421,12 +439,16 @@ map_error(throw, {db, _}) ->
     exit(todo);
 map_error(throw, {processor, _}) ->
     #'MachineFailed'{};
-map_error(throw, {internal, machine_failed}) ->
+map_error(throw, {internal, {machine_failed, _}}) ->
     #'MachineFailed'{}.
 
+-spec log_error({_, _, _}) ->
+    _.
 log_error({Class, Reason, Stacktrace}) ->
     ok = error_logger:error_msg("machine error ~p:~p ~p", [Class, Reason, Stacktrace]).
 
+-spec reraise(_) ->
+    _.
 reraise({ok, R}) ->
     R;
 reraise({throw, E}) ->

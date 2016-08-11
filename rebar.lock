@@ -27,6 +27,6 @@
        {ref,"2a39a0b373d98f3b52d32912a3dab88c6b4c5037"}},
   1},
  {<<"woody">>,
-  {git,"git+ssh://git@github.com/rbkmoney/woody_erlang",
-       {ref,"cd7779e615b536ce872c0d2eeca01d0addab66e1"}},
+  {git,"git@github.com:rbkmoney/woody_erlang.git",
+       {ref,"cccf733393d197610491a9ece6fdd3f5ebf74c26"}},
   0}].

@@ -12,7 +12,7 @@
 %%
 %% API
 %%
--spec child_spec(mg_automoton:options()) ->
+-spec child_spec(mg_woody_api_automaton:options()) ->
     supervisor:child_spec().
 child_spec(Options) ->
     woody_server:child_spec(

@@ -239,7 +239,7 @@ machine_test_door(C) ->
     _CS5 = #{state:=closed} = test_door_update_state(C, CS4),
     ok.
 
--spec update_state(config(), mg_machine_test_door:client_state()) ->
+-spec test_door_update_state(config(), mg_machine_test_door:client_state()) ->
     mg_machine_test_door:client_state().
 test_door_update_state(C, CS) ->
     mg_machine_test_door:update_state(a_opts(C), ?Ref, CS).
@@ -252,4 +252,5 @@ test_door_do_action(C, Action) ->
 %%
 %% utils
 %%
+-spec a_opts(config()) -> _.
 a_opts(C) -> ?config(automaton_options, C).

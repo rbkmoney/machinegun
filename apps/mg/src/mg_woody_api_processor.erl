@@ -21,7 +21,7 @@ process_signal(Options, SignalArgs) ->
     R.
 
 -spec process_call(_Options, mg:call_args(), mg:call_context()) ->
-    mg:call_result().
+    {mg:call_result(), mg:call_context()}.
 process_call(Options, Call, WoodyContext) ->
     call_processor(
         Options,
