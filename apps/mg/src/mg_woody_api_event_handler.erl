@@ -16,9 +16,9 @@
 handle_event(EventType, RpcID, #{status := error, class := Class, reason := Reason, stack := Stack}) ->
     lager:error(
         maps:to_list(RpcID),
-        "[server] ~s with ~s:~p at ~s",
+        " ~s with ~s:~p at ~s",
         [EventType, Class, Reason, genlib_format:format_stacktrace(Stack, [newlines])]
     );
 
 handle_event(EventType, RpcID, EventMeta) ->
-    lager:debug(maps:to_list(RpcID), "[server] ~s: ~p", [EventType, EventMeta]).
+    lager:debug(maps:to_list(RpcID), " ~s: ~p", [EventType, EventMeta]).

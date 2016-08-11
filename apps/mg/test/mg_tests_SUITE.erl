@@ -23,7 +23,10 @@
 -export([machine_call_by_tag   /1]).
 
 %% repair group tests
--export([machine_processor_error/1]).
+-export([machine_processor_error    /1]).
+-export([failed_machine_call        /1]).
+-export([failed_machine_repair_error/1]).
+-export([failed_machine_repair      /1]).
 
 %% test_door group tests
 -export([machine_test_door/1]).
@@ -69,10 +72,13 @@ groups() ->
         ]},
 
         {repair, [sequence], [
-            machine_processor_error
-            % failed_machine_call
-            % failed_machine_repair_error
-            % failed_machine_repair
+            machine_start,
+            machine_processor_error,
+            failed_machine_call,
+            failed_machine_repair_error,
+            failed_machine_call,
+            failed_machine_repair,
+            machine_call_by_id
         ]},
 
         {test_door, [sequence], [
@@ -102,8 +108,8 @@ init_per_group(_, C) ->
     %% TODO сделать нормальную генерацию урлов
     NS = <<"mg_test_ns">>,
     Apps =
-        % genlib_app:start_application_with(lager, [{handlers, [{lager_common_test_backend, debug}]}])
-        genlib_app:start_application_with(lager, [{handlers, [{lager_common_test_backend, error}]}])
+        genlib_app:start_application_with(lager, [{handlers, [{lager_common_test_backend, debug}]}])
+        % genlib_app:start_application_with(lager, [{handlers, [{lager_common_test_backend, error}]}])
         ++
         genlib_app:start_application_with(woody, [{acceptors_pool_size, 1}])
         ++
@@ -187,14 +193,23 @@ machine_tag_not_found(C) ->
 -spec machine_processor_error(config()) ->
     _.
 machine_processor_error(C) ->
-    ok = mg_machine_test_door:start(a_opts(C), ?ID, ?Tag),
-    Ref = {tag, <<"Tag">>},
-    #'MachineFailed'{} =
-        (catch mg_machine_test_door:do_action(a_opts(C), fail, Ref)).
+    #'MachineFailed'{} = (catch mg_machine_test_door:do_action(a_opts(C), fail, ?Ref)).
 
-%% запрос к упавшей машине
-%% упавший запрос на восстановление
-%% восстановление машины
+-spec failed_machine_call(config()) ->
+    _.
+failed_machine_call(C) ->
+    #'MachineFailed'{} = (catch mg_machine_test_door:do_action(a_opts(C), touch, ?Ref)).
+
+-spec failed_machine_repair_error(config()) ->
+    _.
+failed_machine_repair_error(C) ->
+    ok = (catch mg_machine_test_door:repair(a_opts(C), ?Ref, error)).
+
+-spec failed_machine_repair(config()) ->
+    _.
+failed_machine_repair(C) ->
+    ok = (catch mg_machine_test_door:repair(a_opts(C), ?Ref, ok)).
+
 
 %%
 %% test_door group tests

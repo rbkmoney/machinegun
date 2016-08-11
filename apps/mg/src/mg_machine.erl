@@ -228,6 +228,8 @@ handle_load_(State) ->
     {_Replay, state()}.
 handle_call_({call, Call, Context}, State=#{status:={working, _}}) ->
     process_call(Call, Context, State);
+handle_call_({call, _Call, _Context}, State=#{status:={error, _}}) ->
+    {{throw, {internal, machine_failed}}, State};
 handle_call_(touch, State) ->
     {ok, State};
 handle_call_(Call, State) ->
@@ -418,6 +420,8 @@ map_error(throw, {db, _}) ->
     % TODO
     exit(todo);
 map_error(throw, {processor, _}) ->
+    #'MachineFailed'{};
+map_error(throw, {internal, machine_failed}) ->
     #'MachineFailed'{}.
 
 log_error({Class, Reason, Stacktrace}) ->
@@ -425,6 +429,8 @@ log_error({Class, Reason, Stacktrace}) ->
 
 reraise({ok, R}) ->
     R;
+reraise({throw, E}) ->
+    erlang:throw(E);
 reraise({error, {Class, Reason, Stacktrace}}) ->
     erlang:raise(Class, Reason, Stacktrace);
 reraise({error, Reason}) ->
