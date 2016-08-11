@@ -79,17 +79,18 @@ start_if_needed_iter(_, _, _, 0) ->
 start_if_needed_iter(Options, ID, Expr, Attempts) ->
     try
         Expr()
-    catch exit:{noproc, _} ->
-        case start_child(Options, ID) of
-            {ok, _} ->
-                start_if_needed_iter(Options, ID, Expr, Attempts - 1);
-            {error, {already_started, _}} ->
-                start_if_needed_iter(Options, ID, Expr, Attempts - 1);
-            {error, Error} ->
-                throw_error({loading, Error})
-        end
+    catch
+        exit:_ ->
+            % NOTE возможно тут будут проблемы
+            case start_child(Options, ID) of
+                {ok, _} ->
+                    start_if_needed_iter(Options, ID, Expr, Attempts - 1);
+                {error, {already_started, _}} ->
+                    start_if_needed_iter(Options, ID, Expr, Attempts - 1);
+                {error, Error} ->
+                    throw_error({loading, Error})
+            end
     end.
-
 
 -spec start_child(_Options, _ID) ->
     {ok, pid()} | {error, term()}.

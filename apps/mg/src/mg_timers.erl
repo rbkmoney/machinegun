@@ -155,16 +155,18 @@ handle_timeout(State) ->
 -spec handle_next_timer_timeout(state(), calendar:datetime(), pos_integer()) ->
     state().
 handle_next_timer_timeout(State, CurrentDateTime, TimerHandlingStartTime) ->
-    case ets:first(ets_tid(timers, State)) of
-    '$end_of_table' ->
-        schedule_next_wakeup(State, TimerHandlingStartTime - monotonic_time(), infinity);
-    {TimerDateTime, _} when TimerDateTime > CurrentDateTime ->
-        schedule_next_wakeup(State, TimerHandlingStartTime - monotonic_time(), ?WAKEUP_INTERVAL);
-    TRef ->
-        [{TRef, ID, _, MFA}] = ets:lookup(ets_tid(timers, State), TRef),
-        ok = do_cancel(ID, State),
-        _ = apply_handler(ID, MFA),
-        handle_next_timer_timeout(State, CurrentDateTime, TimerHandlingStartTime)
+    case next_timer(State) of
+        undefined ->
+            % нет таймеров
+            schedule_next_wakeup(State, TimerHandlingStartTime - monotonic_time(), infinity);
+        {_ID, TimerDateTime, _MFA} when TimerDateTime > CurrentDateTime ->
+            % таймеры слишком далеко в будущем
+            schedule_next_wakeup(State, TimerHandlingStartTime - monotonic_time(), ?WAKEUP_INTERVAL);
+        {ID, _DateTime, MFA} ->
+            % есть ближайший таймер
+            ok = do_cancel(ID, State),
+            _ = apply_handler(ID, MFA),
+            handle_next_timer_timeout(State, CurrentDateTime, TimerHandlingStartTime)
     end.
 
 -spec schedule_next_wakeup(state(), pos_integer(), pos_integer() | infinity) ->
@@ -174,6 +176,17 @@ schedule_next_wakeup(State, _TimerHandlingTime, infinity) ->
 schedule_next_wakeup(State, TimerHandlingTime, Interval) ->
     Delay = erlang:max(Interval - TimerHandlingTime, 0),
     State#{next_wakeup:=monotonic_time() + Delay}.
+
+-spec next_timer(state()) ->
+    undefined | {_ID, calendar:datetime(), _MFA}.
+next_timer(State) ->
+    case ets:first(ets_tid(timers, State)) of
+        '$end_of_table' ->
+            undefined;
+        TRef ->
+            [{TRef, ID, DateTime, MFA}] = ets:lookup(ets_tid(timers, State), TRef),
+            {ID, DateTime, MFA}
+    end.
 
 -spec get_timeout(state()) ->
     timeout().

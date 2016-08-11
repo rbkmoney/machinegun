@@ -1,6 +1,7 @@
 %%% TODO Пересмотреть ещё раз, продумать и записать требуемые гарантии когда дойдёт дело до работы с БД
 %%% Тут должна гарантироваться атомарность! (?)
 %%% DB заведует таймерами (?)
+%%% TODO как-то странно тут выглядят таймеры, их бы сделать более явно и понятно
 -module(mg_db).
 
 %% API
@@ -22,6 +23,7 @@
 %%
 %% API
 %%
+
 -type status       () :: {created, mg:args()} | {working, calendar:datetime() | undefined} | {error, _Reason}.
 -type machine      () :: {mg:id(), status(), mg:history(), [mg:tag()]}.
 -type timer_handler() :: {module(), atom(), [_Arg]}.
