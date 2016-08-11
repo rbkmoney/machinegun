@@ -116,7 +116,7 @@ init_per_group(_, C) ->
         genlib_app:start_application_with(mg, [{nss, [{NS , <<"http://localhost:8821/processor">>}]}])
     ,
 
-    {ok, ProcessorPid} = mg_machine_test_door:start_link({{0,0,0,0}, 8821, "/processor"}),
+    {ok, ProcessorPid} = mg_machine_test_door:start_link({{0, 0, 0, 0}, 8821, "/processor"}),
     true = erlang:unlink(ProcessorPid),
 
     [
@@ -220,26 +220,34 @@ machine_test_door(C) ->
     % запустить автомат
     _ID = mg_machine_test_door:start(a_opts(C), ?ID, ?Tag),
     CS0 = #{last_event_id => undefined, state => undefined},
-    CS1 = #{state:=open} = mg_machine_test_door:update_state(a_opts(C), ?Ref, CS0),
+    CS1 = #{state:=open} = test_door_update_state(C, CS0),
 
     % прогнать по стейтам
-    ok = mg_machine_test_door:do_action(a_opts(C), close, ?Ref),
-    CS2 = #{state:=closed} = mg_machine_test_door:update_state(a_opts(C), ?Ref, CS1),
+    ok = test_door_do_action(C, close),
+    CS2 = #{state:=closed} = test_door_update_state(C, CS1),
 
-    ok = mg_machine_test_door:do_action(a_opts(C), open , ?Ref),
-    CS3 = #{state:=open} = mg_machine_test_door:update_state(a_opts(C), ?Ref, CS2),
-    ok = mg_machine_test_door:do_action(a_opts(C), close, ?Ref),
+    ok = test_door_do_action(C, open),
+    CS3 = #{state:=open} = test_door_update_state(C, CS2),
+    ok = test_door_do_action(C, close),
 
-    CS4 = #{state:=closed} = mg_machine_test_door:update_state(a_opts(C), ?Ref, CS3),
-    ok = mg_machine_test_door:do_action(a_opts(C), open , ?Ref),
+    CS4 = #{state:=closed} = test_door_update_state(C, CS3),
+    ok = test_door_do_action(C, open),
     ok = timer:sleep(2000),
-    ok = mg_machine_test_door:do_action(a_opts(C), {lock, <<"123">>}, ?Ref),
-    {error, bad_passwd} =
-        mg_machine_test_door:do_action(a_opts(C), {unlock, <<"12">>}, ?Ref),
-    ok = mg_machine_test_door:do_action(a_opts(C), {unlock, <<"123">>}, ?Ref),
-    _CS5 = #{state:=closed} = mg_machine_test_door:update_state(a_opts(C), ?Ref, CS4),
+    ok = test_door_do_action(C, {lock, <<"123">>}),
+    {error, bad_passwd} = test_door_do_action(C, {unlock, <<"12">>}),
+    ok = test_door_do_action(C, {unlock, <<"123">>}),
+    _CS5 = #{state:=closed} = test_door_update_state(C, CS4),
     ok.
 
+-spec update_state(config(), mg_machine_test_door:client_state()) ->
+    mg_machine_test_door:client_state().
+test_door_update_state(C, CS) ->
+    mg_machine_test_door:update_state(a_opts(C), ?Ref, CS).
+
+-spec test_door_do_action(config(), mg_machine_test_door:action()) ->
+    _.
+test_door_do_action(C, Action) ->
+    mg_machine_test_door:do_action(a_opts(C), Action, ?Ref).
 
 %%
 %% utils

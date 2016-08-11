@@ -87,7 +87,7 @@ repair(Options, Ref, RepairResult) ->
 -spec update_state(automaton_options(), mg:reference(), client_state()) ->
     client_state().
 update_state(Options, Ref, ClientState=#{last_event_id:=LastEventID, state:=State}) ->
-    History = automation_getHistory(Options, Ref, #'HistoryRange'{'after'=LastEventID, limit=1}),
+    History = automation_get_history(Options, Ref, #'HistoryRange'{'after'=LastEventID, limit=1}),
     case History of
         [] ->
             ClientState;
@@ -263,9 +263,9 @@ automation_repair({BaseURL, NS}, Ref, Args) ->
 automation_call({BaseURL, NS}, Ref, Call) ->
     call_automation_service(BaseURL, 'Call', [NS, Ref, Call]).
 
--spec automation_getHistory(_Options, mg:reference(), mg:history_range()) ->
+-spec automation_get_history(_Options, mg:reference(), mg:history_range()) ->
     mg:history().
-automation_getHistory({BaseURL, NS}, Ref, Range) ->
+automation_get_history({BaseURL, NS}, Ref, Range) ->
     call_automation_service(BaseURL, 'GetHistory', [NS, Ref, Range]).
 
 %%
