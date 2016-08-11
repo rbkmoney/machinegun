@@ -23,6 +23,7 @@ A service that does something
 
 ## Хочется ещё сделать
 
-1. перейти на jenkins
-1. поправить readme
-1. сделать thrift api
+1. доработать readme
+1. привести в порядок работу с exceptions
+1. сделать event_sink
+1. привести код в порядок и порефакторить

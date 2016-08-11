@@ -1,38 +1,48 @@
 #!groovy
 
-// Args:
-// GitHub repo name
-// Jenkins agent label
-// Tracing artifacts to be stored alongside build logs
-pipeline("machinegun", 'docker-host', "_build/") {
+def finalHook = {
+  runStage('store CT logs') {
+    archive '_build/test/logs/'
+  }
+}
 
-  runStage('submodules') {
-    sh 'make w_container_submodules'
+build('machinegun', 'docker-host', finalHook) {
+  checkoutRepo()
+  loadBuildUtils()
+
+  def pipeDefault
+  runStage('load pipeline') {
+    env.JENKINS_LIB = "build_utils/jenkins_lib"
+    pipeDefault = load("${env.JENKINS_LIB}/pipeDefault.groovy")
   }
 
-  runStage('compile') {
-    sh 'make w_container_compile'
-  }
+  pipeDefault() {
+    runStage('compile') {
+      sh 'make wc_compile'
+    }
+    runStage('lint') {
+      sh 'make wc_lint'
+    }
+    runStage('xref') {
+      sh 'make wc_xref'
+    }
+    runStage('dialyze') {
+      sh 'make wc_dialyze'
+    }
+    runStage('test') {
+      sh "make wc_test"
+    }
 
-  runStage('lint') {
-    sh 'make w_container_lint'
-  }
-
-  runStage('xref') {
-    sh 'make w_container_xref'
-  }
-
-  runStage('dialyze') {
-    sh 'make w_container_dialyze'
-  }
-
-  runStage('test') {
-    sh "make w_container_test"
-  }
-
-  if (env.BRANCH_NAME == 'master') {
-    runStage('push container') {
-      sh 'make push'
+    if (env.BRANCH_NAME == 'master') {
+      runStage('make release') {
+        sh "make wc_release"
+      }
+      runStage('build image') {
+        sh "make build_image"
+      }
+      runStage('push image') {
+        sh "make push_image"
+      }
     }
   }
 }

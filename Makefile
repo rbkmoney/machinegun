@@ -1,52 +1,66 @@
 REBAR := $(shell which rebar3 2>/dev/null || which ./rebar3)
-SUBMODULES = apps/mg_proto/damsel
+SUBMODULES = apps/mg_proto/damsel build_utils
 SUBTARGETS = $(patsubst %,%/.git,$(SUBMODULES))
 
-REGISTRY := dr.rbkmoney.com
-ORG_NAME := rbkmoney
-BASE_IMAGE := "$(REGISTRY)/$(ORG_NAME)/build:latest"
+UTILS_PATH := build_utils
+TEMPLATES_PATH := .
 
-RELNAME := machinegun
+# Name of the service
+SERVICE_NAME := machinegun
+# Service image default tag
+SERVICE_IMAGE_TAG ?= $(shell git rev-parse HEAD)
+# The tag for service image to be pushed with
+SERVICE_IMAGE_PUSH_TAG ?= $(SERVICE_IMAGE_TAG)
 
-TAG = latest
-IMAGE_NAME = "$(REGISTRY)/$(ORG_NAME)/$(RELNAME):$(TAG)"
+# Base image for the service
+BASE_IMAGE_NAME := service_erlang
+BASE_IMAGE_TAG := 170b7dd12d62431303f8bb514abe2b43468223a1
 
-CALL_ANYWHERE := submodules rebar-update compile xref lint dialyze start devrel release clean distclean
+# Build image tag to be used
+BUILD_IMAGE_TAG := 530114ab63a7ff0379a2220169a0be61d3f7c64c
+
+CALL_ANYWHERE := all submodules rebar-update compile xref lint dialyze start devrel release clean distclean
 
 CALL_W_CONTAINER := $(CALL_ANYWHERE) test
 
-
-# default
 all: compile
 
-# utils
-include utils.mk
+-include $(UTILS_PATH)/make_lib/utils_container.mk
+-include $(UTILS_PATH)/make_lib/utils_image.mk
 
-# build
+.PHONY: $(CALL_W_CONTAINER)
+
+# CALL_ANYWHERE
 $(SUBTARGETS): %/.git: %
 	git submodule update --init $<
 	touch $@
 
 submodules: $(SUBTARGETS)
 
-compile: submodules
-	$(REBAR) compile
-
 rebar-update:
 	$(REBAR) update
 
-devrel:
+compile: submodules rebar-update
+	$(REBAR) compile
+
+xref: submodules
+	$(REBAR) xref
+
+lint: compile
+	elvis rock
+
+dialyze:
+	$(REBAR) dialyzer
+
+start: submodules
+	$(REBAR) run
+
+devrel: submodules
 	$(REBAR) release
 
 release: distclean
 	$(REBAR) as prod release
 
-# start
-start: submodules devrel
-	_build/default/rel/${RELNAME}/bin/${RELNAME} console
-
-
-# clean
 clean:
 	$(REBAR) clean
 
@@ -54,27 +68,6 @@ distclean:
 	$(REBAR) clean -a
 	rm -rfv _build _builds _cache _steps _temp
 
-
-# some checks
-xref: submodules
-	$(REBAR) xref
-
-dialyze:
-	$(REBAR) dialyzer
-
-lint:
-	elvis rock
-
+# CALL_W_CONTAINER
 test: submodules
 	$(REBAR) ct
-
-
-# containerize
-containerize: w_container_release
-	$(DOCKER) build --force-rm --tag $(IMAGE_NAME) .
-
-push: containerize
-	$(DOCKER) push "$(IMAGE_NAME)"
-
-
-.PHONY: $(CALL_W_CONTAINER) all containerize push $(UTIL_TARGETS)
