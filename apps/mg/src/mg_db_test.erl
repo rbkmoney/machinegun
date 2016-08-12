@@ -17,7 +17,7 @@ init(Options) ->
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags, [
         mg_db_test_server:child_spec(server, Options),
-        mg_timers:child_spec(timers, timers) % TODO fix name
+        mg_timers        :child_spec(timers, Options)
     ]}}.
 
 %%
@@ -56,7 +56,6 @@ update_machine(Options, OldMachine, NewMachine, TimerHandler) ->
     _ = try_throw_random_error(),
     mg_db_test_server:update_machine(Options, OldMachine, NewMachine, TimerHandler).
 
-%% TODO not_found
 -spec resolve_tag(_Options, mg:tag()) ->
     mg:id().
 resolve_tag(Options, Tag) ->

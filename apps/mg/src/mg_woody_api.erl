@@ -6,13 +6,19 @@
 -module(mg_woody_api).
 
 %% API
+-export_type([options/0]).
 -export([child_spec/1]).
-
 
 %%
 %% API
 %%
--spec child_spec(mg_woody_api_automaton:options()) ->
+-type options() :: #{
+    automaton  => mg_woody_api_automaton :options(),
+    event_sink => mg_woody_api_event_sink:options()
+}.
+
+% TODO прокидывание сетевых настроек
+-spec child_spec(options()) ->
     supervisor:child_spec().
 child_spec(Options) ->
     woody_server:child_spec(
@@ -22,6 +28,9 @@ child_spec(Options) ->
             port          => 8820,
             net_opts      => [],
             event_handler => mg_woody_api_event_handler,
-            handlers      => [mg_woody_api_automaton:handler(Options)]
+            handlers      => [
+                mg_woody_api_automaton :handler(maps:get(automaton , Options)),
+                mg_woody_api_event_sink:handler(maps:get(event_sink, Options))
+            ]
         }
     ).

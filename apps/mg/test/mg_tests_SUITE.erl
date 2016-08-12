@@ -28,8 +28,17 @@
 -export([failed_machine_repair_error/1]).
 -export([failed_machine_repair      /1]).
 
+%% event_sink group tests
+-export([event_sink_get_empty_history    /1]).
+-export([event_sink_get_not_empty_history/1]).
+
 %% test_door group tests
 -export([machine_test_door/1]).
+
+-define(NS, <<"mg_test_ns">>).
+-define(ID, <<"ID">>).
+-define(Tag, <<"Tag">>).
+-define(Ref, {tag, ?Tag}).
 
 
 %%
@@ -44,9 +53,10 @@
     [test_name() | {group, group_name()}].
 all() ->
     [
-        {group, base     },
-        {group, repair   },
-        {group, test_door}
+        {group, base      },
+        {group, repair    },
+        {group, event_sink},
+        {group, test_door }
     ].
 
 -spec groups() ->
@@ -81,6 +91,12 @@ groups() ->
             machine_call_by_id
         ]},
 
+        {event_sink, [], [
+            event_sink_get_empty_history
+            % пока не реализовано
+            % event_sink_get_not_empty_history
+        ]},
+
         {test_door, [sequence], [
             machine_test_door
         ]}
@@ -106,23 +122,23 @@ end_per_suite(_C) ->
     config().
 init_per_group(_, C) ->
     %% TODO сделать нормальную генерацию урлов
-    NS = <<"mg_test_ns">>,
     Apps =
         genlib_app:start_application_with(lager, [{handlers, [{lager_common_test_backend, debug}]}])
         % genlib_app:start_application_with(lager, [{handlers, [{lager_common_test_backend, error}]}])
         ++
         genlib_app:start_application_with(woody, [{acceptors_pool_size, 1}])
         ++
-        genlib_app:start_application_with(mg, [{nss, [{NS , <<"http://localhost:8821/processor">>}]}])
+        genlib_app:start_application_with(mg, [{nss, [{?NS , <<"http://localhost:8821/processor">>}]}])
     ,
 
     {ok, ProcessorPid} = mg_machine_test_door:start_link({{0, 0, 0, 0}, 8821, "/processor"}),
     true = erlang:unlink(ProcessorPid),
 
     [
-        {apps             , Apps                         },
-        {processor_pid    , ProcessorPid                 },
-        {automaton_options, {"http://localhost:8820", NS}}
+        {apps              , Apps                          },
+        {processor_pid     , ProcessorPid                  },
+        {automaton_options , {"http://localhost:8820", ?NS}},
+        {event_sink_options,  "http://localhost:8820"      }
     |
         C
     ].
@@ -144,11 +160,6 @@ application_stop(App=sasl) ->
     ok;
 application_stop(App) ->
     application:stop(App).
-
-
--define(ID, <<"ID">>).
--define(Tag, <<"Tag">>).
--define(Ref, {tag, ?Tag}).
 
 %%
 %% base group tests
@@ -210,12 +221,31 @@ failed_machine_repair_error(C) ->
 failed_machine_repair(C) ->
     ok = (catch mg_machine_test_door:repair(a_opts(C), ?Ref, ok)).
 
+%%
+%% event_sink group test
+%%
+-spec event_sink_get_empty_history(config()) ->
+    _.
+event_sink_get_empty_history(C) ->
+    [] = event_sink_get_history(es_opts(C), #'HistoryRange'{}).
+
+-spec event_sink_get_not_empty_history(config()) ->
+    _.
+event_sink_get_not_empty_history(C) ->
+    _ID = mg_machine_test_door:start(a_opts(C), ?ID, ?Tag),
+    ok = test_door_do_action(C, close),
+    ok = test_door_do_action(C, open ),
+    [
+        #'SinkEvent'{source_id = ?ID, source_ns = ?NS, event = #'Event'{}},
+        #'SinkEvent'{source_id = ?ID, source_ns = ?NS, event = #'Event'{}}
+    ] = event_sink_get_history(es_opts(C), #'HistoryRange'{}).
+
 
 %%
 %% test_door group tests
 %%
 -spec machine_test_door(config()) ->
-    ok.
+    _.
 machine_test_door(C) ->
     % запустить автомат
     _ID = mg_machine_test_door:start(a_opts(C), ?ID, ?Tag),
@@ -236,9 +266,11 @@ machine_test_door(C) ->
     ok = test_door_do_action(C, {lock, <<"123">>}),
     {error, bad_passwd} = test_door_do_action(C, {unlock, <<"12">>}),
     ok = test_door_do_action(C, {unlock, <<"123">>}),
-    _CS5 = #{state:=closed} = test_door_update_state(C, CS4),
-    ok.
+    _CS5 = #{state:=closed} = test_door_update_state(C, CS4).
 
+%%
+%% utils
+%%
 -spec test_door_update_state(config(), mg_machine_test_door:client_state()) ->
     mg_machine_test_door:client_state().
 test_door_update_state(C, CS) ->
@@ -249,8 +281,36 @@ test_door_update_state(C, CS) ->
 test_door_do_action(C, Action) ->
     mg_machine_test_door:do_action(a_opts(C), Action, ?Ref).
 
-%%
-%% utils
-%%
 -spec a_opts(config()) -> _.
 a_opts(C) -> ?config(automaton_options, C).
+-spec es_opts(config()) -> _.
+es_opts(C) -> ?config(event_sink_options, C).
+
+
+%%
+%% event_sink client
+%%
+-spec event_sink_get_history(_Options, mg:history_range()) ->
+    mg:history().
+event_sink_get_history(BaseURL, Range) ->
+    call_event_sink_service(BaseURL, 'GetHistory', [Range]).
+
+%%
+
+-spec call_event_sink_service(_BaseURL, atom(), [_arg]) ->
+    _.
+call_event_sink_service(BaseURL, Function, Args) ->
+    try
+        {R, _} =
+            woody_client:call(
+                woody_client:new_context(woody_client:make_id(<<"mg">>), mg_woody_api_event_handler),
+                {{mg_proto_state_processing_thrift, 'EventSink'}, Function, Args},
+                #{url => BaseURL ++ "/v1/event_sink"}
+            ),
+        case R of
+            {ok, V} -> V;
+             ok     -> ok
+        end
+    catch throw:{{exception, Exception}, _} ->
+        throw(Exception)
+    end.

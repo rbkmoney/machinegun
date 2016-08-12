@@ -23,14 +23,12 @@
 %%
 %% API
 %%
-
 -type status       () :: {created, mg:args()} | {working, calendar:datetime() | undefined} | {error, _Reason}.
 -type machine      () :: {mg:id(), status(), mg:history(), [mg:tag()]}.
 -type timer_handler() :: {module(), atom(), [_Arg]}.
 
 -type error       () :: term().
 -type thrown_error() :: {db, error()}.
-
 
 -callback child_spec(_Options, atom()) ->
     supervisor:child_spec().

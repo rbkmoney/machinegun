@@ -65,7 +65,7 @@
 .
 -type config_nss() :: [config_ns()].
 -type config_element() ::
-    {nss, config_nss()}
+      {nss, config_nss()}
 .
 -type config() :: [config_element()].
 
@@ -103,12 +103,16 @@ stop() ->
 -spec init([]) ->
     mg_utils:supervisor_ret().
 init([]) ->
-    ConfigNSs = get_config_nss(),
+    Config = application:get_all_env(?MODULE),
+    ConfigNSs = proplists:get_value(nss, Config),
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags,
-        mg_machines_child_specs(ConfigNSs)
+        [mg_machine:child_spec(NS, ns_options(ConfigNS)) || ConfigNS={NS,_} <- ConfigNSs]
         ++
-        [mg_woody_api:child_spec(make_automaton_options(ConfigNSs))]
+        [
+            mg_event_sink:child_spec(event_sink_options(), event_sink),
+            mg_woody_api:child_spec(api_options(ConfigNSs))
+        ]
     }}.
 
 %%
@@ -125,40 +129,41 @@ stop(_State) ->
     ok.
 
 %%
-%% machines child specs
+%% local
 %%
--spec mg_machines_child_specs(config_nss()) ->
-    [supervisor:child_spec()].
-mg_machines_child_specs(ConfigNSs) ->
-    [mg_machine_child_spec(ConfigNS) || ConfigNS <- ConfigNSs].
+-define(db_mod, mg_db_test).
 
--spec mg_machine_child_spec(config_ns()) ->
-    supervisor:child_spec().
-mg_machine_child_spec(ConfigNS={NS, _}) ->
-    mg_machine:child_spec(NS, make_ns_options(ConfigNS)).
+-spec ns_options(config_ns()) ->
+    mg_machine:options().
+ns_options({NS, URL}) ->
+    {{mg_woody_api_processor, URL}, {?db_mod, erlang:binary_to_atom(NS, utf8)}}.
 
-%%
-%% utils
-%%
--spec make_automaton_options(config_nss()) ->
+-spec event_sink_options() ->
+    mg_event_sink:options().
+event_sink_options() ->
+    {?db_mod, event_sink}.
+
+-spec api_options(config_nss()) ->
+    mg_woody_api:options().
+api_options(ConfigNSs) ->
+    #{
+        automaton  => api_automaton_options(ConfigNSs),
+        event_sink => api_event_sink_options()
+    }.
+
+-spec api_automaton_options(config_nss()) ->
     mg_woody_api_automaton:options().
-make_automaton_options(ConfigNSs) ->
+api_automaton_options(ConfigNSs) ->
     lists:foldl(
         fun(ConfigNS={NS, _}, Options) ->
             NSBin = NS,
-            Options#{NSBin => make_ns_options(ConfigNS)}
+            Options#{NSBin => ns_options(ConfigNS)}
         end,
         #{},
         ConfigNSs
     ).
 
--spec make_ns_options(config_ns()) ->
-    mg_machine:options().
-make_ns_options({NS, URL}) ->
-    {{mg_woody_api_processor, URL}, {mg_db_test, NS}}.
-
--spec get_config_nss() ->
-    config_nss().
-get_config_nss() ->
-    {ok, ConfigNSs} = application:get_env(?MODULE, nss),
-    ConfigNSs.
+-spec api_event_sink_options() ->
+    mg_woody_api_event_sink:options().
+api_event_sink_options() ->
+    event_sink_options().

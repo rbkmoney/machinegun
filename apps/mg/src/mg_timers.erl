@@ -18,7 +18,7 @@
 %%
 %% API
 %%
--spec child_spec(atom(), _Name) ->
+-spec child_spec(atom(), atom()) ->
     supervisor:child_spec().
 child_spec(ChildID, Name) ->
     #{
@@ -28,20 +28,20 @@ child_spec(ChildID, Name) ->
         shutdown => brutal_kill
     }.
 
--spec start_link(_Name) ->
+-spec start_link(atom()) ->
     mg_utils:gen_start_ret().
 start_link(Name) ->
-    gen_server:start_link({local, Name}, ?MODULE, undefined, []).
+    gen_server:start_link(self_reg_name(Name), ?MODULE, undefined, []).
 
--spec set(_Name, _ID, calendar:datetime(), _MFA) ->
+-spec set(atom(), _ID, calendar:datetime(), _MFA) ->
     ok.
 set(Name, ID, DateTime, MFA) ->
-    gen_server:call(Name, {set, ID, DateTime, MFA}).
+    gen_server:call(self_ref(Name), {set, ID, DateTime, MFA}).
 
--spec cancel(_Name, _ID) ->
+-spec cancel(atom(), _ID) ->
     ok.
 cancel(Name, ID) ->
-    gen_server:call(Name, {cancel, ID}).
+    gen_server:call(self_ref(Name), {cancel, ID}).
 
 %%
 %% gen_server callbacks
@@ -209,3 +209,18 @@ apply_handler(ID, MFA = {M, F, A}) ->
     ets:tid().
 ets_tid(timers, #{timers_table:=Tid}) -> Tid;
 ets_tid(ids   , #{ids_table   :=Tid}) -> Tid.
+
+-spec self_ref(atom()) ->
+    mg_utils:gen_ref().
+self_ref(Name) ->
+    wrap_name(Name).
+
+-spec self_reg_name(atom()) ->
+    mg_utils:gen_reg_name().
+self_reg_name(Name) ->
+    {local, wrap_name(Name)}.
+
+-spec wrap_name(atom()) ->
+    atom().
+wrap_name(Name) ->
+    erlang:list_to_atom(?MODULE_STRING ++ "_" ++ erlang:atom_to_list(Name)).

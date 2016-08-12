@@ -47,7 +47,7 @@
 %%
 %% API
 %%
--type options () :: {mg_utils:mod_opts(), mg_utils:mod_opts()}.
+-type options() :: {mg_utils:mod_opts(), mg_utils:mod_opts()}.
 
 -define(safe(Expr),
     try

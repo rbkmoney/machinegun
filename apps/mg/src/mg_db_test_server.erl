@@ -6,6 +6,7 @@
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 %% API
+-export_type([options/0]).
 -export([child_spec/2, start_link/1, create_machine/3, get_machine/3, update_machine/4, resolve_tag/2]).
 
 %% gen_server callbacks
@@ -14,7 +15,9 @@
 %%
 %% API
 %%
--spec child_spec(atom(), _Options) ->
+-type options() :: _Name::atom().
+
+-spec child_spec(atom(), options()) ->
     supervisor:child_spec().
 child_spec(ChildID, Options) ->
     #{
@@ -24,41 +27,40 @@ child_spec(ChildID, Options) ->
         shutdown => 5000
     }.
 
--spec start_link(_Options) ->
+-spec start_link(options()) ->
     mg_utils:gen_start_ret().
 start_link(Options) ->
     gen_server:start_link(self_reg_name(Options), ?MODULE, Options, []).
 
 %%
 
--spec create_machine(_Options, mg:id(), mg:args()) ->
+-spec create_machine(options(), mg:id(), mg:args()) ->
     % тут не должно быть рейсов
     ok.
 create_machine(Options, ID, Args) ->
     insert_machine(make_ets_name(Options), {ID, {created, Args}, [], []}).
 
--spec get_machine(_Options, mg:id(), mg:history_range() | undefined) ->
+-spec get_machine(options(), mg:id(), mg:history_range() | undefined) ->
     mg_db:machine().
 get_machine(Options, ID, Range) ->
     filter_machine_history(read_machine(make_ets_name(Options), ID), Range).
 
--spec update_machine(_Options, mg_db:machine(), mg_db:machine(), mg_db:timer_handler()) ->
+-spec update_machine(options(), mg_db:machine(), mg_db:machine(), mg_db:timer_handler()) ->
     ok.
 update_machine(Options, _OldMachine, NewMachine, TimerHandler) ->
     write_machine(make_ets_name(Options), NewMachine),
     try_set_timer(Options, NewMachine, TimerHandler).
 
 
--spec try_set_timer(_Options, mg_db:machine(), mg_db:timer_handler()) ->
+-spec try_set_timer(options(), mg_db:machine(), mg_db:timer_handler()) ->
     ok.
-try_set_timer(_Options, {ID, {working, TimerDateTime}, _, _}, TimerHandler) when TimerDateTime =/= undefined ->
-    mg_timers:set(timers, ID, TimerDateTime, TimerHandler);
+try_set_timer(Options, {ID, {working, TimerDateTime}, _, _}, TimerHandler) when TimerDateTime =/= undefined ->
+    mg_timers:set(Options, ID, TimerDateTime, TimerHandler);
 try_set_timer(_Options, {_, _, _, _}, _) ->
     ok.
 
 
-%% TODO not_found
--spec resolve_tag(_Options, mg:tag()) ->
+-spec resolve_tag(options(), mg:tag()) ->
     mg:id().
 resolve_tag(Options, Tag) ->
     ID = ets:foldl(
@@ -84,7 +86,7 @@ resolve_tag(Options, Tag) ->
 %%
 -type state() :: #{}.
 
--spec init(_Options) ->
+-spec init(options()) ->
     mg_utils:gen_server_init_ret(state()).
 init(Options) ->
     % ген-сервер только держит ets'ку
@@ -123,15 +125,20 @@ terminate(_, _) ->
 %%
 %% local
 %%
--spec self_reg_name(_Options) ->
+-spec self_reg_name(options()) ->
     mg_utils:gen_reg_name().
-self_reg_name(_Options) ->
-    {local, ?MODULE}.
+self_reg_name(Name) ->
+    {local, wrap_name(Name)}.
 
--spec make_ets_name(_Options) ->
+-spec make_ets_name(options()) ->
     atom().
-make_ets_name(_Options) ->
-    ?MODULE.
+make_ets_name(Name) ->
+    wrap_name(Name).
+
+-spec wrap_name(atom()) ->
+    atom().
+wrap_name(Name) ->
+    erlang:list_to_atom(?MODULE_STRING ++ "_" ++ erlang:atom_to_list(Name)).
 
 -spec read_machine(atom(), mg:id()) ->
     mg_db:machine().

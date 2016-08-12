@@ -1,8 +1,8 @@
 -module(mg_woody_api_automaton).
 
 %% API
--export([handler/1]).
 -export_type([options/0]).
+-export([handler/1]).
 
 %% woody handler
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
