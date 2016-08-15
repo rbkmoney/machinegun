@@ -6,15 +6,15 @@
 -module(mg_observer).
 
 %% API
--export([handle_event/3]).
+-export([handle_events/3]).
 
 %%
 %% API
 %%
--callback handle_event(_Options, mg:id(), mg:event()) ->
+-callback handle_events(_Options, mg:id(), [mg:event()]) ->
     ok.
 
--spec handle_event(_Options, mg:id(), mg:event()) ->
+-spec handle_events(_Options, mg:id(), [mg:event()]) ->
     ok.
-handle_event(Options, ID, Event) ->
-    mg_utils:apply_mod_opts(Options, handle_event, [ID, Event]).
+handle_events(Options, SourceID, Events) ->
+    mg_utils:apply_mod_opts(Options, handle_events, [SourceID, Events]).

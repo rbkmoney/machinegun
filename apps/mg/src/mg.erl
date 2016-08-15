@@ -138,7 +138,8 @@ stop(_State) ->
 ns_options({NS, URL}) ->
     #{
         db        => {?db_mod, erlang:binary_to_atom(NS, utf8)},
-        processor => {mg_woody_api_processor, URL}
+        processor => {mg_woody_api_processor, URL},
+        observer  => {mg_event_sink, mg_event_sink:machine_options(event_sink_options())}
     }.
 
 -spec event_sink_options() ->

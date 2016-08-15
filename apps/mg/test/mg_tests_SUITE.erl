@@ -92,9 +92,9 @@ groups() ->
         ]},
 
         {event_sink, [], [
-            event_sink_get_empty_history
+            event_sink_get_empty_history,
             % пока не реализовано
-            % event_sink_get_not_empty_history
+            event_sink_get_not_empty_history
         ]},
 
         {test_door, [sequence], [
@@ -236,8 +236,9 @@ event_sink_get_not_empty_history(C) ->
     ok = test_door_do_action(C, close),
     ok = test_door_do_action(C, open ),
     [
-        #'SinkEvent'{source_id = ?ID, source_ns = ?NS, event = #'Event'{}},
-        #'SinkEvent'{source_id = ?ID, source_ns = ?NS, event = #'Event'{}}
+        #'SinkEvent'{source_id = ?ID, source_ns = _, event = #'Event'{}},
+        #'SinkEvent'{source_id = ?ID, source_ns = _, event = #'Event'{}},
+        #'SinkEvent'{source_id = ?ID, source_ns = _, event = #'Event'{}}
     ] = event_sink_get_history(es_opts(C), #'HistoryRange'{}).
 
 

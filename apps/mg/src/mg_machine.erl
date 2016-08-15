@@ -311,17 +311,12 @@ handle_processor_error(Reason, State) ->
 
 -spec notify_observer([mg:event()], state()) ->
     ok.
-notify_observer(Events, #{id:=ID, options:=Options}) ->
+notify_observer(Events, #{id:=SourceID, options:=Options}) ->
     case get_options(observer, Options) of
         undefined ->
             ok;
         Observer ->
-            _ = lists:map(
-                    fun(Event) ->
-                        ok = mg_observer:handle_event(Observer, ID, Event)
-                    end,
-                    Events
-                )
+            ok = mg_observer:handle_events(Observer, SourceID, Events)
     end.
 
 -spec append_events_to_history([mg:event()], state()) ->
