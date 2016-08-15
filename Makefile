@@ -21,7 +21,7 @@ BUILD_IMAGE_TAG := 530114ab63a7ff0379a2220169a0be61d3f7c64c
 
 CALL_ANYWHERE := all submodules rebar-update compile xref lint dialyze start devrel release clean distclean
 
-CALL_W_CONTAINER := $(CALL_ANYWHERE) test
+CALL_W_CONTAINER := $(CALL_ANYWHERE) test dev_test
 
 all: compile
 
@@ -71,3 +71,5 @@ distclean:
 # CALL_W_CONTAINER
 test: submodules
 	$(REBAR) ct
+
+dev_test: xref lint test
