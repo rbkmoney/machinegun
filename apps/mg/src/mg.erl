@@ -107,7 +107,7 @@ init([]) ->
     ConfigNSs = proplists:get_value(nss, Config),
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags,
-        [mg_machine:child_spec(NS, ns_options(ConfigNS)) || ConfigNS={NS,_} <- ConfigNSs]
+        [mg_machine:child_spec(NS, ns_options(ConfigNS)) || ConfigNS={NS, _} <- ConfigNSs]
         ++
         [
             mg_event_sink:child_spec(event_sink_options(), event_sink),
@@ -136,7 +136,10 @@ stop(_State) ->
 -spec ns_options(config_ns()) ->
     mg_machine:options().
 ns_options({NS, URL}) ->
-    {{mg_woody_api_processor, URL}, {?db_mod, erlang:binary_to_atom(NS, utf8)}}.
+    #{
+        db        => {?db_mod, erlang:binary_to_atom(NS, utf8)},
+        processor => {mg_woody_api_processor, URL}
+    }.
 
 -spec event_sink_options() ->
     mg_event_sink:options().

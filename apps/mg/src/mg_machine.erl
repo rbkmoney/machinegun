@@ -47,7 +47,11 @@
 %%
 %% API
 %%
--type options() :: {mg_utils:mod_opts(), mg_utils:mod_opts()}.
+-type options() :: #{
+    db        => mg_utils:mod_opts(),
+    processor => mg_utils:mod_opts(),
+    observer  => mg_utils:mod_opts() | undefined
+}.
 
 -define(safe(Expr),
     try
@@ -157,8 +161,8 @@ init(Options) ->
 %% mg_worker callbacks
 %%
 -type state() :: #{
-    id      => _,
-    options => _,
+    id      => mg:id(),
+    options => options(),
     status  => mg_db:status(),
     history => mg:history(),
     tags    => [mg:tag()]
@@ -191,8 +195,7 @@ handle_call(Call, State) ->
 -spec handle_cast(_Cast, state()) ->
     state().
 handle_cast(Cast, State) ->
-    NewState = handle_cast_(Cast, State),
-    transit_state(State, NewState).
+    transit_state(State, handle_cast_(Cast, State)).
 
 -spec handle_unload(state()) ->
     ok.
@@ -296,7 +299,9 @@ process_signal(Signal, State=#{options:=Options, history:=History}) ->
 -spec handle_processor_result(mg:events_bodies(), mg:complex_action(), state()) ->
     state().
 handle_processor_result(EventsBodies, ComplexAction, State) ->
-    do_complex_action(ComplexAction, append_events_to_history(EventsBodies, State)).
+    Events = generate_events(EventsBodies, get_last_event_id(State)),
+    ok = notify_observer(Events, State),
+    do_complex_action(ComplexAction, append_events_to_history(Events, State)).
 
 -spec handle_processor_error(_Reason, state()) ->
     state().
@@ -304,25 +309,49 @@ handle_processor_error(Reason, State) ->
     ok = error_logger:error_msg("processor call error: ~p", [Reason]),
     set_status({error, Reason}, State).
 
--spec append_events_to_history(mg:events_bodies(), state()) ->
-    state().
-append_events_to_history(EventsBodies, State) ->
-    lists:foldr(fun append_event_to_history/2, State, EventsBodies).
+-spec notify_observer([mg:event()], state()) ->
+    ok.
+notify_observer(Events, #{id:=ID, options:=Options}) ->
+    case get_options(observer, Options) of
+        undefined ->
+            ok;
+        Observer ->
+            _ = lists:map(
+                    fun(Event) ->
+                        ok = mg_observer:handle_event(Observer, ID, Event)
+                    end,
+                    Events
+                )
+    end.
 
--spec append_event_to_history(mg:event_body(), state()) ->
+-spec append_events_to_history([mg:event()], state()) ->
     state().
-append_event_to_history(EventBody, State=#{history:=History}) ->
+append_events_to_history(Events, State=#{history:=History}) ->
+    State#{history := Events ++ History}.
+
+-spec generate_events([mg:event_body()], mg:event_id()) ->
+    [mg:event()].
+generate_events(EventsBodies, LastID) ->
+    {Events, _} =
+        lists:mapfoldr(
+            fun generate_event/2,
+            LastID,
+            EventsBodies
+        ),
+    Events.
+
+-spec generate_event(mg:event_body(), mg:event_id()) ->
+    mg:event().
+generate_event(EventBody, LastID) ->
+    ID = get_next_event_id(LastID),
     {ok, CreatedAt} = rfc3339:format(erlang:system_time()),
-    State#{history:=[
+    Event =
         #'Event'{
-            id            = get_next_event_id(get_last_event_id(State)),
+            id            = ID,
             created_at    = CreatedAt,
             event_payload = EventBody
-        }
-        |
-        History
-    ]}.
-
+        },
+    {Event, ID}.
 
 -spec get_last_event_id(state()) ->
     mg:event_id() | undefined.
@@ -383,10 +412,12 @@ ref2id(Options, {tag, Tag}) ->
 ref2id(_, {id, ID}) ->
     ID.
 
--spec get_options(processor | db, options()) ->
+-spec get_options(processor | db | observer, options()) ->
     mg_utils:mod_opts().
-get_options(processor, {Options, _}) -> Options;
-get_options(db       , {_, Options}) -> Options.
+get_options(Subj=observer, Options) ->
+    maps:get(Subj, Options, undefined);
+get_options(Subj, Options) ->
+    maps:get(Subj, Options).
 
 -spec get_timeout_datetime(undefined | mg:timer()) ->
     calendar:datetime() | undefined.

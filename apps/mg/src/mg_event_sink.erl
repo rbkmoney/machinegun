@@ -4,13 +4,16 @@
 %% API
 -export_type([options/0]).
 -export([child_spec  /2]).
--export([append_event/4]).
 -export([get_history /2]).
 
 
 %% mg_processor handler
 -behaviour(mg_processor).
 -export([process_signal/2, process_call/3]).
+
+%% mg_processor handler
+-behaviour(mg_observer).
+-export([handle_event/3]).
 
 
 %%
@@ -25,14 +28,15 @@ child_spec(Options, ChildID) ->
     mg_machine:child_spec(ChildID, machine_options(Options)).
 
 %% TODO подумать о зацикливании
--spec append_event(options(), mg:id(), mg:ns(), mg:event()) ->
+%% TODO NS
+-spec handle_event(options(), mg:id(), mg:event()) ->
     ok.
-append_event(Options, ID, NS, Event) ->
+handle_event(Options, ID, Event) ->
     try
-        mg_machine:call(machine_options(Options), {id, ?event_sink_machine_id}, {append_event, Event}, undefined)
+        mg_machine:call(machine_options(Options), {id, ?event_sink_machine_id}, {handle_event, ID, Event}, undefined)
     catch throw:#'MachineNotFound'{} ->
         ok = start(Options),
-        append_event(Options, ID, NS, Event)
+        handle_event(Options, ID, Event)
     end.
 
 -spec get_history(options(), mg:history_range()) ->
@@ -72,4 +76,7 @@ start(Options) ->
 -spec machine_options(options()) ->
     mg_machine:options().
 machine_options(DBMod) ->
-    {?MODULE, DBMod}.
+    #{
+        processor =>?MODULE,
+        db        => DBMod
+    }.
