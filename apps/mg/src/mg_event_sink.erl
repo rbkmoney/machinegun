@@ -1,5 +1,4 @@
 -module(mg_event_sink).
--include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 %% API
 -export_type([options/0]).
@@ -7,10 +6,9 @@
 -export([get_history    /2]).
 -export([machine_options/1]).
 
-
 %% mg_processor handler
 -behaviour(mg_processor).
--export([process_signal/2, process_call/3]).
+-export([process_signal/2, process_call/2]).
 
 %% mg_processor handler
 -behaviour(mg_observer).
@@ -20,8 +18,9 @@
 %%
 %% API
 %%
--define(event_sink_machine_id, <<"event_sink">>).
--type options() :: mg_machine:db_options().
+-define(event_sink_machine_id, event_sink).
+
+-type options() :: mg_utils:mod_opts().
 
 -spec child_spec(atom(), options()) ->
     supervisor:child_spec().
@@ -34,31 +33,23 @@ child_spec(Options, ChildID) ->
     ok.
 handle_events(Options, SourceID, Events) ->
     try
-        {<<"">>, undefined} =
-            mg_machine:call(
+        ok = mg_machine:call(
                 machine_options(Options),
                 {id, ?event_sink_machine_id},
-                {handle_events, SourceID, Events},
-                undefined
-            ),
-        ok
-    catch throw:#'MachineNotFound'{} ->
+                {handle_events, SourceID, Events}
+            )
+    catch throw:machine_not_found ->
         ok = start(Options),
         handle_events(Options, SourceID, Events)
     end.
 
 -spec get_history(options(), mg:history_range()) ->
-    mg:sink_events().
+    mg:sink_history().
 get_history(Options, Range) ->
     try
-        [
-            SinkEvent
-            ||
-            #'Event'{event_payload = SinkEvent}
-            <-
-            mg_machine:get_history(machine_options(Options), {id, ?event_sink_machine_id}, Range)
-        ]
-    catch throw:#'MachineNotFound'{} ->
+        [Event || #{id := _, body := Event} <-
+            mg_machine:get_history(machine_options(Options), {id, ?event_sink_machine_id}, Range)]
+    catch throw:machine_not_found ->
         ok = start(Options),
         get_history(Options, Range)
     end.
@@ -67,7 +58,7 @@ get_history(Options, Range) ->
     mg_machine:options().
 machine_options(DBMod) ->
     #{
-        processor =>?MODULE,
+        processor => ?MODULE,
         db        => DBMod
     }.
 
@@ -78,13 +69,13 @@ machine_options(DBMod) ->
 -spec process_signal(_, mg:signal_args()) ->
     mg:signal_result().
 process_signal(_, _) ->
-    #'SignalResult'{events = [], action = #'ComplexAction'{}}.
+    {[], #{timer => undefined, tag => undefinend}}.
 
--spec process_call(_, mg:call_args(), mg:call_context()) ->
+-spec process_call(_, mg:call_args()) ->
     mg:call_result().
-process_call(_, #'CallArgs'{call = {handle_events, SourceID, Events}}, WoodyContext) ->
+process_call(_, {{handle_events, SourceID, Events}, _}) ->
     SinkEvents = generate_sink_events(SourceID, Events),
-    {#'CallResult'{response = <<"">>, events = SinkEvents, action = #'ComplexAction'{}}, WoodyContext}.
+    {ok, SinkEvents, #{timer => undefined, tag => undefinend}}.
 
 %%
 %% local
@@ -102,8 +93,7 @@ generate_sink_events(SourceID, Events) ->
 -spec generate_sink_event(mg:id(), mg:event()) ->
     mg:sink_event().
 generate_sink_event(SourceID, Event) ->
-    #'SinkEvent'{
-        source_id = SourceID,
-        source_ns = <<"TODO source_ns">>, % TODO
-        event     = Event
+    #{
+        source_id => SourceID,
+        event     => Event
     }.

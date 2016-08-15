@@ -30,6 +30,8 @@
 -type error       () :: term().
 -type thrown_error() :: {db, error()}.
 
+%%
+
 -callback child_spec(_Options, atom()) ->
     supervisor:child_spec().
 
@@ -46,6 +48,7 @@
 -callback resolve_tag(_Options, mg:tag()) ->
     mg:id().
 
+%%
 
 -spec child_spec(_Options, atom()) ->
     supervisor:child_spec().

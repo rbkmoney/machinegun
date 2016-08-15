@@ -6,7 +6,22 @@
 -module(mg_woody_api).
 
 %% API
+-export_type([ns        /0]).
+-export_type([id        /0]).
+-export_type([tag       /0]).
+-export_type([args      /0]).
+-export_type([event_id  /0]).
+-export_type([event_body/0]).
+
 -export_type([options/0]).
+
+-type ns        () :: binary().
+-type id        () :: binary().
+-type tag       () :: binary().
+-type args      () :: binary().
+-type event_id  () :: binary().
+-type event_body() :: binary().
+
 -export([child_spec/1]).
 
 %%

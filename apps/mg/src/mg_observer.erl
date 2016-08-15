@@ -14,6 +14,8 @@
 -callback handle_events(_Options, mg:id(), [mg:event()]) ->
     ok.
 
+%%
+
 -spec handle_events(_Options, mg:id(), [mg:event()]) ->
     ok.
 handle_events(Options, SourceID, Events) ->

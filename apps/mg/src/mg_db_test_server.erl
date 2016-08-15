@@ -1,15 +1,12 @@
 -module(mg_db_test_server).
-
--behaviour(gen_server).
-
 -include_lib("stdlib/include/ms_transform.hrl").
--include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 %% API
 -export_type([options/0]).
 -export([child_spec/2, start_link/1, create_machine/3, get_machine/3, update_machine/4, resolve_tag/2]).
 
 %% gen_server callbacks
+-behaviour(gen_server).
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3, code_change/3, terminate/2]).
 
 %%
@@ -77,7 +74,7 @@ resolve_tag(Options, Tag) ->
             make_ets_name(Options)
         ),
     case ID of
-        undefined -> mg_db:throw_error(not_found);
+        undefined -> mg_db:throw_error(machine_not_found);
         _         -> ID
     end.
 
@@ -147,7 +144,7 @@ read_machine(ETS, ID) ->
         [Machine] ->
             Machine;
         [] ->
-            mg_db:throw_error(not_found)
+            mg_db:throw_error(machine_not_found)
     end.
 
 -spec insert_machine(atom(), mg_db:machine()) ->
@@ -155,7 +152,7 @@ read_machine(ETS, ID) ->
 insert_machine(ETS, Machine) ->
     case ets:insert_new(ETS, [Machine]) of
         true  -> ok;
-        false -> mg_db:throw_error(already_exist)
+        false -> mg_db:throw_error(machine_already_exist)
     end.
 
 -spec write_machine(atom(), mg_db:machine()) ->
@@ -166,7 +163,7 @@ write_machine(ETS, Machine={ID, _, _, _}) ->
             true = ets:insert(ETS, [Machine]),
             ok;
         false ->
-            mg_db:throw_error(not_found)
+            mg_db:throw_error(machine_not_found)
     end.
 
 %%
@@ -176,7 +173,7 @@ write_machine(ETS, Machine={ID, _, _, _}) ->
     mg_db:machine().
 filter_machine_history(Machine, undefined) ->
     Machine;
-filter_machine_history({ID, Status, History, Tags}, #'HistoryRange'{'after'=After, limit=Limit}) ->
+filter_machine_history({ID, Status, History, Tags}, {After, Limit}) ->
     {ID, Status, filter_history(History, After, Limit), Tags}.
 
 -spec filter_history(mg:history(), mg:event_id() | undefined, pos_integer()) ->
@@ -192,7 +189,7 @@ filter_history_iter(_, _, 0, Result) ->
     Result;
 filter_history_iter([Event|HistoryTail], undefined, Limit, Result) ->
     filter_history_iter(HistoryTail, undefined, decrease_limit(Limit), [Event|Result]);
-filter_history_iter([#'Event'{id=ID}|HistoryTail], After, Limit, []) when ID =:= After ->
+filter_history_iter([#{id:=EventID}|HistoryTail], After, Limit, []) when EventID =:= After ->
     filter_history_iter(HistoryTail, undefined, Limit, []);
 filter_history_iter([_|HistoryTail], After, Limit, []) ->
     filter_history_iter(HistoryTail, After, Limit, []).

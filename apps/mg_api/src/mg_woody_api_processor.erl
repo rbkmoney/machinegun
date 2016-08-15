@@ -3,7 +3,10 @@
 
 %% mg_processor handler
 -behaviour(mg_processor).
--export([process_signal/2, process_call/3]).
+-export([process_signal/2, process_call/2]).
+
+%% уменьшаем писанину
+-import(mg_woody_api_packer, [pack/2, unpack/2]).
 
 %%
 %% mg_processor handler
@@ -11,24 +14,27 @@
 -spec process_signal(_Options, mg:signal_args()) ->
     mg:signal_result().
 process_signal(Options, SignalArgs) ->
-    {R, _} =
+    {SignalResult, _} =
         call_processor(
             Options,
             woody_client:new_context(woody_client:make_id(<<"mg">>), mg_woody_api_event_handler),
             processSignal,
-            [SignalArgs]
+            [pack(signal_args, SignalArgs)]
         ),
-    R.
+    unpack(signal_result, SignalResult).
 
--spec process_call(_Options, mg:call_args(), mg:call_context()) ->
-    {mg:call_result(), mg:call_context()}.
-process_call(Options, Call, WoodyContext) ->
-    call_processor(
-        Options,
-        WoodyContext,
-        processCall,
-        [Call]
-    ).
+-spec process_call(_Options, mg:call_args()) ->
+    mg:call_result().
+process_call(Options, CallArgs) ->
+    {SignalResult, _} =
+        call_processor(
+            Options,
+            % TODO woody context
+            woody_client:new_context(woody_client:make_id(<<"mg">>), mg_woody_api_event_handler),
+            processCall,
+            [pack(call_args, CallArgs)]
+        ),
+    unpack(call_result, SignalResult).
 
 %%
 %% local

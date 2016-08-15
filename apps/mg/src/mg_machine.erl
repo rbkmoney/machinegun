@@ -20,7 +20,6 @@
 %%% При падении хендлера переводит машину в error состояние.
 %%%
 -module(mg_machine).
--include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 %% API
 -export_type([options/0]).
@@ -29,7 +28,7 @@
 -export([start_link /1]).
 -export([start      /3]).
 -export([repair     /3]).
--export([call       /4]).
+-export([call       /3]).
 -export([get_history/3]).
 
 %% Internal API
@@ -102,20 +101,20 @@ repair(Options, Ref, Args) ->
             )
     ).
 
--spec call(options(), mg:ref(), mg:args(), mg:call_context()) ->
-    {_Resp, mg:call_context()}.
-call(Options, Ref, Call, Context) ->
+-spec call(options(), mg:ref(), mg:args()) ->
+    _Resp.
+call(Options, Ref, Call) ->
     ?safe(
         reraise(
             mg_workers_manager:call(
                 manager_options(Options),
                 ref2id(Options, Ref),
-                {call, Call, Context}
+                {call, Call}
             )
         )
     ).
 
--spec get_history(options, mg:ref(), mg:history_range()) ->
+-spec get_history(options(), mg:ref(), mg:history_range()) ->
     mg:history().
 get_history(Options, Ref, Range) ->
     {_, _, History, _} =
@@ -225,15 +224,15 @@ state_to_machine(#{id:=ID, status:=Status, history:=History, tags:=Tags}) ->
 -spec handle_load_(state()) ->
     state().
 handle_load_(State=#{id:=ID, status:={created, Args}}) ->
-    process_signal({init, #'InitSignal'{id=ID, arg=Args}}, State);
+    process_signal({init, ID, Args}, State);
 handle_load_(State) ->
     State.
 
 -spec handle_call_(_Call, state()) ->
     {_Replay, state()}.
-handle_call_({call, Call, Context}, State=#{status:={working, _}}) ->
-    process_call(Call, Context, State);
-handle_call_({call, _Call, _Context}, State=#{status:={error, _}}) ->
+handle_call_({call, Call}, State=#{status:={working, _}}) ->
+    process_call(Call, State);
+handle_call_({call, _Call}, State=#{status:={error, _}}) ->
     {{throw, {internal, {machine_failed, bad_machine_state}}}, State};
 handle_call_(touch, State) ->
     {ok, State};
@@ -244,9 +243,9 @@ handle_call_(Call, State) ->
 -spec handle_cast_(_Cast, state()) ->
     state().
 handle_cast_(timeout, State=#{status:={working, _}}) ->
-    process_signal({timeout, #'TimeoutSignal'{}}, State);
+    process_signal(timeout, State);
 handle_cast_({repair, Args}, State=#{status:={error, _}}) ->
-    process_signal({repair, #'RepairSignal'{arg=Args}}, State);
+    process_signal({repair, Args}, State);
 handle_cast_(touch, State) ->
     State;
 handle_cast_(Cast, State) ->
@@ -255,40 +254,34 @@ handle_cast_(Cast, State) ->
 
 %%
 
--spec process_call(_Call, mg:call_context(), state()) ->
-    {{ok, {_Resp, mg:call_context()}}, state()}.
-process_call(Call, Context, State=#{options:=Options, history:=History}) ->
-    try
-        {CallResult, NewContext} =
-            mg_processor:process_call(
+-spec process_call(_Call, state()) ->
+    {{ok, _Resp}, state()}.
+process_call(Call, State=#{options:=Options, history:=History}) ->
+    try mg_processor:process_call(
                 get_options(processor, Options),
-                #'CallArgs'{call=Call, history=History},
-                Context
-            ),
-        #'CallResult'{
-            events   = EventsBodies,
-            action   = ComplexAction,
-            response = Response
-        } = CallResult,
-        {{ok, {Response, NewContext}}, handle_processor_result(EventsBodies, ComplexAction, State)}
+                {Call, History}
+            )
+    of
+        CallResult ->
+            {Response, EventsBodies, ComplexAction} = CallResult,
+            {{ok, Response}, handle_processor_result(EventsBodies, ComplexAction, State)}
     catch Class:Reason ->
         Exception = {Class, Reason, erlang:get_stacktrace()},
         {{error, Exception}, handle_processor_error(Exception, State)}
     end.
 
+
 -spec process_signal(mg:signal(), state()) ->
     state().
 process_signal(Signal, State=#{options:=Options, history:=History}) ->
     try
-        #'SignalResult'{
-            events   = EventsBodies,
-            action   = ComplexAction
-        } =
             mg_processor:process_signal(
                 get_options(processor, Options),
-                #'SignalArgs'{signal=Signal, history=History}
-            ),
-        handle_processor_result(EventsBodies, ComplexAction, State)
+                {Signal, History}
+            )
+    of
+        {EventsBodies, ComplexAction} ->
+            handle_processor_result(EventsBodies, ComplexAction, State)
     catch Class:Reason ->
         Exception = {Class, Reason, erlang:get_stacktrace()},
         handle_processor_error(Exception, State)
@@ -296,7 +289,7 @@ process_signal(Signal, State=#{options:=Options, history:=History}) ->
 
 %%
 
--spec handle_processor_result(mg:events_bodies(), mg:complex_action(), state()) ->
+-spec handle_processor_result([mg:event_body()], mg:complex_action(), state()) ->
     state().
 handle_processor_result(EventsBodies, ComplexAction, State) ->
     Events = generate_events(EventsBodies, get_last_event_id(State)),
@@ -336,15 +329,14 @@ generate_events(EventsBodies, LastID) ->
     Events.
 
 -spec generate_event(mg:event_body(), mg:event_id()) ->
-    mg:event().
+    {mg:event(), mg:event_id()}.
 generate_event(EventBody, LastID) ->
     ID = get_next_event_id(LastID),
-    {ok, CreatedAt} = rfc3339:format(erlang:system_time()),
     Event =
-        #'Event'{
-            id            = ID,
-            created_at    = CreatedAt,
-            event_payload = EventBody
+        #{
+            id         => ID,
+            created_at => erlang:system_time(),
+            body       => EventBody
         },
     {Event, ID}.
 
@@ -352,7 +344,7 @@ generate_event(EventBody, LastID) ->
     mg:event_id() | undefined.
 get_last_event_id(#{history:=[]}) ->
     undefined;
-get_last_event_id(#{history:=[#'Event'{id=ID}|_]}) ->
+get_last_event_id(#{history:=[#{id:=ID}|_]}) ->
     ID.
 
 -spec get_next_event_id(undefined | mg:event_id()) ->
@@ -364,7 +356,7 @@ get_next_event_id(N) ->
 
 -spec do_complex_action(mg:complex_action(), state()) ->
     state().
-do_complex_action(#'ComplexAction'{set_timer=SetTimerAction, tag=TagAction}, State) ->
+do_complex_action(#{timer := SetTimerAction, tag := TagAction}, State) ->
     do_set_timer_action(SetTimerAction, do_tag_action(TagAction, State)).
 
 %%
@@ -379,7 +371,7 @@ manager_options(Options) ->
     state().
 do_tag_action(undefined, State) ->
     State;
-do_tag_action(#'TagAction'{tag=Tag}, State=#{tags:=Tags}) ->
+do_tag_action(Tag, State=#{tags:=Tags}) ->
     % TODO детектор коллизий тэгов
     State#{tags:=[Tag|Tags]}.
 
@@ -418,27 +410,12 @@ get_options(Subj, Options) ->
     calendar:datetime() | undefined.
 get_timeout_datetime(undefined) ->
     undefined;
-get_timeout_datetime(#'SetTimerAction'{timer=Timer}) ->
-    case Timer of
-        {deadline, Timestamp} ->
-            parse_rfc3339_timespamp(Timestamp);
-        {timeout, Timeout} ->
-            calendar:gregorian_seconds_to_datetime(
-                calendar:datetime_to_gregorian_seconds(calendar:universal_time()) + Timeout
-            )
-    end.
-
-%% rfc3339:parse имеет некорретный спек, поэтому диалайзер всегда ругается
--dialyzer({nowarn_function, parse_rfc3339_timespamp/1}).
--spec parse_rfc3339_timespamp(binary()) ->
-    calendar:datetime() | no_return().
-parse_rfc3339_timespamp(Timestamp) ->
-    case rfc3339:parse(Timestamp) of
-        {ok, {Date, Time, _, undefined}} ->
-            {Date, Time};
-        InvalidReturn ->
-            erlang:throw({internal, {machine_failed, {bad_timestamp, Timestamp, InvalidReturn}}})
-    end.
+get_timeout_datetime({deadline, Daytime}) ->
+    Daytime;
+get_timeout_datetime({timeout, Timeout}) ->
+    calendar:gregorian_seconds_to_datetime(
+        calendar:datetime_to_gregorian_seconds(calendar:universal_time()) + Timeout
+    ).
 
 %%
 %% error handling
@@ -456,17 +433,17 @@ handle_error({Class, Reason, Stacktrace}) ->
     _.
 map_error(throw, {workers, {loading, Error={db, _}}}) ->
     map_error(throw, Error);
-map_error(throw, {db, not_found}) ->
-    #'MachineNotFound'{};
-map_error(throw, {db, already_exist}) ->
-    #'MachineAlreadyExists'{};
+map_error(throw, {db, machine_not_found}) ->
+    machine_not_found;
+map_error(throw, {db, machine_already_exist}) ->
+    machine_already_exist;
 map_error(throw, {db, _}) ->
     % TODO
     exit(todo);
 map_error(throw, {processor, _}) ->
-    #'MachineFailed'{};
+    machine_failed;
 map_error(throw, {internal, {machine_failed, _}}) ->
-    #'MachineFailed'{}.
+    machine_failed.
 
 -spec log_error({_, _, _}) ->
     _.
