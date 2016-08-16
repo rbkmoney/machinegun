@@ -31,6 +31,7 @@
 %% event_sink group tests
 -export([event_sink_get_empty_history    /1]).
 -export([event_sink_get_not_empty_history/1]).
+-export([event_sink_get_last_event       /1]).
 
 %% test_door group tests
 -export([machine_test_door/1]).
@@ -93,8 +94,8 @@ groups() ->
 
         {event_sink, [], [
             event_sink_get_empty_history,
-            % пока не реализовано
-            event_sink_get_not_empty_history
+            event_sink_get_not_empty_history,
+            event_sink_get_last_event
         ]},
 
         {test_door, [sequence], [
@@ -110,7 +111,7 @@ groups() ->
     config().
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all,c),
-    % dbg:tpl(mg_worker, x),
+    % dbg:tpl({mg_machine_test_door, update_state, '_'}, x),
     C.
 
 -spec end_per_suite(config()) ->
@@ -227,7 +228,7 @@ failed_machine_repair(C) ->
 -spec event_sink_get_empty_history(config()) ->
     _.
 event_sink_get_empty_history(C) ->
-    [] = event_sink_get_history(es_opts(C), #'HistoryRange'{}).
+    [] = event_sink_get_history(es_opts(C), #'HistoryRange'{direction=forward}).
 
 -spec event_sink_get_not_empty_history(config()) ->
     _.
@@ -236,11 +237,16 @@ event_sink_get_not_empty_history(C) ->
     ok = test_door_do_action(C, close),
     ok = test_door_do_action(C, open ),
     [
-        #'SinkEvent'{source_id = ?ID, source_ns = ?NS, event = #'Event'{}},
-        #'SinkEvent'{source_id = ?ID, source_ns = ?NS, event = #'Event'{}},
-        #'SinkEvent'{source_id = ?ID, source_ns = ?NS, event = #'Event'{}}
-    ] = event_sink_get_history(es_opts(C), #'HistoryRange'{}).
+        #'SinkEvent'{id = 1, source_id = ?ID, source_ns = ?NS, event = #'Event'{}},
+        #'SinkEvent'{id = 2, source_id = ?ID, source_ns = ?NS, event = #'Event'{}},
+        #'SinkEvent'{id = 3, source_id = ?ID, source_ns = ?NS, event = #'Event'{}}
+    ] = event_sink_get_history(es_opts(C), #'HistoryRange'{direction=forward}).
 
+-spec event_sink_get_last_event(config()) ->
+    _.
+event_sink_get_last_event(C) ->
+    [#'SinkEvent'{id = 3, source_id = ?ID, source_ns = ?NS, event = #'Event'{}}] =
+        event_sink_get_history(es_opts(C), #'HistoryRange'{direction=backward, limit=1}).
 
 %%
 %% test_door group tests

@@ -76,18 +76,10 @@ do_action(Options, Action, Ref) ->
 repair(Options, Ref, RepairResult) ->
     automation_repair(Options, Ref, pack(repair_result, RepairResult)).
 
-
-% do_incorrect_action() ->
-%     ok.
-
-% do_incorrect_action() ->
-%     ok.
-
-
 -spec update_state(automaton_options(), mg:ref(), client_state()) ->
     client_state().
 update_state(Options, Ref, ClientState=#{last_event_id:=LastEventID, state:=State}) ->
-    History = automation_get_history(Options, Ref, #'HistoryRange'{'after'=LastEventID, limit=1}),
+    History = automation_get_history(Options, Ref, #'HistoryRange'{'after'=LastEventID, limit=1, direction=forward}),
     case History of
         [] ->
             ClientState;
@@ -194,7 +186,7 @@ collapse_history(History) ->
 -spec apply_events(events(), state()) ->
     state().
 apply_events(Events, State) ->
-    lists:foldr(fun apply_event/2, State, Events).
+    lists:foldl(fun apply_event/2, State, Events).
 
 -spec
 apply_event( event()         , state()    ) -> state().

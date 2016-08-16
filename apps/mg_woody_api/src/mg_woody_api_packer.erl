@@ -36,6 +36,8 @@
         mg_proto_base_thrift:'Timer'();
     (ref, mg:ref()) ->
         mg_proto_state_processing_thrift:'Reference'();
+    (direction, mg:direction()) ->
+        mg_proto_state_processing_thrift:'Direction'();
 
     %% events and history
     (event_id, mg_woody_api:event_id()) ->
@@ -109,6 +111,8 @@ pack(ref, {id , ID}) ->
     {id , pack(id, ID)};
 pack(ref, {tag, Tag}) ->
     {tag, pack(tag, Tag)};
+pack(direction, Direction) ->
+    Direction;
 
 %% events and history
 pack(event_id, ID) ->
@@ -176,13 +180,14 @@ pack(call_result, {Response, EventBodies, ComplexAction}) ->
         action   = pack(complex_action    , ComplexAction)
     };
 
-pack(history_range, {After, Limit}) ->
+pack(history_range, {After, Limit, Direction}) ->
     #'HistoryRange'{
-        'after' = pack(event_id, After),
-         limit  = pack(integer , Limit)
+        'after'    = pack(event_id , After    ),
+         limit     = pack(integer  , Limit    ),
+         direction = pack(direction, Direction)
     };
 
-pack(sink_event, #{id := ID, body := #{ source_ns := SourceNS, source_id := SourceID, event := Event }}) ->
+pack(sink_event, #{id := ID, body := #{ source_ns := SourceNS, source_id := SourceID, event := Event}}) ->
     #'SinkEvent'{
         id        = pack(event_id, ID      ),
         source_id = pack(id      , SourceID),
@@ -228,6 +233,8 @@ pack(Type, Value) ->
         mg:timer();
     (ref, mg_proto_state_processing_thrift:'Reference'()) ->
         mg:ref();
+    (direction, mg_proto_state_processing_thrift:'Direction'()) ->
+        mg:direction();
 
     %% events and history
     (event_id, mg_proto_base_thrift:'EventID'()) ->
@@ -303,6 +310,8 @@ unpack(ref, {id , ID}) ->
     {id , unpack(id, ID)};
 unpack(ref, {tag, Tag}) ->
     {tag, unpack(tag, Tag)};
+unpack(direction, Direction) ->
+    Direction;
 
 %% events and history
 unpack(event_id, ID) ->
@@ -348,8 +357,8 @@ unpack(signal_result, #'SignalResult'{events = EventBodies, action = ComplexActi
 unpack(call_result, #'CallResult'{response = Response, events = EventBodies, action = ComplexAction}) ->
     {unpack(call_response, Response), unpack({list, event_body}, EventBodies), unpack(complex_action, ComplexAction)};
 
-unpack(history_range, #'HistoryRange'{'after' = After, limit = Limit}) ->
-    {unpack(event_id, After), unpack(integer , Limit)};
+unpack(history_range, #'HistoryRange'{'after' = After, limit = Limit, direction = Direction}) ->
+    {unpack(event_id, After), unpack(integer , Limit), unpack(direction, Direction)};
 
 unpack(sink_event, #'SinkEvent'{id = ID, source_ns = SourceNS, source_id = SourceID, event = Event}) ->
     #{

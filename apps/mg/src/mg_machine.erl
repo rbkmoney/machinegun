@@ -316,13 +316,13 @@ notify_observer(Events, #{id:=SourceID, options:=Options}) ->
 -spec append_events_to_history([mg:event()], state()) ->
     state().
 append_events_to_history(Events, State=#{history:=History}) ->
-    State#{history := Events ++ History}.
+    State#{history := History ++ Events}.
 
 -spec generate_events([mg:event_body()], mg:event_id()) ->
     [mg:event()].
 generate_events(EventsBodies, LastID) ->
     {Events, _} =
-        lists:mapfoldr(
+        lists:mapfoldl(
             fun generate_event/2,
             LastID,
             EventsBodies
@@ -345,7 +345,8 @@ generate_event(EventBody, LastID) ->
     mg:event_id() | undefined.
 get_last_event_id(#{history:=[]}) ->
     undefined;
-get_last_event_id(#{history:=[#{id:=ID}|_]}) ->
+get_last_event_id(#{history:=History}) ->
+    #{id:=ID} = lists:last(History),
     ID.
 
 -spec get_next_event_id(undefined | mg:event_id()) ->

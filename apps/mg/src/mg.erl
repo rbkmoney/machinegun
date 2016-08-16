@@ -2,13 +2,14 @@
 
 %% Types
 %% base
--export_type([ns      /0]).
--export_type([id      /0]).
--export_type([tag     /0]).
--export_type([args    /0]).
--export_type([timeout_/0]).
--export_type([timer   /0]).
--export_type([ref     /0]).
+-export_type([ns       /0]).
+-export_type([id       /0]).
+-export_type([tag      /0]).
+-export_type([args     /0]).
+-export_type([timeout_ /0]).
+-export_type([timer    /0]).
+-export_type([ref      /0]).
+-export_type([direction/0]).
 
 %% events and history
 -export_type([event_id     /0]).
@@ -36,13 +37,14 @@
 
 
 %% base
--type ns      () :: _.
--type id      () :: _.
--type tag     () :: _.
--type args    () :: _.
--type timeout_() :: non_neg_integer().
--type timer   () :: {timeout, timeout_()} | {deadline, calendar:datetime()}.
--type ref     () :: {id, id()} | {tag, tag()}.
+-type ns       () :: _.
+-type id       () :: _.
+-type tag      () :: _.
+-type args     () :: _.
+-type timeout_ () :: non_neg_integer().
+-type timer    () :: {timeout, timeout_()} | {deadline, calendar:datetime()}.
+-type ref      () :: {id, id()} | {tag, tag()}.
+-type direction() :: forward | backward.
 
 %% events and history
 -type event_id     () :: pos_integer().
@@ -69,7 +71,7 @@
 -type call_args    () :: {args(), history()}.
 -type signal_result() :: {[event_body()], complex_action()}.
 -type call_result  () :: {call_response(), [event_body()], complex_action()}.
--type history_range() :: {After::id() | undefined, Limit::non_neg_integer() | undefined}.
+-type history_range() :: {After::id() | undefined, Limit::non_neg_integer() | undefined, direction()}.
 
 %% event sink
 -type sink_event() :: #{

@@ -173,13 +173,20 @@ write_machine(ETS, Machine={ID, _, _, _}) ->
     mg_db:machine().
 filter_machine_history(Machine, undefined) ->
     Machine;
-filter_machine_history({ID, Status, History, Tags}, {After, Limit}) ->
-    {ID, Status, filter_history(History, After, Limit), Tags}.
+filter_machine_history({ID, Status, History, Tags}, {After, Limit, Direction}) ->
+    {ID, Status, filter_history(apply_direction(Direction, History), After, Limit), Tags}.
+
+-spec apply_direction(mg:direction(), mg:history()) ->
+    mg:history().
+apply_direction(forward, History) ->
+    lists:reverse(History);
+apply_direction(backward, History) ->
+    History.
 
 -spec filter_history(mg:history(), mg:event_id() | undefined, pos_integer()) ->
     mg:history().
 filter_history(History, After, Limit) ->
-    filter_history_iter(lists:reverse(History), After, Limit, []).
+    lists:reverse(filter_history_iter(lists:reverse(History), After, Limit, [])).
 
 -spec filter_history_iter(mg:history(), mg:event_id() | undefined, non_neg_integer(), mg:history()) ->
     mg:history().
