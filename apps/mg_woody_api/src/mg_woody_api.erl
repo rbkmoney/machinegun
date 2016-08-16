@@ -42,7 +42,10 @@
 .
 -type config_nss() :: [config_ns()].
 -type config_element() ::
-      {nss, config_nss()}
+      {nss     ,      config_nss  ()}
+    | {ip      , inet:ip_address  ()}
+    | {port    , inet:port_address()}
+    | {net_opts, []                 } % в вуди нет для этого типа :(
 .
 -type config() :: [config_element()].
 
@@ -96,16 +99,15 @@ stop(_State) ->
 %%
 -define(db_mod, mg_db_test).
 
-% TODO прокидывание сетевых настроек
 -spec woody_child_spec(config()) ->
     supervisor:child_spec().
 woody_child_spec(Config) ->
     woody_server:child_spec(
         api,
         #{
-            ip            => {0, 0, 0, 0},
-            port          => 8820,
-            net_opts      => [],
+            ip            => proplists:get_value(host    , Config, {0, 0, 0, 0}),
+            port          => proplists:get_value(port    , Config, 8820        ),
+            net_opts      => proplists:get_value(net_opts, Config, []          ),
             event_handler => mg_woody_api_event_handler,
             handlers      => [
                 mg_woody_api_automaton :handler(api_automaton_options(proplists:get_value(nss, Config))),
