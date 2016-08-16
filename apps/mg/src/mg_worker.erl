@@ -2,6 +2,8 @@
 -behaviour(gen_server).
 
 %% API
+-export_type([options/0]).
+
 -export([child_spec/2]).
 -export([start_link/2]).
 -export([call      /2]).

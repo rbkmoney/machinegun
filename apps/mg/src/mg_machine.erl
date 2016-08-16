@@ -47,6 +47,7 @@
 %% API
 %%
 -type options() :: #{
+    namespace => mg:ns(),
     db        => mg_utils:mod_opts(),
     processor => mg_utils:mod_opts(),
     observer  => mg_utils:mod_opts() | undefined
@@ -363,9 +364,12 @@ do_complex_action(#{timer := SetTimerAction, tag := TagAction}, State) ->
 %% utils
 %%
 -spec manager_options(options()) ->
-    _TODO.
+    mg_workers_manager:options().
 manager_options(Options) ->
-    {?MODULE, Options}.
+    #{
+        name           => maps:get(namespace, Options),
+        worker_options => {?MODULE, Options}
+    }.
 
 -spec do_tag_action(undefined | mg:tag_action(), state()) ->
     state().

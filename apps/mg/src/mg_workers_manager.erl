@@ -27,7 +27,12 @@
 -type error       () :: {loading, _Error}.
 -type thrown_error() :: {workers, error()}.
 
--spec child_spec(atom(), _Options) ->
+-type options() :: #{
+    name           => _,
+    worker_options => mg_worker:options()
+}.
+
+-spec child_spec(atom(), options()) ->
     supervisor:child_spec().
 child_spec(ChildID, Options) ->
     #{
@@ -37,19 +42,19 @@ child_spec(ChildID, Options) ->
         type     => supervisor
     }.
 
--spec start_link(_Options) ->
+-spec start_link(options()) ->
     mg_utils:gen_start_ret().
 start_link(Options) ->
     supervisor:start_link(self_reg_name(Options), ?MODULE, Options).
 
 % sync
--spec call(_Options, _ID, _Call) ->
+-spec call(options(), _ID, _Call) ->
     _Reply.
 call(Options, ID, Call) ->
     start_if_needed(Options, ID, fun() -> mg_worker:call(ID, Call) end).
 
 % async
--spec cast(_Options, _ID, _Cast) ->
+-spec cast(options(), _ID, _Cast) ->
     ok.
 cast(Options, ID, Cast) ->
     ok = start_if_needed(Options, ID, fun() -> mg_worker:cast(ID, Cast) end).
@@ -57,21 +62,21 @@ cast(Options, ID, Cast) ->
 %%
 %% supervisor callbacks
 %%
--spec init(_Options) ->
+-spec init(options()) ->
     {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init(Options) ->
     SupFlags = #{strategy => simple_one_for_one},
-    {ok, {SupFlags, [mg_worker:child_spec(machine, Options)]}}.
+    {ok, {SupFlags, [mg_worker:child_spec(worker, maps:get(worker_options, Options))]}}.
 
 %%
 %% local
 %%
--spec start_if_needed(_Options, _ID, fun()) ->
+-spec start_if_needed(options(), _ID, fun()) ->
     _.
 start_if_needed(Options, ID, Expr) ->
     start_if_needed_iter(Options, ID, Expr, 10).
 
--spec start_if_needed_iter(_Options, _ID, fun(), non_neg_integer()) ->
+-spec start_if_needed_iter(options(), _ID, fun(), non_neg_integer()) ->
     _.
 start_if_needed_iter(_, _, _, 0) ->
     % такого быть не должно
@@ -92,21 +97,21 @@ start_if_needed_iter(Options, ID, Expr, Attempts) ->
             end
     end.
 
--spec start_child(_Options, _ID) ->
+-spec start_child(options(), _ID) ->
     {ok, pid()} | {error, term()}.
 start_child(Options, ID) ->
     supervisor:start_child(self_ref(Options), [ID]).
 
 
--spec self_ref(_Options) ->
+-spec self_ref(options()) ->
     mg_utils:gen_ref().
 self_ref(Options) ->
-    {via, gproc, {n, l, wrap(Options)}}.
+    {via, gproc, {n, l, wrap(maps:get(name, Options))}}.
 
--spec self_reg_name(_Options) ->
+-spec self_reg_name(options()) ->
     mg_utils:gen_reg_name().
 self_reg_name(Options) ->
-    {via, gproc, {n, l, wrap(Options)}}.
+    {via, gproc, {n, l, wrap(maps:get(name, Options))}}.
 
 -spec wrap(_) ->
     term().

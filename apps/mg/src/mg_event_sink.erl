@@ -58,6 +58,7 @@ get_history(Options, Range) ->
     mg_machine:options().
 machine_options(DBMod) ->
     #{
+        namespace => ?MODULE,
         processor => ?MODULE,
         db        => DBMod
     }.
