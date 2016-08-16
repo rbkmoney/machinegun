@@ -156,7 +156,7 @@ pack(signal_args, {Signal, History}) ->
     };
 pack(call_args, {Args, History}) ->
     #'CallArgs'{
-        call    = pack(args   , Args   ),
+        arg     = pack(args   , Args   ),
         history = pack(history, History)
     };
 pack(signal_result, {EventBodies, ComplexAction}) ->
@@ -331,7 +331,7 @@ unpack(call_response, CallResponse) ->
     unpack(binary, CallResponse);
 unpack(signal_args, #'SignalArgs'{signal = Signal, history = History}) ->
     {unpack(signal , Signal ), unpack(history, History)};
-unpack(call_args, #'CallArgs'{call = Args, history = History}) ->
+unpack(call_args, #'CallArgs'{arg = Args, history = History}) ->
     {unpack(args, Args), unpack(history, History)};
 unpack(signal_result, #'SignalResult'{events = EventBodies, action = ComplexAction}) ->
     {unpack({list, event_body}, EventBodies), unpack(complex_action, ComplexAction)};

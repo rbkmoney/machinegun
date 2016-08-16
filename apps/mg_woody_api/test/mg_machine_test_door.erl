@@ -122,10 +122,10 @@ init({Host, Port, Path}) ->
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), _Options) ->
     {{ok, _Resp}, woody_client:context()} | no_return().
 
-handle_function(''ProcessSignal'', {SignalArgs}, WoodyContext, Options) ->
+handle_function('ProcessSignal', {SignalArgs}, WoodyContext, Options) ->
     {{ok, process_signal(Options, SignalArgs)}, WoodyContext};
 
-handle_function(''ProcessCall'', {CallArgs}, WoodyContext, Options) ->
+handle_function('ProcessCall', {CallArgs}, WoodyContext, Options) ->
     {{ok, process_call(Options, CallArgs)}, WoodyContext}.
 
 %%
@@ -143,7 +143,7 @@ process_signal(_, #'SignalArgs'{signal=Signal, history=History}) ->
 
 -spec process_call(_, mg:call_args()) ->
     mg:call_result().
-process_call(_, #'CallArgs'{call=Action, history=History}) ->
+process_call(_, #'CallArgs'{arg=Action, history=History}) ->
     State = collapse_history(History),
     {Resp, Events} = handle_action(unpack(action, Action), State),
     #'CallResult'{
@@ -260,8 +260,8 @@ automation_repair({BaseURL, NS}, Ref, Args) ->
 
 -spec automation_call(_Options, mg:ref(), mg:args()) ->
     mg:call_resp().
-automation_call({BaseURL, NS}, Ref, Call) ->
-    call_automation_service(BaseURL, 'Call', [NS, Ref, Call]).
+automation_call({BaseURL, NS}, Ref, Args) ->
+    call_automation_service(BaseURL, 'Call', [NS, Ref, Args]).
 
 -spec automation_get_history(_Options, mg:ref(), mg:history_range()) ->
     mg:history().
