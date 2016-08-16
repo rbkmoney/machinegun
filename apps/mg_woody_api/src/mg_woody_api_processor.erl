@@ -18,7 +18,7 @@ process_signal(Options, SignalArgs) ->
         call_processor(
             Options,
             woody_client:new_context(woody_client:make_id(<<"mg">>), mg_woody_api_event_handler),
-            processSignal,
+            'ProcessSignal',
             [pack(signal_args, SignalArgs)]
         ),
     unpack(signal_result, SignalResult).
@@ -31,7 +31,7 @@ process_call(Options, CallArgs) ->
             Options,
             % TODO woody context
             woody_client:new_context(woody_client:make_id(<<"mg">>), mg_woody_api_event_handler),
-            processCall,
+            'ProcessCall',
             [pack(call_args, CallArgs)]
         ),
     unpack(call_result, SignalResult).

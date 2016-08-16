@@ -122,10 +122,10 @@ init({Host, Port, Path}) ->
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), _Options) ->
     {{ok, _Resp}, woody_client:context()} | no_return().
 
-handle_function('processSignal', {SignalArgs}, WoodyContext, Options) ->
+handle_function(''ProcessSignal'', {SignalArgs}, WoodyContext, Options) ->
     {{ok, process_signal(Options, SignalArgs)}, WoodyContext};
 
-handle_function('processCall', {CallArgs}, WoodyContext, Options) ->
+handle_function(''ProcessCall'', {CallArgs}, WoodyContext, Options) ->
     {{ok, process_call(Options, CallArgs)}, WoodyContext}.
 
 %%
