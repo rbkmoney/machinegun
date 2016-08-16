@@ -1,21 +1,21 @@
--module(mg_api).
+%%%
+%%% Про woody context.
+%%% В процеессе обработки process_signal новый, т.к. нет вызывающего запроса,
+%%% в process_call же вызывающий запрос есть и контекст берётся от него.
+%%%
+-module(mg_woody_api).
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
-%% Types
+%% API
+-export_type([ns        /0]).
+-export_type([id        /0]).
+-export_type([tag       /0]).
+-export_type([args      /0]).
+-export_type([event_id  /0]).
+-export_type([event_body/0]).
+
 -export_type([config/0]).
 
-%% config
--type config_ns() ::
-    {mg_woody_api:ns(), _URL}
-.
--type config_nss() :: [config_ns()].
--type config_element() ::
-      {nss, config_nss()}
-.
--type config() :: [config_element()].
-
-
-%% API
 -export([start/0]).
 -export([stop /0]).
 
@@ -28,6 +28,23 @@
 -export([start/2]).
 -export([stop /1]).
 
+%% API
+-type ns        () :: binary().
+-type id        () :: binary().
+-type tag       () :: binary().
+-type args      () :: binary().
+-type event_id  () :: binary().
+-type event_body() :: binary().
+
+%% config
+-type config_ns() ::
+    {mg_woody_api:ns(), _URL}
+.
+-type config_nss() :: [config_ns()].
+-type config_element() ::
+      {nss, config_nss()}
+.
+-type config() :: [config_element()].
 
 %%
 %% API
@@ -41,6 +58,7 @@ start() ->
     ok.
 stop() ->
     application:stop(?MODULE).
+
 
 %%
 %% Supervisor callbacks
@@ -56,7 +74,7 @@ init([]) ->
         ++
         [
             mg_event_sink:child_spec(event_sink_options(), event_sink),
-            mg_woody_api:child_spec(api_options(ConfigNSs))
+            woody_child_spec(Config)
         ]
     }}.
 
@@ -78,6 +96,25 @@ stop(_State) ->
 %%
 -define(db_mod, mg_db_test).
 
+% TODO прокидывание сетевых настроек
+-spec woody_child_spec(config()) ->
+    supervisor:child_spec().
+woody_child_spec(Config) ->
+    woody_server:child_spec(
+        api,
+        #{
+            ip            => {0, 0, 0, 0},
+            port          => 8820,
+            net_opts      => [],
+            event_handler => mg_woody_api_event_handler,
+            handlers      => [
+                mg_woody_api_automaton :handler(api_automaton_options(proplists:get_value(nss, Config))),
+                mg_woody_api_event_sink:handler(api_event_sink_options())
+            ]
+        }
+    ).
+
+
 -spec ns_options(config_ns()) ->
     mg_machine:options().
 ns_options({NS, URL}) ->
@@ -91,14 +128,6 @@ ns_options({NS, URL}) ->
     mg_event_sink:options().
 event_sink_options() ->
     {?db_mod, event_sink}.
-
--spec api_options(config_nss()) ->
-    mg_woody_api:options().
-api_options(ConfigNSs) ->
-    #{
-        automaton  => api_automaton_options(ConfigNSs),
-        event_sink => api_event_sink_options()
-    }.
 
 -spec api_automaton_options(config_nss()) ->
     mg_woody_api_automaton:options().

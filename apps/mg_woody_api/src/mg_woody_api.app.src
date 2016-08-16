@@ -1,8 +1,8 @@
-{application, mg_api, [
+{application, mg_woody_api, [
     {description, "Machinegun FSM processor Woody API"},
     {vsn, "1"},
     {registered, []},
-    {mod, {mg_api, []}},
+    {mod, {mg_woody_api, []}},
     {applications, [
         kernel,
         stdlib,

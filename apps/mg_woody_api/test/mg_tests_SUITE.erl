@@ -128,7 +128,7 @@ init_per_group(_, C) ->
         ++
         genlib_app:start_application_with(woody, [{acceptors_pool_size, 1}])
         ++
-        genlib_app:start_application_with(mg_api, [{nss, [{?NS , <<"http://localhost:8821/processor">>}]}])
+        genlib_app:start_application_with(mg_woody_api, [{nss, [{?NS , <<"http://localhost:8821/processor">>}]}])
     ,
 
     {ok, ProcessorPid} = mg_machine_test_door:start_link({{0, 0, 0, 0}, 8821, "/processor"}),
