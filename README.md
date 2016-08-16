@@ -24,8 +24,6 @@ A service that does something
 ## Хочется ещё сделать
 
 в текущей версии:
-1. прокидывать NS в sink event
-1. добавить в event_id в sink event
 1. убрать GetLastEventID и добавить направление в history_range
 
 в следующей версии:

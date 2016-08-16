@@ -22,6 +22,8 @@
         _;
 
     %% mg base
+    (ns, mg_woody_api:ns()) ->
+        mg_proto_base_thrift:'Namespace'();
     (id, mg_woody_api:id()) ->
         mg_proto_base_thrift:'ID'();
     (tag, mg_woody_api:tag()) ->
@@ -89,6 +91,8 @@ pack({list, T}, Values) ->
     [pack(T, Value) || Value <- Values];
 
 %% mg base
+pack(ns , NS) ->
+    pack(binary, NS);
 pack(id , ID) ->
     pack(binary, ID);
 pack(tag, Tag) ->
@@ -178,11 +182,12 @@ pack(history_range, {After, Limit}) ->
          limit  = pack(integer , Limit)
     };
 
-pack(sink_event, #{source_id := SourceID, event := Event}) ->
+pack(sink_event, #{id := ID, body := #{ source_ns := SourceNS, source_id := SourceID, event := Event }}) ->
     #'SinkEvent'{
-        source_id = pack(id   , SourceID),
-        source_ns = <<"TODO ns">>,
-        event     = pack(event, Event   )
+        id        = pack(event_id, ID      ),
+        source_id = pack(id      , SourceID),
+        source_ns = pack(ns      , SourceNS),
+        event     = pack(event   , Event   )
     };
 
 pack(sink_history, SinkHistory) ->
@@ -209,6 +214,8 @@ pack(Type, Value) ->
         _;
 
     %% mg base
+    (ns, mg_proto_base_thrift:'Namespace'()) ->
+        mg_woody_api:ns();
     (id, mg_proto_base_thrift:'ID'()) ->
         mg_woody_api:id();
     (tag, mg_proto_base_thrift:'Tag'()) ->
@@ -278,6 +285,8 @@ unpack({list, T}, Values) ->
     [unpack(T, Value) || Value <- Values];
 
 %% mg base
+unpack(ns , NS) ->
+    unpack(binary, NS);
 unpack(id , ID) ->
     unpack(binary, ID);
 unpack(tag, Tag) ->
@@ -342,10 +351,15 @@ unpack(call_result, #'CallResult'{response = Response, events = EventBodies, act
 unpack(history_range, #'HistoryRange'{'after' = After, limit = Limit}) ->
     {unpack(event_id, After), unpack(integer , Limit)};
 
-unpack(sink_event, #'SinkEvent'{source_id = SourceID, source_ns = _, event = Event}) ->
+unpack(sink_event, #'SinkEvent'{id = ID, source_ns = SourceNS, source_id = SourceID, event = Event}) ->
     #{
-        source_id => unpack(id   , SourceID),
-        event     => unpack(event, Event   )
+        id   => pack(id, ID),
+        body =>
+            #{
+                source_ns => unpack(ns   , SourceNS),
+                source_id => unpack(id   , SourceID),
+                event     => unpack(event, Event   )
+            }
     };
 
 unpack(sink_history, SinkHistory) ->

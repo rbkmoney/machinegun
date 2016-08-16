@@ -35,8 +35,6 @@
 -export_type([sink_history/0]).
 
 
-
-
 %% base
 -type ns      () :: _.
 -type id      () :: _.
@@ -75,7 +73,7 @@
 
 %% event sink
 -type sink_event() :: #{
-    %% TODO ns
+    source_ns => ns(),
     source_id => id(),
     event     => event()
 }.

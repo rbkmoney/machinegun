@@ -124,7 +124,7 @@ ns_options({NS, URL}) ->
         namespace => NS,
         db        => {?db_mod, erlang:binary_to_atom(NS, utf8)},
         processor => {mg_woody_api_processor, URL},
-        observer  => {mg_event_sink, event_sink_options()}
+        observer  => {mg_event_sink, {event_sink_options(), NS}}
     }.
 
 -spec event_sink_options() ->
