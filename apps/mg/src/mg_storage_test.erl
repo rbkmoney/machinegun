@@ -1,12 +1,15 @@
 -module(mg_storage_test).
--behaviour(mg_storage).
--behaviour(supervisor).
 
 %% supervisor callbacks
+-behaviour(supervisor).
 -export([init/1]).
 
+%% internal API
+-export([start_link/1]).
+
 %% mg_storage callbacks
--export([child_spec/2, start_link/1, create_machine/3, get_machine/3, update_machine/4, add_tag/3, resolve_tag/2]).
+-behaviour(mg_storage).
+-export([child_spec/2, create/3, get_status/2, update_status/4, add_events/3, get_history/3, add_tag/3, resolve_tag/2]).
 
 %%
 %% supervisor callbacks
@@ -16,9 +19,17 @@
 init(Options) ->
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags, [
-        mg_storage_test_server:child_spec(server, Options),
-        mg_timers        :child_spec(timers, Options)
+        mg_storage_test_server:child_spec(Options, server),
+        mg_timers             :child_spec(timers, Options)
     ]}}.
+
+%%
+%% internal API
+%%
+-spec start_link(_Options) ->
+    mg_utils:gen_start_ret().
+start_link(Options) ->
+    supervisor:start_link(?MODULE, Options).
 
 %%
 %% mg_storage callbacks
@@ -33,50 +44,37 @@ child_spec(Options, ChildID) ->
         shutdown => 5000
     }.
 
--spec start_link(_Options) ->
-    mg_utils:gen_start_ret().
-start_link(Options) ->
-    supervisor:start_link(?MODULE, Options).
-
--spec create_machine(_Options, mg:id(), mg:args()) ->
+-spec create(_Options, mg:id(), _Args) ->
     ok.
-create_machine(Options, ID, Args) ->
-    _ = try_throw_random_error(),
-    mg_storage_test_server:create_machine(Options, ID, Args).
+create(Options, ID, Args) ->
+    mg_storage_test_server:create(Options, ID, Args).
 
--spec get_machine(_Options, mg:id(), mg:history_range() | undefined) ->
-    mg_storage:machine().
-get_machine(Options, ID, Range) ->
-    _ = try_throw_random_error(),
-    mg_storage_test_server:get_machine(Options, ID, Range).
+-spec get_status(_Options, mg:id()) ->
+    mg_storage:status().
+get_status(Options, ID) ->
+    mg_storage_test_server:get_status(Options, ID).
 
--spec update_machine(_Options, mg_storage:machine(), mg_storage:machine(), mg_storage:timer_handler()) ->
+-spec update_status(_Options, mg:id(), mg_storage:status(), mg_storage:timer_handler()) ->
     ok.
-update_machine(Options, OldMachine, NewMachine, TimerHandler) ->
-    _ = try_throw_random_error(),
-    mg_storage_test_server:update_machine(Options, OldMachine, NewMachine, TimerHandler).
+update_status(Options, ID, Status, TimerHandler) ->
+    mg_storage_test_server:update_status(Options, ID, Status, TimerHandler).
+
+-spec add_events(_Options, mg:id(), [mg:event()]) ->
+    ok.
+add_events(Options, ID, Events) ->
+    mg_storage_test_server:add_events(Options, ID, Events).
+
+-spec get_history(_Options, mg:id(), mg:history_range() | undefined) ->
+    mg:history().
+get_history(Options, ID, Range) ->
+    mg_storage_test_server:get_history(Options, ID, Range).
 
 -spec add_tag(_Options, mg:id(), mg:tag()) ->
     ok.
 add_tag(Options, ID, Tag) ->
-    _ = try_throw_random_error(),
     mg_storage_test_server:add_tag(Options, ID, Tag).
 
 -spec resolve_tag(_Options, mg:tag()) ->
     mg:id().
 resolve_tag(Options, Tag) ->
-    _ = try_throw_random_error(),
     mg_storage_test_server:resolve_tag(Options, Tag).
-
--spec try_throw_random_error() ->
-    ok | no_return().
-try_throw_random_error() ->
-    % TODO
-    ok.
-    % % seed пока не делаем специально, для воспроизводимости ошибок
-    % case random:uniform() of
-    %     V when V =< 0.2 ->
-    %         ok;
-    %     _ ->
-    %         ok
-    % end.

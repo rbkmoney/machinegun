@@ -4,7 +4,6 @@
 %%% storage заведует таймерами.
 %%%
 %%% TODO:
-%%%  - переделать на add_tag/resolve_tag
 %%%  - переделать на add_event/read_history
 %%%  - как-то странно тут выглядят таймеры, их бы сделать более явно и понятно или вынести
 %%%  - нужно разделить на ожидаемые и неожидаемые ошибки
@@ -13,26 +12,26 @@
 
 %% API
 -export_type([status       /0]).
--export_type([machine      /0]).
 -export_type([timer_handler/0]).
 
 -export_type([error       /0]).
 -export_type([thrown_error/0]).
 
--export([child_spec    /2]).
--export([create_machine/3]).
--export([get_machine   /3]).
--export([update_machine/4]).
--export([add_tag       /3]).
--export([resolve_tag   /2]).
+-export([child_spec   /2]).
+-export([create       /3]).
+-export([get_status   /2]).
+-export([update_status/4]).
+-export([add_events   /3]).
+-export([get_history  /3]).
+-export([add_tag      /3]).
+-export([resolve_tag  /2]).
 
--export([throw_error   /1]).
+-export([throw_error  /1]).
 
 %%
 %% API
 %%
 -type status       () :: {created, mg:args()} | {working, calendar:datetime() | undefined} | {error, _Reason}.
--type machine      () :: {mg:id(), status(), mg:history()}.
 -type timer_handler() :: {module(), atom(), [_Arg]}.
 
 -type error       () :: term().
@@ -43,14 +42,20 @@
 -callback child_spec(_Options, atom()) ->
     supervisor:child_spec().
 
--callback create_machine(_Options, mg:id(), _Args) ->
+-callback create(_Options, mg:id(), _Args) ->
     ok.
 
--callback get_machine(_Options, mg:id(), mg:history_range() | undefined) ->
-    machine().
+-callback get_status(_Options, mg:id()) ->
+    status().
 
--callback update_machine(_Options, Old::machine(), New::machine(), timer_handler()) ->
+-callback update_status(_Options, mg:id(), status(), timer_handler()) ->
     ok.
+
+-callback add_events(_Options, mg:id(), [mg:event()]) ->
+    ok.
+
+-callback get_history(_Options, mg:id(), mg:history_range()) ->
+    mg:history().
 
 -callback add_tag(_Options, mg:id(), mg:tag()) ->
     ok.
@@ -65,20 +70,30 @@
 child_spec(Options, Name) ->
     mg_utils:apply_mod_opts(Options, child_spec, [Name]).
 
--spec create_machine(_Options, mg:id(), _Args) ->
+-spec create(_Options, mg:id(), _Args) ->
     ok.
-create_machine(Options, ID, Args) ->
-    mg_utils:apply_mod_opts(Options, create_machine, [ID, Args]).
+create(Options, ID, Args) ->
+    mg_utils:apply_mod_opts(Options, create, [ID, Args]).
 
--spec get_machine(_Options, mg:id(), mg:history_range() | undefined) ->
-    machine().
-get_machine(Options, ID, Range) ->
-    mg_utils:apply_mod_opts(Options, get_machine, [ID, Range]).
+-spec get_status(_Options, mg:id()) ->
+    status().
+get_status(Options, ID) ->
+    mg_utils:apply_mod_opts(Options, get_status, [ID]).
 
--spec update_machine(_Options, Old::machine(), New::machine(), timer_handler()) ->
+-spec update_status(_Options, mg:id(), status(), timer_handler()) ->
     ok.
-update_machine(Options, OldMachine, NewMachine, TimerHandler) ->
-    mg_utils:apply_mod_opts(Options, update_machine, [OldMachine, NewMachine, TimerHandler]).
+update_status(Options, ID, Status, TimerHandler) ->
+    mg_utils:apply_mod_opts(Options, update_status, [ID, Status, TimerHandler]).
+
+-spec add_events(_Options, mg:id(), [mg:event()]) ->
+    ok.
+add_events(Options, ID, Events) ->
+    mg_utils:apply_mod_opts(Options, add_events, [ID, Events]).
+
+-spec get_history(_Options, mg:id(), mg:history_range() | undefined) ->
+    mg:history().
+get_history(Options, ID, Range) ->
+    mg_utils:apply_mod_opts(Options, get_history, [ID, Range]).
 
 -spec add_tag(_Options, mg:id(), mg:tag()) ->
     ok.

@@ -1,22 +1,34 @@
 -module(mg_storage_test_server).
 -include_lib("stdlib/include/ms_transform.hrl").
 
-%% API
+%% internal API
+-export([start_link/1]).
+
+%% mg_storage callbacks
 -export_type([options/0]).
--export([child_spec/2, start_link/1, create_machine/3, get_machine/3, update_machine/4, add_tag/3, resolve_tag/2]).
+-behaviour(mg_storage).
+-export([child_spec/2, create/3, get_status/2, update_status/4, add_events/3, get_history/3, add_tag/3, resolve_tag/2]).
 
 %% gen_server callbacks
 -behaviour(gen_server).
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3, code_change/3, terminate/2]).
 
 %%
-%% API
+%% internal API
+%%
+-spec start_link(options()) ->
+    mg_utils:gen_start_ret().
+start_link(Options) ->
+    gen_server:start_link(self_reg_name(Options), ?MODULE, Options, []).
+
+%%
+%% mg_storage callbacks
 %%
 -type options() :: _Name::atom().
 
--spec child_spec(atom(), options()) ->
+-spec child_spec(options(), atom()) ->
     supervisor:child_spec().
-child_spec(ChildID, Options) ->
+child_spec(Options, ChildID) ->
     #{
         id       => ChildID,
         start    => {?MODULE, start_link, [Options]},
@@ -24,44 +36,49 @@ child_spec(ChildID, Options) ->
         shutdown => 5000
     }.
 
--spec start_link(options()) ->
-    mg_utils:gen_start_ret().
-start_link(Options) ->
-    gen_server:start_link(self_reg_name(Options), ?MODULE, Options, []).
-
-%%
-
--spec create_machine(options(), mg:id(), mg:args()) ->
+-spec create(_Options, mg:id(), _Args) ->
     ok.
-create_machine(Options, ID, Args) ->
-    throw_if_error(gen_server:call(self_ref(Options), {create_machine, ID, Args})).
+create(Options, ID, Args) ->
+    throw_if_error(gen_server:call(self_ref(Options), {create, ID, Args})).
 
--spec get_machine(options(), mg:id(), mg:history_range() | undefined) ->
-    mg_storage:machine().
-get_machine(Options, ID, Range) ->
-    throw_if_error(gen_server:call(self_ref(Options), {get_machine, ID, Range})).
+-spec get_status(_Options, mg:id()) ->
+    mg_storage:status().
+get_status(Options, ID) ->
+    throw_if_error(gen_server:call(self_ref(Options), {get_status, ID})).
 
--spec update_machine(options(), mg_storage:machine(), mg_storage:machine(), mg_storage:timer_handler()) ->
+-spec update_status(_Options, mg:id(), mg_storage:status(), mg_storage:timer_handler()) ->
     ok.
-update_machine(Options, _OldMachine, NewMachine, TimerHandler) ->
-    throw_if_error(gen_server:call(self_ref(Options), {update_machine, NewMachine, TimerHandler})).
+update_status(Options, ID, Status, TimerHandler) ->
+    throw_if_error(gen_server:call(self_ref(Options), {update_status, ID, Status, TimerHandler})).
+
+-spec add_events(_Options, mg:id(), [mg:event()]) ->
+    ok.
+add_events(Options, ID, Events) ->
+    throw_if_error(gen_server:call(self_ref(Options), {add_events, ID, Events})).
+
+-spec get_history(_Options, mg:id(), mg:history_range() | undefined) ->
+    mg:history().
+get_history(Options, ID, Range) ->
+    throw_if_error(gen_server:call(self_ref(Options), {get_history, ID, Range})).
 
 -spec add_tag(_Options, mg:id(), mg:tag()) ->
     ok.
 add_tag(Options, ID, Tag) ->
     throw_if_error(gen_server:call(self_ref(Options), {add_tag, ID, Tag})).
 
--spec resolve_tag(options(), mg:tag()) ->
+-spec resolve_tag(_Options, mg:tag()) ->
     mg:id().
 resolve_tag(Options, Tag) ->
     throw_if_error(gen_server:call(self_ref(Options), {resolve_tag, Tag})).
+
 
 %%
 %% gen_server callbacks
 %%
 -type state() :: #{
-    machines => #{mg:id () => mg_storage:machine()},
-    tags     => #{mg:tag() => mg        :id     ()},
+    machines => #{mg:id () =>  mg_storage:status() },
+    events   => #{mg:id () => [mg        :event ()]},
+    tags     => #{mg:tag() =>  mg        :id    () },
     options  => options()
 }.
 
@@ -71,6 +88,7 @@ init(Options) ->
     {ok,
         #{
             machines => #{},
+            events   => #{},
             tags     => #{},
             options  => Options
         }
@@ -78,15 +96,21 @@ init(Options) ->
 
 -spec handle_call(_Call, mg_utils:gen_server_from(), state()) ->
     mg_utils:gen_server_handle_call_ret(state()).
-handle_call({create_machine, ID, Args}, _From, State) ->
-    {Resp, NewState} = do_create_machine(ID, Args, State),
+handle_call({create, ID, Args}, _From, State) ->
+    {Resp, NewState} = do_create(ID, Args, State),
     {reply, Resp, NewState};
-handle_call({get_machine, ID, Range}, _From, State) ->
-    Resp = do_get_machine(ID, Range, State),
+handle_call({get_status, ID}, _From, State) ->
+    Resp = do_get_status(ID, State),
     {reply, Resp, State};
-handle_call({update_machine, NewMachine, TimerHandler}, _From, State) ->
-    {Resp, NewState} = do_update_machine(NewMachine, TimerHandler, State),
+handle_call({update_status, ID, Status, TimerHandler}, _From, State) ->
+    {Resp, NewState} = do_update_status(ID, Status, TimerHandler, State),
     {reply, Resp, NewState};
+handle_call({add_events, ID, Events}, _From, State) ->
+    {Resp, NewState} = do_add_events(ID, Events, State),
+    {reply, Resp, NewState};
+handle_call({get_history, ID, Range}, _From, State) ->
+    Resp = do_get_history(ID, Range, State),
+    {reply, Resp, State};
 handle_call({add_tag, ID, Tag}, _From, State) ->
     {Resp, NewState} = do_add_tag(ID, Tag, State),
     {reply, Resp, NewState};
@@ -149,35 +173,54 @@ throw_if_error({error, Error}) ->
     mg_storage:throw_error(Error).
 
 
--spec do_create_machine(mg:id(), mg:args(), state()) ->
+-spec do_create(mg:id(), mg:args(), state()) ->
     {ok | {error, machine_already_exist}, state()}.
-do_create_machine(ID, Args, State=#{machines:=Machines}) ->
+do_create(ID, Args, State=#{machines:=Machines}) ->
     case maps:is_key(ID, Machines) of
         false ->
-            {ok, do_store_machine({ID, {created, Args}, []}, State)};
+            {ok, do_store_events(ID, [], do_store_machine(ID, {created, Args}, State))};
         true ->
             {{error, machine_already_exist}, State}
     end.
 
--spec do_get_machine(mg:id(), mg:history_range(), state()) ->
-    {ok, mg_storage:machine()} | {error, machine_not_found}.
-do_get_machine(ID, Range, #{machines:=Machines}) ->
-    case maps:get(ID, Machines, machine_not_found) of
-        Machine = {_, _, _} ->
-            {ok, filter_machine_history(Machine, Range)};
-        machine_not_found ->
-            {error, machine_not_found}
+-spec do_get_status(mg:id(), state()) ->
+    {ok, mg_storage:status()} | {error, machine_not_found}.
+do_get_status(ID, #{machines:=Machines}) ->
+    try
+        {ok, maps:get(ID, Machines)}
+    catch error:{badkey, ID} ->
+        {error, machine_not_found}
     end.
 
--spec do_update_machine(mg_storage:machine(), mg_storage:timer_handler(), state()) ->
-    {ok, mg:id()} | {error, machine_not_found}.
-do_update_machine(NewMachine={ID, _, _}, TimerHandler, State=#{machines:=Machines, options:=Options}) ->
+-spec do_update_status(mg:id(), mg_storage:status(), mg_storage:timer_handler(), state()) ->
+    {ok | {error, machine_not_found}, state()}.
+do_update_status(ID, Status, TimerHandler, State=#{machines:=Machines, options:=Options}) ->
     case maps:is_key(ID, Machines) of
         true ->
-            ok = try_set_timer(Options, NewMachine, TimerHandler),
-            {ok, do_store_machine(NewMachine, State)};
+            ok = try_set_timer(Options, ID, Status, TimerHandler),
+            {ok, do_store_machine(ID, Status, State)};
         false ->
             {{error, machine_not_found}, State}
+    end.
+
+-spec do_add_events(mg:id(), [mg:event()], state()) ->
+    {ok | {error, machine_not_found}, state()}.
+do_add_events(ID, NewMachineEvents, State=#{events:=Events}) ->
+    case maps:get(ID, Events, undefined) of
+        undefined ->
+            {{error, machine_not_found}, State};
+        MachineEvents ->
+            {ok, do_store_events(ID, NewMachineEvents ++ MachineEvents, State)}
+    end.
+
+-spec do_get_history(mg:id(), mg:history_range(), state()) ->
+    {ok, mg:history()} | {error, machine_not_found}.
+do_get_history(ID, Range, #{events:=Events}) ->
+    case maps:get(ID, Events, undefined) of
+        undefined ->
+            {error, machine_not_found};
+        MachineEvents ->
+            {ok, filter_history(MachineEvents, Range)}
     end.
 
 -spec do_add_tag(mg:id(), mg:tag(), state()) ->
@@ -199,28 +242,32 @@ do_resolve_tag(Tag, #{tags:=Tags}) ->
         {error, machine_not_found}
     end.
 
-
--spec do_store_machine(mg_storage:machine(), state()) ->
+-spec do_store_machine(mg:id(), mg_storage:status(), state()) ->
     state().
-do_store_machine(Machine={ID, _, _}, State=#{machines:=Machines}) ->
-    State#{machines:=maps:put(ID, Machine, Machines)}.
+do_store_machine(ID, Status, State=#{machines:=Machines}) ->
+    State#{machines:=maps:put(ID, Status, Machines)}.
 
--spec try_set_timer(options(), mg_storage:machine(), mg_storage:timer_handler()) ->
+-spec do_store_events(mg:id(), [mg:event()], state()) ->
+    state().
+do_store_events(ID, MachineEvents, State=#{events:=Events}) ->
+    State#{events:=maps:put(ID, MachineEvents, Events)}.
+
+-spec try_set_timer(options(), mg:id(), mg_storage:status(), mg_storage:timer_handler()) ->
     ok.
-try_set_timer(Options, {ID, {working, TimerDateTime}, _}, TimerHandler) when TimerDateTime =/= undefined ->
+try_set_timer(Options, ID, {working, TimerDateTime}, TimerHandler) when TimerDateTime =/= undefined ->
     mg_timers:set(Options, ID, TimerDateTime, TimerHandler);
-try_set_timer(_Options, {_, _, _}, _) ->
+try_set_timer(_Options, _, _, _) ->
     ok.
 
 %%
 %% history filtering
 %%
--spec filter_machine_history(mg_storage:machine(), mg:history_range() | undefined) ->
-    mg_storage:machine().
-filter_machine_history(Machine, undefined) ->
-    Machine;
-filter_machine_history({ID, Status, History}, {After, Limit, Direction}) ->
-    {ID, Status, filter_history(apply_direction(Direction, History), After, Limit)}.
+-spec filter_history(mg:history(), mg:history_range() | undefined) ->
+    mg:history().
+filter_history(History, undefined) ->
+    History;
+filter_history(History, {After, Limit, Direction}) ->
+    lists:reverse(filter_history_iter(apply_direction(Direction, History), After, Limit, [])).
 
 -spec apply_direction(mg:direction(), mg:history()) ->
     mg:history().
@@ -228,11 +275,6 @@ apply_direction(forward, History) ->
     lists:reverse(History);
 apply_direction(backward, History) ->
     History.
-
--spec filter_history(mg:history(), mg:event_id() | undefined, pos_integer()) ->
-    mg:history().
-filter_history(History, After, Limit) ->
-    lists:reverse(filter_history_iter(lists:reverse(History), After, Limit, [])).
 
 -spec filter_history_iter(mg:history(), mg:event_id() | undefined, non_neg_integer(), mg:history()) ->
     mg:history().

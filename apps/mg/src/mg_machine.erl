@@ -79,7 +79,7 @@ start(Options, ID, Args) ->
     ?safe(
         begin
             % создать в бд
-            ok = mg_storage:create_machine(get_options(storage, Options), ID, Args),
+            ok = mg_storage:create(get_options(storage, Options), ID, Args),
             % зафорсить загрузку
             ok = touch(Options, ID, sync)
         end
@@ -112,17 +112,13 @@ call(Options, Ref, Call) ->
 -spec get_history(options(), mg:ref(), mg:history_range()) ->
     mg:history().
 get_history(Options, Ref, Range) ->
-    {_, _, History} =
-        ?safe(
-            check_machine_status(
-                mg_storage:get_machine(
-                    get_options(storage, Options),
-                    ref2id(Options, Ref),
-                    Range
-                )
-            )
-        ),
-    History.
+    ?safe(
+        mg_storage:get_history(
+            get_options(storage, Options),
+            ref2id(Options, Ref),
+            Range
+        )
+    ).
 
 %%
 %% Internal API
@@ -165,13 +161,12 @@ init(Options) ->
     {ok, state()} | {error, mg_storage:error()}.
 handle_load(ID, Options) ->
     try
-        {ID, Status, History} = mg_storage:get_machine(get_options(storage, Options), ID, undefined),
         State =
             #{
                 id      => ID,
                 options => Options,
-                status  => Status,
-                history => History
+                status  => mg_storage:get_status (get_options(storage, Options), ID           ),
+                history => mg_storage:get_history(get_options(storage, Options), ID, undefined)
             },
         {ok, transit_state(State, handle_load_(State))}
     catch throw:DBError ->
@@ -198,19 +193,8 @@ handle_unload(_) ->
 
 -spec transit_state(state(), state()) ->
     state().
-transit_state(OldState=#{id:=OldID}, NewState=#{id:=NewID, options:=Options}) when NewID =:= OldID ->
-    ok = mg_storage:update_machine(
-            get_options(storage, Options),
-            state_to_machine(OldState),
-            state_to_machine(NewState),
-            {?MODULE, handle_timeout, [Options]}
-        ),
+transit_state(#{id:=ID}, NewState=#{id:=NewID}) when NewID =:= ID ->
     NewState.
-
--spec state_to_machine(state()) ->
-    mg_storage:machine().
-state_to_machine(#{id:=ID, status:=Status, history:=History}) ->
-    {ID, Status, History}.
 
 %%
 
@@ -308,7 +292,8 @@ notify_observer(Events, #{id:=SourceID, options:=Options}) ->
 
 -spec append_events_to_history([mg:event()], state()) ->
     state().
-append_events_to_history(Events, State=#{history:=History}) ->
+append_events_to_history(Events, State=#{id:=ID, history:=History, options:=Options}) ->
+    ok = mg_storage:add_events(get_options(storage, Options), ID, Events),
     State#{history := History ++ Events}.
 
 -spec generate_events([mg:event_body()], mg:event_id()) ->
@@ -380,14 +365,9 @@ do_set_timer_action(TimerAction, State) ->
 
 -spec set_status(mg_storage:status(), state()) ->
     state().
-set_status(NewStatus, State) ->
+set_status(NewStatus, State=#{id:=ID, options:=Options}) ->
+    ok = mg_storage:update_status(get_options(storage, Options), ID, NewStatus, {?MODULE, handle_timeout, [Options]}),
     State#{status:=NewStatus}.
-
--spec check_machine_status(mg_storage:machine()) ->
-    mg_storage:machine() | no_return().
-check_machine_status(Machine) ->
-    % TODO error handling
-    Machine.
 
 -spec ref2id(options(), mg:ref()) ->
     _ID.
