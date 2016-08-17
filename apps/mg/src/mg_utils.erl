@@ -29,6 +29,8 @@
 -export([apply_mod_opts   /3]).
 -export([separate_mod_opts/1]).
 
+-export([throw_if_error/2]).
+
 %%
 %% API
 %% OTP
@@ -132,3 +134,18 @@ separate_mod_opts(ModOpts={_, _}) ->
     ModOpts;
 separate_mod_opts(Mod) ->
     {Mod, undefined}.
+
+-spec throw_if_error(ok | error | tuple(), _) ->
+    _.
+throw_if_error(ok, _) ->
+    ok;
+throw_if_error({ok, R}, _) ->
+    R;
+throw_if_error(OK, _) when is_tuple(OK) andalso element(1, OK) =:= ok ->
+    erlang:delete_element(1, OK);
+throw_if_error(error, Exception) ->
+    throw(Exception);
+throw_if_error({error, Error}, Exception) ->
+    throw({Exception, Error});
+throw_if_error(Error, Exception) when is_tuple(Error) andalso element(1, Error) =:= error ->
+    throw({Exception, erlang:delete_element(1, Error)}).
