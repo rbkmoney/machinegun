@@ -122,7 +122,7 @@ woody_child_spec(Config) ->
 ns_options({NS, URL}) ->
     #{
         namespace => NS,
-        db        => {?db_mod, erlang:binary_to_atom(NS, utf8)},
+        storage   => {?db_mod, erlang:binary_to_atom(NS, utf8)},
         processor => {mg_woody_api_processor, URL},
         observer  => {mg_event_sink, {event_sink_options(), NS}}
     }.

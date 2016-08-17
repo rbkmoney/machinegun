@@ -57,7 +57,7 @@ machine_options(Options) ->
     #{
         namespace => ?MODULE,
         processor => ?MODULE,
-        db        => Options
+        storage   => Options
     }.
 
 

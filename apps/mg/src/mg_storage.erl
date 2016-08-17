@@ -1,7 +1,7 @@
 %%%
 %%% Базовое поведение для хранилища данных машин.
 %%% Каждая пишушая операция должна быть атомарной, это важно.
-%%% DB заведует таймерами.
+%%% storage заведует таймерами.
 %%%
 %%% TODO:
 %%%  - переименовать в storage
@@ -36,7 +36,7 @@
 -type timer_handler() :: {module(), atom(), [_Arg]}.
 
 -type error       () :: term().
--type thrown_error() :: {db, error()}.
+-type thrown_error() :: {storage, error()}.
 
 %%
 
@@ -87,4 +87,4 @@ resolve_tag(Options, Tag) ->
 -spec throw_error(error()) ->
     no_return().
 throw_error(Error) ->
-    erlang:throw({db, Error}).
+    erlang:throw({storage, Error}).

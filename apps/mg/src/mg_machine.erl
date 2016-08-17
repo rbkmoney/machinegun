@@ -42,7 +42,7 @@
 %%
 -type options() :: #{
     namespace => mg:ns(),
-    db        => mg_utils:mod_opts(),
+    storage   => mg_utils:mod_opts(),
     processor => mg_utils:mod_opts(),
     observer  => mg_utils:mod_opts() | undefined
 }.
@@ -79,7 +79,7 @@ start(Options, ID, Args) ->
     ?safe(
         begin
             % создать в бд
-            ok = mg_storage:create_machine(get_options(db, Options), ID, Args),
+            ok = mg_storage:create_machine(get_options(storage, Options), ID, Args),
             % зафорсить загрузку
             ok = touch(Options, ID, sync)
         end
@@ -116,7 +116,7 @@ get_history(Options, Ref, Range) ->
         ?safe(
             check_machine_status(
                 mg_storage:get_machine(
-                    get_options(db, Options),
+                    get_options(storage, Options),
                     ref2id(Options, Ref),
                     Range
                 )
@@ -148,7 +148,7 @@ init(Options) ->
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags, [
         mg_workers_manager:child_spec(manager, manager_options(Options)),
-        mg_storage:child_spec(get_options(db, Options), db)
+        mg_storage:child_spec(get_options(storage, Options), storage)
     ]}}.
 
 %%
@@ -166,7 +166,7 @@ init(Options) ->
     {ok, state()} | {error, mg_storage:error()}.
 handle_load(ID, Options) ->
     try
-        {ID, Status, History, Tags} = mg_storage:get_machine(get_options(db, Options), ID, undefined),
+        {ID, Status, History, Tags} = mg_storage:get_machine(get_options(storage, Options), ID, undefined),
         State =
             #{
                 id      => ID,
@@ -202,7 +202,7 @@ handle_unload(_) ->
     state().
 transit_state(OldState=#{id:=OldID}, NewState=#{id:=NewID, options:=Options}) when NewID =:= OldID ->
     ok = mg_storage:update_machine(
-            get_options(db, Options),
+            get_options(storage, Options),
             state_to_machine(OldState),
             state_to_machine(NewState),
             {?MODULE, handle_timeout, [Options]}
@@ -395,11 +395,11 @@ check_machine_status(Machine) ->
 -spec ref2id(options(), mg:ref()) ->
     _ID.
 ref2id(Options, {tag, Tag}) ->
-    mg_storage:resolve_tag(get_options(db, Options), Tag);
+    mg_storage:resolve_tag(get_options(storage, Options), Tag);
 ref2id(_, {id, ID}) ->
     ID.
 
--spec get_options(processor | db | observer, options()) ->
+-spec get_options(processor | storage | observer, options()) ->
     mg_utils:mod_opts().
 get_options(Subj=observer, Options) ->
     maps:get(Subj, Options, undefined);
@@ -431,13 +431,13 @@ handle_error({Class, Reason, Stacktrace}) ->
 
 -spec map_error(_, _) ->
     _.
-map_error(throw, {workers, {loading, Error={db, _}}}) ->
+map_error(throw, {workers, {loading, Error={storage, _}}}) ->
     map_error(throw, Error);
-map_error(throw, {db, machine_not_found}) ->
+map_error(throw, {storage, machine_not_found}) ->
     machine_not_found;
-map_error(throw, {db, machine_already_exist}) ->
+map_error(throw, {storage, machine_already_exist}) ->
     machine_already_exist;
-map_error(throw, {db, _}) ->
+map_error(throw, {storage, _}) ->
     % TODO
     exit(todo);
 map_error(throw, {processor, _}) ->
