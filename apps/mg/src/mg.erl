@@ -54,7 +54,7 @@
     created_at => calendar:datetime(),
     body       => event_body()
 }.
--type history      () :: [event_body()].
+-type history      () :: [event()].
 
 %% actions
 -type tag_action      () :: tag().

@@ -42,9 +42,9 @@
 .
 -type config_nss() :: [config_ns()].
 -type config_element() ::
-      {nss     ,      config_nss  ()}
-    | {ip      , inet:ip_address  ()}
-    | {port    , inet:port_address()}
+      {nss     ,      config_nss ()}
+    | {ip      , inet:ip_address ()}
+    | {port    , inet:port_number()}
     | {net_opts, []                 } % в вуди нет для этого типа :(
 .
 -type config() :: [config_element()].

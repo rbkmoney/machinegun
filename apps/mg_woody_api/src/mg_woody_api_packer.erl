@@ -8,77 +8,8 @@
 %%
 %% API
 %%
--spec pack
-    %% system
-    % (_, undefined) ->
-    %     undefined;
-    (binary, binary()) ->
-        binary();
-    (integer, integer()) ->
-        integer();
-    (timestamp, calendar:datetime()) ->
-        mg_proto_base_thrift:'Timestamp'();
-    ({list, _}, _) ->
-        _;
-
-    %% mg base
-    (ns, mg_woody_api:ns()) ->
-        mg_proto_base_thrift:'Namespace'();
-    (id, mg_woody_api:id()) ->
-        mg_proto_base_thrift:'ID'();
-    (tag, mg_woody_api:tag()) ->
-        mg_proto_base_thrift:'Tag'();
-    (args, mg_woody_api:args()) ->
-        mg_proto_state_processing_thrift:'Args'();
-    (timeout, mg:timeout_()) ->
-        mg_proto_base_thrift:'Timeout'();
-    (timer, mg:timer()) ->
-        mg_proto_base_thrift:'Timer'();
-    (ref, mg:ref()) ->
-        mg_proto_state_processing_thrift:'Reference'();
-    (direction, mg:direction()) ->
-        mg_proto_state_processing_thrift:'Direction'();
-
-    %% events and history
-    (event_id, mg_woody_api:event_id()) ->
-        mg_proto_base_thrift:'EventID'();
-    (event_body, mg_woody_api:event_body()) ->
-        mg_proto_state_processing_thrift:'EventBody'();
-    (event, mg:event()) ->
-        mg_proto_state_processing_thrift:'Event'();
-    (history, mg:history()) ->
-        mg_proto_state_processing_thrift:'History'();
-
-    %% actions
-    (tag_action, mg:tag_action()) ->
-        mg_proto_state_processing_thrift:'TagAction'();
-    (set_timer_action, mg:set_timer_action()) ->
-        mg_proto_state_processing_thrift:'SetTimerAction'();
-    (complex_action, mg:complex_action()) ->
-        mg_proto_state_processing_thrift:'ComplexAction'();
-
-    %% calls, signals, get_gistory
-    (signal, mg:signal()) ->
-        mg_proto_state_processing_thrift:'Signal'();
-    (call_response, mg:call_response()) ->
-        mg_proto_state_processing_thrift:'CallResponse'();
-    (signal_args, mg:signal_args()) ->
-        mg_proto_state_processing_thrift:'SignalArgs'();
-    (call_args, mg:call_args()) ->
-        mg_proto_state_processing_thrift:'CallArgs'();
-    (call_result, mg:call_result()) ->
-        mg_proto_state_processing_thrift:'CallResult'();
-    (history_range, mg:history_range()) ->
-        mg_proto_state_processing_thrift:'HistoryRange'();
-
-    %% event sink
-    (sink_event, mg:sink_event()) ->
-        mg_proto_state_processing_thrift:'SinkEvent'();
-    (sink_history, mg:sink_history()) ->
-        mg_proto_state_processing_thrift:'SinkHistory'().
-
-    % (_, _) ->
-    %     no_return().
+-spec pack(_, _) ->
+    _.
 
 %% system
 pack(_, undefined) ->
@@ -203,82 +134,8 @@ pack(Type, Value) ->
 
 %%
 
--spec unpack
-    %% system
-    % (_, undefined) ->
-    %     undefined;
-    (binary, binary()) ->
-        binary();
-    (integer, integer()) ->
-        integer();
-    (timestamp, mg_proto_base_thrift:'Timestamp'()) ->
-        % TODO какой-то пипец с диалайзером, если честно поставить тип, то всё оказывается плохо
-        % calendar:datetime();
-        binary();
-    ({list, _}, _) ->
-        _;
-
-    %% mg base
-    (ns, mg_proto_base_thrift:'Namespace'()) ->
-        mg_woody_api:ns();
-    (id, mg_proto_base_thrift:'ID'()) ->
-        mg_woody_api:id();
-    (tag, mg_proto_base_thrift:'Tag'()) ->
-        mg_woody_api:tag();
-    (args, mg_proto_state_processing_thrift:'Args'()) ->
-        mg_woody_api:args();
-    (timeout, mg_proto_base_thrift:'Timeout'()) ->
-        mg:timeout_();
-    (timer, mg_proto_base_thrift:'Timer'()) ->
-        mg:timer();
-    (ref, mg_proto_state_processing_thrift:'Reference'()) ->
-        mg:ref();
-    (direction, mg_proto_state_processing_thrift:'Direction'()) ->
-        mg:direction();
-
-    %% events and history
-    (event_id, mg_proto_base_thrift:'EventID'()) ->
-        mg_woody_api:event_id();
-    (event_body, mg_proto_state_processing_thrift:'EventBody'()) ->
-        mg_woody_api:event_body();
-    (event, mg_proto_state_processing_thrift:'Event'()) ->
-        mg:event();
-    (history, mg_proto_state_processing_thrift:'History'()) ->
-        mg:history();
-
-    %% actions
-    (tag_action, mg_proto_state_processing_thrift:'TagAction'()) ->
-        mg:tag_action();
-    (set_timer_action, mg_proto_state_processing_thrift:'SetTimerAction'()) ->
-        mg:set_timer_action();
-    (complex_action, mg_proto_state_processing_thrift:'ComplexAction'()) ->
-        mg:complex_action();
-
-    %% calls, signals, get_gistory
-    (signal, mg_proto_state_processing_thrift:'Signal'()) ->
-        mg:signal();
-    (call_response, mg_proto_state_processing_thrift:'CallResponse'()) ->
-        mg:call_response();
-    (signal_args, mg_proto_state_processing_thrift:'SignalArgs'()) ->
-        mg:signal_args();
-    (call_args, mg_proto_state_processing_thrift:'CallArgs'()) ->
-        mg:call_args();
-    (signal_result, mg_proto_state_processing_thrift:'SignalResult'()) ->
-        mg:signal_result();
-    (call_result, mg_proto_state_processing_thrift:'CallResult'()) ->
-        mg:call_result();
-    (history_range, mg_proto_state_processing_thrift:'HistoryRange'()) ->
-        mg:history_range();
-
-    %% event sink
-    (sink_event, mg_proto_state_processing_thrift:'SinkEvent'()) ->
-        mg:sink_event();
-    (sink_history, mg_proto_state_processing_thrift:'SinkHistory'()) ->
-        mg:sink_history().
-
-    % (_, _) ->
-    %     no_return().
-
+-spec unpack(_, _) ->
+    _.
 %% system
 unpack(_, undefined) ->
     undefined;
@@ -362,7 +219,7 @@ unpack(history_range, #'HistoryRange'{'after' = After, limit = Limit, direction 
 
 unpack(sink_event, #'SinkEvent'{id = ID, source_ns = SourceNS, source_id = SourceID, event = Event}) ->
     #{
-        id   => pack(id, ID),
+        id   => unpack(id, ID),
         body =>
             #{
                 source_ns => unpack(ns   , SourceNS),

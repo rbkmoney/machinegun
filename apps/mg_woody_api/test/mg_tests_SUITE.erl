@@ -80,6 +80,9 @@ groups() ->
 
             % machine_get_unexisted_event
             % machine_double_tagging
+
+            % machine_negative_timeout
+            % machine_negative_deadline
         ]},
 
         {repair, [sequence], [
