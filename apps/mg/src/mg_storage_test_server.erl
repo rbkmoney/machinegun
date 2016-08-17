@@ -1,4 +1,4 @@
--module(mg_db_test_server).
+-module(mg_storage_test_server).
 -include_lib("stdlib/include/ms_transform.hrl").
 
 %% API
@@ -38,18 +38,18 @@ create_machine(Options, ID, Args) ->
     insert_machine(make_ets_name(Options), {ID, {created, Args}, [], []}).
 
 -spec get_machine(options(), mg:id(), mg:history_range() | undefined) ->
-    mg_db:machine().
+    mg_storage:machine().
 get_machine(Options, ID, Range) ->
     filter_machine_history(read_machine(make_ets_name(Options), ID), Range).
 
--spec update_machine(options(), mg_db:machine(), mg_db:machine(), mg_db:timer_handler()) ->
+-spec update_machine(options(), mg_storage:machine(), mg_storage:machine(), mg_storage:timer_handler()) ->
     ok.
 update_machine(Options, _OldMachine, NewMachine, TimerHandler) ->
     write_machine(make_ets_name(Options), NewMachine),
     try_set_timer(Options, NewMachine, TimerHandler).
 
 
--spec try_set_timer(options(), mg_db:machine(), mg_db:timer_handler()) ->
+-spec try_set_timer(options(), mg_storage:machine(), mg_storage:timer_handler()) ->
     ok.
 try_set_timer(Options, {ID, {working, TimerDateTime}, _, _}, TimerHandler) when TimerDateTime =/= undefined ->
     mg_timers:set(Options, ID, TimerDateTime, TimerHandler);
@@ -74,7 +74,7 @@ resolve_tag(Options, Tag) ->
             make_ets_name(Options)
         ),
     case ID of
-        undefined -> mg_db:throw_error(machine_not_found);
+        undefined -> mg_storage:throw_error(machine_not_found);
         _         -> ID
     end.
 
@@ -138,24 +138,24 @@ wrap_name(Name) ->
     erlang:list_to_atom(?MODULE_STRING ++ "_" ++ erlang:atom_to_list(Name)).
 
 -spec read_machine(atom(), mg:id()) ->
-    mg_db:machine().
+    mg_storage:machine().
 read_machine(ETS, ID) ->
     case ets:lookup(ETS, ID) of
         [Machine] ->
             Machine;
         [] ->
-            mg_db:throw_error(machine_not_found)
+            mg_storage:throw_error(machine_not_found)
     end.
 
--spec insert_machine(atom(), mg_db:machine()) ->
+-spec insert_machine(atom(), mg_storage:machine()) ->
     ok.
 insert_machine(ETS, Machine) ->
     case ets:insert_new(ETS, [Machine]) of
         true  -> ok;
-        false -> mg_db:throw_error(machine_already_exist)
+        false -> mg_storage:throw_error(machine_already_exist)
     end.
 
--spec write_machine(atom(), mg_db:machine()) ->
+-spec write_machine(atom(), mg_storage:machine()) ->
     ok.
 write_machine(ETS, Machine={ID, _, _, _}) ->
     case ets:member(ETS, ID) of
@@ -163,14 +163,14 @@ write_machine(ETS, Machine={ID, _, _, _}) ->
             true = ets:insert(ETS, [Machine]),
             ok;
         false ->
-            mg_db:throw_error(machine_not_found)
+            mg_storage:throw_error(machine_not_found)
     end.
 
 %%
 %% history filtering
 %%
--spec filter_machine_history(mg_db:machine(), mg:history_range() | undefined) ->
-    mg_db:machine().
+-spec filter_machine_history(mg_storage:machine(), mg:history_range() | undefined) ->
+    mg_storage:machine().
 filter_machine_history(Machine, undefined) ->
     Machine;
 filter_machine_history({ID, Status, History, Tags}, {After, Limit, Direction}) ->

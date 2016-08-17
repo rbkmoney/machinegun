@@ -7,13 +7,7 @@
 %%% Не падает при получении неожиданных запросов, и пишет их в error_logger.
 %%%
 %%% Возможно стоит ещё сделать
-%%%  - прокинуть ID во все запросы
-%%%  - attach/detach
-%%%  - init/teminate
-%%%  - handle_info
 %%%  - format_state
-%%%  - подписку на эвенты
-%%%  - время жизни
 %%% ?
 %%%
 %%% Реализует понятие тэгов.
@@ -85,7 +79,7 @@ start(Options, ID, Args) ->
     ?safe(
         begin
             % создать в бд
-            ok = mg_db:create_machine(get_options(db, Options), ID, Args),
+            ok = mg_storage:create_machine(get_options(db, Options), ID, Args),
             % зафорсить загрузку
             ok = touch(Options, ID, sync)
         end
@@ -121,7 +115,7 @@ get_history(Options, Ref, Range) ->
     {_, _, History, _} =
         ?safe(
             check_machine_status(
-                mg_db:get_machine(
+                mg_storage:get_machine(
                     get_options(db, Options),
                     ref2id(Options, Ref),
                     Range
@@ -154,7 +148,7 @@ init(Options) ->
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags, [
         mg_workers_manager:child_spec(manager, manager_options(Options)),
-        mg_db:child_spec(get_options(db, Options), db)
+        mg_storage:child_spec(get_options(db, Options), db)
     ]}}.
 
 %%
@@ -163,16 +157,16 @@ init(Options) ->
 -type state() :: #{
     id      => mg:id(),
     options => options(),
-    status  => mg_db:status(),
+    status  => mg_storage:status(),
     history => mg:history(),
     tags    => [mg:tag()]
 }.
 
 -spec handle_load(_ID, module()) ->
-    {ok, state()} | {error, mg_db:error()}.
+    {ok, state()} | {error, mg_storage:error()}.
 handle_load(ID, Options) ->
     try
-        {ID, Status, History, Tags} = mg_db:get_machine(get_options(db, Options), ID, undefined),
+        {ID, Status, History, Tags} = mg_storage:get_machine(get_options(db, Options), ID, undefined),
         State =
             #{
                 id      => ID,
@@ -207,7 +201,7 @@ handle_unload(_) ->
 -spec transit_state(state(), state()) ->
     state().
 transit_state(OldState=#{id:=OldID}, NewState=#{id:=NewID, options:=Options}) when NewID =:= OldID ->
-    ok = mg_db:update_machine(
+    ok = mg_storage:update_machine(
             get_options(db, Options),
             state_to_machine(OldState),
             state_to_machine(NewState),
@@ -216,7 +210,7 @@ transit_state(OldState=#{id:=OldID}, NewState=#{id:=NewID, options:=Options}) wh
     NewState.
 
 -spec state_to_machine(state()) ->
-    mg_db:machine().
+    mg_storage:machine().
 state_to_machine(#{id:=ID, status:=Status, history:=History, tags:=Tags}) ->
     {ID, Status, History, Tags}.
 
@@ -258,10 +252,11 @@ handle_cast_(Cast, State) ->
 -spec process_call(_Call, state()) ->
     {{ok, _Resp}, state()}.
 process_call(Call, State=#{options:=Options, history:=History}) ->
-    try mg_processor:process_call(
-                get_options(processor, Options),
-                {Call, History}
-            )
+    try
+        mg_processor:process_call(
+            get_options(processor, Options),
+            {Call, History}
+        )
     of
         CallResult ->
             {Response, EventsBodies, ComplexAction} = CallResult,
@@ -276,10 +271,10 @@ process_call(Call, State=#{options:=Options, history:=History}) ->
     state().
 process_signal(Signal, State=#{options:=Options, history:=History}) ->
     try
-            mg_processor:process_signal(
-                get_options(processor, Options),
-                {Signal, History}
-            )
+        mg_processor:process_signal(
+            get_options(processor, Options),
+            {Signal, History}
+        )
     of
         {EventsBodies, ComplexAction} ->
             handle_processor_result(EventsBodies, ComplexAction, State)
@@ -386,13 +381,13 @@ do_tag_action(Tag, State=#{tags:=Tags}) ->
 do_set_timer_action(TimerAction, State) ->
     set_status({working, get_timeout_datetime(TimerAction)}, State).
 
--spec set_status(mg_db:status(), state()) ->
+-spec set_status(mg_storage:status(), state()) ->
     state().
 set_status(NewStatus, State) ->
     State#{status:=NewStatus}.
 
--spec check_machine_status(mg_db:machine()) ->
-    mg_db:machine() | no_return().
+-spec check_machine_status(mg_storage:machine()) ->
+    mg_storage:machine() | no_return().
 check_machine_status(Machine) ->
     % TODO error handling
     Machine.
@@ -400,7 +395,7 @@ check_machine_status(Machine) ->
 -spec ref2id(options(), mg:ref()) ->
     _ID.
 ref2id(Options, {tag, Tag}) ->
-    mg_db:resolve_tag(get_options(db, Options), Tag);
+    mg_storage:resolve_tag(get_options(db, Options), Tag);
 ref2id(_, {id, ID}) ->
     ID.
 

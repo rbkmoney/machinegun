@@ -70,7 +70,7 @@ stop() ->
     mg_utils:supervisor_ret().
 init([]) ->
     Config = application:get_all_env(?MODULE),
-    ConfigNSs = proplists:get_value(nss, Config),
+    ConfigNSs = proplists:get_value(nss, Config, []),
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags,
         [mg_machine:child_spec(NS, ns_options(ConfigNS)) || ConfigNS={NS, _} <- ConfigNSs]
@@ -97,7 +97,7 @@ stop(_State) ->
 %%
 %% local
 %%
--define(db_mod, mg_db_test).
+-define(db_mod, mg_storage_test).
 
 -spec woody_child_spec(config()) ->
     supervisor:child_spec().
@@ -110,7 +110,7 @@ woody_child_spec(Config) ->
             net_opts      => proplists:get_value(net_opts, Config, []          ),
             event_handler => mg_woody_api_event_handler,
             handlers      => [
-                mg_woody_api_automaton :handler(api_automaton_options(proplists:get_value(nss, Config))),
+                mg_woody_api_automaton :handler(api_automaton_options(proplists:get_value(nss, Config, []))),
                 mg_woody_api_event_sink:handler(api_event_sink_options())
             ]
         }

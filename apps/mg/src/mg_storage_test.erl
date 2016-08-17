@@ -1,11 +1,11 @@
--module(mg_db_test).
--behaviour(mg_db).
+-module(mg_storage_test).
+-behaviour(mg_storage).
 -behaviour(supervisor).
 
 %% supervisor callbacks
 -export([init/1]).
 
-%% mg_db callbacks
+%% mg_storage callbacks
 -export([child_spec/2, start_link/1, create_machine/3, get_machine/3, update_machine/4, resolve_tag/2]).
 
 %%
@@ -16,12 +16,12 @@
 init(Options) ->
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags, [
-        mg_db_test_server:child_spec(server, Options),
+        mg_storage_test_server:child_spec(server, Options),
         mg_timers        :child_spec(timers, Options)
     ]}}.
 
 %%
-%% mg_db callbacks
+%% mg_storage callbacks
 %%
 -spec child_spec(_Options, atom()) ->
     supervisor:child_spec().
@@ -42,25 +42,25 @@ start_link(Options) ->
     ok.
 create_machine(Options, ID, Args) ->
     _ = try_throw_random_error(),
-    mg_db_test_server:create_machine(Options, ID, Args).
+    mg_storage_test_server:create_machine(Options, ID, Args).
 
 -spec get_machine(_Options, mg:id(), mg:history_range() | undefined) ->
-    mg_db:machine().
+    mg_storage:machine().
 get_machine(Options, ID, Range) ->
     _ = try_throw_random_error(),
-    mg_db_test_server:get_machine(Options, ID, Range).
+    mg_storage_test_server:get_machine(Options, ID, Range).
 
--spec update_machine(_Options, mg_db:machine(), mg_db:machine(), mg_db:timer_handler()) ->
+-spec update_machine(_Options, mg_storage:machine(), mg_storage:machine(), mg_storage:timer_handler()) ->
     ok.
 update_machine(Options, OldMachine, NewMachine, TimerHandler) ->
     _ = try_throw_random_error(),
-    mg_db_test_server:update_machine(Options, OldMachine, NewMachine, TimerHandler).
+    mg_storage_test_server:update_machine(Options, OldMachine, NewMachine, TimerHandler).
 
 -spec resolve_tag(_Options, mg:tag()) ->
     mg:id().
 resolve_tag(Options, Tag) ->
     _ = try_throw_random_error(),
-    mg_db_test_server:resolve_tag(Options, Tag).
+    mg_storage_test_server:resolve_tag(Options, Tag).
 
 -spec try_throw_random_error() ->
     ok | no_return().
