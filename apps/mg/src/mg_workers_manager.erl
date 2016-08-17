@@ -8,6 +8,8 @@
 -behaviour(supervisor).
 
 %% API
+-export_type([options     /0]).
+
 -export_type([error       /0]).
 -export_type([thrown_error/0]).
 
@@ -106,12 +108,17 @@ start_child(Options, ID) ->
 -spec self_ref(options()) ->
     mg_utils:gen_ref().
 self_ref(Options) ->
-    {via, gproc, {n, l, wrap(maps:get(name, Options))}}.
+    {via, gproc, gproc_key(Options)}.
 
 -spec self_reg_name(options()) ->
     mg_utils:gen_reg_name().
 self_reg_name(Options) ->
-    {via, gproc, {n, l, wrap(maps:get(name, Options))}}.
+    {via, gproc, gproc_key(Options)}.
+
+-spec gproc_key(options()) ->
+    gproc:key().
+gproc_key(Options) ->
+    {n, l, wrap(maps:get(name, Options))}.
 
 -spec wrap(_) ->
     term().
