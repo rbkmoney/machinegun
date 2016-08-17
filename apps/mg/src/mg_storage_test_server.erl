@@ -3,7 +3,7 @@
 
 %% API
 -export_type([options/0]).
--export([child_spec/2, start_link/1, create_machine/3, get_machine/3, update_machine/4, resolve_tag/2]).
+-export([child_spec/2, start_link/1, create_machine/3, get_machine/3, update_machine/4, add_tag/3, resolve_tag/2]).
 
 %% gen_server callbacks
 -behaviour(gen_server).
@@ -46,6 +46,11 @@ get_machine(Options, ID, Range) ->
 update_machine(Options, _OldMachine, NewMachine, TimerHandler) ->
     throw_if_error(gen_server:call(self_ref(Options), {update_machine, NewMachine, TimerHandler})).
 
+-spec add_tag(_Options, mg:id(), mg:tag()) ->
+    ok.
+add_tag(Options, ID, Tag) ->
+    throw_if_error(gen_server:call(self_ref(Options), {add_tag, ID, Tag})).
+
 -spec resolve_tag(options(), mg:tag()) ->
     mg:id().
 resolve_tag(Options, Tag) ->
@@ -55,7 +60,9 @@ resolve_tag(Options, Tag) ->
 %% gen_server callbacks
 %%
 -type state() :: #{
-    machines => #{mg:id() => mg_storage:machine()}
+    machines => #{mg:id () => mg_storage:machine()},
+    tags     => #{mg:tag() => mg        :id     ()},
+    options  => options()
 }.
 
 -spec init(options()) ->
@@ -64,6 +71,7 @@ init(Options) ->
     {ok,
         #{
             machines => #{},
+            tags     => #{},
             options  => Options
         }
     }.
@@ -78,6 +86,9 @@ handle_call({get_machine, ID, Range}, _From, State) ->
     {reply, Resp, State};
 handle_call({update_machine, NewMachine, TimerHandler}, _From, State) ->
     {Resp, NewState} = do_update_machine(NewMachine, TimerHandler, State),
+    {reply, Resp, NewState};
+handle_call({add_tag, ID, Tag}, _From, State) ->
+    {Resp, NewState} = do_add_tag(ID, Tag, State),
     {reply, Resp, NewState};
 handle_call({resolve_tag, Tag}, _From, State) ->
     Resp = do_resolve_tag(Tag, State),
@@ -143,7 +154,7 @@ throw_if_error({error, Error}) ->
 do_create_machine(ID, Args, State=#{machines:=Machines}) ->
     case maps:is_key(ID, Machines) of
         false ->
-            {ok, do_store_machine({ID, {created, Args}, [], []}, State)};
+            {ok, do_store_machine({ID, {created, Args}, []}, State)};
         true ->
             {{error, machine_already_exist}, State}
     end.
@@ -152,7 +163,7 @@ do_create_machine(ID, Args, State=#{machines:=Machines}) ->
     {ok, mg_storage:machine()} | {error, machine_not_found}.
 do_get_machine(ID, Range, #{machines:=Machines}) ->
     case maps:get(ID, Machines, machine_not_found) of
-        Machine = {_, _, _, _} ->
+        Machine = {_, _, _} ->
             {ok, filter_machine_history(Machine, Range)};
         machine_not_found ->
             {error, machine_not_found}
@@ -160,7 +171,7 @@ do_get_machine(ID, Range, #{machines:=Machines}) ->
 
 -spec do_update_machine(mg_storage:machine(), mg_storage:timer_handler(), state()) ->
     {ok, mg:id()} | {error, machine_not_found}.
-do_update_machine(NewMachine={ID, _, _, _}, TimerHandler, State=#{machines:=Machines, options:=Options}) ->
+do_update_machine(NewMachine={ID, _, _}, TimerHandler, State=#{machines:=Machines, options:=Options}) ->
     case maps:is_key(ID, Machines) of
         true ->
             ok = try_set_timer(Options, NewMachine, TimerHandler),
@@ -169,34 +180,37 @@ do_update_machine(NewMachine={ID, _, _, _}, TimerHandler, State=#{machines:=Mach
             {{error, machine_not_found}, State}
     end.
 
+-spec do_add_tag(mg:id(), mg:tag(), state()) ->
+    {ok | {error, tag_already_exist}, state()}.
+do_add_tag(ID, Tag, State=#{tags:=Tags}) ->
+    case maps:is_key(Tag, Tags) of
+        false ->
+            {ok, State#{tags:=maps:put(Tag, ID, Tags)}};
+        true ->
+            {{error, tag_already_exist}, State}
+    end.
+
 -spec do_resolve_tag(mg:tag(), state()) ->
     {ok, mg:id()} | {error, machine_not_found}.
-do_resolve_tag(Tag, #{machines:=Machines}) ->
-    find_tag(Tag, maps:to_list(Machines)).
+do_resolve_tag(Tag, #{tags:=Tags}) ->
+    try
+        {ok, maps:get(Tag, Tags)}
+    catch error:{badkey, Tag} ->
+        {error, machine_not_found}
+    end.
+
 
 -spec do_store_machine(mg_storage:machine(), state()) ->
     state().
-do_store_machine(Machine={ID, _, _, _}, State=#{machines:=Machines}) ->
+do_store_machine(Machine={ID, _, _}, State=#{machines:=Machines}) ->
     State#{machines:=maps:put(ID, Machine, Machines)}.
 
 -spec try_set_timer(options(), mg_storage:machine(), mg_storage:timer_handler()) ->
     ok.
-try_set_timer(Options, {ID, {working, TimerDateTime}, _, _}, TimerHandler) when TimerDateTime =/= undefined ->
+try_set_timer(Options, {ID, {working, TimerDateTime}, _}, TimerHandler) when TimerDateTime =/= undefined ->
     mg_timers:set(Options, ID, TimerDateTime, TimerHandler);
-try_set_timer(_Options, {_, _, _, _}, _) ->
+try_set_timer(_Options, {_, _, _}, _) ->
     ok.
-
--spec find_tag(mg:tag(), list(mg_storage:machine())) ->
-    {ok, mg:id()} | {error, machine_not_found}.
-find_tag(_, []) ->
-    {error, machine_not_found};
-find_tag(Tag, [{ID, {ID, _, _, Tags}}|RemainMachines]) ->
-    case lists:member(Tag, Tags) of
-        true ->
-            {ok, ID};
-        false ->
-            find_tag(Tag, RemainMachines)
-    end.
 
 %%
 %% history filtering
@@ -205,8 +219,8 @@ find_tag(Tag, [{ID, {ID, _, _, Tags}}|RemainMachines]) ->
     mg_storage:machine().
 filter_machine_history(Machine, undefined) ->
     Machine;
-filter_machine_history({ID, Status, History, Tags}, {After, Limit, Direction}) ->
-    {ID, Status, filter_history(apply_direction(Direction, History), After, Limit), Tags}.
+filter_machine_history({ID, Status, History}, {After, Limit, Direction}) ->
+    {ID, Status, filter_history(apply_direction(Direction, History), After, Limit)}.
 
 -spec apply_direction(mg:direction(), mg:history()) ->
     mg:history().

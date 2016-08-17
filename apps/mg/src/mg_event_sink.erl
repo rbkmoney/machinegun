@@ -67,13 +67,13 @@ machine_options(Options) ->
 -spec process_signal(_, mg:signal_args()) ->
     mg:signal_result().
 process_signal(_, _) ->
-    {[], #{timer => undefined, tag => undefinend}}.
+    {[], #{timer => undefined, tag => undefined}}.
 
 -spec process_call(_, mg:call_args()) ->
     mg:call_result().
 process_call(_, {{handle_events, SourceNS, SourceID, Events}, _}) ->
     SinkEvents = generate_sink_events(SourceNS, SourceID, Events),
-    {ok, SinkEvents, #{timer => undefined, tag => undefinend}}.
+    {ok, SinkEvents, #{timer => undefined, tag => undefined}}.
 
 %%
 %% local

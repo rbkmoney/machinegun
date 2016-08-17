@@ -4,7 +4,6 @@
 %%% storage заведует таймерами.
 %%%
 %%% TODO:
-%%%  - переименовать в storage
 %%%  - переделать на add_tag/resolve_tag
 %%%  - переделать на add_event/read_history
 %%%  - как-то странно тут выглядят таймеры, их бы сделать более явно и понятно или вынести
@@ -24,6 +23,7 @@
 -export([create_machine/3]).
 -export([get_machine   /3]).
 -export([update_machine/4]).
+-export([add_tag       /3]).
 -export([resolve_tag   /2]).
 
 -export([throw_error   /1]).
@@ -32,7 +32,7 @@
 %% API
 %%
 -type status       () :: {created, mg:args()} | {working, calendar:datetime() | undefined} | {error, _Reason}.
--type machine      () :: {mg:id(), status(), mg:history(), [mg:tag()]}.
+-type machine      () :: {mg:id(), status(), mg:history()}.
 -type timer_handler() :: {module(), atom(), [_Arg]}.
 
 -type error       () :: term().
@@ -50,6 +50,9 @@
     machine().
 
 -callback update_machine(_Options, Old::machine(), New::machine(), timer_handler()) ->
+    ok.
+
+-callback add_tag(_Options, mg:id(), mg:tag()) ->
     ok.
 
 -callback resolve_tag(_Options, mg:tag()) ->
@@ -76,6 +79,11 @@ get_machine(Options, ID, Range) ->
     ok.
 update_machine(Options, OldMachine, NewMachine, TimerHandler) ->
     mg_utils:apply_mod_opts(Options, update_machine, [OldMachine, NewMachine, TimerHandler]).
+
+-spec add_tag(_Options, mg:id(), mg:tag()) ->
+    ok.
+add_tag(Options, ID, Tag) ->
+    mg_utils:apply_mod_opts(Options, add_tag, [ID, Tag]).
 
 -spec resolve_tag(_Options, mg:tag()) ->
     mg:id().

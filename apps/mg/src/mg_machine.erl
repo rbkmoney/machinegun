@@ -112,7 +112,7 @@ call(Options, Ref, Call) ->
 -spec get_history(options(), mg:ref(), mg:history_range()) ->
     mg:history().
 get_history(Options, Ref, Range) ->
-    {_, _, History, _} =
+    {_, _, History} =
         ?safe(
             check_machine_status(
                 mg_storage:get_machine(
@@ -158,22 +158,20 @@ init(Options) ->
     id      => mg:id(),
     options => options(),
     status  => mg_storage:status(),
-    history => mg:history(),
-    tags    => [mg:tag()]
+    history => mg:history()
 }.
 
 -spec handle_load(_ID, module()) ->
     {ok, state()} | {error, mg_storage:error()}.
 handle_load(ID, Options) ->
     try
-        {ID, Status, History, Tags} = mg_storage:get_machine(get_options(storage, Options), ID, undefined),
+        {ID, Status, History} = mg_storage:get_machine(get_options(storage, Options), ID, undefined),
         State =
             #{
                 id      => ID,
                 options => Options,
                 status  => Status,
-                history => History,
-                tags    => Tags
+                history => History
             },
         {ok, transit_state(State, handle_load_(State))}
     catch throw:DBError ->
@@ -211,8 +209,8 @@ transit_state(OldState=#{id:=OldID}, NewState=#{id:=NewID, options:=Options}) wh
 
 -spec state_to_machine(state()) ->
     mg_storage:machine().
-state_to_machine(#{id:=ID, status:=Status, history:=History, tags:=Tags}) ->
-    {ID, Status, History, Tags}.
+state_to_machine(#{id:=ID, status:=Status, history:=History}) ->
+    {ID, Status, History}.
 
 %%
 
@@ -371,10 +369,9 @@ manager_options(Options) ->
     state().
 do_tag_action(undefined, State) ->
     State;
-do_tag_action(Tag, State=#{tags:=Tags}) ->
-    % TODO детектор коллизий тэгов
-    State#{tags:=[Tag|Tags]}.
-
+do_tag_action(Tag, State=#{id:=ID, options:=Options}) ->
+    ok = mg_storage:add_tag(get_options(storage, Options), ID, Tag),
+    State.
 
 -spec do_set_timer_action(undefined | mg:set_timer_action(), state()) ->
     state().

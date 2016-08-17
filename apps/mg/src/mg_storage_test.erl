@@ -6,7 +6,7 @@
 -export([init/1]).
 
 %% mg_storage callbacks
--export([child_spec/2, start_link/1, create_machine/3, get_machine/3, update_machine/4, resolve_tag/2]).
+-export([child_spec/2, start_link/1, create_machine/3, get_machine/3, update_machine/4, add_tag/3, resolve_tag/2]).
 
 %%
 %% supervisor callbacks
@@ -55,6 +55,12 @@ get_machine(Options, ID, Range) ->
 update_machine(Options, OldMachine, NewMachine, TimerHandler) ->
     _ = try_throw_random_error(),
     mg_storage_test_server:update_machine(Options, OldMachine, NewMachine, TimerHandler).
+
+-spec add_tag(_Options, mg:id(), mg:tag()) ->
+    ok.
+add_tag(Options, ID, Tag) ->
+    _ = try_throw_random_error(),
+    mg_storage_test_server:add_tag(Options, ID, Tag).
 
 -spec resolve_tag(_Options, mg:tag()) ->
     mg:id().
