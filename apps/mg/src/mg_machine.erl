@@ -154,7 +154,9 @@ init(Options) ->
     id      => mg:id(),
     options => options(),
     status  => mg_storage:status(),
-    history => mg:history()
+    history => mg:history(),
+    tag_to_add   => undefined | mg:tag(),
+    event_to_add => [mg:event()]
 }.
 
 -spec handle_load(_ID, module()) ->
@@ -166,7 +168,9 @@ handle_load(ID, Options) ->
                 id      => ID,
                 options => Options,
                 status  => mg_storage:get_status (get_options(storage, Options), ID           ),
-                history => mg_storage:get_history(get_options(storage, Options), ID, undefined)
+                history => mg_storage:get_history(get_options(storage, Options), ID, undefined),
+                tag_to_add   => undefined,
+                event_to_add => []
             },
         {ok, transit_state(State, handle_load_(State))}
     catch throw:DBError ->
@@ -194,7 +198,9 @@ handle_unload(_) ->
 -spec transit_state(state(), state()) ->
     state().
 transit_state(#{id:=ID}, NewState=#{id:=NewID}) when NewID =:= ID ->
-    NewState.
+    #{options:=Options, status:=NewStatus, event_to_add:=NewEvents, tag_to_add:=NewTag} = NewState,
+    ok = mg_storage:update(get_options(storage, Options), ID, NewStatus, NewEvents, NewTag),
+    NewState#{event_to_add:=[], tag_to_add:=undefined}.
 
 %%
 
@@ -292,9 +298,8 @@ notify_observer(Events, #{id:=SourceID, options:=Options}) ->
 
 -spec append_events_to_history([mg:event()], state()) ->
     state().
-append_events_to_history(Events, State=#{id:=ID, history:=History, options:=Options}) ->
-    ok = mg_storage:add_events(get_options(storage, Options), ID, Events),
-    State#{history := History ++ Events}.
+append_events_to_history(Events, State=#{history:=History}) ->
+    State#{history := History ++ Events, event_to_add:=Events}.
 
 -spec generate_events([mg:event_body()], mg:event_id()) ->
     [mg:event()].
@@ -354,9 +359,8 @@ manager_options(Options) ->
     state().
 do_tag_action(undefined, State) ->
     State;
-do_tag_action(Tag, State=#{id:=ID, options:=Options}) ->
-    ok = mg_storage:add_tag(get_options(storage, Options), ID, Tag),
-    State.
+do_tag_action(Tag, State) ->
+    State#{tag_to_add:=Tag}.
 
 -spec do_set_timer_action(undefined | mg:set_timer_action(), state()) ->
     state().
@@ -365,8 +369,7 @@ do_set_timer_action(TimerAction, State) ->
 
 -spec set_status(mg_storage:status(), state()) ->
     state().
-set_status(NewStatus, State=#{id:=ID, options:=Options}) ->
-    ok = mg_storage:update_status(get_options(storage, Options), ID, NewStatus),
+set_status(NewStatus, State) ->
     State#{status:=NewStatus}.
 
 -spec ref2id(options(), mg:ref()) ->

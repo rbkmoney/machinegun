@@ -9,7 +9,7 @@
 
 %% mg_storage callbacks
 -behaviour(mg_storage).
--export([child_spec/3, create/3, get_status/2, update_status/3, add_events/3, get_history/3, add_tag/3, resolve_tag/2]).
+-export([child_spec/3, create/3, get_status/2, get_history/3, resolve_tag/2, update/5]).
 
 %%
 %% supervisor callbacks
@@ -54,27 +54,17 @@ create(Options, ID, Args) ->
 get_status(Options, ID) ->
     mg_storage_test_server:get_status(Options, ID).
 
--spec update_status(_Options, mg:id(), mg_storage:status()) ->
-    ok.
-update_status(Options, ID, Status) ->
-    mg_storage_test_server:update_status(Options, ID, Status).
-
--spec add_events(_Options, mg:id(), [mg:event()]) ->
-    ok.
-add_events(Options, ID, Events) ->
-    mg_storage_test_server:add_events(Options, ID, Events).
-
 -spec get_history(_Options, mg:id(), mg:history_range() | undefined) ->
     mg:history().
 get_history(Options, ID, Range) ->
     mg_storage_test_server:get_history(Options, ID, Range).
 
--spec add_tag(_Options, mg:id(), mg:tag()) ->
-    ok.
-add_tag(Options, ID, Tag) ->
-    mg_storage_test_server:add_tag(Options, ID, Tag).
-
 -spec resolve_tag(_Options, mg:tag()) ->
     mg:id().
 resolve_tag(Options, Tag) ->
     mg_storage_test_server:resolve_tag(Options, Tag).
+
+-spec update(_Options, mg:id(), mg_storage:status(), [mg:event()], mg:tag()) ->
+    ok.
+update(Options, ID, Status, Events, Tag) ->
+    mg_storage_test_server:update(Options, ID, Status, Events, Tag).

@@ -15,16 +15,14 @@
 -export_type([error       /0]).
 -export_type([thrown_error/0]).
 
--export([child_spec   /3]).
--export([create       /3]).
--export([get_status   /2]).
--export([update_status/3]).
--export([add_events   /3]).
--export([get_history  /3]).
--export([add_tag      /3]).
--export([resolve_tag  /2]).
+-export([child_spec /3]).
+-export([create     /3]).
+-export([get_status /2]).
+-export([get_history/3]).
+-export([resolve_tag/2]).
+-export([update     /5]).
 
--export([throw_error  /1]).
+-export([throw_error/1]).
 
 %%
 %% API
@@ -46,20 +44,14 @@
 -callback get_status(_Options, mg:id()) ->
     status().
 
--callback update_status(_Options, mg:id(), status()) ->
-    ok.
-
--callback add_events(_Options, mg:id(), [mg:event()]) ->
-    ok.
-
 -callback get_history(_Options, mg:id(), mg:history_range()) ->
     mg:history().
 
--callback add_tag(_Options, mg:id(), mg:tag()) ->
-    ok.
-
 -callback resolve_tag(_Options, mg:tag()) ->
     mg:id().
+
+-callback update(_Options, mg:id(), status(), [mg:event()], mg:tag()) ->
+    ok.
 
 %%
 
@@ -78,30 +70,20 @@ create(Options, ID, Args) ->
 get_status(Options, ID) ->
     mg_utils:apply_mod_opts(Options, get_status, [ID]).
 
--spec update_status(_Options, mg:id(), status()) ->
-    ok.
-update_status(Options, ID, Status) ->
-    mg_utils:apply_mod_opts(Options, update_status, [ID, Status]).
-
--spec add_events(_Options, mg:id(), [mg:event()]) ->
-    ok.
-add_events(Options, ID, Events) ->
-    mg_utils:apply_mod_opts(Options, add_events, [ID, Events]).
-
 -spec get_history(_Options, mg:id(), mg:history_range() | undefined) ->
     mg:history().
 get_history(Options, ID, Range) ->
     mg_utils:apply_mod_opts(Options, get_history, [ID, Range]).
 
--spec add_tag(_Options, mg:id(), mg:tag()) ->
-    ok.
-add_tag(Options, ID, Tag) ->
-    mg_utils:apply_mod_opts(Options, add_tag, [ID, Tag]).
-
 -spec resolve_tag(_Options, mg:tag()) ->
     mg:id().
 resolve_tag(Options, Tag) ->
     mg_utils:apply_mod_opts(Options, resolve_tag, [Tag]).
+
+-spec update(_Options, mg:id(), status(), [mg:event()], mg:tag()) ->
+    ok.
+update(Options, ID, Status, Events, Tag) ->
+    mg_utils:apply_mod_opts(Options, update, [ID, Status, Events, Tag]).
 
 
 %% все ошибки из модулей с поведением mg_storage должны кидаться через эту функцию
