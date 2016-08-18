@@ -18,7 +18,9 @@ build('machinegun', 'docker-host', finalHook) {
 
   pipeDefault() {
     runStage('compile') {
-      sh 'make wc_compile'
+      withGithubPrivkey{
+          sh 'make wc_compile'
+      }
     }
     runStage('lint') {
       sh 'make wc_lint'
@@ -35,7 +37,9 @@ build('machinegun', 'docker-host', finalHook) {
 
     if (env.BRANCH_NAME == 'master') {
       runStage('make release') {
-        sh "make wc_release"
+        withGithubPrivkey{
+          sh "make wc_release"
+        }
       }
       runStage('build image') {
         sh "make build_image"
