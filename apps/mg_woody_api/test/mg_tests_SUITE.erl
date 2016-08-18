@@ -81,6 +81,9 @@ groups() ->
             % machine_get_unexisted_event
             % machine_double_tagging
 
+            % machine_timer_timeout_test
+            % machine_timer_deadline_test
+
             % machine_negative_timeout
             % machine_negative_deadline
         ]},

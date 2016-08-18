@@ -4,8 +4,6 @@
 %%% storage заведует таймерами.
 %%%
 %%% TODO:
-%%%  - переделать на add_event/read_history
-%%%  - как-то странно тут выглядят таймеры, их бы сделать более явно и понятно или вынести
 %%%  - нужно разделить на ожидаемые и неожидаемые ошибки
 %%%
 -module(mg_storage).
@@ -17,10 +15,10 @@
 -export_type([error       /0]).
 -export_type([thrown_error/0]).
 
--export([child_spec   /2]).
+-export([child_spec   /3]).
 -export([create       /3]).
 -export([get_status   /2]).
--export([update_status/4]).
+-export([update_status/3]).
 -export([add_events   /3]).
 -export([get_history  /3]).
 -export([add_tag      /3]).
@@ -39,7 +37,7 @@
 
 %%
 
--callback child_spec(_Options, atom()) ->
+-callback child_spec(_Options, atom(), timer_handler()) ->
     supervisor:child_spec().
 
 -callback create(_Options, mg:id(), _Args) ->
@@ -48,7 +46,7 @@
 -callback get_status(_Options, mg:id()) ->
     status().
 
--callback update_status(_Options, mg:id(), status(), timer_handler()) ->
+-callback update_status(_Options, mg:id(), status()) ->
     ok.
 
 -callback add_events(_Options, mg:id(), [mg:event()]) ->
@@ -65,10 +63,10 @@
 
 %%
 
--spec child_spec(_Options, atom()) ->
+-spec child_spec(_Options, atom(), timer_handler()) ->
     supervisor:child_spec().
-child_spec(Options, Name) ->
-    mg_utils:apply_mod_opts(Options, child_spec, [Name]).
+child_spec(Options, Name, TimerHandler) ->
+    mg_utils:apply_mod_opts(Options, child_spec, [Name, TimerHandler]).
 
 -spec create(_Options, mg:id(), _Args) ->
     ok.
@@ -80,10 +78,10 @@ create(Options, ID, Args) ->
 get_status(Options, ID) ->
     mg_utils:apply_mod_opts(Options, get_status, [ID]).
 
--spec update_status(_Options, mg:id(), status(), timer_handler()) ->
+-spec update_status(_Options, mg:id(), status()) ->
     ok.
-update_status(Options, ID, Status, TimerHandler) ->
-    mg_utils:apply_mod_opts(Options, update_status, [ID, Status, TimerHandler]).
+update_status(Options, ID, Status) ->
+    mg_utils:apply_mod_opts(Options, update_status, [ID, Status]).
 
 -spec add_events(_Options, mg:id(), [mg:event()]) ->
     ok.

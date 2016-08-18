@@ -37,15 +37,13 @@
 -type event_body() :: binary().
 
 %% config
--type config_ns() ::
-    {mg_woody_api:ns(), _URL}
-.
+-type config_ns() :: {mg_woody_api:ns(), _URL}.
 -type config_nss() :: [config_ns()].
 -type config_element() ::
       {nss     ,      config_nss ()}
     | {ip      , inet:ip_address ()}
     | {port    , inet:port_number()}
-    | {net_opts, []                 } % в вуди нет для этого типа :(
+    | {net_opts, []                } % в вуди нет для этого типа :(
 .
 -type config() :: [config_element()].
 

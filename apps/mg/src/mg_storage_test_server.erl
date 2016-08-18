@@ -2,12 +2,12 @@
 -include_lib("stdlib/include/ms_transform.hrl").
 
 %% internal API
--export([start_link/1]).
+-export([start_link/2]).
 
 %% mg_storage callbacks
 -export_type([options/0]).
 -behaviour(mg_storage).
--export([child_spec/2, create/3, get_status/2, update_status/4, add_events/3, get_history/3, add_tag/3, resolve_tag/2]).
+-export([child_spec/3, create/3, get_status/2, update_status/3, add_events/3, get_history/3, add_tag/3, resolve_tag/2]).
 
 %% gen_server callbacks
 -behaviour(gen_server).
@@ -16,22 +16,22 @@
 %%
 %% internal API
 %%
--spec start_link(options()) ->
+-spec start_link(options(), mg_storage:timer_handler()) ->
     mg_utils:gen_start_ret().
-start_link(Options) ->
-    gen_server:start_link(self_reg_name(Options), ?MODULE, Options, []).
+start_link(Options, TimerHandler) ->
+    gen_server:start_link(self_reg_name(Options), ?MODULE, {Options, TimerHandler}, []).
 
 %%
 %% mg_storage callbacks
 %%
 -type options() :: _Name::atom().
 
--spec child_spec(options(), atom()) ->
+-spec child_spec(options(), atom(), mg_storage:timer_handler()) ->
     supervisor:child_spec().
-child_spec(Options, ChildID) ->
+child_spec(Options, ChildID, TimerHandler) ->
     #{
         id       => ChildID,
-        start    => {?MODULE, start_link, [Options]},
+        start    => {?MODULE, start_link, [Options, TimerHandler]},
         restart  => permanent,
         shutdown => 5000
     }.
@@ -46,10 +46,10 @@ create(Options, ID, Args) ->
 get_status(Options, ID) ->
     throw_if_error(gen_server:call(self_ref(Options), {get_status, ID})).
 
--spec update_status(_Options, mg:id(), mg_storage:status(), mg_storage:timer_handler()) ->
+-spec update_status(_Options, mg:id(), mg_storage:status()) ->
     ok.
-update_status(Options, ID, Status, TimerHandler) ->
-    throw_if_error(gen_server:call(self_ref(Options), {update_status, ID, Status, TimerHandler})).
+update_status(Options, ID, Status) ->
+    throw_if_error(gen_server:call(self_ref(Options), {update_status, ID, Status})).
 
 -spec add_events(_Options, mg:id(), [mg:event()]) ->
     ok.
@@ -82,15 +82,16 @@ resolve_tag(Options, Tag) ->
     options  => options()
 }.
 
--spec init(options()) ->
+-spec init({options(), mg_storage:timer_handler()}) ->
     mg_utils:gen_server_init_ret(state()).
-init(Options) ->
+init({Options, TimerHandler}) ->
     {ok,
         #{
-            machines => #{},
-            events   => #{},
-            tags     => #{},
-            options  => Options
+            machines      => #{},
+            events        => #{},
+            tags          => #{},
+            timer_handler => TimerHandler,
+            options       => Options
         }
     }.
 
@@ -102,8 +103,8 @@ handle_call({create, ID, Args}, _From, State) ->
 handle_call({get_status, ID}, _From, State) ->
     Resp = do_get_status(ID, State),
     {reply, Resp, State};
-handle_call({update_status, ID, Status, TimerHandler}, _From, State) ->
-    {Resp, NewState} = do_update_status(ID, Status, TimerHandler, State),
+handle_call({update_status, ID, Status}, _From, State) ->
+    {Resp, NewState} = do_update_status(ID, Status, State),
     {reply, Resp, NewState};
 handle_call({add_events, ID, Events}, _From, State) ->
     {Resp, NewState} = do_add_events(ID, Events, State),
@@ -192,12 +193,12 @@ do_get_status(ID, #{machines:=Machines}) ->
         {error, machine_not_found}
     end.
 
--spec do_update_status(mg:id(), mg_storage:status(), mg_storage:timer_handler(), state()) ->
+-spec do_update_status(mg:id(), mg_storage:status(), state()) ->
     {ok | {error, machine_not_found}, state()}.
-do_update_status(ID, Status, TimerHandler, State=#{machines:=Machines, options:=Options}) ->
+do_update_status(ID, Status, State=#{machines:=Machines}) ->
     case maps:is_key(ID, Machines) of
         true ->
-            ok = try_set_timer(Options, ID, Status, TimerHandler),
+            ok = try_set_timer(ID, Status, State),
             {ok, do_store_machine(ID, Status, State)};
         false ->
             {{error, machine_not_found}, State}
@@ -252,11 +253,12 @@ do_store_machine(ID, Status, State=#{machines:=Machines}) ->
 do_store_events(ID, MachineEvents, State=#{events:=Events}) ->
     State#{events:=maps:put(ID, MachineEvents, Events)}.
 
--spec try_set_timer(options(), mg:id(), mg_storage:status(), mg_storage:timer_handler()) ->
+-spec try_set_timer(mg:id(), mg_storage:status(), state()) ->
     ok.
-try_set_timer(Options, ID, {working, TimerDateTime}, TimerHandler) when TimerDateTime =/= undefined ->
+try_set_timer(ID, {working, TimerDateTime}, #{options:=Options, timer_handler:=TimerHandler})
+    when TimerDateTime =/= undefined ->
     mg_timers:set(Options, ID, TimerDateTime, TimerHandler);
-try_set_timer(_Options, _, _, _) ->
+try_set_timer(_, _, _) ->
     ok.
 
 %%

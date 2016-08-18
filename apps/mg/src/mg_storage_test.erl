@@ -5,41 +5,41 @@
 -export([init/1]).
 
 %% internal API
--export([start_link/1]).
+-export([start_link/2]).
 
 %% mg_storage callbacks
 -behaviour(mg_storage).
--export([child_spec/2, create/3, get_status/2, update_status/4, add_events/3, get_history/3, add_tag/3, resolve_tag/2]).
+-export([child_spec/3, create/3, get_status/2, update_status/3, add_events/3, get_history/3, add_tag/3, resolve_tag/2]).
 
 %%
 %% supervisor callbacks
 %%
--spec init(_Options) ->
+-spec init({_Options, mg_storage:timer_handler()}) ->
     mg_utils:supervisor_ret().
-init(Options) ->
+init({Options, TimerHandler}) ->
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags, [
-        mg_storage_test_server:child_spec(Options, server),
+        mg_storage_test_server:child_spec(Options, server, TimerHandler),
         mg_timers             :child_spec(timers, Options)
     ]}}.
 
 %%
 %% internal API
 %%
--spec start_link(_Options) ->
+-spec start_link(_Options, mg_storage:timer_handler()) ->
     mg_utils:gen_start_ret().
-start_link(Options) ->
-    supervisor:start_link(?MODULE, Options).
+start_link(Options, TimerHandler) ->
+    supervisor:start_link(?MODULE, {Options, TimerHandler}).
 
 %%
 %% mg_storage callbacks
 %%
--spec child_spec(_Options, atom()) ->
+-spec child_spec(_Options, atom(), mg_storage:timer_handler()) ->
     supervisor:child_spec().
-child_spec(Options, ChildID) ->
+child_spec(Options, ChildID, TimerHandler) ->
     #{
         id       => ChildID,
-        start    => {?MODULE, start_link, [Options]},
+        start    => {?MODULE, start_link, [Options, TimerHandler]},
         restart  => permanent,
         shutdown => 5000
     }.
@@ -54,10 +54,10 @@ create(Options, ID, Args) ->
 get_status(Options, ID) ->
     mg_storage_test_server:get_status(Options, ID).
 
--spec update_status(_Options, mg:id(), mg_storage:status(), mg_storage:timer_handler()) ->
+-spec update_status(_Options, mg:id(), mg_storage:status()) ->
     ok.
-update_status(Options, ID, Status, TimerHandler) ->
-    mg_storage_test_server:update_status(Options, ID, Status, TimerHandler).
+update_status(Options, ID, Status) ->
+    mg_storage_test_server:update_status(Options, ID, Status).
 
 -spec add_events(_Options, mg:id(), [mg:event()]) ->
     ok.

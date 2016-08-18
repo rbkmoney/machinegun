@@ -84,6 +84,7 @@ init({ID, Options}) ->
             mod               => Mod,
             state             => {loading, Args},
             unload_tref       => undefined,
+            % TODO customize
             % hibernate_timeout => 5000,
             % unload_timeout    => 5 * 60 * 1000
             hibernate_timeout => 1,

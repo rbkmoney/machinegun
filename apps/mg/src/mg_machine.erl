@@ -144,7 +144,7 @@ init(Options) ->
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags, [
         mg_workers_manager:child_spec(manager, manager_options(Options)),
-        mg_storage:child_spec(get_options(storage, Options), storage)
+        mg_storage:child_spec(get_options(storage, Options), storage, {?MODULE, handle_timeout, [Options]})
     ]}}.
 
 %%
@@ -366,7 +366,7 @@ do_set_timer_action(TimerAction, State) ->
 -spec set_status(mg_storage:status(), state()) ->
     state().
 set_status(NewStatus, State=#{id:=ID, options:=Options}) ->
-    ok = mg_storage:update_status(get_options(storage, Options), ID, NewStatus, {?MODULE, handle_timeout, [Options]}),
+    ok = mg_storage:update_status(get_options(storage, Options), ID, NewStatus),
     State#{status:=NewStatus}.
 
 -spec ref2id(options(), mg:ref()) ->
