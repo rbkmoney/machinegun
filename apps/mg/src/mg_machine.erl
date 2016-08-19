@@ -89,11 +89,13 @@ start(Options, ID, Args) ->
     ok.
 repair(Options, Ref, Args) ->
     ?safe(
-        ok = mg_workers_manager:cast(
+        reraise(
+            mg_workers_manager:call(
                 manager_options(Options),
                 ref2id(Options, Ref),
                 {repair, Args}
             )
+        )
     ).
 
 -spec call(options(), mg:ref(), mg:args()) ->
@@ -225,6 +227,9 @@ handle_call_({call, Call}, State=#{status:={working, _}}) ->
     process_call(Call, State);
 handle_call_({call, _Call}, State=#{status:={error, _}}) ->
     {{throw, {internal, {machine_failed, bad_machine_state}}}, State};
+handle_call_({repair, Args}, State=#{status:={error, _}}) ->
+    %% TODO кидать machine_failed при падении запроса
+    {ok, process_signal({repair, Args}, State)};
 handle_call_(touch, State) ->
     {ok, State};
 handle_call_(Call, State) ->
@@ -235,8 +240,6 @@ handle_call_(Call, State) ->
     state().
 handle_cast_(timeout, State=#{status:={working, _}}) ->
     process_signal(timeout, State);
-handle_cast_({repair, Args}, State=#{status:={error, _}}) ->
-    process_signal({repair, Args}, State);
 handle_cast_(touch, State) ->
     State;
 handle_cast_(Cast, State) ->
@@ -445,6 +448,8 @@ log_error({Class, Reason, Stacktrace}) ->
 
 -spec reraise(_) ->
     _.
+reraise(ok) ->
+    ok;
 reraise({ok, R}) ->
     R;
 reraise({throw, E}) ->
