@@ -168,7 +168,7 @@ do_get_status(ID, #{machines:=Machines}) ->
     end.
 
 -spec do_update(mg:id(), mg_storage:status(), [mg:event()], mg:tag(), state()) ->
-    {ok, state()}.
+    state().
 do_update(ID, Status, Events, Tag, State) ->
     do_actions(
         [
