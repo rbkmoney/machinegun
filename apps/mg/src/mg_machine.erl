@@ -163,11 +163,19 @@ init(Options) ->
     {ok, state()} | {error, mg_storage:error()}.
 handle_load(ID, Options) ->
     try
+        Status =
+            case mg_storage:get_status(get_options(storage, Options), ID) of
+                undefined ->
+                    % FIXME
+                    throw({storage, machine_not_found});
+                Status_ ->
+                    Status_
+            end,
         State =
             #{
                 id      => ID,
                 options => Options,
-                status  => mg_storage:get_status (get_options(storage, Options), ID           ),
+                status  => Status,
                 history => mg_storage:get_history(get_options(storage, Options), ID, undefined),
                 tag_to_add   => undefined,
                 event_to_add => []
@@ -375,7 +383,12 @@ set_status(NewStatus, State) ->
 -spec ref2id(options(), mg:ref()) ->
     _ID.
 ref2id(Options, {tag, Tag}) ->
-    mg_storage:resolve_tag(get_options(storage, Options), Tag);
+    case mg_storage:resolve_tag(get_options(storage, Options), Tag) of
+        undefined ->
+            throw({storage, machine_not_found});
+        ID ->
+            ID
+    end;
 ref2id(_, {id, ID}) ->
     ID.
 

@@ -36,30 +36,30 @@ child_spec(Options, ChildID, TimerHandler) ->
         shutdown => 5000
     }.
 
--spec create(_Options, mg:id(), _Args) ->
+-spec create(options(), mg:id(), _Args) ->
     ok.
 create(Options, ID, Args) ->
-    throw_if_error(gen_server:call(self_ref(Options), {create, ID, Args})).
+    gen_server:call(self_ref(Options), {create, ID, Args}).
 
--spec get_status(_Options, mg:id()) ->
-    mg_storage:status().
+-spec get_status(options(), mg:id()) ->
+    mg_storage:status() | undefined.
 get_status(Options, ID) ->
-    throw_if_error(gen_server:call(self_ref(Options), {get_status, ID})).
+    gen_server:call(self_ref(Options), {get_status, ID}).
 
--spec get_history(_Options, mg:id(), mg:history_range() | undefined) ->
+-spec get_history(options(), mg:id(), mg:history_range() | undefined) ->
     mg:history().
 get_history(Options, ID, Range) ->
-    throw_if_error(gen_server:call(self_ref(Options), {get_history, ID, Range})).
+    gen_server:call(self_ref(Options), {get_history, ID, Range}).
 
--spec resolve_tag(_Options, mg:tag()) ->
-    mg:id().
+-spec resolve_tag(options(), mg:tag()) ->
+    mg:id() | undefined.
 resolve_tag(Options, Tag) ->
-    throw_if_error(gen_server:call(self_ref(Options), {resolve_tag, Tag})).
+    gen_server:call(self_ref(Options), {resolve_tag, Tag}).
 
--spec update(_Options, mg:id(), mg_storage:status(), [mg:event()], mg:tag()) ->
+-spec update(options(), mg:id(), mg_storage:status(), [mg:event()], mg:tag()) ->
     ok.
 update(Options, ID, Status, Events, Tag) ->
-    throw_if_error(gen_server:call(self_ref(Options), {update, ID, Status, Events, Tag})).
+    gen_server:call(self_ref(Options), {update, ID, Status, Events, Tag}).
 
 %%
 %% gen_server callbacks
@@ -87,23 +87,23 @@ init({Options, TimerHandler}) ->
 -spec handle_call(_Call, mg_utils:gen_server_from(), state()) ->
     mg_utils:gen_server_handle_call_ret(state()).
 handle_call({create, ID, Args}, _From, State) ->
-    {Resp, NewState} = do_create(ID, Args, State),
-    {reply, Resp, NewState};
+    NewState = do_create(ID, Args, State),
+    {reply, ok, NewState};
 handle_call({get_status, ID}, _From, State) ->
     Resp = do_get_status(ID, State),
     {reply, Resp, State};
 handle_call({update, ID, Status, Events, Tag}, _From, State) ->
-    {Resp, NewState} = do_update(ID, Status, Events, Tag, State),
-    {reply, Resp, NewState};
+    NewState = do_update(ID, Status, Events, Tag, State),
+    {reply, ok, NewState};
 handle_call({add_events, ID, Events}, _From, State) ->
-    {Resp, NewState} = do_add_events(ID, Events, State),
-    {reply, Resp, NewState};
+    NewState = do_add_events(ID, Events, State),
+    {reply, ok, NewState};
 handle_call({get_history, ID, Range}, _From, State) ->
     Resp = do_get_history(ID, Range, State),
     {reply, Resp, State};
 handle_call({add_tag, ID, Tag}, _From, State) ->
-    {Resp, NewState} = do_add_tag(ID, Tag, State),
-    {reply, Resp, NewState};
+    NewState = do_add_tag(ID, Tag, State),
+    {reply, ok, NewState};
 handle_call({resolve_tag, Tag}, _From, State) ->
     Resp = do_resolve_tag(Tag, State),
     {reply, Resp, State};
@@ -153,37 +153,22 @@ self_reg_name(Name) ->
 wrap_name(Name) ->
     erlang:list_to_atom(?MODULE_STRING ++ "_" ++ erlang:atom_to_list(Name)).
 
--spec throw_if_error(ok | {ok, V} | {error, _}) ->
-    ok | V | no_return().
-throw_if_error(ok) ->
-    ok;
-throw_if_error({ok, V}) ->
-    V;
-throw_if_error({error, Error}) ->
-    mg_storage:throw_error(Error).
-
-
 -spec do_create(mg:id(), mg:args(), state()) ->
-    {ok | {error, machine_already_exist}, state()}.
-do_create(ID, Args, State=#{machines:=Machines}) ->
-    case maps:is_key(ID, Machines) of
-        false ->
-            {ok, do_store_events(ID, [], do_store_machine(ID, {created, Args}, State))};
-        true ->
-            {{error, machine_already_exist}, State}
-    end.
+    state().
+do_create(ID, Args, State) ->
+    do_store_events(ID, [], do_store_machine(ID, {created, Args}, State)).
 
 -spec do_get_status(mg:id(), state()) ->
-    {ok, mg_storage:status()} | {error, machine_not_found}.
+    mg_storage:status() | undefined.
 do_get_status(ID, #{machines:=Machines}) ->
     try
-        {ok, maps:get(ID, Machines)}
+        maps:get(ID, Machines)
     catch error:{badkey, ID} ->
-        {error, machine_not_found}
+        undefined
     end.
 
 -spec do_update(mg:id(), mg_storage:status(), [mg:event()], mg:tag(), state()) ->
-    {ok | {error, machine_not_found}, state()}.
+    {ok, state()}.
 do_update(ID, Status, Events, Tag, State) ->
     do_actions(
         [
@@ -195,55 +180,37 @@ do_update(ID, Status, Events, Tag, State) ->
     ).
 
 -spec do_update_status(mg:id(), mg_storage:status(), state()) ->
-    {ok | {error, machine_not_found}, state()}.
-do_update_status(ID, Status, State=#{machines:=Machines}) ->
-    case maps:is_key(ID, Machines) of
-        true ->
-            ok = try_set_timer(ID, Status, State),
-            {ok, do_store_machine(ID, Status, State)};
-        false ->
-            {{error, machine_not_found}, State}
-    end.
+    state().
+do_update_status(ID, Status, State) ->
+    ok = try_set_timer(ID, Status, State),
+    do_store_machine(ID, Status, State).
 
 -spec do_add_events(mg:id(), [mg:event()], state()) ->
-    {ok | {error, machine_not_found}, state()}.
+    state().
 do_add_events(ID, NewMachineEvents, State=#{events:=Events}) ->
-    case maps:get(ID, Events, undefined) of
-        undefined ->
-            {{error, machine_not_found}, State};
-        MachineEvents ->
-            {ok, do_store_events(ID, NewMachineEvents ++ MachineEvents, State)}
-    end.
+    MachineEvents = maps:get(ID, Events, []),
+    do_store_events(ID, NewMachineEvents ++ MachineEvents, State).
 
 -spec do_get_history(mg:id(), mg:history_range(), state()) ->
-    {ok, mg:history()} | {error, machine_not_found}.
+    mg:history().
 do_get_history(ID, Range, #{events:=Events}) ->
-    case maps:get(ID, Events, undefined) of
-        undefined ->
-            {error, machine_not_found};
-        MachineEvents ->
-            {ok, filter_history(MachineEvents, Range)}
-    end.
+    MachineEvents = maps:get(ID, Events, []),
+    filter_history(MachineEvents, Range).
 
 -spec do_add_tag(mg:id(), mg:tag() | undefined, state()) ->
-    {ok | {error, tag_already_exist}, state()}.
+    state().
 do_add_tag(_, undefined, State) ->
-    {ok, State};
+    State;
 do_add_tag(ID, Tag, State=#{tags:=Tags}) ->
-    case maps:is_key(Tag, Tags) of
-        false ->
-            {ok, State#{tags:=maps:put(Tag, ID, Tags)}};
-        true ->
-            {{error, tag_already_exist}, State}
-    end.
+    State#{tags:=maps:put(Tag, ID, Tags)}.
 
 -spec do_resolve_tag(mg:tag(), state()) ->
-    {ok, mg:id()} | {error, machine_not_found}.
+    mg:id() | undefined.
 do_resolve_tag(Tag, #{tags:=Tags}) ->
     try
-        {ok, maps:get(Tag, Tags)}
+        maps:get(Tag, Tags)
     catch error:{badkey, Tag} ->
-        {error, machine_not_found}
+        undefined
     end.
 
 -spec do_store_machine(mg:id(), mg_storage:status(), state()) ->
@@ -265,17 +232,13 @@ try_set_timer(_, _, _) ->
     ok.
 
 
--spec do_actions([fun((state()) -> {ok | {error, _}, state()})], state()) ->
-    {ok | {error, _}, state()}.
+-spec do_actions([fun((state()) -> state())], state()) ->
+    state().
 do_actions([], State) ->
-    {ok, State};
+    State;
 do_actions([Action|RemainActions], State) ->
-    case Action(State) of
-        {ok, NewState} ->
-            do_actions(RemainActions, NewState);
-        Error={{error, _}, _} ->
-            Error
-    end.
+    NewState = Action(State),
+    do_actions(RemainActions, NewState).
 
 %%
 %% history filtering

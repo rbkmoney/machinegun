@@ -27,7 +27,11 @@
 %%
 %% API
 %%
--type status       () :: {created, mg:args()} | {working, calendar:datetime() | undefined} | {error, _Reason}.
+-type status() ::
+      {created, mg:args()}
+    | {working, calendar:datetime() | undefined}
+    | {error, _Reason}
+.
 -type timer_handler() :: {module(), atom(), [_Arg]}.
 
 -type error       () :: term().
@@ -42,13 +46,13 @@
     ok.
 
 -callback get_status(_Options, mg:id()) ->
-    status().
+    status() | undefined.
 
 -callback get_history(_Options, mg:id(), mg:history_range()) ->
     mg:history().
 
 -callback resolve_tag(_Options, mg:tag()) ->
-    mg:id().
+    mg:id() | undefined.
 
 -callback update(_Options, mg:id(), status(), [mg:event()], mg:tag()) ->
     ok.
@@ -66,7 +70,7 @@ create(Options, ID, Args) ->
     mg_utils:apply_mod_opts(Options, create, [ID, Args]).
 
 -spec get_status(_Options, mg:id()) ->
-    status().
+    status() | undefined.
 get_status(Options, ID) ->
     mg_utils:apply_mod_opts(Options, get_status, [ID]).
 
@@ -76,7 +80,7 @@ get_history(Options, ID, Range) ->
     mg_utils:apply_mod_opts(Options, get_history, [ID, Range]).
 
 -spec resolve_tag(_Options, mg:tag()) ->
-    mg:id().
+    mg:id() | undefined.
 resolve_tag(Options, Tag) ->
     mg_utils:apply_mod_opts(Options, resolve_tag, [Tag]).
 

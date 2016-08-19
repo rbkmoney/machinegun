@@ -50,7 +50,7 @@ create(Options, ID, Args) ->
     mg_storage_test_server:create(Options, ID, Args).
 
 -spec get_status(_Options, mg:id()) ->
-    mg_storage:status().
+    mg_storage:status() | undefined.
 get_status(Options, ID) ->
     mg_storage_test_server:get_status(Options, ID).
 
@@ -60,7 +60,7 @@ get_history(Options, ID, Range) ->
     mg_storage_test_server:get_history(Options, ID, Range).
 
 -spec resolve_tag(_Options, mg:tag()) ->
-    mg:id().
+    mg:id() | undefined.
 resolve_tag(Options, Tag) ->
     mg_storage_test_server:resolve_tag(Options, Tag).
 

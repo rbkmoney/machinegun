@@ -38,7 +38,7 @@ handle_events({Options, SourceNS}, SourceID, Events) ->
             )
     catch throw:machine_not_found ->
         ok = start(Options),
-        handle_events(Options, SourceID, Events)
+        handle_events({Options, SourceNS}, SourceID, Events)
     end.
 
 -spec get_history(options(), mg:history_range()) ->
