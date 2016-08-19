@@ -79,7 +79,7 @@ start(Options, ID, Args) ->
     ?safe(
         begin
             % создать в бд
-            ok = mg_storage:create(get_options(storage, Options), ID, Args),
+            ok = mg_storage:update(get_options(storage, Options), ID, {created, Args}, [], undefined),
             % зафорсить загрузку
             ok = touch(Options, ID, sync)
         end

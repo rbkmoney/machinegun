@@ -16,7 +16,6 @@
 -export_type([thrown_error/0]).
 
 -export([child_spec /3]).
--export([create     /3]).
 -export([get_status /2]).
 -export([get_history/3]).
 -export([resolve_tag/2]).
@@ -42,9 +41,6 @@
 -callback child_spec(_Options, atom(), timer_handler()) ->
     supervisor:child_spec().
 
--callback create(_Options, mg:id(), _Args) ->
-    ok.
-
 -callback get_status(_Options, mg:id()) ->
     status() | undefined.
 
@@ -64,21 +60,19 @@
 child_spec(Options, Name, TimerHandler) ->
     mg_utils:apply_mod_opts(Options, child_spec, [Name, TimerHandler]).
 
--spec create(_Options, mg:id(), _Args) ->
-    ok.
-create(Options, ID, Args) ->
-    mg_utils:apply_mod_opts(Options, create, [ID, Args]).
-
+%% Если машины нет, то возвращает undefined
 -spec get_status(_Options, mg:id()) ->
     status() | undefined.
 get_status(Options, ID) ->
     mg_utils:apply_mod_opts(Options, get_status, [ID]).
 
+%% Если машины нет, то возвращает пустой список
 -spec get_history(_Options, mg:id(), mg:history_range() | undefined) ->
     mg:history().
 get_history(Options, ID, Range) ->
     mg_utils:apply_mod_opts(Options, get_history, [ID, Range]).
 
+%% Если машины с таким тэгом нет, то возвращает undefined
 -spec resolve_tag(_Options, mg:tag()) ->
     mg:id() | undefined.
 resolve_tag(Options, Tag) ->

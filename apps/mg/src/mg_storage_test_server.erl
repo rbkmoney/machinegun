@@ -7,7 +7,7 @@
 %% mg_storage callbacks
 -export_type([options/0]).
 -behaviour(mg_storage).
--export([child_spec/3, create/3, get_status/2, get_history/3, resolve_tag/2, update/5]).
+-export([child_spec/3, get_status/2, get_history/3, resolve_tag/2, update/5]).
 
 %% gen_server callbacks
 -behaviour(gen_server).
@@ -35,11 +35,6 @@ child_spec(Options, ChildID, TimerHandler) ->
         restart  => permanent,
         shutdown => 5000
     }.
-
--spec create(options(), mg:id(), _Args) ->
-    ok.
-create(Options, ID, Args) ->
-    gen_server:call(self_ref(Options), {create, ID, Args}).
 
 -spec get_status(options(), mg:id()) ->
     mg_storage:status() | undefined.
@@ -86,9 +81,6 @@ init({Options, TimerHandler}) ->
 
 -spec handle_call(_Call, mg_utils:gen_server_from(), state()) ->
     mg_utils:gen_server_handle_call_ret(state()).
-handle_call({create, ID, Args}, _From, State) ->
-    NewState = do_create(ID, Args, State),
-    {reply, ok, NewState};
 handle_call({get_status, ID}, _From, State) ->
     Resp = do_get_status(ID, State),
     {reply, Resp, State};
@@ -152,11 +144,6 @@ self_reg_name(Name) ->
     atom().
 wrap_name(Name) ->
     erlang:list_to_atom(?MODULE_STRING ++ "_" ++ erlang:atom_to_list(Name)).
-
--spec do_create(mg:id(), mg:args(), state()) ->
-    state().
-do_create(ID, Args, State) ->
-    do_store_events(ID, [], do_store_machine(ID, {created, Args}, State)).
 
 -spec do_get_status(mg:id(), state()) ->
     mg_storage:status() | undefined.

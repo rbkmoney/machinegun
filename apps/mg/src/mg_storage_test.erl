@@ -9,7 +9,7 @@
 
 %% mg_storage callbacks
 -behaviour(mg_storage).
--export([child_spec/3, create/3, get_status/2, get_history/3, resolve_tag/2, update/5]).
+-export([child_spec/3, get_status/2, get_history/3, resolve_tag/2, update/5]).
 
 %%
 %% supervisor callbacks
@@ -43,11 +43,6 @@ child_spec(Options, ChildID, TimerHandler) ->
         restart  => permanent,
         shutdown => 5000
     }.
-
--spec create(_Options, mg:id(), _Args) ->
-    ok.
-create(Options, ID, Args) ->
-    mg_storage_test_server:create(Options, ID, Args).
 
 -spec get_status(_Options, mg:id()) ->
     mg_storage:status() | undefined.
