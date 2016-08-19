@@ -222,7 +222,7 @@ failed_machine_call(C) ->
 -spec failed_machine_repair_error(config()) ->
     _.
 failed_machine_repair_error(C) ->
-    ok = (catch mg_machine_test_door:repair(a_opts(C), ?Ref, error)).
+    #'MachineFailed'{} = (catch mg_machine_test_door:repair(a_opts(C), ?Ref, error)).
 
 -spec failed_machine_repair(config()) ->
     _.

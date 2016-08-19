@@ -10,9 +10,6 @@
 %% API
 -export_type([options     /0]).
 
--export_type([error       /0]).
--export_type([thrown_error/0]).
-
 -export([child_spec /2]).
 -export([start_link /1]).
 -export([call       /3]).
@@ -25,10 +22,6 @@
 %%
 %% API
 %%
-%% кидаемая ожидаемая ошибка
--type error       () :: {loading, _Error}.
--type thrown_error() :: {workers, error()}.
-
 -type options() :: #{
     name           => _,
     worker_options => mg_worker:options()
@@ -51,15 +44,15 @@ start_link(Options) ->
 
 % sync
 -spec call(options(), _ID, _Call) ->
-    _Reply.
+    _Reply | {error, _}.
 call(Options, ID, Call) ->
     start_if_needed(Options, ID, fun() -> mg_worker:call(ID, Call) end).
 
 % async
 -spec cast(options(), _ID, _Cast) ->
-    ok.
+    ok | {error, _}.
 cast(Options, ID, Cast) ->
-    ok = start_if_needed(Options, ID, fun() -> mg_worker:cast(ID, Cast) end).
+    start_if_needed(Options, ID, fun() -> mg_worker:cast(ID, Cast) end).
 
 %%
 %% supervisor callbacks
@@ -74,7 +67,7 @@ init(Options) ->
 %% local
 %%
 -spec start_if_needed(options(), _ID, fun()) ->
-    _.
+    _ | {error, _}.
 start_if_needed(Options, ID, Expr) ->
     start_if_needed_iter(Options, ID, Expr, 10).
 
@@ -94,8 +87,8 @@ start_if_needed_iter(Options, ID, Expr, Attempts) ->
                     start_if_needed_iter(Options, ID, Expr, Attempts - 1);
                 {error, {already_started, _}} ->
                     start_if_needed_iter(Options, ID, Expr, Attempts - 1);
-                {error, Error} ->
-                    throw_error({loading, Error})
+                Error={error, _} ->
+                    Error
             end
     end.
 
@@ -124,8 +117,3 @@ gproc_key(Options) ->
     term().
 wrap(V) ->
     {?MODULE, V}.
-
--spec throw_error(error()) ->
-    no_return().
-throw_error(Error) ->
-    erlang:throw({workers, Error}).

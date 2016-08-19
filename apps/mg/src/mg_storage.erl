@@ -12,16 +12,11 @@
 -export_type([status       /0]).
 -export_type([timer_handler/0]).
 
--export_type([error       /0]).
--export_type([thrown_error/0]).
-
 -export([child_spec /3]).
 -export([get_status /2]).
 -export([get_history/3]).
 -export([resolve_tag/2]).
 -export([update     /5]).
-
--export([throw_error/1]).
 
 %%
 %% API
@@ -32,9 +27,6 @@
     | {error, _Reason}
 .
 -type timer_handler() :: {module(), atom(), [_Arg]}.
-
--type error       () :: term().
--type thrown_error() :: {storage, error()}.
 
 %%
 
@@ -82,10 +74,3 @@ resolve_tag(Options, Tag) ->
     ok.
 update(Options, ID, Status, Events, Tag) ->
     mg_utils:apply_mod_opts(Options, update, [ID, Status, Events, Tag]).
-
-
-%% все ошибки из модулей с поведением mg_storage должны кидаться через эту функцию
--spec throw_error(error()) ->
-    no_return().
-throw_error(Error) ->
-    erlang:throw({storage, Error}).

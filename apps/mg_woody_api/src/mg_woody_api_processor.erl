@@ -43,16 +43,11 @@ process_call(Options, CallArgs) ->
     _.
 call_processor(Options, WoodyContext, Function, Args) ->
     URL = Options,
-    {Result, NewWoodyContext} =
-        woody_client:call_safe(
+    {{ok, Result}, WoodyContext} =
+        woody_client:call(
             WoodyContext,
             {{mg_proto_state_processing_thrift, 'Processor'}, Function, Args},
             #{url => URL}
         ),
-    case Result of
-        {ok, Value} ->
-            {Value, NewWoodyContext};
-        {error, Reason} ->
-            % TODO woody_context
-            mg_processor:throw_error(Reason)
-    end.
+    {Result, WoodyContext}.
+
