@@ -2,12 +2,13 @@
 -include_lib("stdlib/include/ms_transform.hrl").
 
 %% internal API
--export([start_link/2]).
+-export([start_link    /2]).
+-export([handle_timeout/2]).
 
 %% mg_storage callbacks
 -export_type([options/0]).
 -behaviour(mg_storage).
--export([child_spec/3, get_status/2, get_history/3, resolve_tag/2, update/5]).
+-export([child_spec/3, create_machine/3, get_machine/2, get_history/3, resolve_tag/2, update_machine/4]).
 
 %% gen_server callbacks
 -behaviour(gen_server).
@@ -36,10 +37,15 @@ child_spec(Options, ChildID, TimerHandler) ->
         shutdown => 5000
     }.
 
--spec get_status(options(), mg:id()) ->
-    mg_storage:status() | undefined.
-get_status(Options, ID) ->
-    gen_server:call(self_ref(Options), {get_status, ID}).
+-spec create_machine(_Options, mg:id(), mg:args()) ->
+    mg_storage:machine().
+create_machine(Options, ID, Args) ->
+    gen_server:call(self_ref(Options), {create_machine, ID, Args}).
+
+-spec get_machine(options(), mg:id()) ->
+    mg_storage:machine() | undefined.
+get_machine(Options, ID) ->
+    gen_server:call(self_ref(Options), {get_machine, ID}).
 
 -spec get_history(options(), mg:id(), mg:history_range() | undefined) ->
     mg:history().
@@ -51,18 +57,18 @@ get_history(Options, ID, Range) ->
 resolve_tag(Options, Tag) ->
     gen_server:call(self_ref(Options), {resolve_tag, Tag}).
 
--spec update(options(), mg:id(), mg_storage:status(), [mg:event()], mg:tag()) ->
-    ok.
-update(Options, ID, Status, Events, Tag) ->
-    gen_server:call(self_ref(Options), {update, ID, Status, Events, Tag}).
+-spec update_machine(options(), mg:id(), mg_storage:machine(), mg_storage:update()) ->
+    mg_storage:machine().
+update_machine(Options, ID, Machine, Update) ->
+    gen_server:call(self_ref(Options), {update_machine, ID, Machine, Update}).
 
 %%
 %% gen_server callbacks
 %%
 -type state() :: #{
-    machines => #{mg:id () =>  mg_storage:status() },
-    events   => #{mg:id () => [mg        :event ()]},
-    tags     => #{mg:tag() =>  mg        :id    () },
+    machines => #{mg:id () =>  mg_storage:machine() },
+    events   => #{mg:id () => [mg        :event  ()]},
+    tags     => #{mg:tag() =>  mg        :id     () },
     options  => options()
 }.
 
@@ -81,21 +87,18 @@ init({Options, TimerHandler}) ->
 
 -spec handle_call(_Call, mg_utils:gen_server_from(), state()) ->
     mg_utils:gen_server_handle_call_ret(state()).
-handle_call({get_status, ID}, _From, State) ->
-    Resp = do_get_status(ID, State),
+handle_call({create_machine, ID, Args}, _From, State) ->
+    {Resp, NewState} = do_create_machine(ID, Args, State),
+    {reply, Resp, NewState};
+handle_call({get_machine, ID}, _From, State) ->
+    Resp = do_get_machine(ID, State),
     {reply, Resp, State};
-handle_call({update, ID, Status, Events, Tag}, _From, State) ->
-    NewState = do_update(ID, Status, Events, Tag, State),
-    {reply, ok, NewState};
-handle_call({add_events, ID, Events}, _From, State) ->
-    NewState = do_add_events(ID, Events, State),
-    {reply, ok, NewState};
+handle_call({update_machine, ID, Machine, Update}, _From, State) ->
+    {Resp, NewState} = do_update_machine(ID, Machine, Update, State),
+    {reply, Resp, NewState};
 handle_call({get_history, ID, Range}, _From, State) ->
     Resp = do_get_history(ID, Range, State),
     {reply, Resp, State};
-handle_call({add_tag, ID, Tag}, _From, State) ->
-    NewState = do_add_tag(ID, Tag, State),
-    {reply, ok, NewState};
 handle_call({resolve_tag, Tag}, _From, State) ->
     Resp = do_resolve_tag(Tag, State),
     {reply, Resp, State};
@@ -145,38 +148,69 @@ self_reg_name(Name) ->
 wrap_name(Name) ->
     erlang:list_to_atom(?MODULE_STRING ++ "_" ++ erlang:atom_to_list(Name)).
 
--spec do_get_status(mg:id(), state()) ->
-    mg_storage:status() | undefined.
-do_get_status(ID, #{machines:=Machines}) ->
+-spec do_get_machine(mg:id(), state()) ->
+    mg_storage:machine() | undefined.
+do_get_machine(ID, #{machines:=Machines}) ->
     try
         maps:get(ID, Machines)
     catch error:{badkey, ID} ->
         undefined
     end.
 
--spec do_update(mg:id(), mg_storage:status(), [mg:event()], mg:tag(), state()) ->
-    state().
-do_update(ID, Status, Events, Tag, State) ->
-    do_actions(
-        [
-            fun(S) -> do_add_events   (ID, Events, S) end,
-            fun(S) -> do_add_tag      (ID, Tag   , S) end,
-            fun(S) -> do_update_status(ID, Status, S) end
-        ],
-        State
-    ).
+-spec do_create_machine(mg:id(), mg:args(), state()) ->
+    {mg_storage:machine(), state()}.
+do_create_machine(ID, Args, State) ->
+    Machine =
+        #{
+            status        => {created, Args},
+            last_event_id => undefined,
+            db_state      => 1
+        },
+    NewState = do_store_machine(ID, Machine, State),
+    {Machine, NewState}.
 
--spec do_update_status(mg:id(), mg_storage:status(), state()) ->
-    state().
-do_update_status(ID, Status, State) ->
-    ok = try_set_timer(ID, Status, State),
-    do_store_machine(ID, Status, State).
+-spec do_update_machine(mg:id(), mg_storage:machine(), mg_storage:update(), state()) ->
+    {mg_storage:machine(), state()}.
+do_update_machine(ID, Machine, Update, State) ->
+    % хотим убедится, что логика правильно работает с экземпляром machine
+    ok = check_machine_version(ID, Machine, State),
+
+    OldStatus = maps:get(status, Machine),
+    NewStatus = maps:get(status, Update, OldStatus),
+    ok = try_set_timer(ID, NewStatus, State),
+
+    NewMachine =
+        Machine#{
+            status        := NewStatus,
+            last_event_id := maps:get(last_event_id, Update, maps:get(last_event_id, Machine)),
+            db_state      := maps:get(db_state, Machine) + 1
+        },
+    NewState =
+        do_actions(
+            [
+                fun(S) -> do_add_events   (ID, maps:get(new_events, Update, []       ), S) end,
+                fun(S) -> do_add_tag      (ID, maps:get(new_tag   , Update, undefined), S) end,
+                fun(S) -> do_store_machine(ID, NewMachine, S) end
+            ],
+            State
+        ),
+    {NewMachine, NewState}.
+
+-spec check_machine_version(mg:id(), mg_storage:machine(), state()) ->
+    ok | no_return().
+check_machine_version(ID, Machine, State) ->
+    case do_get_machine(ID, State) of
+        DBMachine when DBMachine =:= Machine ->
+            ok;
+        DBMachine ->
+            exit({machine_version_mismatch, DBMachine, Machine})
+    end.
 
 -spec do_add_events(mg:id(), [mg:event()], state()) ->
     state().
 do_add_events(ID, NewMachineEvents, State=#{events:=Events}) ->
     MachineEvents = maps:get(ID, Events, []),
-    do_store_events(ID, NewMachineEvents ++ MachineEvents, State).
+    do_store_events(ID, MachineEvents ++ NewMachineEvents, State).
 
 -spec do_get_history(mg:id(), mg:history_range(), state()) ->
     mg:history().
@@ -200,10 +234,10 @@ do_resolve_tag(Tag, #{tags:=Tags}) ->
         undefined
     end.
 
--spec do_store_machine(mg:id(), mg_storage:status(), state()) ->
+-spec do_store_machine(mg:id(), mg_storage:machine(), state()) ->
     state().
-do_store_machine(ID, Status, State=#{machines:=Machines}) ->
-    State#{machines:=maps:put(ID, Status, Machines)}.
+do_store_machine(ID, Machine, State=#{machines:=Machines}) ->
+    State#{machines:=maps:put(ID, Machine, Machines)}.
 
 -spec do_store_events(mg:id(), [mg:event()], state()) ->
     state().
@@ -214,10 +248,14 @@ do_store_events(ID, MachineEvents, State=#{events:=Events}) ->
     ok.
 try_set_timer(ID, {working, TimerDateTime}, #{options:=Options, timer_handler:=TimerHandler})
     when TimerDateTime =/= undefined ->
-    mg_timers:set(Options, ID, TimerDateTime, TimerHandler);
-try_set_timer(_, _, _) ->
-    ok.
+    mg_timers:set(Options, ID, TimerDateTime, {?MODULE, handle_timeout, [TimerHandler]});
+try_set_timer(ID, _, #{options:=Options}) ->
+    mg_timers:cancel(Options, ID).
 
+-spec handle_timeout(mg_storage:timer_handler(), mg:id()) ->
+    _.
+handle_timeout({M, F, A}, ID) ->
+    erlang:spawn_link(M, F, A ++ [ID]).
 
 -spec do_actions([fun((state()) -> state())], state()) ->
     state().
@@ -240,9 +278,9 @@ filter_history(History, {After, Limit, Direction}) ->
 -spec apply_direction(mg:direction(), mg:history()) ->
     mg:history().
 apply_direction(forward, History) ->
-    lists:reverse(History);
+    History;
 apply_direction(backward, History) ->
-    History.
+    lists:reverse(History).
 
 -spec filter_history_iter(mg:history(), mg:event_id() | undefined, non_neg_integer(), mg:history()) ->
     mg:history().

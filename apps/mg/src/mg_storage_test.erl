@@ -9,7 +9,7 @@
 
 %% mg_storage callbacks
 -behaviour(mg_storage).
--export([child_spec/3, get_status/2, get_history/3, resolve_tag/2, update/5]).
+-export([child_spec/3, create_machine/3, get_machine/2, get_history/3, resolve_tag/2, update_machine/4]).
 
 %%
 %% supervisor callbacks
@@ -44,10 +44,15 @@ child_spec(Options, ChildID, TimerHandler) ->
         shutdown => 5000
     }.
 
--spec get_status(_Options, mg:id()) ->
-    mg_storage:status() | undefined.
-get_status(Options, ID) ->
-    mg_storage_test_server:get_status(Options, ID).
+-spec create_machine(_Options, mg:id(), mg:args()) ->
+    mg_storage:machine().
+create_machine(Options, ID, Args) ->
+    mg_storage_test_server:create_machine(Options, ID, Args).
+
+-spec get_machine(_Options, mg:id()) ->
+    mg_storage:machine() | undefined.
+get_machine(Options, ID) ->
+    mg_storage_test_server:get_machine(Options, ID).
 
 -spec get_history(_Options, mg:id(), mg:history_range() | undefined) ->
     mg:history().
@@ -59,7 +64,7 @@ get_history(Options, ID, Range) ->
 resolve_tag(Options, Tag) ->
     mg_storage_test_server:resolve_tag(Options, Tag).
 
--spec update(_Options, mg:id(), mg_storage:status(), [mg:event()], mg:tag()) ->
-    ok.
-update(Options, ID, Status, Events, Tag) ->
-    mg_storage_test_server:update(Options, ID, Status, Events, Tag).
+-spec update_machine(_Options, mg:id(), mg_storage:machine(), mg_storage:update()) ->
+    mg_storage:machine().
+update_machine(Options, ID, Machine, Update) ->
+    mg_storage_test_server:update_machine(Options, ID, Machine, Update).

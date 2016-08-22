@@ -13,7 +13,6 @@
 -export([child_spec /2]).
 -export([start_link /1]).
 -export([call       /3]).
--export([cast       /3]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -48,12 +47,6 @@ start_link(Options) ->
 call(Options, ID, Call) ->
     start_if_needed(Options, ID, fun() -> mg_worker:call(ID, Call) end).
 
-% async
--spec cast(options(), _ID, _Cast) ->
-    ok | {error, _}.
-cast(Options, ID, Cast) ->
-    start_if_needed(Options, ID, fun() -> mg_worker:cast(ID, Cast) end).
-
 %%
 %% supervisor callbacks
 %%
@@ -85,16 +78,28 @@ start_if_needed_iter(Options, ID, Expr, Attempts) ->
             %  чтобы потом не ловить неожиданных проблем
             case start_child(Options, ID) of
                 {ok, Pid} ->
-                    _ = (catch mg_worker:load(Pid)),
-                    start_if_needed_iter(Options, ID, Expr, Attempts - 1);
+                    start_if_needed_iter_load(Pid, Options, ID, Expr, Attempts);
                 {error, {already_started, Pid}} ->
-                    % чтобы нечаянно не опередить запрос на загрузку выше
-                    % загрузка может и не пройти и падать при этом не надо
-                    _ = (catch mg_worker:load(Pid)),
-                    start_if_needed_iter(Options, ID, Expr, Attempts - 1);
+                    start_if_needed_iter_load(Pid, Options, ID, Expr, Attempts);
                 Error={error, _} ->
                     Error
             end
+    end.
+
+-spec start_if_needed_iter_load(pid(), options(), _ID, fun(), non_neg_integer()) ->
+    _.
+start_if_needed_iter_load(Pid, Options, ID, Expr, Attempts) ->
+    try mg_worker:load(Pid) of
+        ok ->
+            start_if_needed_iter(Options, ID, Expr, Attempts - 1);
+        Error={error, _} ->
+            Error
+    catch exit:_ ->
+        % если произошло одновременно 2 запроса,
+        % один запустил воркера, второй получил готовый
+        % оба отправили запрос на загрузку, но первый упал с ошибкой
+        % OMG!!!
+        start_if_needed_iter(Options, ID, Expr, Attempts - 1)
     end.
 
 -spec start_child(options(), _ID) ->

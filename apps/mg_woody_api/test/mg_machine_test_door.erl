@@ -64,8 +64,7 @@ start_link(Options) ->
 -spec start(automaton_options(), mg:id(), mg:tag()) ->
     ok.
 start(Options, ID, Tag) ->
-    automation_start(Options, ID, Tag),
-    ok.
+    automation_start(Options, ID, Tag).
 
 -spec do_action(automaton_options(), mg:ref(), action()) -> ok | {error, bad_state | bad_passwd}.
 do_action(Options, Action, Ref) ->

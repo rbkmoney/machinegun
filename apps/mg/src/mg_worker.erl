@@ -8,7 +8,6 @@
 -export([start_link/2]).
 -export([load      /1]).
 -export([call      /2]).
--export([cast      /2]).
 
 %% gen_server callbacks
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3, code_change/3, terminate/2]).
@@ -24,9 +23,6 @@
 
 -callback handle_call(_Call, _State) ->
     {_Replay, _State}.
-
--callback handle_cast(_Cast, _State) ->
-    _State.
 
 
 -type options() :: mg_utils:mod_opts().
@@ -49,7 +45,7 @@ start_link(Options, ID) ->
 % загрузка делается отдельно, чтобы не блокировать этим супервизор,
 % т.к. у него легко может начать расти очередь
 -spec load(pid()) ->
-    ok.
+    ok | {error, _}.
 load(Pid) ->
     gen_server:call(Pid, load).
 
@@ -57,12 +53,6 @@ load(Pid) ->
     _Result.
 call(ID, Call) ->
     gen_server:call(self_ref(ID), {call, Call}).
-
--spec cast(_ID, _Cast) ->
-    ok.
-cast(ID, Cast) ->
-    gen_server:cast(self_ref(ID), {cast, Cast}).
-
 
 %%
 %% gen_server callbacks
@@ -118,9 +108,6 @@ handle_call(Call, From, State) ->
 
 -spec handle_cast(_Cast, state()) ->
     mg_utils:gen_server_handle_cast_ret(state()).
-handle_cast({cast, Cast}, State=#{mod:=Mod, state:={working, ModState}}) ->
-    NewState = State#{state:={working, Mod:handle_cast(Cast, ModState)}},
-    {noreply, schedule_unload_timer(NewState), hibernate_timeout(NewState)};
 handle_cast(Cast, State) ->
     ok = error_logger:error_msg("unexpected gen_server cast received: ~p", [Cast]),
     {noreply, schedule_unload_timer(State), hibernate_timeout(State)}.

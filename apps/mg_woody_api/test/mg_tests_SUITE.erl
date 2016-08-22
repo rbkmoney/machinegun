@@ -60,6 +60,7 @@ all() ->
         {group, test_door }
     ].
 
+%% TODO проверить отмену таймера
 -spec groups() ->
     [{group_name(), list(_), test_name()}].
 groups() ->
@@ -117,7 +118,7 @@ groups() ->
     config().
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all,c),
-    % dbg:tpl({mg_event_sink, handle_events, '_'}, x),
+    % dbg:tpl({mg_machine, '_', '_'}, x),
     C.
 
 -spec end_per_suite(config()) ->
@@ -274,12 +275,18 @@ machine_test_door(C) ->
     ok = test_door_do_action(C, close),
 
     CS4 = #{state:=closed} = test_door_update_state(C, CS3),
-    ok = test_door_do_action(C, open),
+    % ждем, что таймер не сработает
     ok = timer:sleep(2000),
+    CS5 = #{state:=closed} = test_door_update_state(C, CS4),
+    ok = test_door_do_action(C, open),
+    CS6 = #{state:=open} = test_door_update_state(C, CS5),
+    % ждем, что таймер сработает
+    ok = timer:sleep(2000),
+    CS7 = #{state:=closed} = test_door_update_state(C, CS6),
     ok = test_door_do_action(C, {lock, <<"123">>}),
     {error, bad_passwd} = test_door_do_action(C, {unlock, <<"12">>}),
     ok = test_door_do_action(C, {unlock, <<"123">>}),
-    _CS5 = #{state:=closed} = test_door_update_state(C, CS4).
+    _CS8 = #{state:=closed} = test_door_update_state(C, CS7).
 
 %%
 %% utils

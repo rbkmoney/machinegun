@@ -5,6 +5,8 @@
 %%% Реализует понятие тэгов.
 %%% При падении хендлера переводит машину в error состояние.
 %%%
+%%% Эвенты в машине всегда идут в таком порядке, что слева самые старые.
+%%%
 -module(mg_machine).
 
 %%
@@ -103,10 +105,10 @@ repair(Options, Ref, Args) ->
 call(Options, Ref, Call) ->
     mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ref2id(Options, Ref), {call, Call})).
 
--spec get_history(options(), mg:ref(), mg:history_range()) ->
+-spec get_history(options(), mg:ref(), mg:history_range() | undefined) ->
     mg:history().
 get_history(Options, Ref, Range) ->
-    mg_storage:get_history(get_options(storage, Options), ref2id(Options, Ref), Range).
+    get_history_by_id(Options, ref2id(Options, Ref), Range).
 
 %%
 %% Internal API
@@ -114,7 +116,7 @@ get_history(Options, Ref, Range) ->
 -spec handle_timeout(options(), _ID) ->
     ok.
 handle_timeout(Options, ID) ->
-    ok = mg_workers_manager:cast(manager_options(Options), ID, timeout).
+    ok = mg_workers_manager:call(manager_options(Options), ID, timeout).
 
 %%
 %% supervisor
@@ -134,10 +136,8 @@ init(Options) ->
 -type state() :: #{
     id      => mg:id(),
     options => options(),
-    status  => undefined | mg_storage:status(),
-    history => mg:history(),
-    tag_to_add   => undefined | mg:tag(),
-    event_to_add => [mg:event()]
+    machine => mg_storage:machine() | undefined,
+    update  => mg_storage:update()
 }.
 
 -spec handle_load(_ID, module()) ->
@@ -148,13 +148,11 @@ handle_load(ID, Options) ->
             #{
                 id      => ID,
                 options => Options,
-                status  => mg_storage:get_status (get_options(storage, Options), ID           ),
-                history => mg_storage:get_history(get_options(storage, Options), ID, undefined),
-                tag_to_add   => undefined,
-                event_to_add => []
+                machine => mg_storage:get_machine(get_options(storage, Options), ID),
+                update  => #{}
             },
         % есть подозрения, что это не очень хорошо, но нет понимания, что именно
-        {ok, transit_state(State, handle_load_(State))}
+        {ok, transit_state(handle_load_(State))}
     catch
         throw:Reason ->
             {error, Reason};
@@ -168,15 +166,15 @@ handle_load(ID, Options) ->
     {_Resp, state()}.
 handle_call(Call, State) ->
     try
-        {Resp, NewState} = handle_call_(Call, State),
-        {Resp, transit_state(State, NewState)}
+        {Resp, Update} = handle_call_(Call, State),
+        {Resp, transit_state(Update)}
     catch
         throw:Reason ->
             {{error, Reason}, State};
         Class:Reason ->
             {
                 {error, machine_failed},
-                transit_state(State, handle_exception({Class, Reason, erlang:get_stacktrace()}, State))
+                transit_state(handle_exception({Class, Reason, erlang:get_stacktrace()}, State))
             }
     end.
 
@@ -184,12 +182,12 @@ handle_call(Call, State) ->
     state().
 handle_cast(Cast, State) ->
     try
-        transit_state(State, handle_cast_(Cast, State))
+        transit_state(handle_cast_(Cast, State))
     catch
         throw:Error ->
             {{error, Error}, State};
         Class:Error ->
-            transit_state(State, handle_exception({Class, Error, erlang:get_stacktrace()}, State))
+            transit_state(handle_exception({Class, Error, erlang:get_stacktrace()}, State))
     end.
 
 -spec handle_unload(state()) ->
@@ -203,71 +201,77 @@ handle_unload(_) ->
     state().
 handle_exception(Exception, State=#{id:=ID}) ->
     ok = log_machine_error(ID, Exception),
-    set_status({error, Exception}, State).
+    Update =
+        #{
+            status => {error, Exception}
+        },
+    State#{update:=Update}.
 
--spec transit_state(state(), state()) ->
+-spec transit_state(state()) ->
     state().
-transit_state(State, NewState) when State =:= NewState ->
+transit_state(State=#{machine:=Machine, update:=Update}) when erlang:map_size(Update) =:= 0; Machine =:= undefined ->
     State;
-transit_state(#{id:=ID}, NewState=#{id:=NewID}) when NewID =:= ID ->
-    #{options:=Options, status:=NewStatus, event_to_add:=NewEvents, tag_to_add:=NewTag} = NewState,
-    ok = mg_storage:update(get_options(storage, Options), ID, NewStatus, NewEvents, NewTag),
-    NewState#{event_to_add:=[], tag_to_add:=undefined}.
-
--spec set_status(mg_storage:status(), state()) ->
-    state().
-set_status(NewStatus, State) ->
-    State#{status:=NewStatus}.
+transit_state(State=#{id:=ID, options:=Options, machine:=Machine, update:=Update}) ->
+    NewMachine =
+        mg_storage:update_machine(get_options(storage, Options), ID, Machine, Update),
+    State#{machine:=NewMachine, update:=#{}}.
 
 %%
 
 -spec handle_load_(state()) ->
     state().
-handle_load_(State=#{id:=ID, status:={created, Args}}) ->
+handle_load_(State=#{id:=ID, machine:=#{status:={created, Args}}}) ->
     process_signal({init, ID, Args}, State);
 handle_load_(State) ->
     State.
 
--spec
-handle_call_(_Call         , state()                     ) -> {_Resp, state()}.
-handle_call_({create, Args}, State=#{status:=undefined  }) -> {ok, process_creation(Args, State)};
-handle_call_({create, _   }, State=#{status:=_          }) -> {{error, machine_already_exist}, State};
+-spec handle_call_(_Call, state()) ->
+    {_Resp, state()}.
+handle_call_(Call, State=#{machine:=Machine}) ->
+    case {Call, Machine} of
+        {{create, Args   }, undefined              } -> {ok, process_creation(Args, State)};
+        {{create, _      }, #{status:=           _}} -> {{error, machine_already_exist}, State};
+        {{call  , SubCall}, #{status:={working, _}}} -> process_call(SubCall, State);
+        {{call  , _      }, #{status:={error  , _}}} -> {{error, machine_failed       }, State};
+        {{call  , _      }, undefined              } -> {{error, machine_not_found    }, State};
+        {{repair, Args   }, #{status:={error  , _}}} -> { ok, process_signal({repair, Args}, State)};
+        {{repair, _      }, #{status:={working, _}}} -> { ok,                            State};
+        {{repair, _      }, undefined              } -> {{error, machine_not_found    }, State};
+        { timeout         , #{status:={working, _}}} -> { ok, process_signal(timeout, State)};
+        { timeout         , #{status:=_           }} -> { ok,                            State}
+        % если машина в статусе _created_, а ей пришел запрос,
+        % то это значит, что-то пошло не так, такого быть не должно
+    end.
 
-handle_call_({call  , Call}, State=#{status:={working, _}}) -> process_call(Call, State);
-handle_call_({call  , _   }, State=#{status:={error,   _}}) -> {{error, machine_failed}, State};
-handle_call_({call  , _   }, State=#{status:=undefined   }) -> {{error, machine_not_found}, State};
-
-handle_call_({repair, Args}, State=#{status:={error  , _}}) -> {ok, process_signal({repair, Args}, State)};
-handle_call_({repair, _   }, State=#{status:={working, _}}) -> {ok, State}; % точно нужно такое поведение?
-handle_call_({repair, _   }, State=#{status:=undefined   }) -> {{error, machine_not_found}, State}.
-
-% если машина в статусе _created_, а ей пришел запрос, то это значит, что-то пошло не так, такого быть не должно
 
 -spec
 handle_cast_(_Cast, state()) -> state().
 
-handle_cast_(timeout, State=#{status:={working, _}}) -> process_signal(timeout, State);
-handle_cast_(timeout, State=#{status:=_           }) -> State. % опоздавший таймаут
+handle_cast_(timeout, State=#{machine:=#{status:={working, _}}}) -> process_signal(timeout, State);
+handle_cast_(timeout, State=#{machine:=#{status:=_           }}) -> State. % опоздавший таймаут
 
 %%
 
 -spec process_creation(_Args, state()) ->
     state().
 process_creation(Args, State=#{id:=ID, options:=Options}) ->
-    NewStatus = {created, Args},
-    ok = mg_storage:update(get_options(storage, Options), ID, NewStatus, [], undefined),
-    handle_load_(State#{status:=NewStatus}).
+    Machine = mg_storage:create_machine(get_options(storage, Options), ID, Args),
+    handle_load_(State#{machine:=Machine}).
 
 -spec process_call(_Call, state()) ->
     {{ok, _Resp}, state()}.
-process_call(Call, State=#{options:=Options, history:=History}) ->
+process_call(Call, State=#{options:=Options, id:=ID}) ->
+    % TODO прокидывать range снаружи
+    History = get_history_by_id(Options, ID, undefined),
     {Response, EventsBodies, ComplexAction} =
         mg_processor:process_call(get_options(processor, Options), {Call, History}),
     {{ok, Response}, handle_processor_result(EventsBodies, ComplexAction, State)}.
 
 -spec process_signal(mg:signal(), state()) ->
     state().
-process_signal(Signal, State=#{options:=Options, history:=History}) ->
+process_signal(Signal, State=#{options:=Options, id:=ID}) ->
+    % TODO прокидывать range снаружи
+    History = get_history_by_id(Options, ID, undefined),
     {EventsBodies, ComplexAction} =
         mg_processor:process_signal(get_options(processor, Options), {Signal, History}),
     handle_processor_result(EventsBodies, ComplexAction, State).
@@ -277,9 +281,18 @@ process_signal(Signal, State=#{options:=Options, history:=History}) ->
 -spec handle_processor_result([mg:event_body()], mg:complex_action(), state()) ->
     state().
 handle_processor_result(EventsBodies, ComplexAction, State) ->
-    Events = generate_events(EventsBodies, get_last_event_id(State)),
+    {Events, NewLastEventID} = generate_events(EventsBodies, get_last_event_id(State)),
+    TimerAction = maps:get(timer, ComplexAction, undefined),
+    TagAction   = maps:get(tag  , ComplexAction, undefined),
     ok = notify_observer(Events, State),
-    do_complex_action(ComplexAction, append_events_to_history(Events, State)).
+    Update =
+        #{
+            status        => {working, get_timeout_datetime(TimerAction)},
+            last_event_id => NewLastEventID,
+            new_events    => Events,
+            new_tag       => TagAction
+        },
+    State#{update:=Update}.
 
 -spec notify_observer([mg:event()], state()) ->
     ok.
@@ -291,21 +304,14 @@ notify_observer(Events, #{id:=SourceID, options:=Options}) ->
             ok = mg_observer:handle_events(Observer, SourceID, Events)
     end.
 
--spec append_events_to_history([mg:event()], state()) ->
-    state().
-append_events_to_history(Events, State=#{history:=History}) ->
-    State#{history := History ++ Events, event_to_add:=Events}.
-
 -spec generate_events([mg:event_body()], mg:event_id()) ->
-    [mg:event()].
+    {[mg:event()], mg:event_id()}.
 generate_events(EventsBodies, LastID) ->
-    {Events, _} =
-        lists:mapfoldl(
-            fun generate_event/2,
-            LastID,
-            EventsBodies
-        ),
-    Events.
+    lists:mapfoldl(
+        fun generate_event/2,
+        LastID,
+        EventsBodies
+    ).
 
 -spec generate_event(mg:event_body(), mg:event_id()) ->
     {mg:event(), mg:event_id()}.
@@ -321,11 +327,8 @@ generate_event(EventBody, LastID) ->
 
 -spec get_last_event_id(state()) ->
     mg:event_id() | undefined.
-get_last_event_id(#{history:=[]}) ->
-    undefined;
-get_last_event_id(#{history:=History}) ->
-    #{id:=ID} = lists:last(History),
-    ID.
+get_last_event_id(#{machine:=#{last_event_id:=LastEventID}}) ->
+    LastEventID.
 
 -spec get_next_event_id(undefined | mg:event_id()) ->
     mg:event_id().
@@ -333,11 +336,6 @@ get_next_event_id(undefined) ->
     1;
 get_next_event_id(N) ->
     N + 1.
-
--spec do_complex_action(mg:complex_action(), state()) ->
-    state().
-do_complex_action(#{timer := SetTimerAction, tag := TagAction}, State) ->
-    do_set_timer_action(SetTimerAction, do_tag_action(TagAction, State)).
 
 %%
 %% utils
@@ -350,18 +348,6 @@ manager_options(Options) ->
         worker_options => {?MODULE, Options}
     }.
 
--spec do_tag_action(undefined | mg:tag_action(), state()) ->
-    state().
-do_tag_action(undefined, State) ->
-    State;
-do_tag_action(Tag, State) ->
-    State#{tag_to_add:=Tag}.
-
--spec do_set_timer_action(undefined | mg:set_timer_action(), state()) ->
-    state().
-do_set_timer_action(TimerAction, State) ->
-    set_status({working, get_timeout_datetime(TimerAction)}, State).
-
 -spec ref2id(options(), mg:ref()) ->
     _ID.
 ref2id(Options, {tag, Tag}) ->
@@ -373,6 +359,11 @@ ref2id(Options, {tag, Tag}) ->
     end;
 ref2id(_, {id, ID}) ->
     ID.
+
+-spec get_history_by_id(options(), mg:id(), mg:history_range() | undefined) ->
+    mg:history().
+get_history_by_id(Options, ID, Range) ->
+    mg_storage:get_history(get_options(storage, Options), ID, Range).
 
 -spec get_options(processor | storage | observer, options()) ->
     mg_utils:mod_opts().
