@@ -67,8 +67,7 @@ groups() ->
         {base, [sequence], [
             namespace_not_found,
             machine_start,
-            % на данный момент не работает
-            % machine_already_exists,
+            machine_already_exists,
             machine_call_by_id,
             machine_id_not_found,
             machine_tag_not_found,

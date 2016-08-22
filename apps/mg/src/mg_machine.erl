@@ -91,20 +91,17 @@ start_link(Options) ->
 -spec start(options(), mg:id(), mg:args()) ->
     ok.
 start(Options, ID, Args) ->
-    % создать в бд
-    ok = mg_storage:update(get_options(storage, Options), ID, {created, Args}, [], undefined),
-    % зафорсить загрузку
-    throw_if_error(mg_workers_manager:call(manager_options(Options), ID, touch)).
+    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {create, Args})).
 
 -spec repair(options(), mg:ref(), mg:args()) ->
     ok.
 repair(Options, Ref, Args) ->
-    throw_if_error(mg_workers_manager:call(manager_options(Options), ref2id(Options, Ref), {repair, Args})).
+    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ref2id(Options, Ref), {repair, Args})).
 
 -spec call(options(), mg:ref(), mg:args()) ->
     _Resp.
 call(Options, Ref, Call) ->
-    throw_if_error(mg_workers_manager:call(manager_options(Options), ref2id(Options, Ref), {call, Call})).
+    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ref2id(Options, Ref), {call, Call})).
 
 -spec get_history(options(), mg:ref(), mg:history_range()) ->
     mg:history().
@@ -137,7 +134,7 @@ init(Options) ->
 -type state() :: #{
     id      => mg:id(),
     options => options(),
-    status  => mg_storage:status(),
+    status  => undefined | mg_storage:status(),
     history => mg:history(),
     tag_to_add   => undefined | mg:tag(),
     event_to_add => [mg:event()]
@@ -146,28 +143,21 @@ init(Options) ->
 -spec handle_load(_ID, module()) ->
     {ok, state()} | {error, _}.
 handle_load(ID, Options) ->
-    State =
-        #{
-            id      => ID,
-            options => Options,
-            tag_to_add   => undefined,
-            event_to_add => []
-        },
     try
-        case mg_storage:get_status(get_options(storage, Options), ID) of
-            undefined ->
-                {error, machine_not_found};
-            Status ->
-                LoadedState =
-                    State#{
-                        status  => Status,
-                        history => mg_storage:get_history(get_options(storage, Options), ID, undefined)
-                    },
-                {ok, transit_state(LoadedState, handle_load_(LoadedState))}
-        end
+        State =
+            #{
+                id      => ID,
+                options => Options,
+                status  => mg_storage:get_status (get_options(storage, Options), ID           ),
+                history => mg_storage:get_history(get_options(storage, Options), ID, undefined),
+                tag_to_add   => undefined,
+                event_to_add => []
+            },
+        % есть подозрения, что это не очень хорошо, но нет понимания, что именно
+        {ok, transit_state(State, handle_load_(State))}
     catch
         throw:Reason ->
-            {{error, Reason}, State};
+            {error, Reason};
         Class:Reason ->
             Exception = {Class, Reason, erlang:get_stacktrace()},
             ok = log_machine_error(ID, Exception),
@@ -209,7 +199,7 @@ handle_unload(_) ->
 
 %%
 
--spec handle_exception(exception(), state()) ->
+-spec handle_exception(mg_utils:exception(), state()) ->
     state().
 handle_exception(Exception, State=#{id:=ID}) ->
     ok = log_machine_error(ID, Exception),
@@ -238,24 +228,35 @@ handle_load_(State=#{id:=ID, status:={created, Args}}) ->
 handle_load_(State) ->
     State.
 
--spec handle_call_(_Call, state()) ->
-    {_Replay, state()}.
-handle_call_({call, Call}, State=#{status:={working, _}}) ->
-    process_call(Call, State);
-handle_call_({call, _Call}, State=#{status:={error, _}}) ->
-    {{error, machine_failed}, State};
-handle_call_({repair, Args}, State=#{status:={error, _}}) ->
-    %% TODO кидать machine_failed при падении запроса
-    {ok, process_signal({repair, Args}, State)};
-handle_call_(touch, State) ->
-    {ok, State}.
+-spec
+handle_call_(_Call         , state()                     ) -> {_Resp, state()}.
+handle_call_({create, Args}, State=#{status:=undefined  }) -> {ok, process_creation(Args, State)};
+handle_call_({create, _   }, State=#{status:=_          }) -> {{error, machine_already_exist}, State};
 
--spec handle_cast_(_Cast, state()) ->
-    state().
-handle_cast_(timeout, State=#{status:={working, _}}) ->
-    process_signal(timeout, State).
+handle_call_({call  , Call}, State=#{status:={working, _}}) -> process_call(Call, State);
+handle_call_({call  , _   }, State=#{status:={error,   _}}) -> {{error, machine_failed}, State};
+handle_call_({call  , _   }, State=#{status:=undefined   }) -> {{error, machine_not_found}, State};
+
+handle_call_({repair, Args}, State=#{status:={error  , _}}) -> {ok, process_signal({repair, Args}, State)};
+handle_call_({repair, _   }, State=#{status:={working, _}}) -> {ok, State}; % точно нужно такое поведение?
+handle_call_({repair, _   }, State=#{status:=undefined   }) -> {{error, machine_not_found}, State}.
+
+% если машина в статусе _created_, а ей пришел запрос, то это значит, что-то пошло не так, такого быть не должно
+
+-spec
+handle_cast_(_Cast, state()) -> state().
+
+handle_cast_(timeout, State=#{status:={working, _}}) -> process_signal(timeout, State);
+handle_cast_(timeout, State=#{status:=_           }) -> State. % опоздавший таймаут
 
 %%
+
+-spec process_creation(_Args, state()) ->
+    state().
+process_creation(Args, State=#{id:=ID, options:=Options}) ->
+    NewStatus = {created, Args},
+    ok = mg_storage:update(get_options(storage, Options), ID, NewStatus, [], undefined),
+    handle_load_(State#{status:=NewStatus}).
 
 -spec process_call(_Call, state()) ->
     {{ok, _Resp}, state()}.
@@ -391,28 +392,7 @@ get_timeout_datetime({timeout, Timeout}) ->
         calendar:datetime_to_gregorian_seconds(calendar:universal_time()) + Timeout
     ).
 
--spec log_machine_error(mg:id(), exception()) ->
+-spec log_machine_error(mg:id(), mg_utils:exception()) ->
     ok.
 log_machine_error(ID, Exception) ->
-    ok = error_logger:error_msg("[~p] machine failed ~s", [ID, format_exception(Exception)]).
-
--spec throw_if_error
-    ( ok       ) -> ok;
-    ({ok   , V}) -> V;
-    ({error, _}) -> no_return().
-throw_if_error( ok            ) -> ok;
-throw_if_error({ok   , V     }) -> V;
-throw_if_error({error, Reason}) -> throw(Reason).
-
-%% TODO перенести в генлиб
--type exception() :: {exit | error | throw, term(), list()}.
-
-% -spec raise(exception()) ->
-%     no_return().
-% raise({Class, Reason, Stacktrace}) ->
-%     erlang:raise(Class, Reason, Stacktrace).
-
--spec format_exception(exception()) ->
-    iodata().
-format_exception({Class, Reason, Stacktrace}) ->
-    io_lib:format("~s:~p~n~p", [Class, Reason, Stacktrace]).
+    ok = error_logger:error_msg("[~p] machine failed ~s", [ID, mg_utils:format_exception(Exception)]).
