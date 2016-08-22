@@ -81,11 +81,16 @@ start_if_needed_iter(Options, ID, Expr, Attempts) ->
         Expr()
     catch
         exit:_ ->
-            % NOTE возможно тут будут проблемы
+            % NOTE возможно тут будут проблемы и это место надо очень хорошо отсмотреть
+            %  чтобы потом не ловить неожиданных проблем
             case start_child(Options, ID) of
-                {ok, _} ->
+                {ok, Pid} ->
+                    _ = (catch mg_worker:load(Pid)),
                     start_if_needed_iter(Options, ID, Expr, Attempts - 1);
-                {error, {already_started, _}} ->
+                {error, {already_started, Pid}} ->
+                    % чтобы нечаянно не опередить запрос на загрузку выше
+                    % загрузка может и не пройти и падать при этом не надо
+                    _ = (catch mg_worker:load(Pid)),
                     start_if_needed_iter(Options, ID, Expr, Attempts - 1);
                 Error={error, _} ->
                     Error

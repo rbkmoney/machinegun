@@ -6,6 +6,7 @@
 
 -export([child_spec/2]).
 -export([start_link/2]).
+-export([load      /1]).
 -export([call      /2]).
 -export([cast      /2]).
 
@@ -43,12 +44,14 @@ child_spec(ChildID, Options) ->
 -spec start_link(options(), _ID) ->
     mg_utils:gen_start_ret().
 start_link(Options, ID) ->
-    case gen_server:start_link(self_reg_name(ID), ?MODULE, {ID, Options}, []) of
-        {ok, Pid} ->
-            gen_server:call(Pid, load);
-        Error = {error, _} ->
-            Error
-    end.
+    gen_server:start_link(self_reg_name(ID), ?MODULE, {ID, Options}, []).
+
+% загрузка делается отдельно, чтобы не блокировать этим супервизор,
+% т.к. у него легко может начать расти очередь
+-spec load(pid()) ->
+    ok.
+load(Pid) ->
+    gen_server:call(Pid, load).
 
 -spec call(_ID, _Call) ->
     _Result.
@@ -68,7 +71,7 @@ cast(ID, Cast) ->
     #{
         id                => _ID,
         mod               => module(),
-        state             => loading | {working, _State},
+        state             => {loading, _Args} | {working, _State},
         unload_tref       => reference() | undefined,
         hibernate_timeout => timeout(),
         unload_timeout    => timeout()
@@ -98,10 +101,13 @@ handle_call(load, _, State=#{id:=ID, mod:=Mod, state:={loading, Args}}) ->
     case Mod:handle_load(ID, Args) of
         {ok, ModState} ->
             NewState = State#{state:={working, ModState}},
-            {reply, {ok, self()}, schedule_unload_timer(NewState), hibernate_timeout(NewState)};
+            {reply, ok, schedule_unload_timer(NewState), hibernate_timeout(NewState)};
         {error, Reason} ->
             {stop, normal, {error, Reason}, State}
     end;
+handle_call(load, _, State=#{state:={working, _}}) ->
+    % если вдруг придёт 2 запроса на загрузку вместе
+    {reply, ok, schedule_unload_timer(State), hibernate_timeout(State)};
 handle_call({call, Call}, _, State=#{mod:=Mod, state:={working, ModState}}) ->
     {Reply, NewModState} = Mod:handle_call(Call, ModState),
     NewState = State#{state:={working, NewModState}},
