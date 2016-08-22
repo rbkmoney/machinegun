@@ -104,7 +104,7 @@ woody_child_spec(Config) ->
         api,
         #{
             ip            => proplists:get_value(host    , Config, {0, 0, 0, 0}),
-            port          => proplists:get_value(port    , Config, 8820        ),
+            port          => proplists:get_value(port    , Config, 8020        ),
             net_opts      => proplists:get_value(net_opts, Config, []          ),
             event_handler => mg_woody_api_event_handler,
             handlers      => [
