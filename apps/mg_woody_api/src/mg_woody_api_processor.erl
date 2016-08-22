@@ -3,6 +3,7 @@
 
 %% mg_processor handler
 -behaviour(mg_processor).
+-export_type([options/0]).
 -export([process_signal/2, process_call/2]).
 
 %% уменьшаем писанину
@@ -11,7 +12,9 @@
 %%
 %% mg_processor handler
 %%
--spec process_signal(_Options, mg:signal_args()) ->
+-type options() :: woody_t:url().
+
+-spec process_signal(options(), mg:signal_args()) ->
     mg:signal_result().
 process_signal(Options, SignalArgs) ->
     {SignalResult, _} =
@@ -23,7 +26,7 @@ process_signal(Options, SignalArgs) ->
         ),
     unpack(signal_result, SignalResult).
 
--spec process_call(_Options, mg:call_args()) ->
+-spec process_call(options(), mg:call_args()) ->
     mg:call_result().
 process_call(Options, CallArgs) ->
     {SignalResult, _} =
@@ -39,7 +42,7 @@ process_call(Options, CallArgs) ->
 %%
 %% local
 %%
--spec call_processor(_Options, woody_client:context(), atom(), list(_)) ->
+-spec call_processor(options(), woody_client:context(), atom(), list(_)) ->
     _.
 call_processor(Options, WoodyContext, Function, Args) ->
     URL = Options,
