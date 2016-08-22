@@ -64,7 +64,7 @@
     namespace => mg:ns(),
     storage   => mg_utils:mod_opts(),
     processor => mg_utils:mod_opts(),
-    observer  => mg_utils:mod_opts() | undefined
+    observer  => mg_utils:mod_opts()   % опционально
 }.
 
 -type thrown_error() :: logic_error() | {temporary, temporary_error()}.
