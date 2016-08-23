@@ -2,13 +2,11 @@
 -include_lib("stdlib/include/ms_transform.hrl").
 
 %% internal API
--export([start_link    /2]).
--export([handle_timeout/2]).
+-export([start_link/1]).
 
-%% mg_storage callbacks
+%% mg_storage like callbacks
 -export_type([options/0]).
--behaviour(mg_storage).
--export([child_spec/3, create_machine/3, get_machine/2, get_history/3, resolve_tag/2, update_machine/4]).
+-export([child_spec/2, create_machine/3, get_machine/2, get_history/3, resolve_tag/2, update_machine/4]).
 
 %% gen_server callbacks
 -behaviour(gen_server).
@@ -17,22 +15,22 @@
 %%
 %% internal API
 %%
--spec start_link(options(), mg_storage:timer_handler()) ->
+-spec start_link(options()) ->
     mg_utils:gen_start_ret().
-start_link(Options, TimerHandler) ->
-    gen_server:start_link(self_reg_name(Options), ?MODULE, {Options, TimerHandler}, []).
+start_link(Options) ->
+    gen_server:start_link(self_reg_name(Options), ?MODULE, Options, []).
 
 %%
 %% mg_storage callbacks
 %%
 -type options() :: _Name::atom().
 
--spec child_spec(options(), atom(), mg_storage:timer_handler()) ->
+-spec child_spec(options(), atom()) ->
     supervisor:child_spec().
-child_spec(Options, ChildID, TimerHandler) ->
+child_spec(Options, ChildID) ->
     #{
         id       => ChildID,
-        start    => {?MODULE, start_link, [Options, TimerHandler]},
+        start    => {?MODULE, start_link, [Options]},
         restart  => permanent,
         shutdown => 5000
     }.
@@ -74,13 +72,12 @@ update_machine(Options, ID, Machine, Update) ->
 
 -spec init({options(), mg_storage:timer_handler()}) ->
     mg_utils:gen_server_init_ret(state()).
-init({Options, TimerHandler}) ->
+init(Options) ->
     {ok,
         #{
             machines      => #{},
             events        => #{},
             tags          => #{},
-            timer_handler => TimerHandler,
             options       => Options
         }
     }.
@@ -246,16 +243,13 @@ do_store_events(ID, MachineEvents, State=#{events:=Events}) ->
 
 -spec try_set_timer(mg:id(), mg_storage:status(), state()) ->
     ok.
-try_set_timer(ID, {working, TimerDateTime}, #{options:=Options, timer_handler:=TimerHandler})
+try_set_timer(ID, {working, TimerDateTime}, #{options:=Options})
     when TimerDateTime =/= undefined ->
-    mg_timers:set(Options, ID, TimerDateTime, {?MODULE, handle_timeout, [TimerHandler]});
+    mg_timers:set(Options, ID, TimerDateTime);
 try_set_timer(ID, _, #{options:=Options}) ->
     mg_timers:cancel(Options, ID).
 
--spec handle_timeout(mg_storage:timer_handler(), mg:id()) ->
-    _.
-handle_timeout({M, F, A}, ID) ->
-    erlang:spawn_link(M, F, A ++ [ID]).
+
 
 -spec do_actions([fun((state()) -> state())], state()) ->
     state().

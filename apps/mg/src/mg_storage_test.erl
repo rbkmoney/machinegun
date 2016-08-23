@@ -19,8 +19,8 @@
 init({Options, TimerHandler}) ->
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags, [
-        mg_storage_test_server:child_spec(Options, server, TimerHandler),
-        mg_timers             :child_spec(timers, Options)
+        mg_storage_test_server:child_spec(Options, server),
+        mg_timers             :child_spec(timers, Options, TimerHandler)
     ]}}.
 
 %%
