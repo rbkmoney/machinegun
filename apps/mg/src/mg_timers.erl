@@ -125,11 +125,19 @@ do_create_tables(State) ->
     ok.
 do_set(ID, DateTime, State) ->
     ok = do_cancel(ID, State),
-    % TODO не очень поятно зачем тут ещё раз DateTime, а память кушает
-    TRef = {DateTime, erlang:make_ref()},
+    TRef = erlang:make_ref(),
     true = ets:insert(ets_tid(timers, State), {TRef, ID, DateTime}),
     true = ets:insert(ets_tid(ids   , State), {ID, TRef}),
     ok.
+
+%
+% потребление памяти = N * ((6 + (2 + 4 + 8 + (2 + 2 + 2 + 6))) + (6 + (2 + 8 + 4)))
+% 416 * 1000000 / 1024 /1024 = 397 Mb — 1kk таймеров при size(ID) = 8
+% а при хранении одного инвойса 6 месяцев это будет всего 3.85 инвойса в минуту :-\
+% если заменить TRef c reference на counter и DateTime на Timestamp,
+% то можно уменьшить с 416 до 280 байт на таймер, почти в 2 раза, но картину это не изменит
+% как следствие при увеличении нагрузки хранить все таймеры будет нельзя
+%
 
 -spec do_cancel(_ID, state()) ->
     ok.
