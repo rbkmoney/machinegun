@@ -8,11 +8,11 @@
 -behaviour(supervisor).
 
 %% API
--export_type([options     /0]).
+-export_type([options/0]).
 
--export([child_spec /2]).
--export([start_link /1]).
--export([call       /3]).
+-export([child_spec/2]).
+-export([start_link/1]).
+-export([call      /3]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -45,7 +45,33 @@ start_link(Options) ->
 -spec call(options(), _ID, _Call) ->
     _Reply | {error, _}.
 call(Options, ID, Call) ->
-    start_if_needed(Options, ID, fun() -> mg_worker:call(ID, Call) end).
+    call(Options, ID, Call, 10).
+
+-spec call(options(), _ID, _Call, non_neg_integer()) ->
+    _Reply | {error, _}.
+call(_, _, _, 0) ->
+    % такого быть не должно
+    erlang:exit(unexpected_behaviour);
+call(Options, ID, Call, Attempts) ->
+    try
+        mg_worker:call(ID, Call)
+    catch
+        exit:_ ->
+            %
+            % NOTE возможно тут будут проблемы и это место надо очень хорошо отсмотреть
+            %  чтобы потом не ловить неожиданных проблем
+            %
+            % идея в том, что если нет процесса, то мы его запускаем
+            %
+            case start_child(Options, ID) of
+                {ok, _} ->
+                    call(Options, ID, Call, Attempts - 1);
+                {error, {already_started, _}} ->
+                    call(Options, ID, Call, Attempts - 1);
+                Error={error, _} ->
+                    Error
+            end
+    end.
 
 %%
 %% supervisor callbacks
@@ -59,49 +85,6 @@ init(Options) ->
 %%
 %% local
 %%
--spec start_if_needed(options(), _ID, fun()) ->
-    _ | {error, _}.
-start_if_needed(Options, ID, Expr) ->
-    start_if_needed_iter(Options, ID, Expr, 10).
-
--spec start_if_needed_iter(options(), _ID, fun(), non_neg_integer()) ->
-    _.
-start_if_needed_iter(_, _, _, 0) ->
-    % такого быть не должно
-    erlang:exit(unexpected_behaviour);
-start_if_needed_iter(Options, ID, Expr, Attempts) ->
-    try
-        Expr()
-    catch
-        exit:_ ->
-            % NOTE возможно тут будут проблемы и это место надо очень хорошо отсмотреть
-            %  чтобы потом не ловить неожиданных проблем
-            case start_child(Options, ID) of
-                {ok, Pid} ->
-                    start_if_needed_iter_load(Pid, Options, ID, Expr, Attempts);
-                {error, {already_started, Pid}} ->
-                    start_if_needed_iter_load(Pid, Options, ID, Expr, Attempts);
-                Error={error, _} ->
-                    Error
-            end
-    end.
-
--spec start_if_needed_iter_load(pid(), options(), _ID, fun(), non_neg_integer()) ->
-    _.
-start_if_needed_iter_load(Pid, Options, ID, Expr, Attempts) ->
-    try mg_worker:load(Pid) of
-        ok ->
-            start_if_needed_iter(Options, ID, Expr, Attempts - 1);
-        Error={error, _} ->
-            Error
-    catch exit:_ ->
-        % если произошло одновременно 2 запроса,
-        % один запустил воркера, второй получил готовый
-        % оба отправили запрос на загрузку, но первый упал с ошибкой
-        % OMG!!!
-        start_if_needed_iter(Options, ID, Expr, Attempts - 1)
-    end.
-
 -spec start_child(options(), _ID) ->
     {ok, pid()} | {error, term()}.
 start_child(Options, ID) ->

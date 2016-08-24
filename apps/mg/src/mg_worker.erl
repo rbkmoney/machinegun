@@ -6,7 +6,6 @@
 
 -export([child_spec/2]).
 -export([start_link/2]).
--export([load      /1]).
 -export([call      /2]).
 
 %% gen_server callbacks
@@ -41,13 +40,6 @@ child_spec(ChildID, Options) ->
     mg_utils:gen_start_ret().
 start_link(Options, ID) ->
     gen_server:start_link(self_reg_name(ID), ?MODULE, {ID, Options}, []).
-
-% загрузка делается отдельно, чтобы не блокировать этим супервизор,
-% т.к. у него легко может начать расти очередь
--spec load(pid()) ->
-    ok | {error, _}.
-load(Pid) ->
-    gen_server:call(Pid, load).
 
 -spec call(_ID, _Call) ->
     _Result.
@@ -87,17 +79,16 @@ init({ID, Options}) ->
 
 -spec handle_call(_Call, mg_utils:gen_server_from(), state()) ->
     mg_utils:gen_server_handle_call_ret(state()).
-handle_call(load, _, State=#{id:=ID, mod:=Mod, state:={loading, Args}}) ->
+
+% загрузка делается отдельно, чтобы не блокировать этим супервизор,
+% т.к. у него легко может начать расти очередь
+handle_call(Call={call, _}, From, State=#{id:=ID, mod:=Mod, state:={loading, Args}}) ->
     case Mod:handle_load(ID, Args) of
         {ok, ModState} ->
-            NewState = State#{state:={working, ModState}},
-            {reply, ok, schedule_unload_timer(NewState), hibernate_timeout(NewState)};
-        {error, Reason} ->
-            {stop, normal, {error, Reason}, State}
+            handle_call(Call, From, State#{state:={working, ModState}});
+        Error={error, _} ->
+            {stop, normal, Error, State}
     end;
-handle_call(load, _, State=#{state:={working, _}}) ->
-    % если вдруг придёт 2 запроса на загрузку вместе
-    {reply, ok, schedule_unload_timer(State), hibernate_timeout(State)};
 handle_call({call, Call}, _, State=#{mod:=Mod, state:={working, ModState}}) ->
     {Reply, NewModState} = Mod:handle_call(Call, ModState),
     NewState = State#{state:={working, NewModState}},
