@@ -136,17 +136,17 @@ init_per_group(_, C) ->
         ++
         genlib_app:start_application_with(woody, [{acceptors_pool_size, 1}])
         ++
-        genlib_app:start_application_with(mg_woody_api, [{nss, [{?NS , <<"http://localhost:8021/processor">>}]}])
+        genlib_app:start_application_with(mg_woody_api, [{nss, [{?NS , <<"http://localhost:8023/processor">>}]}])
     ,
 
-    {ok, ProcessorPid} = mg_machine_test_door:start_link({{0, 0, 0, 0}, 8021, "/processor"}),
+    {ok, ProcessorPid} = mg_machine_test_door:start_link({{0, 0, 0, 0}, 8023, "/processor"}),
     true = erlang:unlink(ProcessorPid),
 
     [
         {apps              , Apps                          },
         {processor_pid     , ProcessorPid                  },
-        {automaton_options , {"http://localhost:8020", ?NS}},
-        {event_sink_options,  "http://localhost:8020"      }
+        {automaton_options , {"http://localhost:8022", ?NS}},
+        {event_sink_options,  "http://localhost:8022"      }
     |
         C
     ].
