@@ -57,7 +57,7 @@
 
 %% mg_worker
 -behaviour(mg_worker).
--export([handle_load/2, handle_call/2, handle_cast/2, handle_unload/1]).
+-export([handle_load/2, handle_call/2, handle_unload/1]).
 
 %%
 %% API
@@ -177,18 +177,6 @@ handle_call(Call, State) ->
                 {error, machine_failed},
                 transit_state(handle_exception({Class, Reason, erlang:get_stacktrace()}, State))
             }
-    end.
-
--spec handle_cast(_Cast, state()) ->
-    state().
-handle_cast(Cast, State) ->
-    try
-        transit_state(handle_cast_(Cast, State))
-    catch
-        throw:Error ->
-            {{error, Error}, State};
-        Class:Error ->
-            transit_state(handle_exception({Class, Error, erlang:get_stacktrace()}, State))
     end.
 
 -spec handle_unload(state()) ->

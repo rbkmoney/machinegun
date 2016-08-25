@@ -107,7 +107,7 @@ handle_cast(Cast, State) ->
     mg_utils:gen_server_handle_info_ret(state()).
 handle_info(timeout, State) ->
     {noreply, State, hibernate};
-handle_info({timeout, TRef, unload}, State=#{mod:=Mod, unload_tref:=TRef, #{status:=Status}}) ->
+handle_info({timeout, TRef, unload}, State=#{mod:=Mod, unload_tref:=TRef, status:=Status}) ->
     case Status of
         {working, ModState} ->
             _ = Mod:handle_unload(ModState);
