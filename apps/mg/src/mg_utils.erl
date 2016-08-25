@@ -111,9 +111,9 @@
 
 -spec
 gen_reg_name2_ref(gen_reg_name()) -> gen_ref().
-gen_reg_name2_ref({local, Name}) -> Name;
-gen_reg_name2_ref(V={global, _}) -> V;
-gen_reg_name2_ref(V={via, _, _}) -> V. % Is this correct?
+gen_reg_name2_ref({local, Name} ) -> Name;
+gen_reg_name2_ref(V={global, _} ) -> V;
+gen_reg_name2_ref(V={via, _, _} ) -> V. % Is this correct?
 
 
 %%
@@ -139,33 +139,30 @@ separate_mod_opts(ModOpts={_, _}) ->
 separate_mod_opts(Mod) ->
     {Mod, undefined}.
 
--spec throw_if_error(ok | tuple()) ->
-    _ | no_return().
+-spec throw_if_error
+    (ok             ) -> ok;
+    ({ok   , Result}) -> Result;
+    ({error, _Error}) -> no_return().
 throw_if_error(ok) ->
     ok;
 throw_if_error({ok, R}) ->
     R;
-throw_if_error(OK) when is_tuple(OK) andalso element(1, OK) =:= ok ->
-    erlang:delete_element(1, OK);
 throw_if_error({error, Error}) ->
     throw(Error).
 
--spec throw_if_error(ok | error | tuple(), _) ->
-    _ | no_return().
+-spec throw_if_error
+    (ok             , _ExceptionTag) -> ok;
+    ({ok   , Result}, _ExceptionTag) -> Result;
+    ({error, _Error}, _ExceptionTag) -> no_return().
 throw_if_error(ok, _) ->
     ok;
 throw_if_error({ok, R}, _) ->
     R;
-throw_if_error(OK, _) when is_tuple(OK) andalso element(1, OK) =:= ok ->
-    erlang:delete_element(1, OK);
 throw_if_error(error, Exception) ->
     throw(Exception);
 throw_if_error({error, Error}, Exception) ->
-    throw({Exception, Error});
-throw_if_error(Error, Exception) when is_tuple(Error) andalso element(1, Error) =:= error ->
-    throw({Exception, erlang:delete_element(1, Error)}).
+    throw({Exception, Error}).
 
-%% TODO перенести в genlib
 -type exception() :: {exit | error | throw, term(), list()}.
 
 -spec raise(exception()) ->
