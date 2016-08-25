@@ -73,6 +73,7 @@
 -type logic_error() :: machine_already_exist | machine_not_found | machine_failed.
 -type temporary_error() :: overload | storage_unavailable | processor_unavailable.
 
+-type throws() :: no_return().
 
 -spec child_spec(atom(), options()) ->
     supervisor:child_spec().
@@ -91,22 +92,22 @@ start_link(Options) ->
     supervisor:start_link(?MODULE, Options).
 
 -spec start(options(), mg:id(), mg:args()) ->
-    ok.
+    ok | throws().
 start(Options, ID, Args) ->
     mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {create, Args})).
 
 -spec repair(options(), mg:ref(), mg:args()) ->
-    ok.
+    ok | throws().
 repair(Options, Ref, Args) ->
     mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ref2id(Options, Ref), {repair, Args})).
 
 -spec call(options(), mg:ref(), mg:args()) ->
-    _Resp.
+    _Resp | throws().
 call(Options, Ref, Call) ->
     mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ref2id(Options, Ref), {call, Call})).
 
 -spec get_history(options(), mg:ref(), mg:history_range() | undefined) ->
-    mg:history().
+    mg:history() | throws().
 get_history(Options, Ref, Range) ->
     get_history_by_id(Options, ref2id(Options, Ref), Range).
 
@@ -114,9 +115,9 @@ get_history(Options, Ref, Range) ->
 %% Internal API
 %%
 -spec handle_timeout(options(), _ID) ->
-    ok.
+    ok | throws().
 handle_timeout(Options, ID) ->
-    ok = mg_workers_manager:call(manager_options(Options), ID, timeout).
+    ok = mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, timeout)).
 
 %%
 %% supervisor
@@ -242,13 +243,6 @@ handle_call_(Call, State=#{machine:=Machine}) ->
         % если машина в статусе _created_, а ей пришел запрос,
         % то это значит, что-то пошло не так, такого быть не должно
     end.
-
-
--spec
-handle_cast_(_Cast, state()) -> state().
-
-handle_cast_(timeout, State=#{machine:=#{status:={working, _}}}) -> process_signal(timeout, State);
-handle_cast_(timeout, State=#{machine:=#{status:=_           }}) -> State. % опоздавший таймаут
 
 %%
 
