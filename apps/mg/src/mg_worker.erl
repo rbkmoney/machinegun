@@ -21,7 +21,7 @@
     ok.
 
 -callback handle_call(_Call, _State) ->
-    {_Replay, _State}.
+    {_Reply, _State}.
 
 
 -type options() :: mg_utils:mod_opts().

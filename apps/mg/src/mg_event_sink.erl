@@ -10,7 +10,7 @@
 -behaviour(mg_processor).
 -export([process_signal/2, process_call/2]).
 
-%% mg_processor handler
+%% mg_observer handler
 -behaviour(mg_observer).
 -export([handle_events/3]).
 
@@ -21,7 +21,7 @@
 
 -type options() :: mg_utils:mod_opts().
 
--spec child_spec(atom(), options()) ->
+-spec child_spec(options(), atom()) ->
     supervisor:child_spec().
 child_spec(Options, ChildID) ->
     mg_machine:child_spec(ChildID, machine_options(Options)).

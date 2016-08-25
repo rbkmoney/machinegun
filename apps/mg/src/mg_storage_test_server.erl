@@ -220,7 +220,7 @@ do_get_history(ID, Range, #{events:=Events}) ->
 do_add_tag(_, undefined, State) ->
     State;
 do_add_tag(ID, Tag, State=#{tags:=Tags}) ->
-    State#{tags:=maps:put(Tag, ID, Tags)}.
+    State#{tags:=Tags#{Tag => ID}}.
 
 -spec do_resolve_tag(mg:tag(), state()) ->
     mg:id() | undefined.
