@@ -1,12 +1,17 @@
-{application, mg , [
-    {description, "Machinegun FSM processor"},
+{application, mg_woody_api, [
+    {description, "Machinegun FSM processor Woody API"},
     {vsn, "1"},
     {registered, []},
+    {mod, {mg_woody_api, []}},
     {applications, [
         kernel,
         stdlib,
         genlib,
-        gproc
+        mg,
+        rfc3339,
+        lager,
+        mg_proto,
+        woody
     ]},
     {env, []},
     {modules, []},

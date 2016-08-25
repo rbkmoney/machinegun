@@ -1,0 +1,10 @@
+{application, mg_proto, [
+    {description, "State processing protocol definitions"},
+    {vsn, "0"},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib,
+        thrift
+    ]}
+]}.
