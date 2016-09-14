@@ -26,8 +26,8 @@ handler(Options) ->
 %% woody handler
 %%
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), options()) ->
-    {{ok, term()}, woody_client:context()} | no_return().
+    {term(), woody_client:context()} | no_return().
 
 handle_function('GetHistory', {Range}, WoodyContext, Options) ->
     SinkHistory = mg_event_sink:get_history(Options, unpack(history_range, Range)),
-    {{ok, pack(sink_history, SinkHistory)}, WoodyContext}.
+    {pack(sink_history, SinkHistory), WoodyContext}.

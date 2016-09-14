@@ -327,10 +327,7 @@ call_event_sink_service(BaseURL, Function, Args) ->
                 {{mg_proto_state_processing_thrift, 'EventSink'}, Function, Args},
                 #{url => BaseURL ++ "/v1/event_sink"}
             ),
-        case R of
-            {ok, V} -> V;
-             ok     -> ok
-        end
+        R
     catch throw:{{exception, Exception}, _} ->
         throw(Exception)
     end.

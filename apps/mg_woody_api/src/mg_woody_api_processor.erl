@@ -46,11 +46,9 @@ process_call(Options, CallArgs) ->
     _.
 call_processor(Options, WoodyContext, Function, Args) ->
     URL = Options,
-    {{ok, Result}, WoodyContext} =
-        woody_client:call(
-            WoodyContext,
-            {{mg_proto_state_processing_thrift, 'Processor'}, Function, Args},
-            #{url => URL}
-        ),
-    {Result, WoodyContext}.
+    woody_client:call(
+        WoodyContext,
+        {{mg_proto_state_processing_thrift, 'Processor'}, Function, Args},
+        #{url => URL}
+    ).
 

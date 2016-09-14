@@ -111,13 +111,13 @@ init({Host, Port, Path}) ->
 %% processor woody handler
 %%
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), _Options) ->
-    {{ok, _Resp}, woody_client:context()} | no_return().
+    {ok| _Resp, woody_client:context()} | no_return().
 
 handle_function('ProcessSignal', {SignalArgs}, WoodyContext, Options) ->
-    {{ok, process_signal(Options, SignalArgs)}, WoodyContext};
+    {process_signal(Options, SignalArgs), WoodyContext};
 
 handle_function('ProcessCall', {CallArgs}, WoodyContext, Options) ->
-    {{ok, process_call(Options, CallArgs)}, WoodyContext}.
+    {process_call(Options, CallArgs), WoodyContext}.
 
 %%
 %% local
@@ -271,10 +271,7 @@ call_automation_service(BaseURL, Function, Args) ->
                 {{mg_proto_state_processing_thrift, 'Automaton'}, Function, Args},
                 #{url => BaseURL ++ "/v1/automaton"}
             ),
-        case R of
-            {ok, V} -> V;
-             ok     -> ok
-        end
+        R
     catch throw:{{exception, Exception}, _} ->
         throw(Exception)
     end.

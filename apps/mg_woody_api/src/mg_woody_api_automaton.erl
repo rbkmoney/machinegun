@@ -49,7 +49,7 @@ map_error(Other) ->
 %% в вуди сейчас Options — это list()
 -dialyzer({nowarn_function, handle_function/4}).
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), options()) ->
-    {{ok, term()}, woody_client:context()} | no_return().
+    {ok | term(), woody_client:context()} | no_return().
 
 handle_function('Start', {NS, ID, Args}, WoodyContext, Options) ->
     ok = ?safe_handle(
@@ -71,7 +71,7 @@ handle_function('Call', {NS, Ref, Args}, WoodyContext, Options) ->
             mg_machine:call(get_ns_options(NS, Options), unpack(ref, Ref), unpack(args, Args)),
             WoodyContext
         ),
-    {{ok, pack(call_response, Response)}, WoodyContext};
+    {pack(call_response, Response), WoodyContext};
 
 handle_function('GetHistory', {NS, Ref, Range}, WoodyContext, Options) ->
     History =
@@ -79,7 +79,7 @@ handle_function('GetHistory', {NS, Ref, Range}, WoodyContext, Options) ->
             mg_machine:get_history(get_ns_options(NS, Options), unpack(ref, Ref), unpack(history_range, Range)),
             WoodyContext
         ),
-    {{ok, pack(history, History)}, WoodyContext}.
+    {pack(history, History), WoodyContext}.
 
 %%
 %% local
