@@ -37,13 +37,17 @@
 -type event_body() :: binary().
 
 %% config
--type config_ns() :: {mg_woody_api:ns(), _URL}.
--type config_nss() :: [config_ns()].
+-type config_ns() :: #{
+    url        => _URL,
+    event_sink => mg_event_sink:id()
+}.
+-type config_nss() :: #{ns() => config_ns()}.
 -type config_element() ::
-      {nss     ,      config_nss ()}
-    | {ip      , inet:ip_address ()}
-    | {port    , inet:port_number()}
-    | {net_opts, []                } % в вуди нет для этого типа :(
+      {namespaces,      config_nss   ()}
+    | {api_host  , inet:ip_address   ()}
+    | {api_port  , inet:port_number  ()}
+    | {net_opts  , []                  } % в вуди нет для этого типа :(
+    | {storage   , mg_storage:storage()}
 .
 -type config() :: [config_element()].
 
@@ -67,16 +71,17 @@ stop() ->
 -spec init([]) ->
     mg_utils:supervisor_ret().
 init([]) ->
-    Config = application:get_all_env(?MODULE),
-    ConfigNSs = proplists:get_value(nss, Config, []),
+    Config     = application:get_all_env(?MODULE),
+    ConfigNSs  = get_config_element(namespaces, Config),
+    Storage    = get_config_element(storage   , Config),
+    EventSinks = collect_event_sinks(ConfigNSs),
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags,
-        [mg_machine:child_spec(NS, ns_options(ConfigNS)) || ConfigNS={NS, _} <- ConfigNSs]
+        [mg_machine:child_spec(NS, ns_options(NS, ConfigNS, Storage)) || {NS, ConfigNS} <- maps:to_list(ConfigNSs)]
         ++
-        [
-            mg_event_sink:child_spec(event_sink_options(), event_sink),
-            woody_child_spec(Config)
-        ]
+        [mg_event_sink:child_spec(event_sink_options(Storage), EventSinkID, EventSinkID) || EventSinkID <- EventSinks]
+        ++
+        [woody_child_spec(Config, woody_api)]
     }}.
 
 %%
@@ -95,54 +100,100 @@ stop(_State) ->
 %%
 %% local
 %%
--define(db_mod, mg_storage_test).
-
--spec woody_child_spec(config()) ->
+-spec woody_child_spec(config(), atom()) ->
     supervisor:child_spec().
-woody_child_spec(Config) ->
+woody_child_spec(Config, ChildID) ->
     woody_server:child_spec(
-        api,
+        ChildID,
         #{
-            ip            => proplists:get_value(host    , Config, {0, 0, 0, 0}),
-            port          => proplists:get_value(port    , Config, 8022        ),
-            net_opts      => proplists:get_value(net_opts, Config, []          ),
+            ip            => get_config_element(host    , Config, {0, 0, 0, 0}),
+            port          => get_config_element(port    , Config, 8022        ),
+            net_opts      => get_config_element(net_opts, Config, []          ),
             event_handler => mg_woody_api_event_handler,
             handlers      => [
-                mg_woody_api_automaton :handler(api_automaton_options(proplists:get_value(nss, Config, []))),
-                mg_woody_api_event_sink:handler(api_event_sink_options())
+                mg_woody_api_automaton :handler(api_automaton_options (Config)),
+                mg_woody_api_event_sink:handler(api_event_sink_options(Config))
             ]
         }
     ).
 
-
--spec ns_options(config_ns()) ->
-    mg_machine:options().
-ns_options({NS, URL}) ->
-    #{
-        namespace => NS,
-        storage   => {?db_mod, erlang:binary_to_atom(NS, utf8)},
-        processor => {mg_woody_api_processor, URL},
-        observer  => {mg_event_sink, {event_sink_options(), NS}}
-    }.
-
--spec event_sink_options() ->
-    mg_event_sink:options().
-event_sink_options() ->
-    {?db_mod, event_sink}.
-
--spec api_automaton_options(config_nss()) ->
+-spec api_automaton_options(config()) ->
     mg_woody_api_automaton:options().
-api_automaton_options(ConfigNSs) ->
-    lists:foldl(
-        fun(ConfigNS={NS, _}, Options) ->
-            NSBin = NS,
-            Options#{NSBin => ns_options(ConfigNS)}
+api_automaton_options(Config) ->
+    ConfigNSs = get_config_element(namespaces, Config),
+    Storage   = get_config_element(storage   , Config),
+    maps:fold(
+        fun(NS, ConfigNS, Options) ->
+            Options#{NS => ns_options(NS, ConfigNS, Storage)}
         end,
         #{},
         ConfigNSs
     ).
 
--spec api_event_sink_options() ->
+-spec ns_options(mg:ns(), config_ns(), mg_storage:storage()) ->
+    mg_machine:options().
+ns_options(NS, #{url:=URL, event_sink:=EventSinkID}, Storage) ->
+    #{
+        namespace => NS,
+        storage   => Storage,
+        processor => {mg_woody_api_processor, URL},
+        observer  => {mg_event_sink, {event_sink_options(Storage), NS, EventSinkID}}
+    };
+ns_options(NS, #{url:=URL}, Storage) ->
+    #{
+        namespace => NS,
+        storage   => Storage,
+        processor => {mg_woody_api_processor, URL}
+    }.
+
+-spec api_event_sink_options(config()) ->
     mg_woody_api_event_sink:options().
-api_event_sink_options() ->
-    event_sink_options().
+api_event_sink_options(Config) ->
+    {
+        collect_event_sinks(get_config_element(namespaces, Config)),
+        event_sink_options(get_config_element(storage, Config))
+    }.
+
+-spec event_sink_options(mg_storage:storage()) ->
+    mg_event_sink:options().
+event_sink_options(Storage) ->
+    #{
+        storage => Storage
+    }.
+
+-spec collect_event_sinks(config_nss()) ->
+    [mg_event_sink:id()].
+collect_event_sinks(ConfigNSs) ->
+    maps:fold(
+        fun
+            (_, #{event_sink:=EventSinkID}, Acc) ->
+                [EventSinkID|Acc];
+            (_, _, Acc) ->
+                Acc
+        end,
+        [],
+        ConfigNSs
+    ).
+
+%%
+%% config utils
+%%
+-spec get_config_element(atom(), config()) ->
+    term() | no_return().
+get_config_element(Element, Config) ->
+    case lists:keyfind(Element, 1, Config) of
+        false ->
+            erlang:throw({config_element_not_found, Element});
+        {Element, Value} ->
+            Value
+    end.
+
+-spec get_config_element(atom(), config(), term()) ->
+    term().
+get_config_element(Element, Config, Default) ->
+    case lists:keyfind(Element, 1, Config) of
+        false ->
+            Default;
+        {Element, Value} ->
+            Value
+    end.

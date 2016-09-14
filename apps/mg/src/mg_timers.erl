@@ -224,14 +224,19 @@ ets_tid(ids   , #{ids_table   :=Tid}) -> Tid.
 -spec self_ref(atom()) ->
     mg_utils:gen_ref().
 self_ref(Name) ->
-    wrap_name(Name).
+    {via, gproc, gproc_key(Name)}.
 
 -spec self_reg_name(atom()) ->
     mg_utils:gen_reg_name().
 self_reg_name(Name) ->
-    {local, wrap_name(Name)}.
+    {via, gproc, gproc_key(Name)}.
 
--spec wrap_name(atom()) ->
-    atom().
-wrap_name(Name) ->
-    erlang:list_to_atom(?MODULE_STRING ++ "_" ++ erlang:atom_to_list(Name)).
+-spec gproc_key(atom()) ->
+    gproc:key().
+gproc_key(Name) ->
+    {n, l, wrap(Name)}.
+
+-spec wrap(_) ->
+    term().
+wrap(V) ->
+    {?MODULE, V}.

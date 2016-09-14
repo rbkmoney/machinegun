@@ -18,8 +18,8 @@
        {ref,"6cce18dc0934b88ae56d4a31f39699f0f66dbaee"}},
   0},
  {<<"snowflake">>,
-  {git,"https://github.com/tel/snowflake.git",
-       {ref,"7a8eab0f12757133623b2151a7913b6d2707b629"}},
+  {git,"https://github.com/rbkmoney/snowflake.git",
+       {ref,"36b978a3ad711c9d9349b799a24c5499a95ae29a"}},
   1},
  {<<"ssl_verify_fun">>,{pkg,<<"ssl_verify_fun">>,<<"1.1.0">>},2},
  {<<"thrift">>,
@@ -28,5 +28,5 @@
   1},
  {<<"woody">>,
   {git,"git@github.com:rbkmoney/woody_erlang.git",
-       {ref,"78b3f7767cffbaba51d9b6e249a628205e58903d"}},
+       {ref,"49f47a8b3d0429269d389e2207b94879b9088380"}},
   0}].

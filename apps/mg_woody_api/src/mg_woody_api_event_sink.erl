@@ -9,13 +9,10 @@
 -behaviour(woody_server_thrift_handler).
 -export([handle_function/4]).
 
-%% уменьшаем писанину
--import(mg_woody_api_packer, [pack/2, unpack/2]).
-
 %%
 %% API
 %%
--type options() :: mg_event_sink:options().
+-type options() :: {[mg_event_sink:id()], mg_event_sink:options()}.
 
 -spec handler(options()) ->
     mg_utils:woody_handler().
@@ -26,8 +23,19 @@ handler(Options) ->
 %% woody handler
 %%
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), options()) ->
-    {{ok, term()}, woody_client:context()} | no_return().
+    {term(), woody_client:context()} | no_return().
 
-handle_function('GetHistory', {Range}, WoodyContext, Options) ->
-    SinkHistory = mg_event_sink:get_history(Options, unpack(history_range, Range)),
-    {{ok, pack(sink_history, SinkHistory)}, WoodyContext}.
+handle_function('GetHistory', {EventSinkID, Range}, WoodyContext, {AvaliableEventSinks, Options}) ->
+    _ = check_event_sink(AvaliableEventSinks, EventSinkID, WoodyContext),
+    SinkHistory = mg_event_sink:get_history(Options, EventSinkID, mg_woody_api_packer:unpack(history_range, Range)),
+    {mg_woody_api_packer:pack(sink_history, SinkHistory), WoodyContext}.
+
+-spec check_event_sink([mg_event_sink:id()], mg_event_sink:id(), woody_client:context()) ->
+    ok | no_return().
+check_event_sink(AvaliableEventSinks, EventSinkID, WoodyContext) ->
+    case lists:member(EventSinkID, AvaliableEventSinks) of
+        true ->
+            ok;
+        false ->
+            throw({#'EventSinkNotFound'{}, WoodyContext})
+    end.

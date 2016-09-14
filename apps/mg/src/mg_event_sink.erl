@@ -2,9 +2,9 @@
 
 %% API
 -export_type([options/0]).
--export([child_spec     /2]).
--export([get_history    /2]).
--export([machine_options/1]).
+-export_type([id     /0]).
+-export([child_spec     /3]).
+-export([get_history    /3]).
 
 %% mg_processor handler
 -behaviour(mg_processor).
@@ -17,49 +17,40 @@
 %%
 %% API
 %%
--define(event_sink_machine_id, event_sink).
+-type id() :: mg:id().
+-type options() :: #{
+    storage => mg_storage:storage()
+}.
 
--type options() :: mg_utils:mod_opts().
-
--spec child_spec(options(), atom()) ->
+-spec child_spec(options(), id(), atom()) ->
     supervisor:child_spec().
-child_spec(Options, ChildID) ->
-    mg_machine:child_spec(ChildID, machine_options(Options)).
+child_spec(Options, EventSinkID, ChildID) ->
+    mg_machine:child_spec(ChildID, machine_options(Options, EventSinkID)).
 
 %% TODO подумать о зацикливании
--spec handle_events({options(), mg:ns()}, mg:id(), [mg:event()]) ->
+-spec handle_events({options(), mg:ns(), id()}, mg:id(), [mg:event()]) ->
     ok.
-handle_events({Options, SourceNS}, SourceID, Events) ->
+handle_events({Options, SourceNS, EventSinkID}, SourceID, Events) ->
     try
         ok = mg_machine:call(
-                machine_options(Options),
-                {id, ?event_sink_machine_id},
+                machine_options(Options, EventSinkID),
+                {id, EventSinkID},
                 {handle_events, SourceNS, SourceID, Events}
             )
     catch throw:machine_not_found ->
-        ok = start(Options),
-        handle_events({Options, SourceNS}, SourceID, Events)
+        ok = start(Options, EventSinkID),
+        handle_events({Options, SourceNS, EventSinkID}, SourceID, Events)
     end.
 
--spec get_history(options(), mg:history_range()) ->
+-spec get_history(options(), id(), mg:history_range()) ->
     mg:sink_history().
-get_history(Options, Range) ->
+get_history(Options, EventSinkID, Range) ->
     try
-        mg_machine:get_history(machine_options(Options), {id, ?event_sink_machine_id}, Range)
+        mg_machine:get_history(machine_options(Options, EventSinkID), {id, EventSinkID}, Range)
     catch throw:machine_not_found ->
-        ok = start(Options),
-        get_history(Options, Range)
+        ok = start(Options, EventSinkID),
+        get_history(Options, EventSinkID, Range)
     end.
-
--spec machine_options(options()) ->
-    mg_machine:options().
-machine_options(Options) ->
-    #{
-        namespace => ?MODULE,
-        processor => ?MODULE,
-        storage   => Options
-    }.
-
 
 %%
 %% mg_processor handler
@@ -78,10 +69,19 @@ process_call(_, {{handle_events, SourceNS, SourceID, Events}, _}) ->
 %%
 %% local
 %%
--spec start(options()) ->
+-spec machine_options(options(), id()) ->
+    mg_machine:options().
+machine_options(#{storage:=Storage}, EventSinkID) ->
+    #{
+        namespace => EventSinkID,
+        processor => ?MODULE,
+        storage   => Storage
+    }.
+
+-spec start(options(), id()) ->
     ok.
-start(Options) ->
-    mg_machine:start(machine_options(Options), ?event_sink_machine_id, <<"">>).
+start(Options, EventSinkID) ->
+    mg_machine:start(machine_options(Options, EventSinkID), EventSinkID, <<"">>).
 
 -spec generate_sink_events(mg:ns(), mg:id(), [mg:event()]) ->
     [mg:sink_event()].
