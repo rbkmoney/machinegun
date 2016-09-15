@@ -6,9 +6,6 @@
 -export_type([options/0]).
 -export([process_signal/2, process_call/2]).
 
-%% уменьшаем писанину
--import(mg_woody_api_packer, [pack/2, unpack/2]).
-
 %%
 %% mg_processor handler
 %%
@@ -22,9 +19,9 @@ process_signal(Options, SignalArgs) ->
             Options,
             woody_client:new_context(woody_client:make_id(<<"mg">>), mg_woody_api_event_handler),
             'ProcessSignal',
-            [pack(signal_args, SignalArgs)]
+            [mg_woody_api_packer:pack(signal_args, SignalArgs)]
         ),
-    unpack(signal_result, SignalResult).
+    mg_woody_api_packer:unpack(signal_result, SignalResult).
 
 -spec process_call(options(), mg:call_args()) ->
     mg:call_result().
@@ -35,9 +32,9 @@ process_call(Options, CallArgs) ->
             % TODO woody context
             woody_client:new_context(woody_client:make_id(<<"mg">>), mg_woody_api_event_handler),
             'ProcessCall',
-            [pack(call_args, CallArgs)]
+            [mg_woody_api_packer:pack(call_args, CallArgs)]
         ),
-    unpack(call_result, SignalResult).
+    mg_woody_api_packer:unpack(call_result, SignalResult).
 
 %%
 %% local

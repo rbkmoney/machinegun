@@ -168,13 +168,13 @@ do_create_machine(ID, Args, State) ->
 
 -spec do_update_machine(mg:id(), mg_storage:machine(), mg_storage:update(), state()) ->
     {mg_storage:machine(), state()}.
-do_update_machine(ID, Machine, Update, State) ->
+do_update_machine(ID, Machine, Update, State=#{options:=Options}) ->
     % хотим убедится, что логика правильно работает с экземпляром machine
     ok = check_machine_version(ID, Machine, State),
 
     OldStatus = maps:get(status, Machine),
     NewStatus = maps:get(status, Update, OldStatus),
-    ok = try_set_timer(ID, NewStatus, State),
+    ok = mg_storage_utils:try_set_timer(Options, ID, NewStatus),
 
     NewMachine =
         Machine#{
@@ -213,7 +213,8 @@ do_add_events(ID, NewMachineEvents, State=#{events:=Events}) ->
     mg:history().
 do_get_history(ID, Range, #{events:=Events}) ->
     MachineEvents = maps:get(ID, Events, []),
-    filter_history(MachineEvents, Range).
+    IDs = mg_storage_utils:filter_history_ids([EventID || #{id:=EventID} <- MachineEvents], Range),
+    [Event || Event=#{id:=EventID} <- MachineEvents, lists:member(EventID, IDs)].
 
 -spec do_add_tag(mg:id(), mg:tag() | undefined, state()) ->
     state().
@@ -241,16 +242,6 @@ do_store_machine(ID, Machine, State=#{machines:=Machines}) ->
 do_store_events(ID, MachineEvents, State=#{events:=Events}) ->
     State#{events:=maps:put(ID, MachineEvents, Events)}.
 
--spec try_set_timer(mg:id(), mg_storage:status(), state()) ->
-    ok.
-try_set_timer(ID, {working, TimerDateTime}, #{options:=Options})
-    when TimerDateTime =/= undefined ->
-    mg_timers:set(Options, ID, TimerDateTime);
-try_set_timer(ID, _, #{options:=Options}) ->
-    mg_timers:cancel(Options, ID).
-
-
-
 -spec do_actions([fun((state()) -> state())], state()) ->
     state().
 do_actions([], State) ->
@@ -258,40 +249,3 @@ do_actions([], State) ->
 do_actions([Action|RemainActions], State) ->
     NewState = Action(State),
     do_actions(RemainActions, NewState).
-
-%%
-%% history filtering
-%%
--spec filter_history(mg:history(), mg:history_range() | undefined) ->
-    mg:history().
-filter_history(History, undefined) ->
-    History;
-filter_history(History, {After, Limit, Direction}) ->
-    lists:reverse(filter_history_iter(apply_direction(Direction, History), After, Limit, [])).
-
--spec apply_direction(mg:direction(), mg:history()) ->
-    mg:history().
-apply_direction(forward, History) ->
-    History;
-apply_direction(backward, History) ->
-    lists:reverse(History).
-
--spec filter_history_iter(mg:history(), mg:event_id() | undefined, non_neg_integer(), mg:history()) ->
-    mg:history().
-filter_history_iter([], _, _, Result) ->
-    Result;
-filter_history_iter(_, _, 0, Result) ->
-    Result;
-filter_history_iter([Event|HistoryTail], undefined, Limit, Result) ->
-    filter_history_iter(HistoryTail, undefined, decrease_limit(Limit), [Event|Result]);
-filter_history_iter([#{id:=EventID}|HistoryTail], After, Limit, []) when EventID =:= After ->
-    filter_history_iter(HistoryTail, undefined, Limit, []);
-filter_history_iter([_|HistoryTail], After, Limit, []) ->
-    filter_history_iter(HistoryTail, After, Limit, []).
-
--spec decrease_limit(undefined | pos_integer()) ->
-    non_neg_integer().
-decrease_limit(undefined) ->
-    undefined;
-decrease_limit(N) ->
-    N - 1.

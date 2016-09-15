@@ -9,9 +9,6 @@
 -behaviour(woody_server_thrift_handler).
 -export([handle_function/4]).
 
-%% уменьшаем писанину
--import(mg_woody_api_packer, [pack/2, unpack/2]).
-
 %%
 %% API
 %%
@@ -29,5 +26,5 @@ handler(Options) ->
     {term(), woody_client:context()} | no_return().
 
 handle_function('GetHistory', {Range}, WoodyContext, Options) ->
-    SinkHistory = mg_event_sink:get_history(Options, unpack(history_range, Range)),
-    {pack(sink_history, SinkHistory), WoodyContext}.
+    SinkHistory = mg_event_sink:get_history(Options, mg_woody_api_packer:unpack(history_range, Range)),
+    {mg_woody_api_packer:pack(sink_history, SinkHistory), WoodyContext}.
