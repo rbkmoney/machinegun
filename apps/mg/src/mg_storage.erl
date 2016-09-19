@@ -18,7 +18,7 @@
 -export([child_spec    /3]).
 -export([create_machine/3]).
 -export([get_machine   /2]).
--export([get_history   /3]).
+-export([get_history   /4]).
 -export([resolve_tag   /2]).
 -export([update_machine/4]).
 
@@ -33,15 +33,13 @@
 -type timer_handler() :: {module(), atom(), [_Arg]}.
 
 -type machine() :: #{
-    status        => status(),
-    last_event_id => mg:event_id(),
-    db_state      => _ % опционально
+    status     => status(),
+    events_ids => [mg:event_id()],
+    db_state   => _ % опционально
 }.
 
 %% все поля опциональны
 -type update() :: #{
-    % странное поле...
-    last_event_id => mg:event_id(),
     status        => status(),
     new_events    => [mg:event()],
     new_tag       => mg:tag() | undefined
@@ -58,7 +56,7 @@
 -callback get_machine(_Options, mg:id()) ->
     machine() | undefined.
 
--callback get_history(_Options, mg:id(), mg:history_range() | undefined) ->
+-callback get_history(_Options, mg:id(), machine(), mg:history_range() | undefined) ->
     mg:history().
 
 -callback resolve_tag(_Options, mg:tag()) ->
@@ -86,10 +84,10 @@ get_machine(Options, ID) ->
     mg_utils:apply_mod_opts(Options, get_machine, [ID]).
 
 %% Если машины нет, то возвращает пустой список
--spec get_history(_Options, mg:id(), mg:history_range() | undefined) ->
+-spec get_history(_Options, mg:id(), machine(), mg:history_range() | undefined) ->
     mg:history().
-get_history(Options, ID, Range) ->
-    mg_utils:apply_mod_opts(Options, get_history, [ID, Range]).
+get_history(Options, ID, Machine, Range) ->
+    mg_utils:apply_mod_opts(Options, get_history, [ID, Machine, Range]).
 
 %% Если машины с таким тэгом нет, то возвращает undefined
 -spec resolve_tag(_Options, mg:tag()) ->

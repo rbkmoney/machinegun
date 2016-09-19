@@ -109,7 +109,13 @@ call(Options, Ref, Call) ->
 -spec get_history(options(), mg:ref(), mg:history_range() | undefined) ->
     mg:history() | throws().
 get_history(Options, Ref, Range) ->
-    get_history_by_id(Options, ref2id(Options, Ref), Range).
+    ID = ref2id(Options, Ref),
+    case mg_storage:get_machine(get_options(storage, Options), ID) of
+        undefined ->
+            throw(machine_not_found);
+        Machine ->
+            get_history_by_id(Options, ID, Machine, Range)
+    end.
 
 %%
 %% Internal API
@@ -242,18 +248,18 @@ process_creation(Args, State=#{id:=ID, options:=Options}) ->
 
 -spec process_call(_Call, state()) ->
     {{ok, _Resp}, state()}.
-process_call(Call, State=#{options:=Options, id:=ID}) ->
+process_call(Call, State=#{options:=Options, id:=ID, machine:=Machine}) ->
     % TODO прокидывать range снаружи
-    History = get_history_by_id(Options, ID, undefined),
+    History = get_history_by_id(Options, ID, Machine, undefined),
     {Response, EventsBodies, ComplexAction} =
         mg_processor:process_call(get_options(processor, Options), {Call, History}),
     {{ok, Response}, handle_processor_result(EventsBodies, ComplexAction, State)}.
 
 -spec process_signal(mg:signal(), state()) ->
     state().
-process_signal(Signal, State=#{options:=Options, id:=ID}) ->
+process_signal(Signal, State=#{options:=Options, id:=ID, machine:=Machine}) ->
     % TODO прокидывать range снаружи
-    History = get_history_by_id(Options, ID, undefined),
+    History = get_history_by_id(Options, ID, Machine, undefined),
     {EventsBodies, ComplexAction} =
         mg_processor:process_signal(get_options(processor, Options), {Signal, History}),
     handle_processor_result(EventsBodies, ComplexAction, State).
@@ -263,14 +269,13 @@ process_signal(Signal, State=#{options:=Options, id:=ID}) ->
 -spec handle_processor_result([mg:event_body()], mg:complex_action(), state()) ->
     state().
 handle_processor_result(EventsBodies, ComplexAction, State) ->
-    {Events, NewLastEventID} = generate_events(EventsBodies, get_last_event_id(State)),
+    Events = generate_events(EventsBodies, get_last_event_id(State)),
     TimerAction = maps:get(timer, ComplexAction, undefined),
     TagAction   = maps:get(tag  , ComplexAction, undefined),
     ok = notify_observer(Events, State),
     Update =
         #{
             status        => {working, get_timeout_datetime(TimerAction)},
-            last_event_id => NewLastEventID,
             new_events    => Events,
             new_tag       => TagAction
         },
@@ -287,13 +292,15 @@ notify_observer(Events, #{id:=SourceID, options:=Options}) ->
     end.
 
 -spec generate_events([mg:event_body()], mg:event_id()) ->
-    {[mg:event()], mg:event_id()}.
+    [mg:event()].
 generate_events(EventsBodies, LastID) ->
-    lists:mapfoldl(
-        fun generate_event/2,
-        LastID,
-        EventsBodies
-    ).
+    {Events, _} =
+        lists:mapfoldl(
+            fun generate_event/2,
+            LastID,
+            EventsBodies
+        ),
+    Events.
 
 -spec generate_event(mg:event_body(), mg:event_id()) ->
     {mg:event(), mg:event_id()}.
@@ -309,8 +316,10 @@ generate_event(EventBody, LastID) ->
 
 -spec get_last_event_id(state()) ->
     mg:event_id() | undefined.
-get_last_event_id(#{machine:=#{last_event_id:=LastEventID}}) ->
-    LastEventID.
+get_last_event_id(#{machine:=#{events_ids:=[]}}) ->
+    undefined;
+get_last_event_id(#{machine:=#{events_ids:=EventsIDs}}) ->
+    lists:last(EventsIDs).
 
 -spec get_next_event_id(undefined | mg:event_id()) ->
     mg:event_id().
@@ -342,10 +351,10 @@ ref2id(Options, {tag, Tag}) ->
 ref2id(_, {id, ID}) ->
     ID.
 
--spec get_history_by_id(options(), mg:id(), mg:history_range() | undefined) ->
+-spec get_history_by_id(options(), mg:id(), mg_storage:machine(), mg:history_range() | undefined) ->
     mg:history().
-get_history_by_id(Options, ID, Range) ->
-    mg_storage:get_history(get_options(storage, Options), ID, Range).
+get_history_by_id(Options, ID, Machine, Range) ->
+    mg_storage:get_history(get_options(storage, Options), ID, Machine, Range).
 
 -spec get_options(processor | storage | observer, options()) ->
     mg_utils:mod_opts().

@@ -6,7 +6,7 @@
 
 %% mg_storage like callbacks
 -export_type([options/0]).
--export([child_spec/2, create_machine/3, get_machine/2, get_history/3, resolve_tag/2, update_machine/4]).
+-export([child_spec/2, create_machine/3, get_machine/2, get_history/4, resolve_tag/2, update_machine/4]).
 
 %% gen_server callbacks
 -behaviour(gen_server).
@@ -45,10 +45,10 @@ create_machine(Options, ID, Args) ->
 get_machine(Options, ID) ->
     gen_server:call(self_ref(Options), {get_machine, ID}).
 
--spec get_history(options(), mg:id(), mg:history_range() | undefined) ->
+-spec get_history(options(), mg:id(), mg_storage:machine(), mg:history_range() | undefined) ->
     mg:history().
-get_history(Options, ID, Range) ->
-    gen_server:call(self_ref(Options), {get_history, ID, Range}).
+get_history(Options, ID, Machine, Range) ->
+    gen_server:call(self_ref(Options), {get_history, ID, Machine, Range}).
 
 -spec resolve_tag(options(), mg:tag()) ->
     mg:id() | undefined.
@@ -64,9 +64,9 @@ update_machine(Options, ID, Machine, Update) ->
 %% gen_server callbacks
 %%
 -type state() :: #{
-    machines => #{mg:id () =>  mg_storage:machine() },
-    events   => #{mg:id () => [mg        :event  ()]},
-    tags     => #{mg:tag() =>  mg        :id     () },
+    machines => #{mg:id() => mg_storage:machine()},
+    events   => #{{mg:id(), mg:event_id()} => mg:event()},
+    tags     => #{mg:tag() => mg:id()},
     options  => options()
 }.
 
@@ -93,8 +93,8 @@ handle_call({get_machine, ID}, _From, State) ->
 handle_call({update_machine, ID, Machine, Update}, _From, State) ->
     {Resp, NewState} = do_update_machine(ID, Machine, Update, State),
     {reply, Resp, NewState};
-handle_call({get_history, ID, Range}, _From, State) ->
-    Resp = do_get_history(ID, Range, State),
+handle_call({get_history, ID, Machine, Range}, _From, State) ->
+    Resp = do_get_history(ID, Machine, Range, State),
     {reply, Resp, State};
 handle_call({resolve_tag, Tag}, _From, State) ->
     Resp = do_resolve_tag(Tag, State),
@@ -159,9 +159,9 @@ do_get_machine(ID, #{machines:=Machines}) ->
 do_create_machine(ID, Args, State) ->
     Machine =
         #{
-            status        => {created, Args},
-            last_event_id => undefined,
-            db_state      => 1
+            status     => {created, Args},
+            events_ids => [],
+            db_state   => 1
         },
     NewState = do_store_machine(ID, Machine, State),
     {Machine, NewState}.
@@ -169,25 +169,29 @@ do_create_machine(ID, Args, State) ->
 -spec do_update_machine(mg:id(), mg_storage:machine(), mg_storage:update(), state()) ->
     {mg_storage:machine(), state()}.
 do_update_machine(ID, Machine, Update, State=#{options:=Options}) ->
-    % хотим убедится, что логика правильно работает с экземпляром machine
     ok = check_machine_version(ID, Machine, State),
 
     OldStatus = maps:get(status, Machine),
     NewStatus = maps:get(status, Update, OldStatus),
     ok = mg_storage_utils:try_set_timer(Options, ID, NewStatus),
 
+    NewMachineEvents = maps:get(new_events, Update, []       ),
+    NewTag           = maps:get(new_tag   , Update, undefined),
+
+    NewMachineEventsIDs = [MachineEventID || #{id:=MachineEventID} <- NewMachineEvents],
+
     NewMachine =
         Machine#{
-            status        := NewStatus,
-            last_event_id := maps:get(last_event_id, Update, maps:get(last_event_id, Machine)),
-            db_state      := maps:get(db_state, Machine) + 1
+            status     := NewStatus,
+            events_ids := maps:get(events_ids, Machine) ++ NewMachineEventsIDs,
+            db_state   := maps:get(db_state  , Machine) + 1
         },
     NewState =
         do_actions(
             [
-                fun(S) -> do_add_events   (ID, maps:get(new_events, Update, []       ), S) end,
-                fun(S) -> do_add_tag      (ID, maps:get(new_tag   , Update, undefined), S) end,
-                fun(S) -> do_store_machine(ID, NewMachine, S) end
+                fun(S) -> do_add_events   (ID, NewMachineEvents, S) end,
+                fun(S) -> do_add_tag      (ID, NewTag          , S) end,
+                fun(S) -> do_store_machine(ID, NewMachine      , S) end
             ],
             State
         ),
@@ -196,6 +200,7 @@ do_update_machine(ID, Machine, Update, State=#{options:=Options}) ->
 -spec check_machine_version(mg:id(), mg_storage:machine(), state()) ->
     ok | no_return().
 check_machine_version(ID, Machine, State) ->
+    % хотим убедится, что логика правильно работает с экземпляром machine
     case do_get_machine(ID, State) of
         DBMachine when DBMachine =:= Machine ->
             ok;
@@ -205,16 +210,25 @@ check_machine_version(ID, Machine, State) ->
 
 -spec do_add_events(mg:id(), [mg:event()], state()) ->
     state().
-do_add_events(ID, NewMachineEvents, State=#{events:=Events}) ->
-    MachineEvents = maps:get(ID, Events, []),
-    do_store_events(ID, MachineEvents ++ NewMachineEvents, State).
+do_add_events(ID, NewMachineEvents, State) ->
+    lists:foldl(
+        fun(MachineEvent, StateAcc) ->
+            do_store_event(ID, MachineEvent, StateAcc)
+        end,
+        State,
+        NewMachineEvents
+    ).
 
--spec do_get_history(mg:id(), mg:history_range(), state()) ->
+-spec do_get_history(mg:id(), mg_storage:machine(), mg:history_range(), state()) ->
     mg:history().
-do_get_history(ID, Range, #{events:=Events}) ->
-    MachineEvents = maps:get(ID, Events, []),
-    IDs = mg_storage_utils:filter_history_ids([EventID || #{id:=EventID} <- MachineEvents], Range),
-    [Event || Event=#{id:=EventID} <- MachineEvents, lists:member(EventID, IDs)].
+do_get_history(ID, Machine=#{events_ids:=EventsIDs}, Range, State=#{events:=Events}) ->
+    ok = check_machine_version(ID, Machine, State),
+    maps:values(
+        maps:with(
+            [{ID, EventID} || EventID <- mg_storage_utils:filter_history_ids(EventsIDs, Range)],
+            Events
+        )
+    ).
 
 -spec do_add_tag(mg:id(), mg:tag() | undefined, state()) ->
     state().
@@ -237,10 +251,10 @@ do_resolve_tag(Tag, #{tags:=Tags}) ->
 do_store_machine(ID, Machine, State=#{machines:=Machines}) ->
     State#{machines:=maps:put(ID, Machine, Machines)}.
 
--spec do_store_events(mg:id(), [mg:event()], state()) ->
+-spec do_store_event(mg:id(), mg:event(), state()) ->
     state().
-do_store_events(ID, MachineEvents, State=#{events:=Events}) ->
-    State#{events:=maps:put(ID, MachineEvents, Events)}.
+do_store_event(ID, MachineEvent=#{id:=MachineEventID}, State=#{events:=Events}) ->
+    State#{events:=maps:put({ID, MachineEventID}, MachineEvent, Events)}.
 
 -spec do_actions([fun((state()) -> state())], state()) ->
     state().

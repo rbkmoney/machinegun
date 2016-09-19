@@ -9,7 +9,7 @@
 
 %% mg_storage callbacks
 -behaviour(mg_storage).
--export([child_spec/3, create_machine/3, get_machine/2, get_history/3, resolve_tag/2, update_machine/4]).
+-export([child_spec/3, create_machine/3, get_machine/2, get_history/4, resolve_tag/2, update_machine/4]).
 
 %%
 %% supervisor callbacks
@@ -54,10 +54,10 @@ create_machine(Options, ID, Args) ->
 get_machine(Options, ID) ->
     mg_storage_test_server:get_machine(Options, ID).
 
--spec get_history(_Options, mg:id(), mg:history_range() | undefined) ->
+-spec get_history(_Options, mg:id(), mg_storage:machine(), mg:history_range() | undefined) ->
     mg:history().
-get_history(Options, ID, Range) ->
-    mg_storage_test_server:get_history(Options, ID, Range).
+get_history(Options, ID, Machine, Range) ->
+    mg_storage_test_server:get_history(Options, ID, Machine, Range).
 
 -spec resolve_tag(_Options, mg:tag()) ->
     mg:id() | undefined.
