@@ -12,6 +12,7 @@
 %% API
 -export_type([status       /0]).
 -export_type([timer_handler/0]).
+-export_type([events_range /0]).
 -export_type([machine      /0]).
 -export_type([update       /0]).
 -export_type([options      /0]).
@@ -34,11 +35,14 @@
 .
 -type timer_handler() :: {module(), atom(), [_Arg]}.
 
+%% не очень удобно, что получилось 2 формата range'а
+%% надо подумать, как это исправить
+-type events_range() :: {First::mg:event_id(), Last::mg:event_id()}.
+
 -type machine() :: #{
-    status     => status(),
-    events_ids => [mg:event_id()],
-    % events_ids => {First::mg:event_id(), Last::mg:event_id()},
-    db_state   => _ % опционально
+    status       => status(),
+    events_range => events_range(),
+    db_state     => _ % опционально
 }.
 
 %% все поля опциональны

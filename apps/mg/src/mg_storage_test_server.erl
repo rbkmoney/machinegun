@@ -166,9 +166,9 @@ do_get_machine(ID, #{machines:=Machines}) ->
 do_create_machine(ID, Args, State) ->
     Machine =
         #{
-            status     => {created, Args},
-            events_ids => [],
-            db_state   => 1
+            status       => {created, Args},
+            events_range => undefined,
+            db_state     => 1
         },
     NewState = do_store_machine(ID, Machine, State),
     {Machine, NewState}.
@@ -185,13 +185,11 @@ do_update_machine(ID, Machine, Update, State=#{namespace:=Namespace}) ->
     NewMachineEvents = maps:get(new_events, Update, []       ),
     NewTag           = maps:get(new_tag   , Update, undefined),
 
-    NewMachineEventsIDs = [MachineEventID || #{id:=MachineEventID} <- NewMachineEvents],
-
     NewMachine =
         Machine#{
-            status     := NewStatus,
-            events_ids := maps:get(events_ids, Machine) ++ NewMachineEventsIDs,
-            db_state   := maps:get(db_state  , Machine) + 1
+            status       := NewStatus,
+            events_range := update_events_range(maps:get(events_range, Machine, undefined), NewMachineEvents),
+            db_state     := maps:get(db_state  , Machine) + 1
         },
     NewState =
         do_actions(
@@ -203,6 +201,22 @@ do_update_machine(ID, Machine, Update, State=#{namespace:=Namespace}) ->
             State
         ),
     {NewMachine, NewState}.
+
+
+-spec update_events_range(undefined | mg_storage:events_range(), [mg:event()]) ->
+    undefined | mg_storage:events_range().
+update_events_range(OldEventsRange, []) ->
+    OldEventsRange;
+update_events_range(undefined, [FirstEvent|RemainEvents]) ->
+    FirstEventID = get_event_id(FirstEvent),
+    update_events_range({FirstEventID, FirstEventID}, RemainEvents);
+update_events_range({First, _}, NewMachineEvents) ->
+    {First, get_event_id(lists:last(NewMachineEvents))}.
+
+-spec get_event_id(mg:event()) ->
+    mg:event_id().
+get_event_id(#{id:=ID}) ->
+    ID.
 
 -spec check_machine_version(mg:id(), mg_storage:machine(), state()) ->
     ok | no_return().
@@ -228,14 +242,25 @@ do_add_events(ID, NewMachineEvents, State) ->
 
 -spec do_get_history(mg:id(), mg_storage:machine(), mg:history_range(), state()) ->
     mg:history().
-do_get_history(ID, Machine=#{events_ids:=EventsIDs}, Range, State=#{events:=Events}) ->
+do_get_history(ID, Machine=#{events_range:=MachineEventsRange}, RequestedRange, State=#{events:=Events}) ->
     ok = check_machine_version(ID, Machine, State),
     maps:values(
         maps:with(
-            [{ID, EventID} || EventID <- mg_storage_utils:filter_history_ids(EventsIDs, Range)],
+            [
+                {ID, EventID}
+                ||
+                EventID <- mg_storage_utils:filter_history_ids(get_events_ids(MachineEventsRange), RequestedRange)
+            ],
             Events
         )
     ).
+
+-spec get_events_ids(undefined | mg_storage:events_range()) ->
+    [mg:event_id()].
+get_events_ids(undefined) ->
+    [];
+get_events_ids({FirstEventID, LastEventID}) ->
+    lists:seq(FirstEventID, LastEventID).
 
 -spec do_add_tag(mg:id(), mg:tag() | undefined, state()) ->
     state().

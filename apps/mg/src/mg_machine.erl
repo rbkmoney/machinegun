@@ -328,10 +328,10 @@ generate_event(EventBody, LastID) ->
 
 -spec get_last_event_id(state()) ->
     mg:event_id() | undefined.
-get_last_event_id(#{machine:=#{events_ids:=[]}}) ->
+get_last_event_id(#{machine:=#{events_range:=undefined}}) ->
     undefined;
-get_last_event_id(#{machine:=#{events_ids:=EventsIDs}}) ->
-    lists:last(EventsIDs).
+get_last_event_id(#{machine:=#{events_range:={_, LastID}}}) ->
+    LastID.
 
 -spec get_next_event_id(undefined | mg:event_id()) ->
     mg:event_id().
