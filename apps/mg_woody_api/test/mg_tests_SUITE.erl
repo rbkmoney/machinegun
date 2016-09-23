@@ -32,14 +32,16 @@
 -export([event_sink_get_empty_history    /1]).
 -export([event_sink_get_not_empty_history/1]).
 -export([event_sink_get_last_event       /1]).
+-export([event_sink_incorrect_id         /1]).
 
 %% test_door group tests
 -export([machine_test_door/1]).
 
--define(NS, <<"mg_test_ns">>).
+-define(NS(C), <<"mg_test_", (proplists:get_value(test_instance, C))/binary, "_ns">>).
 -define(ID, <<"ID">>).
 -define(Tag, <<"Tag">>).
 -define(Ref, {tag, ?Tag}).
+-define(ES_ID, <<"test_event_sink">>).
 
 
 %%
@@ -99,10 +101,11 @@ groups() ->
             machine_call_by_id
         ]},
 
-        {event_sink, [], [
+        {event_sink, [sequence], [
             event_sink_get_empty_history,
             event_sink_get_not_empty_history,
-            event_sink_get_last_event
+            event_sink_get_last_event,
+            event_sink_incorrect_id
         ]},
 
         {test_door, [sequence], [
@@ -128,7 +131,8 @@ end_per_suite(_C) ->
 
 -spec init_per_group(group_name(), config()) ->
     config().
-init_per_group(_, C) ->
+init_per_group(TestGroup, C0) ->
+    C = [{test_instance, erlang:atom_to_binary(TestGroup, utf8)} | C0],
     %% TODO сделать нормальную генерацию урлов
     Apps =
         genlib_app:start_application_with(lager, [{handlers, [{lager_common_test_backend, debug}]}])
@@ -136,23 +140,47 @@ init_per_group(_, C) ->
         ++
         genlib_app:start_application_with(woody, [{acceptors_pool_size, 1}])
         ++
-        genlib_app:start_application_with(mg_woody_api, [
-            {storage, mg_storage_test},
-            {nss, [{?NS , <<"http://localhost:8023/processor">>}]}
-        ])
+        genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(TestGroup, C))
     ,
 
     {ok, ProcessorPid} = mg_machine_test_door:start_link({{0, 0, 0, 0}, 8023, "/processor"}),
     true = erlang:unlink(ProcessorPid),
 
     [
-        {apps              , Apps                          },
-        {processor_pid     , ProcessorPid                  },
-        {automaton_options , {"http://localhost:8022", ?NS}},
-        {event_sink_options,  "http://localhost:8022"      }
+        {apps              , Apps                             },
+        {processor_pid     , ProcessorPid                     },
+        {automaton_options , {"http://localhost:8022", ?NS(C)}},
+        {event_sink_options,  "http://localhost:8022"         }
     |
         C
     ].
+
+-spec mg_woody_api_config(atom(), config()) ->
+    list().
+mg_woody_api_config(event_sink, C) ->
+    [
+        mg_woody_api_config_storage(),
+        {namespaces, #{
+            ?NS(C) => #{
+                url        => <<"http://localhost:8023/processor">>,
+                event_sink => ?ES_ID
+            }
+        }}
+    ];
+mg_woody_api_config(_TestGroup, C) ->
+    [
+        mg_woody_api_config_storage(),
+        {namespaces, #{
+            ?NS(C) => #{
+                url => <<"http://localhost:8023/processor">>
+            }
+        }}
+    ].
+
+-spec mg_woody_api_config_storage() ->
+    _.
+mg_woody_api_config_storage() ->
+    {storage, mg_storage_test}.
 
 -spec end_per_group(group_name(), config()) ->
     ok.
@@ -238,7 +266,7 @@ failed_machine_repair(C) ->
 -spec event_sink_get_empty_history(config()) ->
     _.
 event_sink_get_empty_history(C) ->
-    [] = event_sink_get_history(es_opts(C), #'HistoryRange'{direction=forward}).
+    [] = event_sink_get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}).
 
 -spec event_sink_get_not_empty_history(config()) ->
     _.
@@ -246,17 +274,25 @@ event_sink_get_not_empty_history(C) ->
     _ID = mg_machine_test_door:start(a_opts(C), ?ID, ?Tag),
     ok = test_door_do_action(C, close),
     ok = test_door_do_action(C, open ),
+    NS = ?NS(C),
     [
-        #'SinkEvent'{id = 1, source_id = ?ID, source_ns = ?NS, event = #'Event'{}},
-        #'SinkEvent'{id = 2, source_id = ?ID, source_ns = ?NS, event = #'Event'{}},
-        #'SinkEvent'{id = 3, source_id = ?ID, source_ns = ?NS, event = #'Event'{}}
-    ] = event_sink_get_history(es_opts(C), #'HistoryRange'{direction=forward}).
+        #'SinkEvent'{id = 1, source_id = ?ID, source_ns = NS, event = #'Event'{}},
+        #'SinkEvent'{id = 2, source_id = ?ID, source_ns = NS, event = #'Event'{}},
+        #'SinkEvent'{id = 3, source_id = ?ID, source_ns = NS, event = #'Event'{}}
+    ] = event_sink_get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}).
 
 -spec event_sink_get_last_event(config()) ->
     _.
 event_sink_get_last_event(C) ->
-    [#'SinkEvent'{id = 3, source_id = ?ID, source_ns = ?NS, event = #'Event'{}}] =
-        event_sink_get_history(es_opts(C), #'HistoryRange'{direction=backward, limit=1}).
+    NS = ?NS(C),
+    [#'SinkEvent'{id = 3, source_id = ?ID, source_ns = NS, event = #'Event'{}}] =
+        event_sink_get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=backward, limit=1}).
+
+-spec event_sink_incorrect_id(config()) ->
+    _.
+event_sink_incorrect_id(C) ->
+    #'EventSinkNotFound'{}
+        = (catch event_sink_get_history(es_opts(C), <<"incorrect_event_sink_id">>, #'HistoryRange'{})).
 
 %%
 %% test_door group tests
@@ -313,10 +349,10 @@ es_opts(C) -> ?config(event_sink_options, C).
 %%
 %% event_sink client
 %%
--spec event_sink_get_history(_Options, mg:history_range()) ->
+-spec event_sink_get_history(_Options, mg_event_sink:id(), mg:history_range()) ->
     mg:history().
-event_sink_get_history(BaseURL, Range) ->
-    call_event_sink_service(BaseURL, 'GetHistory', [Range]).
+event_sink_get_history(BaseURL, ES_ID, Range) ->
+    call_event_sink_service(BaseURL, 'GetHistory', [ES_ID, Range]).
 
 %%
 

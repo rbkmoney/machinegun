@@ -12,6 +12,7 @@
 
 -export([child_spec/2]).
 -export([start_link/1]).
+-export([is_started/1]).
 -export([call      /3]).
 
 %% Supervisor callbacks
@@ -40,6 +41,11 @@ child_spec(ChildID, Options) ->
     mg_utils:gen_start_ret().
 start_link(Options) ->
     supervisor:start_link(self_reg_name(Options), ?MODULE, Options).
+
+-spec is_started(options()) ->
+    boolean().
+is_started(Options) ->
+    gproc:whereis_name(gproc_key(Options)) =/= undefined.
 
 % sync
 -spec call(options(), _ID, _Call) ->

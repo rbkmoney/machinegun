@@ -1,6 +1,6 @@
 [submodule "apps/mg_proto/damsel"]
 	path = apps/mg_proto/damsel
-	url = git@github.com:rbkmoney/damsel.git
+	url = git@github.com:petrkozorezov/damsel.git
 [submodule "build_utils"]
 	path = build_utils
 	url = git@github.com:rbkmoney/build_utils.git

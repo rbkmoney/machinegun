@@ -25,6 +25,11 @@ handler(Options) ->
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), options()) ->
     {term(), woody_client:context()} | no_return().
 
-handle_function('GetHistory', {Range}, WoodyContext, Options) ->
-    SinkHistory = mg_event_sink:get_history(Options, mg_woody_api_packer:unpack(history_range, Range)),
+handle_function('GetHistory', {EventSinkID, Range}, WoodyContext, Options) ->
+    SinkHistory =
+        try
+            mg_event_sink:get_history(Options, EventSinkID, mg_woody_api_packer:unpack(history_range, Range))
+        catch throw:event_sink_not_found ->
+            throw({#'EventSinkNotFound'{}, WoodyContext})
+        end,
     {mg_woody_api_packer:pack(sink_history, SinkHistory), WoodyContext}.

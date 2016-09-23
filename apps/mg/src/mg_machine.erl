@@ -43,6 +43,7 @@
 
 -export([child_spec /2]).
 -export([start_link /1]).
+-export([is_started /1]).
 -export([start      /3]).
 -export([repair     /3]).
 -export([call       /3]).
@@ -90,6 +91,13 @@ child_spec(ChildID, Options) ->
     mg_utils:gen_start_ret().
 start_link(Options) ->
     supervisor:start_link(?MODULE, Options).
+
+%% Не совсем корректное название, т.к. не понятно, что же имеется ввиду machine или automaton,
+%% но т.к. разделения ещё нет оставим пока так (а имеется в виду automaton).
+-spec is_started(options()) ->
+    boolean().
+is_started(Options) ->
+    mg_workers_manager:is_started(manager_options(Options)).
 
 -spec start(options(), mg:id(), mg:args()) ->
     ok | throws().
