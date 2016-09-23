@@ -64,7 +64,7 @@
 %%
 -type options() :: #{
     namespace => mg:ns(),
-    storage   => mg_utils:mod_opts(),
+    storage   => mg_storage:storage(),
     processor => mg_utils:mod_opts(),
     observer  => mg_utils:mod_opts()   % опционально
 }.
@@ -110,7 +110,7 @@ call(Options, Ref, Call) ->
     mg:history() | throws().
 get_history(Options, Ref, Range) ->
     ID = ref2id(Options, Ref),
-    case mg_storage:get_machine(get_options(storage, Options), ID) of
+    case mg_storage:get_machine(get_options(storage, Options), get_options(namespace, Options), ID) of
         undefined ->
             throw(machine_not_found);
         Machine ->
@@ -134,7 +134,8 @@ init(Options) ->
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags, [
         mg_workers_manager:child_spec(manager, manager_options(Options)),
-        mg_storage:child_spec(get_options(storage, Options), storage, {?MODULE, handle_timeout, [Options]})
+        mg_storage:child_spec(get_options(storage, Options), get_options(namespace, Options),
+            storage, {?MODULE, handle_timeout, [Options]})
     ]}}.
 
 %%
@@ -155,7 +156,7 @@ handle_load(ID, Options) ->
             #{
                 id      => ID,
                 options => Options,
-                machine => mg_storage:get_machine(get_options(storage, Options), ID),
+                machine => mg_storage:get_machine(get_options(storage, Options), get_options(namespace, Options), ID),
                 update  => #{}
             },
         % есть подозрения, что это не очень хорошо, но нет понимания, что именно
@@ -208,7 +209,7 @@ transit_state(State=#{machine:=Machine, update:=Update}) when erlang:map_size(Up
     State;
 transit_state(State=#{id:=ID, options:=Options, machine:=Machine, update:=Update}) ->
     NewMachine =
-        mg_storage:update_machine(get_options(storage, Options), ID, Machine, Update),
+        mg_storage:update_machine(get_options(storage, Options), get_options(namespace, Options), ID, Machine, Update),
     State#{machine:=NewMachine, update:=#{}}.
 
 %%
@@ -233,9 +234,11 @@ handle_call_(Call, State=#{machine:=Machine}) ->
         {{repair, _      }, #{status:={working, _}}} -> { ok,                            State};
         {{repair, _      }, undefined              } -> {{error, machine_not_found    }, State};
         { timeout         , #{status:={working, _}}} -> { ok, process_signal(timeout, State)};
-        { timeout         , #{status:=_           }} -> { ok,                            State}
+        { timeout         , #{status:=_           }} -> { ok,                            State};
+
         % если машина в статусе _created_, а ей пришел запрос,
         % то это значит, что-то пошло не так, такого быть не должно
+        { _               , #{status:={created, _}}} -> exit({something_went_wrong, Call, Machine})
     end.
 
 %%
@@ -243,7 +246,7 @@ handle_call_(Call, State=#{machine:=Machine}) ->
 -spec process_creation(_Args, state()) ->
     state().
 process_creation(Args, State=#{id:=ID, options:=Options}) ->
-    Machine = mg_storage:create_machine(get_options(storage, Options), ID, Args),
+    Machine = mg_storage:create_machine(get_options(storage, Options), get_options(namespace, Options), ID, Args),
     handle_load_(State#{machine:=Machine}).
 
 -spec process_call(_Call, state()) ->
@@ -273,13 +276,22 @@ handle_processor_result(EventsBodies, ComplexAction, State) ->
     TimerAction = maps:get(timer, ComplexAction, undefined),
     TagAction   = maps:get(tag  , ComplexAction, undefined),
     ok = notify_observer(Events, State),
-    Update =
-        #{
-            status        => {working, get_timeout_datetime(TimerAction)},
-            new_events    => Events,
-            new_tag       => TagAction
-        },
-    State#{update:=Update}.
+    Update = #{status => {working, get_timeout_datetime(TimerAction)}},
+    State#{ update := add_events_to_update(Events, add_tag_to_update(TagAction, Update))}.
+
+-spec add_events_to_update([mg:event()], mg_storage:update()) ->
+    mg_storage:update().
+add_events_to_update([], Update) ->
+    Update;
+add_events_to_update(Events, Update) ->
+    Update#{new_events => Events}.
+
+-spec add_tag_to_update(mg:tag() | undefined, mg_storage:update()) ->
+    mg_storage:update().
+add_tag_to_update(undefined, Update) ->
+    Update;
+add_tag_to_update(Tag, Update) ->
+    Update#{new_tag => Tag}.
 
 -spec notify_observer([mg:event()], state()) ->
     ok.
@@ -342,7 +354,7 @@ manager_options(Options) ->
 -spec ref2id(options(), mg:ref()) ->
     _ID.
 ref2id(Options, {tag, Tag}) ->
-    case mg_storage:resolve_tag(get_options(storage, Options), Tag) of
+    case mg_storage:resolve_tag(get_options(storage, Options), get_options(namespace, Options), Tag) of
         undefined ->
             throw(machine_not_found);
         ID ->
@@ -354,10 +366,10 @@ ref2id(_, {id, ID}) ->
 -spec get_history_by_id(options(), mg:id(), mg_storage:machine(), mg:history_range() | undefined) ->
     mg:history().
 get_history_by_id(Options, ID, Machine, Range) ->
-    mg_storage:get_history(get_options(storage, Options), ID, Machine, Range).
+    mg_storage:get_history(get_options(storage, Options), get_options(namespace, Options), ID, Machine, Range).
 
--spec get_options(processor | storage | observer, options()) ->
-    mg_utils:mod_opts().
+-spec get_options(namespace | processor | storage | observer, options()) ->
+    _.
 get_options(Subj=observer, Options) ->
     maps:get(Subj, Options, undefined);
 get_options(Subj, Options) ->

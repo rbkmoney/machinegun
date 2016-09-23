@@ -117,8 +117,8 @@ groups() ->
 -spec init_per_suite(config()) ->
     config().
 init_per_suite(C) ->
-    % dbg:tracer(), dbg:p(all,c),
-    % dbg:tpl({mg_machine, '_', '_'}, x),
+    % dbg:tracer(), dbg:p(all, c),
+    % dbg:tpl({mg_storage_riak, '_', '_'}, x),
     C.
 
 -spec end_per_suite(config()) ->
@@ -136,7 +136,10 @@ init_per_group(_, C) ->
         ++
         genlib_app:start_application_with(woody, [{acceptors_pool_size, 1}])
         ++
-        genlib_app:start_application_with(mg_woody_api, [{nss, [{?NS , <<"http://localhost:8023/processor">>}]}])
+        genlib_app:start_application_with(mg_woody_api, [
+            {storage, mg_storage_test},
+            {nss, [{?NS , <<"http://localhost:8023/processor">>}]}
+        ])
     ,
 
     {ok, ProcessorPid} = mg_machine_test_door:start_link({{0, 0, 0, 0}, 8023, "/processor"}),

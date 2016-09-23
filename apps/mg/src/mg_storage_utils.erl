@@ -7,13 +7,13 @@
 %%
 %% API
 %%
--spec try_set_timer(atom(), mg:id(), mg_storage:status()) ->
+-spec try_set_timer(mg:ns(), mg:id(), mg_storage:status()) ->
     ok.
-try_set_timer(TimersName, ID, {working, TimerDateTime})
+try_set_timer(Namespace, ID, {working, TimerDateTime})
     when TimerDateTime =/= undefined ->
-    mg_timers:set(TimersName, ID, TimerDateTime);
-try_set_timer(TimersName, ID, _) ->
-    mg_timers:cancel(TimersName, ID).
+    mg_timers:set(Namespace, ID, TimerDateTime);
+try_set_timer(Namespace, ID, _) ->
+    mg_timers:cancel(Namespace, ID).
 
 %% TODO
 % -spec apply_machine_update() ->

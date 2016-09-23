@@ -40,10 +40,11 @@
 -type config_ns() :: {mg_woody_api:ns(), _URL}.
 -type config_nss() :: [config_ns()].
 -type config_element() ::
-      {nss     ,      config_nss ()}
-    | {ip      , inet:ip_address ()}
-    | {port    , inet:port_number()}
-    | {net_opts, []                } % в вуди нет для этого типа :(
+      {nss     ,      config_nss   ()}
+    | {ip      , inet:ip_address   ()}
+    | {port    , inet:port_number  ()}
+    | {net_opts, []                  } % в вуди нет для этого типа :(
+    | {storage , mg_storage:storage()}
 .
 -type config() :: [config_element()].
 
@@ -68,14 +69,15 @@ stop() ->
     mg_utils:supervisor_ret().
 init([]) ->
     Config = application:get_all_env(?MODULE),
-    ConfigNSs = proplists:get_value(nss, Config, []),
+    ConfigNSs = get_config_element(nss    , Config),
+    Storage   = get_config_element(storage, Config),
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags,
-        [mg_machine:child_spec(NS, ns_options(ConfigNS)) || ConfigNS={NS, _} <- ConfigNSs]
+        [mg_machine:child_spec(NS, ns_options(ConfigNS, Storage)) || ConfigNS={NS, _} <- ConfigNSs]
         ++
         [
-            mg_event_sink:child_spec(event_sink_options(), event_sink),
-            woody_child_spec(Config)
+            mg_event_sink:child_spec(event_sink_options(Storage), event_sink),
+            woody_child_spec(Config, woody_api)
         ]
     }}.
 
@@ -95,54 +97,80 @@ stop(_State) ->
 %%
 %% local
 %%
--define(db_mod, mg_storage_test).
-
--spec woody_child_spec(config()) ->
+-spec woody_child_spec(config(), atom()) ->
     supervisor:child_spec().
-woody_child_spec(Config) ->
+woody_child_spec(Config, ChildID) ->
     woody_server:child_spec(
-        api,
+        ChildID,
         #{
-            ip            => proplists:get_value(host    , Config, {0, 0, 0, 0}),
-            port          => proplists:get_value(port    , Config, 8022        ),
-            net_opts      => proplists:get_value(net_opts, Config, []          ),
+            ip            => get_config_element(host    , Config, {0, 0, 0, 0}),
+            port          => get_config_element(port    , Config, 8022        ),
+            net_opts      => get_config_element(net_opts, Config, []          ),
             event_handler => mg_woody_api_event_handler,
             handlers      => [
-                mg_woody_api_automaton :handler(api_automaton_options(proplists:get_value(nss, Config, []))),
-                mg_woody_api_event_sink:handler(api_event_sink_options())
+                mg_woody_api_automaton :handler(api_automaton_options (Config)),
+                mg_woody_api_event_sink:handler(api_event_sink_options(Config))
             ]
         }
     ).
 
-
--spec ns_options(config_ns()) ->
-    mg_machine:options().
-ns_options({NS, URL}) ->
-    #{
-        namespace => NS,
-        storage   => {?db_mod, erlang:binary_to_atom(NS, utf8)},
-        processor => {mg_woody_api_processor, URL},
-        observer  => {mg_event_sink, {event_sink_options(), NS}}
-    }.
-
--spec event_sink_options() ->
-    mg_event_sink:options().
-event_sink_options() ->
-    {?db_mod, event_sink}.
-
--spec api_automaton_options(config_nss()) ->
+-spec api_automaton_options(config()) ->
     mg_woody_api_automaton:options().
-api_automaton_options(ConfigNSs) ->
+api_automaton_options(Config) ->
+    ConfigNSs = get_config_element(nss    , Config),
+    Storage   = get_config_element(storage, Config),
     lists:foldl(
         fun(ConfigNS={NS, _}, Options) ->
             NSBin = NS,
-            Options#{NSBin => ns_options(ConfigNS)}
+            Options#{NSBin => ns_options(ConfigNS, Storage)}
         end,
         #{},
         ConfigNSs
     ).
 
--spec api_event_sink_options() ->
+-spec ns_options(config_ns(), mg_storage:storage()) ->
+    mg_machine:options().
+ns_options({NS, URL}, Storage) ->
+    #{
+        namespace => NS,
+        storage   => Storage,
+        processor => {mg_woody_api_processor, URL},
+        observer  => {mg_event_sink, {event_sink_options(Storage), NS}}
+    }.
+
+-spec api_event_sink_options(config()) ->
     mg_woody_api_event_sink:options().
-api_event_sink_options() ->
-    event_sink_options().
+api_event_sink_options(Config) ->
+    event_sink_options(get_config_element(storage, Config)).
+
+-spec event_sink_options(mg_storage:storage()) ->
+    mg_event_sink:options().
+event_sink_options(Storage) ->
+    #{
+        id        => <<"event_sink">>,
+        namespace => <<"event_sink">>,
+        storage   => Storage
+    }.
+
+%%
+%% config utils
+%%
+-spec get_config_element(atom(), config()) ->
+    term() | no_return().
+get_config_element(Element, Config) ->
+    case lists:keyfind(Element, 1, Config) of
+        false ->
+            erlang:throw({config_element_not_found, Element});
+        {Element, Value} ->
+            Value
+    end.
+
+-spec get_config_element(atom(), config(), term()) ->
+    term().
+get_config_element(Element, Config, Default) ->
+    case lists:keyfind(Element, 1, Config) of
+        false ->
+            Default;
+        {Element, Value} ->
+            Value
+    end.

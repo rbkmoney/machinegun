@@ -17,9 +17,10 @@
 %%
 %% API
 %%
--define(event_sink_machine_id, event_sink).
-
--type options() :: mg_utils:mod_opts().
+-type options() :: #{
+    id      => mg:id(),
+    storage => mg_storage:storage()
+}.
 
 -spec child_spec(options(), atom()) ->
     supervisor:child_spec().
@@ -33,7 +34,7 @@ handle_events({Options, SourceNS}, SourceID, Events) ->
     try
         ok = mg_machine:call(
                 machine_options(Options),
-                {id, ?event_sink_machine_id},
+                {id, event_sink_machine_id(Options)},
                 {handle_events, SourceNS, SourceID, Events}
             )
     catch throw:machine_not_found ->
@@ -45,7 +46,7 @@ handle_events({Options, SourceNS}, SourceID, Events) ->
     mg:sink_history().
 get_history(Options, Range) ->
     try
-        mg_machine:get_history(machine_options(Options), {id, ?event_sink_machine_id}, Range)
+        mg_machine:get_history(machine_options(Options), {id, event_sink_machine_id(Options)}, Range)
     catch throw:machine_not_found ->
         ok = start(Options),
         get_history(Options, Range)
@@ -53,11 +54,11 @@ get_history(Options, Range) ->
 
 -spec machine_options(options()) ->
     mg_machine:options().
-machine_options(Options) ->
+machine_options(#{storage:=Storage, namespace := Namespace}) ->
     #{
-        namespace => ?MODULE,
+        namespace => Namespace,
         processor => ?MODULE,
-        storage   => Options
+        storage   => Storage
     }.
 
 
@@ -81,7 +82,7 @@ process_call(_, {{handle_events, SourceNS, SourceID, Events}, _}) ->
 -spec start(options()) ->
     ok.
 start(Options) ->
-    mg_machine:start(machine_options(Options), ?event_sink_machine_id, <<"">>).
+    mg_machine:start(machine_options(Options), event_sink_machine_id(Options), <<"">>).
 
 -spec generate_sink_events(mg:ns(), mg:id(), [mg:event()]) ->
     [mg:sink_event()].
@@ -96,3 +97,8 @@ generate_sink_event(SourceNS, SourceID, Event) ->
         source_id => SourceID,
         event     => Event
     }.
+
+-spec event_sink_machine_id(options()) ->
+    mg:id().
+event_sink_machine_id(#{id:=ID}) ->
+    ID.

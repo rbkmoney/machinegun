@@ -84,11 +84,12 @@ handle_function('GetHistory', {NS, Ref, Range}, WoodyContext, Options) ->
 %%
 %% local
 %%
--spec get_ns_options(mg:ns(), options()) ->
+-spec get_ns_options(mg_woody_api:ns(), options()) ->
     mg_machine:options().
-get_ns_options(NS, Options) ->
+get_ns_options(Namespace, Options) ->
     try
-        maps:get(NS, Options)
-    catch error:{badkey, NS} ->
-        throw(#'NamespaceNotFound'{})
+        maps:get(Namespace, Options)
+    catch
+        error:{badkey, Namespace} ->
+            throw(#'NamespaceNotFound'{})
     end.

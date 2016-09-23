@@ -2,11 +2,11 @@
 -include_lib("stdlib/include/ms_transform.hrl").
 
 %% internal API
--export([start_link/1]).
+-export([start_link/2]).
 
 %% mg_storage like callbacks
 -export_type([options/0]).
--export([child_spec/2, create_machine/3, get_machine/2, get_history/4, resolve_tag/2, update_machine/4]).
+-export([child_spec/3, create_machine/4, get_machine/3, get_history/5, resolve_tag/3, update_machine/5]).
 
 %% gen_server callbacks
 -behaviour(gen_server).
@@ -15,70 +15,72 @@
 %%
 %% internal API
 %%
--spec start_link(options()) ->
+-spec start_link(options(), mg:ns()) ->
     mg_utils:gen_start_ret().
-start_link(Options) ->
-    gen_server:start_link(self_reg_name(Options), ?MODULE, Options, []).
+start_link(Options, Namespace) ->
+    gen_server:start_link(self_reg_name(Namespace), ?MODULE, {Options, Namespace}, []).
 
 %%
 %% mg_storage callbacks
 %%
--type options() :: _Name::atom().
+-type options() :: _.
 
--spec child_spec(options(), atom()) ->
+-spec child_spec(options(), mg:ns(), atom()) ->
     supervisor:child_spec().
-child_spec(Options, ChildID) ->
+child_spec(Options, Namespace, ChildID) ->
     #{
         id       => ChildID,
-        start    => {?MODULE, start_link, [Options]},
+        start    => {?MODULE, start_link, [Options, Namespace]},
         restart  => permanent,
         shutdown => 5000
     }.
 
--spec create_machine(_Options, mg:id(), mg:args()) ->
+-spec create_machine(options(), mg:ns(), mg:id(), mg:args()) ->
     mg_storage:machine().
-create_machine(Options, ID, Args) ->
-    gen_server:call(self_ref(Options), {create_machine, ID, Args}).
+create_machine(_Options, Namespace, ID, Args) ->
+    gen_server:call(self_ref(Namespace), {create_machine, ID, Args}).
 
--spec get_machine(options(), mg:id()) ->
+-spec get_machine(options(), mg:ns(), mg:id()) ->
     mg_storage:machine() | undefined.
-get_machine(Options, ID) ->
-    gen_server:call(self_ref(Options), {get_machine, ID}).
+get_machine(_Options, Namespace, ID) ->
+    gen_server:call(self_ref(Namespace), {get_machine, ID}).
 
--spec get_history(options(), mg:id(), mg_storage:machine(), mg:history_range() | undefined) ->
+-spec get_history(options(), mg:ns(), mg:id(), mg_storage:machine(), mg:history_range() | undefined) ->
     mg:history().
-get_history(Options, ID, Machine, Range) ->
-    gen_server:call(self_ref(Options), {get_history, ID, Machine, Range}).
+get_history(_Options, Namespace, ID, Machine, Range) ->
+    gen_server:call(self_ref(Namespace), {get_history, ID, Machine, Range}).
 
--spec resolve_tag(options(), mg:tag()) ->
+-spec resolve_tag(options(), mg:ns(), mg:tag()) ->
     mg:id() | undefined.
-resolve_tag(Options, Tag) ->
-    gen_server:call(self_ref(Options), {resolve_tag, Tag}).
+resolve_tag(_Options, Namespace, Tag) ->
+    gen_server:call(self_ref(Namespace), {resolve_tag, Tag}).
 
--spec update_machine(options(), mg:id(), mg_storage:machine(), mg_storage:update()) ->
+-spec update_machine(options(), mg:ns(), mg:id(), mg_storage:machine(), mg_storage:update()) ->
     mg_storage:machine().
-update_machine(Options, ID, Machine, Update) ->
-    gen_server:call(self_ref(Options), {update_machine, ID, Machine, Update}).
+update_machine(_Options, Namespace, ID, Machine, Update) ->
+    gen_server:call(self_ref(Namespace), {update_machine, ID, Machine, Update}).
 
 %%
 %% gen_server callbacks
 %%
 -type state() :: #{
-    machines => #{mg:id() => mg_storage:machine()},
-    events   => #{{mg:id(), mg:event_id()} => mg:event()},
-    tags     => #{mg:tag() => mg:id()},
-    options  => options()
+    namespace => mg:ns(),
+    options   => options(),
+    machines  => #{mg:id() => mg_storage:machine()},
+    events    => #{{mg:id(), mg:event_id()} => mg:event()},
+    tags      => #{mg:tag() => mg:id()}
 }.
 
--spec init({options(), mg_storage:timer_handler()}) ->
+-spec init({options(), mg:ns()}) ->
     mg_utils:gen_server_init_ret(state()).
-init(Options) ->
+init({Options, Namespace}) ->
     {ok,
         #{
-            machines      => #{},
-            events        => #{},
-            tags          => #{},
-            options       => Options
+            namespace => Namespace,
+            options   => Options,
+            machines  => #{},
+            events    => #{},
+            tags      => #{}
         }
     }.
 
@@ -130,20 +132,25 @@ terminate(_, _) ->
 %%
 %% local
 %%
--spec self_ref(atom()) ->
+-spec self_ref(mg:ns()) ->
     mg_utils:gen_ref().
-self_ref(Name) ->
-    wrap_name(Name).
+self_ref(Namespace) ->
+    {via, gproc, gproc_key(Namespace)}.
 
--spec self_reg_name(options()) ->
+-spec self_reg_name(mg:ns()) ->
     mg_utils:gen_reg_name().
-self_reg_name(Name) ->
-    {local, wrap_name(Name)}.
+self_reg_name(Namespace) ->
+    {via, gproc, gproc_key(Namespace)}.
 
--spec wrap_name(atom()) ->
-    atom().
-wrap_name(Name) ->
-    erlang:list_to_atom(?MODULE_STRING ++ "_" ++ erlang:atom_to_list(Name)).
+-spec gproc_key(mg:ns()) ->
+    gproc:key().
+gproc_key(Namespace) ->
+    {n, l, wrap(Namespace)}.
+
+-spec wrap(_) ->
+    term().
+wrap(V) ->
+    {?MODULE, V}.
 
 -spec do_get_machine(mg:id(), state()) ->
     mg_storage:machine() | undefined.
@@ -168,12 +175,12 @@ do_create_machine(ID, Args, State) ->
 
 -spec do_update_machine(mg:id(), mg_storage:machine(), mg_storage:update(), state()) ->
     {mg_storage:machine(), state()}.
-do_update_machine(ID, Machine, Update, State=#{options:=Options}) ->
+do_update_machine(ID, Machine, Update, State=#{namespace:=Namespace}) ->
     ok = check_machine_version(ID, Machine, State),
 
     OldStatus = maps:get(status, Machine),
     NewStatus = maps:get(status, Update, OldStatus),
-    ok = mg_storage_utils:try_set_timer(Options, ID, NewStatus),
+    ok = mg_storage_utils:try_set_timer(Namespace, ID, NewStatus),
 
     NewMachineEvents = maps:get(new_events, Update, []       ),
     NewTag           = maps:get(new_tag   , Update, undefined),
