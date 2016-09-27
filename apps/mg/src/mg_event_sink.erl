@@ -31,7 +31,6 @@ child_spec(Options, EventSinkID, ChildID) ->
 -spec handle_events({options(), mg:ns(), id()}, mg:id(), [mg:event()]) ->
     ok.
 handle_events({Options, SourceNS, EventSinkID}, SourceID, Events) ->
-    _ = check_namespace_started(Options, EventSinkID),
     try
         ok = mg_machine:call(
                 machine_options(Options, EventSinkID),
@@ -46,7 +45,6 @@ handle_events({Options, SourceNS, EventSinkID}, SourceID, Events) ->
 -spec get_history(options(), id(), mg:history_range()) ->
     mg:sink_history().
 get_history(Options, EventSinkID, Range) ->
-    _ = check_namespace_started(Options, EventSinkID),
     try
         mg_machine:get_history(machine_options(Options, EventSinkID), {id, EventSinkID}, Range)
     catch throw:machine_not_found ->
@@ -79,11 +77,6 @@ machine_options(#{storage:=Storage}, EventSinkID) ->
         processor => ?MODULE,
         storage   => Storage
     }.
-
--spec check_namespace_started(options(), id()) ->
-    _ | no_return().
-check_namespace_started(Options, EventSinkID) ->
-    mg_machine:is_started(machine_options(Options, EventSinkID)) orelse throw(event_sink_not_found).
 
 -spec start(options(), id()) ->
     ok.

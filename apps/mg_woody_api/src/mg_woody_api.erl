@@ -149,7 +149,10 @@ ns_options(NS, #{url:=URL}, Storage) ->
 -spec api_event_sink_options(config()) ->
     mg_woody_api_event_sink:options().
 api_event_sink_options(Config) ->
-    event_sink_options(get_config_element(storage, Config)).
+    {
+        collect_event_sinks(get_config_element(namespaces, Config)),
+        event_sink_options(get_config_element(storage, Config))
+    }.
 
 -spec event_sink_options(mg_storage:storage()) ->
     mg_event_sink:options().
