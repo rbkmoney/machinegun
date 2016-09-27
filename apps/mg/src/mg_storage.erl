@@ -37,7 +37,7 @@
 
 %% не очень удобно, что получилось 2 формата range'а
 %% надо подумать, как это исправить
--type events_range() :: {First::mg:event_id(), Last::mg:event_id()}.
+-type events_range() :: {First::mg:event_id(), Last::mg:event_id()} | undefined.
 
 -type machine() :: #{
     status       => status(),

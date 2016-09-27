@@ -32,7 +32,8 @@
 -export([event_sink_get_empty_history    /1]).
 -export([event_sink_get_not_empty_history/1]).
 -export([event_sink_get_last_event       /1]).
--export([event_sink_incorrect_id         /1]).
+-export([event_sink_incorrect_event_id   /1]).
+-export([event_sink_incorrect_sink_id    /1]).
 
 %% test_door group tests
 -export([machine_test_door/1]).
@@ -105,7 +106,9 @@ groups() ->
             event_sink_get_empty_history,
             event_sink_get_not_empty_history,
             event_sink_get_last_event,
-            event_sink_incorrect_id
+            % TODO event_not_found
+            % event_sink_incorrect_event_id,
+            event_sink_incorrect_sink_id
         ]},
 
         {test_door, [sequence], [
@@ -121,7 +124,7 @@ groups() ->
     config().
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
-    % dbg:tpl({mg_storage_riak, '_', '_'}, x),
+    % dbg:tpl({mg_machine_test_door, 'apply_events', '_'}, x),
     C.
 
 -spec end_per_suite(config()) ->
@@ -288,9 +291,16 @@ event_sink_get_last_event(C) ->
     [#'SinkEvent'{id = 3, source_id = ?ID, source_ns = NS, event = #'Event'{}}] =
         event_sink_get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=backward, limit=1}).
 
--spec event_sink_incorrect_id(config()) ->
+-spec event_sink_incorrect_event_id(config()) ->
     _.
-event_sink_incorrect_id(C) ->
+event_sink_incorrect_event_id(C) ->
+    #'EventNotFound'{}
+        = (catch event_sink_get_history(es_opts(C), ?ES_ID, #'HistoryRange'{'after'=42})).
+
+
+-spec event_sink_incorrect_sink_id(config()) ->
+    _.
+event_sink_incorrect_sink_id(C) ->
     #'EventSinkNotFound'{}
         = (catch event_sink_get_history(es_opts(C), <<"incorrect_event_sink_id">>, #'HistoryRange'{})).
 
