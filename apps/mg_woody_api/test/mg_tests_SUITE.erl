@@ -351,8 +351,8 @@ es_opts(C) -> ?config(event_sink_options, C).
 %%
 -spec event_sink_get_history(_Options, mg_event_sink:id(), mg:history_range()) ->
     mg:history().
-event_sink_get_history(BaseURL, ES_ID, Range) ->
-    call_event_sink_service(BaseURL, 'GetHistory', [ES_ID, Range]).
+event_sink_get_history(BaseURL, EventSinkID, Range) ->
+    call_event_sink_service(BaseURL, 'GetHistory', [EventSinkID, Range]).
 
 %%
 
