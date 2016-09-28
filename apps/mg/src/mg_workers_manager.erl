@@ -42,11 +42,6 @@ child_spec(ChildID, Options) ->
 start_link(Options) ->
     supervisor:start_link(self_reg_name(Options), ?MODULE, Options).
 
--spec is_started(options()) ->
-    boolean().
-is_started(Options) ->
-    gproc:whereis_name(gproc_key(Options)) =/= undefined.
-
 % sync
 -spec call(options(), _ID, _Call) ->
     _Reply | {error, _}.
