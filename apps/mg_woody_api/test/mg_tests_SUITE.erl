@@ -124,7 +124,7 @@ groups() ->
     config().
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
-    % dbg:tpl({mg_machine_test_door, 'apply_events', '_'}, x),
+    % dbg:tpl({mg_storage_riak, 'apply_machine_update', '_'}, x),
     C.
 
 -spec end_per_suite(config()) ->
@@ -183,7 +183,16 @@ mg_woody_api_config(_TestGroup, C) ->
 -spec mg_woody_api_config_storage() ->
     _.
 mg_woody_api_config_storage() ->
-    {storage, mg_storage_test}.
+    % {storage, mg_storage_test}.
+    {storage, {mg_storage_riak, #{
+        host => "riakdb",
+        port => 8087,
+        pool => #{
+            init_count => 1,
+            max_count  => 10
+        }
+    }}}.
+
 
 -spec end_per_group(group_name(), config()) ->
     ok.
