@@ -240,7 +240,7 @@ do_add_events(ID, NewMachineEvents, State) ->
         NewMachineEvents
     ).
 
--spec do_get_history(mg:id(), mg_storage:machine(), mg:history_range(), state()) ->
+-spec do_get_history(mg:id(), mg_storage:machine(), mg:history_range() | undefined, state()) ->
     mg:history().
 do_get_history(ID, Machine, RequestedRange, State=#{events:=Events}) ->
     ok = check_machine_version(ID, Machine, State),
