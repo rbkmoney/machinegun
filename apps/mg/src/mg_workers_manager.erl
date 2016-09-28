@@ -12,7 +12,6 @@
 
 -export([child_spec/2]).
 -export([start_link/1]).
--export([is_started/1]).
 -export([call      /3]).
 
 %% Supervisor callbacks
