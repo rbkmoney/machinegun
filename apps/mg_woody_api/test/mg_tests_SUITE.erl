@@ -124,7 +124,8 @@ groups() ->
     config().
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
-    % dbg:tpl({mg_storage_riak, 'apply_machine_update', '_'}, x),
+    % dbg:tpl({mg_machine_event_sink, '_', '_'}, x),
+    % dbg:tpl({mg_machine, 'get_history', '_'}, x),
     C.
 
 -spec end_per_suite(config()) ->
@@ -255,22 +256,22 @@ machine_tag_not_found(C) ->
 -spec machine_processor_error(config()) ->
     _.
 machine_processor_error(C) ->
-    #'MachineFailed'{} = (catch mg_machine_test_door:do_action(a_opts(C), fail, ?Ref)).
+    #'MachineFailed'{} = (catch mg_machine_test_door:do_action(a_opts(C), fail, {id, ?ID})).
 
 -spec failed_machine_call(config()) ->
     _.
 failed_machine_call(C) ->
-    #'MachineFailed'{} = (catch mg_machine_test_door:do_action(a_opts(C), touch, ?Ref)).
+    #'MachineFailed'{} = (catch mg_machine_test_door:do_action(a_opts(C), touch, {id, ?ID})).
 
 -spec failed_machine_repair_error(config()) ->
     _.
 failed_machine_repair_error(C) ->
-    #'MachineFailed'{} = (catch mg_machine_test_door:repair(a_opts(C), ?Ref, error)).
+    #'MachineFailed'{} = (catch mg_machine_test_door:repair(a_opts(C), {id, ?ID}, error)).
 
 -spec failed_machine_repair(config()) ->
     _.
 failed_machine_repair(C) ->
-    ok = (catch mg_machine_test_door:repair(a_opts(C), ?Ref, ok)).
+    ok = (catch mg_machine_test_door:repair(a_opts(C), {id, ?ID}, ok)).
 
 %%
 %% event_sink group test
@@ -284,8 +285,8 @@ event_sink_get_empty_history(C) ->
     _.
 event_sink_get_not_empty_history(C) ->
     _ID = mg_machine_test_door:start(a_opts(C), ?ID, ?Tag),
-    ok = test_door_do_action(C, close),
-    ok = test_door_do_action(C, open ),
+    ok = test_door_do_action(C, close, {id, ?ID}),
+    ok = test_door_do_action(C, open , {id, ?ID}),
     NS = ?NS(C),
     [
         #'SinkEvent'{id = 1, source_id = ?ID, source_ns = NS, event = #'Event'{}},
@@ -358,6 +359,11 @@ test_door_update_state(C, CS) ->
     _.
 test_door_do_action(C, Action) ->
     mg_machine_test_door:do_action(a_opts(C), Action, ?Ref).
+
+-spec test_door_do_action(config(), mg_machine_test_door:action(), mg:ref()) ->
+    _.
+test_door_do_action(C, Action, Ref) ->
+    mg_machine_test_door:do_action(a_opts(C), Action, Ref).
 
 -spec a_opts(config()) -> _.
 a_opts(C) -> ?config(automaton_options, C).
