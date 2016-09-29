@@ -39,7 +39,7 @@
 %% config
 -type config_ns() :: #{
     url        => _URL,
-    event_sink => mg_event_sink:id()
+    event_sink => mg_machine_event_sink:id()
 }.
 -type config_nss() :: #{ns() => config_ns()}.
 -type config_element() ::
@@ -79,7 +79,7 @@ init([]) ->
     {ok, {SupFlags,
         [mg_machine:child_spec(NS, ns_options(NS, ConfigNS, Storage)) || {NS, ConfigNS} <- maps:to_list(ConfigNSs)]
         ++
-        [mg_event_sink:child_spec(event_sink_options(Storage), EventSinkID, EventSinkID) || EventSinkID <- EventSinks]
+        [mg_machine_event_sink:child_spec(event_sink_options(Storage), ESID, ESID) || ESID <- EventSinks]
         ++
         [woody_child_spec(Config, woody_api)]
     }}.
@@ -137,7 +137,7 @@ ns_options(NS, #{url:=URL, event_sink:=EventSinkID}, Storage) ->
         namespace => NS,
         storage   => Storage,
         processor => {mg_woody_api_processor, URL},
-        observer  => {mg_event_sink, {event_sink_options(Storage), NS, EventSinkID}}
+        observer  => {mg_machine_event_sink, {event_sink_options(Storage), NS, EventSinkID}}
     };
 ns_options(NS, #{url:=URL}, Storage) ->
     #{
@@ -155,14 +155,14 @@ api_event_sink_options(Config) ->
     }.
 
 -spec event_sink_options(mg_storage:storage()) ->
-    mg_event_sink:options().
+    mg_machine_event_sink:options().
 event_sink_options(Storage) ->
     #{
         storage => Storage
     }.
 
 -spec collect_event_sinks(config_nss()) ->
-    [mg_event_sink:id()].
+    [mg_machine_event_sink:id()].
 collect_event_sinks(ConfigNSs) ->
     maps:fold(
         fun

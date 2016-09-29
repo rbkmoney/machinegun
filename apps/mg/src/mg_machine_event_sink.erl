@@ -1,4 +1,4 @@
--module(mg_event_sink).
+-module(mg_machine_event_sink).
 
 %% API
 -export_type([options/0]).

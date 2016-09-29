@@ -12,7 +12,7 @@
 %%
 %% API
 %%
--type options() :: {[mg_event_sink:id()], mg_event_sink:options()}.
+-type options() :: {[mg_machine_event_sink:id()], mg_machine_event_sink:options()}.
 
 -spec handler(options()) ->
     mg_utils:woody_handler().
@@ -27,10 +27,11 @@ handler(Options) ->
 
 handle_function('GetHistory', {EventSinkID, Range}, WoodyContext, {AvaliableEventSinks, Options}) ->
     _ = check_event_sink(AvaliableEventSinks, EventSinkID, WoodyContext),
-    SinkHistory = mg_event_sink:get_history(Options, EventSinkID, mg_woody_api_packer:unpack(history_range, Range)),
+    SinkHistory =
+        mg_machine_event_sink:get_history(Options, EventSinkID, mg_woody_api_packer:unpack(history_range, Range)),
     {mg_woody_api_packer:pack(sink_history, SinkHistory), WoodyContext}.
 
--spec check_event_sink([mg_event_sink:id()], mg_event_sink:id(), woody_client:context()) ->
+-spec check_event_sink([mg_machine_event_sink:id()], mg_machine_event_sink:id(), woody_client:context()) ->
     ok | no_return().
 check_event_sink(AvaliableEventSinks, EventSinkID, WoodyContext) ->
     case lists:member(EventSinkID, AvaliableEventSinks) of
