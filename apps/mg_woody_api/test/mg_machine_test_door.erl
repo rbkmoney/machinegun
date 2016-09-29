@@ -125,7 +125,7 @@ handle_function('ProcessCall', {CallArgs}, WoodyContext, Options) ->
 %%
 %% local
 %%
--spec process_signal(_, mg_machine:signal_args()) ->
+-spec process_signal(_, mg:signal_args()) ->
     mg:signal_result().
 process_signal(_, #'SignalArgs'{signal=Signal, history=History}) ->
     State = collapse_history(History),
@@ -146,7 +146,7 @@ process_call(_, #'CallArgs'{arg=Action, history=History}) ->
         response = pack(resp, Resp)
     }.
 
--spec handle_signal_(mg_machine:signal(), state()) ->
+-spec handle_signal_(mg:signal(), state()) ->
     event().
 handle_signal_({init, #'InitSignal'{arg=Tag}}, undefined) ->
     [{creating, Tag}];
@@ -180,7 +180,7 @@ handle_action(touch, _State) ->
 handle_action(_, _State) ->
     {{error, bad_state}, []}.
 
--spec collapse_history(mg_machine:history()) ->
+-spec collapse_history(mg:history()) ->
     state().
 collapse_history(History) ->
     apply_events([unpack(event, Event) || #'Event'{event_payload=Event} <- History], undefined).
@@ -200,7 +200,7 @@ apply_event({locking, Passwd}, closed     ) -> {locked, Passwd};
 apply_event( unlocking       , {locked, _}) -> closed.
 
 -spec actions_from_events(events(), state()) ->
-    mg_machine:actions().
+    mg:actions().
 actions_from_events([], _) ->
     #'ComplexAction'{};
 actions_from_events(Events=[Event], OldState) ->
