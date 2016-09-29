@@ -183,15 +183,15 @@ mg_woody_api_config(_TestGroup, C) ->
 -spec mg_woody_api_config_storage() ->
     _.
 mg_woody_api_config_storage() ->
-    % {storage, mg_storage_test}.
-    {storage, {mg_storage_riak, #{
-        host => "riakdb",
-        port => 8087,
-        pool => #{
-            init_count => 1,
-            max_count  => 10
-        }
-    }}}.
+    {storage, mg_storage_test}.
+    % {storage, {mg_storage_riak, #{
+    %     host => "riakdb",
+    %     port => 8087,
+    %     pool => #{
+    %         init_count => 1,
+    %         max_count  => 10
+    %     }
+    % }}}.
 
 
 -spec end_per_group(group_name(), config()) ->
@@ -278,7 +278,7 @@ failed_machine_repair(C) ->
 -spec event_sink_get_empty_history(config()) ->
     _.
 event_sink_get_empty_history(C) ->
-    [] = event_sink_get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}).
+    [] = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}).
 
 -spec event_sink_get_not_empty_history(config()) ->
     _.
@@ -291,27 +291,27 @@ event_sink_get_not_empty_history(C) ->
         #'SinkEvent'{id = 1, source_id = ?ID, source_ns = NS, event = #'Event'{}},
         #'SinkEvent'{id = 2, source_id = ?ID, source_ns = NS, event = #'Event'{}},
         #'SinkEvent'{id = 3, source_id = ?ID, source_ns = NS, event = #'Event'{}}
-    ] = event_sink_get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}).
+    ] = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}).
 
 -spec event_sink_get_last_event(config()) ->
     _.
 event_sink_get_last_event(C) ->
     NS = ?NS(C),
     [#'SinkEvent'{id = 3, source_id = ?ID, source_ns = NS, event = #'Event'{}}] =
-        event_sink_get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=backward, limit=1}).
+        mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=backward, limit=1}).
 
 -spec event_sink_incorrect_event_id(config()) ->
     _.
 event_sink_incorrect_event_id(C) ->
     #'EventNotFound'{}
-        = (catch event_sink_get_history(es_opts(C), ?ES_ID, #'HistoryRange'{'after'=42})).
+        = (catch mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{'after'=42})).
 
 
 -spec event_sink_incorrect_sink_id(config()) ->
     _.
 event_sink_incorrect_sink_id(C) ->
     #'EventSinkNotFound'{}
-        = (catch event_sink_get_history(es_opts(C), <<"incorrect_event_sink_id">>, #'HistoryRange'{})).
+        = (catch mg_event_sink_client:get_history(es_opts(C), <<"incorrect_event_sink_id">>, #'HistoryRange'{})).
 
 %%
 %% test_door group tests
@@ -365,27 +365,3 @@ a_opts(C) -> ?config(automaton_options, C).
 es_opts(C) -> ?config(event_sink_options, C).
 
 
-%%
-%% event_sink client
-%%
--spec event_sink_get_history(_Options, mg_event_sink:id(), mg:history_range()) ->
-    mg:history().
-event_sink_get_history(BaseURL, EventSinkID, Range) ->
-    call_event_sink_service(BaseURL, 'GetHistory', [EventSinkID, Range]).
-
-%%
-
--spec call_event_sink_service(_BaseURL, atom(), [_arg]) ->
-    _.
-call_event_sink_service(BaseURL, Function, Args) ->
-    try
-        {R, _} =
-            woody_client:call(
-                woody_client:new_context(woody_client:make_id(<<"mg">>), mg_woody_api_event_handler),
-                {{mg_proto_state_processing_thrift, 'EventSink'}, Function, Args},
-                #{url => BaseURL ++ "/v1/event_sink"}
-            ),
-        R
-    catch throw:{{exception, Exception}, _} ->
-        throw(Exception)
-    end.

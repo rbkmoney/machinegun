@@ -64,21 +64,24 @@ start_link(Options) ->
 -spec start(automaton_options(), mg:id(), mg:tag()) ->
     ok.
 start(Options, ID, Tag) ->
-    automation_start(Options, ID, Tag).
+    mg_automaton_client:start(Options, ID, Tag).
 
 -spec do_action(automaton_options(), mg:ref(), action()) -> ok | {error, bad_state | bad_passwd}.
 do_action(Options, Action, Ref) ->
-    unpack(resp, automation_call(Options, Ref, pack(action, Action))).
+    unpack(resp, mg_automaton_client:call(Options, Ref, pack(action, Action))).
 
 -spec repair(automaton_options(), mg:ref(), ok | error) ->
     ok.
 repair(Options, Ref, RepairResult) ->
-    automation_repair(Options, Ref, pack(repair_result, RepairResult)).
+    mg_automaton_client:repair(Options, Ref, pack(repair_result, RepairResult)).
 
 -spec update_state(automaton_options(), mg:ref(), client_state()) ->
     client_state().
 update_state(Options, Ref, ClientState=#{last_event_id:=LastEventID, state:=State}) ->
-    History = automation_get_history(Options, Ref, #'HistoryRange'{'after'=LastEventID, limit=1, direction=forward}),
+    History =
+        mg_automaton_client:get_history(
+            Options, Ref, #'HistoryRange'{'after'=LastEventID, limit=1, direction=forward}
+        ),
     case History of
         [] ->
             ClientState;
@@ -234,44 +237,3 @@ unpack(events, Events) ->
     [unpack(event, Event) || Event <- Events];
 unpack(_, V) ->
     binary_to_term(V).
-
-
-%%
-%% automation client
-%%
--spec automation_start(_Options, mg:id(), mg:args()) ->
-    mg:id().
-automation_start({BaseURL, NS}, ID, Args) ->
-    call_automation_service(BaseURL, 'Start', [NS, ID, Args]).
-
--spec automation_repair(_Options, mg:ref(), mg:args()) ->
-    ok.
-automation_repair({BaseURL, NS}, Ref, Args) ->
-    call_automation_service(BaseURL, 'Repair', [NS, Ref, Args]).
-
--spec automation_call(_Options, mg:ref(), mg:args()) ->
-    mg:call_resp().
-automation_call({BaseURL, NS}, Ref, Args) ->
-    call_automation_service(BaseURL, 'Call', [NS, Ref, Args]).
-
--spec automation_get_history(_Options, mg:ref(), mg:history_range()) ->
-    mg:history().
-automation_get_history({BaseURL, NS}, Ref, Range) ->
-    call_automation_service(BaseURL, 'GetHistory', [NS, Ref, Range]).
-
-%%
-
--spec call_automation_service(_BaseURL, atom(), [_arg]) ->
-    _.
-call_automation_service(BaseURL, Function, Args) ->
-    try
-        {R, _} =
-            woody_client:call(
-                woody_client:new_context(woody_client:make_id(<<"mg">>), mg_woody_api_event_handler),
-                {{mg_proto_state_processing_thrift, 'Automaton'}, Function, Args},
-                #{url => BaseURL ++ "/v1/automaton"}
-            ),
-        R
-    catch throw:{{exception, Exception}, _} ->
-        throw(Exception)
-    end.
