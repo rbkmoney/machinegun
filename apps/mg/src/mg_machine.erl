@@ -255,7 +255,7 @@ process_call(Call, State=#{options:=Options, id:=ID, machine:=Machine}) ->
     % TODO прокидывать range снаружи
     History = get_history_by_id(Options, ID, Machine, undefined),
     {Response, EventsBodies, ComplexAction} =
-        mg_processor:process_call(get_options(processor, Options), {Call, History}),
+        mg_processor:process_call(get_options(processor, Options), ID, {Call, History}),
     {{ok, Response}, handle_processor_result(EventsBodies, ComplexAction, State)}.
 
 -spec process_signal(mg:signal(), state()) ->
@@ -264,7 +264,7 @@ process_signal(Signal, State=#{options:=Options, id:=ID, machine:=Machine}) ->
     % TODO прокидывать range снаружи
     History = get_history_by_id(Options, ID, Machine, undefined),
     {EventsBodies, ComplexAction} =
-        mg_processor:process_signal(get_options(processor, Options), {Signal, History}),
+        mg_processor:process_signal(get_options(processor, Options), ID, {Signal, History}),
     handle_processor_result(EventsBodies, ComplexAction, State).
 
 %%

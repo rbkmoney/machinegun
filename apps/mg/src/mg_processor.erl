@@ -1,25 +1,25 @@
 -module(mg_processor).
 
--export([process_signal/2]).
--export([process_call  /2]).
+%% API
+-export([process_signal/3]).
+-export([process_call  /3]).
 
 %%
 %% API
 %%
-
--callback process_signal(_Options, mg:signal_args()) ->
+-callback process_signal(_Options, mg:id(), mg:signal_args()) ->
     mg:signal_result().
--callback process_call(_Options, mg:call_args()) ->
+-callback process_call(_Options, mg:id(), mg:call_args()) ->
     mg:call_result().
 
 %%
 
--spec process_signal(_Options, mg:signal_args()) ->
+-spec process_signal(mg_utils:mod_opts(), mg:id(), mg:signal_args()) ->
     mg:signal_result().
-process_signal(Options, Args) ->
-    mg_utils:apply_mod_opts(Options, process_signal, [Args]).
+process_signal(ModOpts, ID, Args) ->
+    mg_utils:apply_mod_opts(ModOpts, process_signal, [ID, Args]).
 
--spec process_call(_Options, mg:call_args()) ->
+-spec process_call(mg_utils:mod_opts(), mg:id(), mg:call_args()) ->
     mg:call_result().
-process_call(Options, Args) ->
-    mg_utils:apply_mod_opts(Options, process_call, [Args]).
+process_call(ModOpts, ID, Args) ->
+    mg_utils:apply_mod_opts(ModOpts, process_call, [ID, Args]).
