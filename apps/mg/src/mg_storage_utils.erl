@@ -37,7 +37,7 @@ pool_do(PoolName, Fun) ->
     Pid =
         case pooler:take_member(PoolName, Timeout) of
             error_no_members ->
-                % TODO log
+                ok = error_logger:error_msg("pool '~s' is overloaded", [PoolName]).
                 throw({temporary, storage_unavailable});
             Pid_ ->
                 Pid_
@@ -48,7 +48,6 @@ pool_do(PoolName, Fun) ->
         R
     catch Class:Reason ->
         ok = pooler:return_member(PoolName, Pid, fail),
-        % TODO log
         erlang:raise(Class, Reason, erlang:get_stacktrace())
     end.
 
