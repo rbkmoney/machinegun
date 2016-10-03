@@ -45,7 +45,7 @@ create_machine(_Options, Namespace, ID, Args) ->
 get_machine(_Options, Namespace, ID) ->
     gen_server:call(self_ref(Namespace), {get_machine, ID}).
 
--spec get_history(options(), mg:ns(), mg:id(), mg_storage:machine(), mg:history_range() | undefined) ->
+-spec get_history(options(), mg:ns(), mg:id(), mg_storage:machine(), mg:history_range()) ->
     mg:history().
 get_history(_Options, Namespace, ID, Machine, Range) ->
     gen_server:call(self_ref(Namespace), {get_history, ID, Machine, Range}).
@@ -227,7 +227,7 @@ do_add_events(ID, NewMachineEvents, State) ->
         NewMachineEvents
     ).
 
--spec do_get_history(mg:id(), mg_storage:machine(), mg:history_range() | undefined, state()) ->
+-spec do_get_history(mg:id(), mg_storage:machine(), mg:history_range(), state()) ->
     mg:history().
 do_get_history(ID, Machine, RequestedRange, State=#{events:=Events}) ->
     ok = check_machine_version(ID, Machine, State),

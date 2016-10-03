@@ -143,7 +143,7 @@ get_machine(Options, Namespace, ID) ->
         end
     ).
 
--spec get_history(options(), mg:ns(), mg:id(), mg_storage:machine(), mg:history_range() | undefined) ->
+-spec get_history(options(), mg:ns(), mg:id(), mg_storage:machine(), mg:history_range()) ->
     mg:history().
 get_history(Options, Namespace, ID, Machine, Range) ->
     do(

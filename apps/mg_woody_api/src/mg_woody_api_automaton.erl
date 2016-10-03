@@ -60,7 +60,7 @@ handle_function('Start', {NS, ID, Args}, WoodyContext, Options) ->
 
 handle_function('Repair', {NS, Ref, Args}, WoodyContext, Options) ->
     ok = ?safe_handle(
-            mg_machine_complex:repair(get_ns_options(NS, Options), unpack(ref, Ref), unpack(args, Args)),
+            mg_machine_complex:repair(get_ns_options(NS, Options), unpack(ref, Ref), unpack(args, Args), undefined),
             WoodyContext
         ),
     {ok, WoodyContext};
@@ -68,7 +68,7 @@ handle_function('Repair', {NS, Ref, Args}, WoodyContext, Options) ->
 handle_function('Call', {NS, Ref, Args}, WoodyContext, Options) ->
     Response =
         ?safe_handle(
-            mg_machine_complex:call(get_ns_options(NS, Options), unpack(ref, Ref), unpack(args, Args)),
+            mg_machine_complex:call(get_ns_options(NS, Options), unpack(ref, Ref), unpack(args, Args), undefined),
             WoodyContext
         ),
     {pack(call_response, Response), WoodyContext};

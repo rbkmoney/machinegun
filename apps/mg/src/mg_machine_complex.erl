@@ -11,8 +11,8 @@
 -export([child_spec /2]).
 
 -export([start      /3]).
--export([repair     /3]).
--export([call       /3]).
+-export([repair     /4]).
+-export([call       /4]).
 -export([get_history/3]).
 
 %% internal API
@@ -52,17 +52,17 @@ child_spec(Options, ChildID) ->
 start(Options, ID, Args) ->
     mg_machine:start(Options, ID, Args).
 
--spec repair(options(), mg:ref(), mg:args()) ->
+-spec repair(options(), mg:ref(), mg:args(), mg:history_range()) ->
     ok.
-repair(Options, Ref, Args) ->
-    mg_machine:repair(Options, ref2id(Options, Ref), Args).
+repair(Options, Ref, Args, HRange) ->
+    mg_machine:repair(Options, ref2id(Options, Ref), Args, HRange).
 
--spec call(options(), mg:ref(), mg:args()) ->
+-spec call(options(), mg:ref(), mg:args(), mg:history_range()) ->
     _Resp.
-call(Options, Ref, Call) ->
-    mg_machine:call(Options, ref2id(Options, Ref), {call, Call}).
+call(Options, Ref, Call, HRange) ->
+    mg_machine:call(Options, ref2id(Options, Ref), {call, Call}, HRange).
 
--spec get_history(options(), mg:ref(), mg:history_range() | undefined) ->
+-spec get_history(options(), mg:ref(), mg:history_range()) ->
     mg:history().
 get_history(Options, Ref, Range) ->
     mg_machine:get_history(Options, ref2id(Options, Ref), Range).
@@ -84,7 +84,7 @@ start_link(Options) ->
 -spec handle_timeout(options(), mg:id()) ->
     ok.
 handle_timeout(Options, MachineID) ->
-    ok = mg_machine:call(Options, MachineID, handle_timeout).
+    ok = mg_machine:call(Options, MachineID, handle_timeout, undefined).
 
 %%
 %% supervisor callbacks

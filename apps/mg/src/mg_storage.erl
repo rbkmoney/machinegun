@@ -62,7 +62,7 @@
 -callback get_machine(options(), mg:ns(), mg:id()) ->
     machine() | undefined.
 
--callback get_history(options(), mg:ns(), mg:id(), machine(), mg:history_range() | undefined) ->
+-callback get_history(options(), mg:ns(), mg:id(), machine(), mg:history_range()) ->
     mg:history().
 
 -callback update_machine(options(), mg:ns(), mg:id(), machine(), update()) ->
@@ -87,7 +87,7 @@ get_machine(Options, Namespace, ID) ->
     mg_utils:apply_mod_opts(Options, get_machine, [Namespace, ID]).
 
 %% Если машины нет, то возвращает пустой список
--spec get_history(options(), mg:ns(), mg:id(), machine(), mg:history_range() | undefined) ->
+-spec get_history(options(), mg:ns(), mg:id(), machine(), mg:history_range()) ->
     mg:history().
 get_history(Options, Namespace, ID, Machine, Range) ->
     mg_utils:apply_mod_opts(Options, get_history, [Namespace, ID, Machine, Range]).

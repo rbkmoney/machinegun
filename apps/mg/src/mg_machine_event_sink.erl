@@ -36,6 +36,7 @@ handle_events({Options, SourceNS, EventSinkID}, SourceID, Events) ->
             machine_options(Options, EventSinkID),
             EventSinkID,
             {handle_events, SourceNS, SourceID, Events},
+            {undefined, 0, backward},
             undefined
         ).
 
@@ -54,7 +55,7 @@ process_signal(_, _, _) ->
 
 -spec process_call(_, id(), mg:call_args()) ->
     mg:call_result().
-process_call(_, _, {{handle_events, SourceNS, SourceID, Events}, _}) ->
+process_call(_, _, {{handle_events, SourceNS, SourceID, Events}, []}) ->
     SinkEvents = generate_sink_events(SourceNS, SourceID, Events),
     {ok, SinkEvents, #{}}.
 

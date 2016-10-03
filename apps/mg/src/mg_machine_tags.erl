@@ -28,7 +28,7 @@ child_spec(Options, ChildID) ->
     ok | {already_exists, mg:id()}.
 add_tag(Options, Tag, MachineID) ->
     % TODO подумать об ошибках тут
-    mg_machine:call_with_lazy_start(machine_options(Options), Tag, {add_tag, MachineID}, undefined).
+    mg_machine:call_with_lazy_start(machine_options(Options), Tag, {add_tag, MachineID}, undefined, undefined).
 
 -spec resolve_tag(options(), mg:tag()) ->
     mg:id() | undefined.

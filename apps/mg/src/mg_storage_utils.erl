@@ -52,7 +52,7 @@ pool_do(PoolName, Fun) ->
         erlang:raise(Class, Reason, erlang:get_stacktrace())
     end.
 
--spec get_machine_events_ids(mg:id(), mg_storage:machine(), mg:history_range() | undefined) ->
+-spec get_machine_events_ids(mg:id(), mg_storage:machine(), mg:history_range()) ->
     [{mg:id(), mg:event_id()}].
 get_machine_events_ids(MachineID, #{events_range:=MachineEventsRange}, RequestedRange) ->
     [{MachineID, EventID} || EventID <-
@@ -61,7 +61,7 @@ get_machine_events_ids(MachineID, #{events_range:=MachineEventsRange}, Requested
 %%
 %% local
 %%
--spec expand_request_range(mg:history_range() | undefined) ->
+-spec expand_request_range(mg:history_range()) ->
     mg:history_range().
 expand_request_range(undefined) ->
     {undefined, undefined, forward};

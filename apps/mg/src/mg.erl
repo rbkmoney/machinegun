@@ -71,7 +71,7 @@
 -type call_args    () :: {args(), history()}.
 -type signal_result() :: {[event_body()], complex_action()}.
 -type call_result  () :: {call_response(), [event_body()], complex_action()}.
--type history_range() :: {After::id() | undefined, Limit::non_neg_integer() | undefined, direction()}.
+-type history_range() :: {After::id() | undefined, Limit::non_neg_integer() | undefined, direction()} | undefined.
 
 %% event sink
 -type sink_event() :: #{

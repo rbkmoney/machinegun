@@ -54,14 +54,14 @@ child_spec(Options, ChildID) ->
 set_timer(Options, MachineID, DateTime) ->
     % TODO подумать об ошибках тут
     ok = mg_machine:call_with_lazy_start(
-            machine_options(Options), ?TIMERS_ID, {set_timer, MachineID, DateTime}, undefined
+            machine_options(Options), ?TIMERS_ID, {set_timer, MachineID, DateTime}, undefined, undefined
         ).
 
 -spec cancel_timer(options(), mg:id()) ->
     ok.
 cancel_timer(Options, MachineID) ->
     ok = mg_machine:call_with_lazy_start(
-            machine_options(Options), ?TIMERS_ID, {cancel_timer, MachineID}, undefined
+            machine_options(Options), ?TIMERS_ID, {cancel_timer, MachineID}, undefined, undefined
         ).
 
 -spec handle_timeout(options()) ->
@@ -72,7 +72,7 @@ handle_timeout(Options) ->
 -spec handle_timeout(options(), id()) ->
     ok.
 handle_timeout(Options, TimersID) ->
-    ok = mg_machine:call_with_lazy_start(Options, TimersID, handle_timeout, undefined).
+    ok = mg_machine:call_with_lazy_start(Options, TimersID, handle_timeout, undefined, undefined).
 
 %%
 %% internal API
