@@ -43,10 +43,15 @@
 
 -export([child_spec /2]).
 -export([start_link /1]).
+
 -export([start      /3]).
 -export([repair     /3]).
 -export([call       /3]).
 -export([get_history/3]).
+
+-export([call_with_lazy_start       /4]).
+-export([get_history_with_lazy_start/4]).
+-export([do_with_lazy_start         /4]).
 
 %% Internal API
 -export([handle_timeout/2]).
@@ -115,6 +120,35 @@ get_history(Options, Ref, Range) ->
             throw(machine_not_found);
         Machine ->
             get_history_by_id(Options, ID, Machine, Range)
+    end.
+
+
+%% TODO придумуть имена получше, ревьюверы, есть идеи?
+-spec call_with_lazy_start(options(), mg:id(), mg:args(), mg:args()) ->
+    _Resp | throws().
+call_with_lazy_start(Options, ID, Call, StartArgs) ->
+    do_with_lazy_start(Options, ID, StartArgs, fun() -> call(Options, {id, ID}, Call) end).
+
+-spec get_history_with_lazy_start(options(), mg:id(), mg:history_range() | undefined, mg:args()) ->
+    mg:history() | throws().
+get_history_with_lazy_start(Options, ID, Range, StartArgs) ->
+    do_with_lazy_start(Options, ID, StartArgs, fun() -> get_history(Options, {id, ID}, Range) end).
+
+-spec do_with_lazy_start(options(), mg:id(), mg:args(), fun(() -> R)) ->
+    R.
+do_with_lazy_start(Options, ID, StartArgs, Fun) ->
+    try
+        Fun()
+    catch throw:machine_not_found ->
+        try
+            ok = start(Options, ID, StartArgs)
+        catch throw:machine_already_exist ->
+            % вдруг кто-то ещё делает аналогичный процесс
+            ok
+        end,
+        % если к этому моменту машина не создалась, значит она уже не создастся
+        % и исключение будет оправданным
+        Fun()
     end.
 
 %%

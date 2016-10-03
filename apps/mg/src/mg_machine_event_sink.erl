@@ -31,26 +31,17 @@ child_spec(Options, EventSinkID, ChildID) ->
 -spec handle_events({options(), mg:ns(), id()}, mg:id(), [mg:event()]) ->
     ok.
 handle_events({Options, SourceNS, EventSinkID}, SourceID, Events) ->
-    try
-        ok = mg_machine:call(
-                machine_options(Options, EventSinkID),
-                {id, EventSinkID},
-                {handle_events, SourceNS, SourceID, Events}
-            )
-    catch throw:machine_not_found ->
-        ok = start(Options, EventSinkID),
-        handle_events({Options, SourceNS, EventSinkID}, SourceID, Events)
-    end.
+    ok = mg_machine:call_with_lazy_start(
+            machine_options(Options, EventSinkID),
+            EventSinkID,
+            {handle_events, SourceNS, SourceID, Events},
+            <<"">>
+        ).
 
 -spec get_history(options(), id(), mg:history_range()) ->
     mg:sink_history().
 get_history(Options, EventSinkID, Range) ->
-    try
-        mg_machine:get_history(machine_options(Options, EventSinkID), {id, EventSinkID}, Range)
-    catch throw:machine_not_found ->
-        ok = start(Options, EventSinkID),
-        get_history(Options, EventSinkID, Range)
-    end.
+    mg_machine:get_history_with_lazy_start(machine_options(Options, EventSinkID), EventSinkID, Range, <<"">>).
 
 %%
 %% mg_processor handler
@@ -77,11 +68,6 @@ machine_options(#{storage:=Storage}, EventSinkID) ->
         processor => ?MODULE,
         storage   => Storage
     }.
-
--spec start(options(), id()) ->
-    ok.
-start(Options, EventSinkID) ->
-    mg_machine:start(machine_options(Options, EventSinkID), EventSinkID, <<"">>).
 
 -spec generate_sink_events(mg:ns(), mg:id(), [mg:event()]) ->
     [mg:sink_event()].
