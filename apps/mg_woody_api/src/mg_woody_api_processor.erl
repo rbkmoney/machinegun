@@ -26,7 +26,7 @@ process_signal(Options, _, SignalArgs) ->
 -spec process_call(options(), mg_woody_api:id(), mg:call_args()) ->
     mg:call_result().
 process_call(Options, _, CallArgs) ->
-    {SignalResult, _} =
+    {CallResult, _} =
         call_processor(
             Options,
             % TODO woody context
@@ -34,7 +34,7 @@ process_call(Options, _, CallArgs) ->
             'ProcessCall',
             [mg_woody_api_packer:pack(call_args, CallArgs)]
         ),
-    mg_woody_api_packer:unpack(call_result, SignalResult).
+    mg_woody_api_packer:unpack(call_result, CallResult).
 
 %%
 %% local
