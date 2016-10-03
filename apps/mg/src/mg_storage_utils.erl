@@ -33,7 +33,7 @@ pool_child_spec(Options) ->
     R.
 pool_do(PoolName, Fun) ->
     % TODO сделать нормально
-    Timeout = {30, 'sec'},
+    Timeout = {5, 'sec'},
     Pid =
         case pooler:take_member(PoolName, Timeout) of
             error_no_members ->
