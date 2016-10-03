@@ -109,7 +109,7 @@
 -spec child_spec(options(), mg:ns(), atom()) ->
     supervisor:child_spec().
 child_spec(Options, Namespace, _ChildID) ->
-    mg_storage_pool:child_spec(pool_options(Options, Namespace)).
+    mg_storage_utils:pool_child_spec(pool_options(Options, Namespace)).
 
 -spec create_machine(options(), mg:ns(), mg:id(), mg:args()) ->
     mg_storage:machine().
@@ -290,10 +290,10 @@ machine_to_object(Machine) ->
 -spec do(mg:ns(), fun((pid()) -> Result)) ->
     Result.
 do(Namespace, Fun) ->
-    mg_storage_pool:do(ns_to_atom(Namespace), Fun).
+    mg_storage_utils:pool_do(ns_to_atom(Namespace), Fun).
 
 -spec pool_options(options(), mg:ns()) ->
-    mg_storage_pool:options().
+    mg_storage_utils:pool_options().
 pool_options(Options=#{pool:=PoolOptions}, Namespace) ->
     PoolOptions#{
         start_mfa =>
