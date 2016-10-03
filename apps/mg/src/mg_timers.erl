@@ -21,8 +21,9 @@
 %% API
 %%
 -type timer_handler() :: {module(), atom(), [_Arg]}.
+-type name() :: term().
 
--spec child_spec(atom(), atom(), timer_handler()) ->
+-spec child_spec(atom(), name(), timer_handler()) ->
     supervisor:child_spec().
 child_spec(ChildID, Name, TimerHandler) ->
     #{
@@ -32,17 +33,17 @@ child_spec(ChildID, Name, TimerHandler) ->
         shutdown => brutal_kill
     }.
 
--spec start_link(atom(), timer_handler()) ->
+-spec start_link(name(), timer_handler()) ->
     mg_utils:gen_start_ret().
 start_link(Name, TimerHandler) ->
     gen_server:start_link(self_reg_name(Name), ?MODULE, TimerHandler, []).
 
--spec set(atom(), _ID, calendar:datetime()) ->
+-spec set(name(), _ID, calendar:datetime()) ->
     ok.
 set(Name, ID, DateTime) ->
     gen_server:call(self_ref(Name), {set, ID, DateTime}).
 
--spec cancel(atom(), _ID) ->
+-spec cancel(name(), _ID) ->
     ok.
 cancel(Name, ID) ->
     gen_server:call(self_ref(Name), {cancel, ID}).
@@ -221,22 +222,22 @@ apply_handler(ID, MFA = {M, F, A}) ->
 ets_tid(timers, #{timers_table:=Tid}) -> Tid;
 ets_tid(ids   , #{ids_table   :=Tid}) -> Tid.
 
--spec self_ref(atom()) ->
+-spec self_ref(name()) ->
     mg_utils:gen_ref().
 self_ref(Name) ->
     {via, gproc, gproc_key(Name)}.
 
--spec self_reg_name(atom()) ->
+-spec self_reg_name(name()) ->
     mg_utils:gen_reg_name().
 self_reg_name(Name) ->
     {via, gproc, gproc_key(Name)}.
 
--spec gproc_key(atom()) ->
+-spec gproc_key(name()) ->
     gproc:key().
 gproc_key(Name) ->
     {n, l, wrap(Name)}.
 
--spec wrap(_) ->
+-spec wrap(name()) ->
     term().
 wrap(V) ->
     {?MODULE, V}.
