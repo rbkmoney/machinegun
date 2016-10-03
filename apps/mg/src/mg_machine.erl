@@ -80,9 +80,9 @@
 
 -type throws() :: no_return().
 
--spec child_spec(atom(), options()) ->
+-spec child_spec(options(), atom()) ->
     supervisor:child_spec().
-child_spec(ChildID, Options) ->
+child_spec(Options, ChildID) ->
     #{
         id       => ChildID,
         start    => {?MODULE, start_link, [Options]},

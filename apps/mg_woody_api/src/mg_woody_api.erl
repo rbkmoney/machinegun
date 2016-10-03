@@ -77,7 +77,7 @@ init([]) ->
     EventSinks = collect_event_sinks(ConfigNSs),
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags,
-        [mg_machine:child_spec(NS, ns_options(NS, ConfigNS, Storage)) || {NS, ConfigNS} <- maps:to_list(ConfigNSs)]
+        [mg_machine:child_spec(ns_options(NS, ConfigNS, Storage), NS) || {NS, ConfigNS} <- maps:to_list(ConfigNSs)]
         ++
         [mg_machine_event_sink:child_spec(event_sink_options(Storage), ESID, ESID) || ESID <- EventSinks]
         ++

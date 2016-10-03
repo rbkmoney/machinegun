@@ -3,8 +3,8 @@
 %% API
 -export_type([options/0]).
 -export_type([id     /0]).
--export([child_spec     /3]).
--export([get_history    /3]).
+-export([child_spec /3]).
+-export([get_history/3]).
 
 %% mg_processor handler
 -behaviour(mg_processor).
@@ -25,12 +25,13 @@
 -spec child_spec(options(), id(), atom()) ->
     supervisor:child_spec().
 child_spec(Options, EventSinkID, ChildID) ->
-    mg_machine:child_spec(ChildID, machine_options(Options, EventSinkID)).
+    mg_machine:child_spec(machine_options(Options, EventSinkID), ChildID).
 
-%% TODO подумать о зацикливании
+
 -spec handle_events({options(), mg:ns(), id()}, mg:id(), [mg:event()]) ->
     ok.
 handle_events({Options, SourceNS, EventSinkID}, SourceID, Events) ->
+    % TODO что делать с ошибками тут?
     ok = mg_machine:call_with_lazy_start(
             machine_options(Options, EventSinkID),
             EventSinkID,
