@@ -1,6 +1,3 @@
-%%%
-%%% TODO сделать удаление тэгов
-%%%
 -module(mg_machine_tags).
 
 %% API
