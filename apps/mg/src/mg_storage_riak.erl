@@ -92,17 +92,10 @@
 %%%
 -module(mg_storage_riak).
 
-%% supervisor callbacks
--behaviour(supervisor).
--export([init/1]).
-
-%% internal API
--export([start_link/3]).
-
 %% mg_storage callbacks
 -behaviour(mg_storage).
 -export_type([options/0]).
--export([child_spec/4, create_machine/4, get_machine/3, get_history/5, resolve_tag/3, update_machine/5]).
+-export([child_spec/3, create_machine/4, get_machine/3, get_history/5, update_machine/5]).
 
 -type options() :: #{
     host      => inet            :ip_address  (),
@@ -111,37 +104,12 @@
 }.
 
 %%
-%% supervisor callbacks
-%%
--spec init({options(), mg:ns(), mg_storage:timer_handler()}) ->
-    mg_utils:supervisor_ret().
-init({Options, Namespace, TimerHandler}) ->
-    SupFlags = #{strategy => one_for_all},
-    {ok, {SupFlags, [
-        mg_storage_pool:child_spec(pool_options(Options, Namespace)),
-        mg_timers      :child_spec(timers, Namespace, TimerHandler)
-    ]}}.
-
-%%
-%% internal API
-%%
--spec start_link(options(), mg:ns(), mg_storage:timer_handler()) ->
-    mg_utils:gen_start_ret().
-start_link(Options, Namespace, TimerHandler) ->
-    supervisor:start_link(?MODULE, {Options, Namespace, TimerHandler}).
-
-%%
 %% mg_storage callbacks
 %%
--spec child_spec(options(), mg:ns(), atom(), mg_storage:timer_handler()) ->
+-spec child_spec(options(), mg:ns(), atom()) ->
     supervisor:child_spec().
-child_spec(Options, Namespace, ChildID, TimerHandler) ->
-    #{
-        id       => ChildID,
-        start    => {?MODULE, start_link, [Options, Namespace, TimerHandler]},
-        restart  => permanent,
-        shutdown => 5000
-    }.
+child_spec(Options, Namespace, _ChildID) ->
+    mg_storage_pool:child_spec(pool_options(Options, Namespace)).
 
 -spec create_machine(options(), mg:ns(), mg:id(), mg:args()) ->
     mg_storage:machine().
@@ -189,32 +157,6 @@ get_history(Options, Namespace, ID, Machine, Range) ->
         end
     ).
 
--spec resolve_tag(options(), mg:ns(), mg:tag()) ->
-    mg:id() | undefined.
-resolve_tag(Options, Namespace, Tag) ->
-    do(
-        Namespace,
-        fun(Pid) ->
-            try
-                % TODO проверить двойное тэгирование
-                MachineID = unpack(tag, riakc_obj:get_value(get_db_object(Pid, Options, Namespace, tag, Tag))),
-                #{tags:=Tags} =
-                    unpack(
-                        machine,
-                        riakc_obj:get_value(get_db_object(Pid, Options, Namespace, machine, MachineID))
-                    ),
-                case lists:member(Tag, Tags) of
-                    true ->
-                        MachineID;
-                    false ->
-                        undefined
-                end
-            catch throw:not_found ->
-                undefined
-            end
-        end
-    ).
-
 -spec update_machine(options(), mg:ns(), mg:id(), mg_storage:machine(), mg_storage:update()) ->
     mg_storage:machine().
 update_machine(Options, Namespace, ID, Machine, Update) ->
@@ -235,8 +177,7 @@ update_machine(Options, Namespace, ID, Machine, Update) ->
 
 -spec apply_machine_update(pid(), options(), mg:ns(), mg:id(), atom(), term(), mg_storage:machine()) ->
     mg_storage:machine().
-apply_machine_update(_Pid, _Options, Namespace, ID, status, NewStatus, Machine) ->
-    ok = mg_storage_utils:try_set_timer(Namespace, ID, NewStatus),
+apply_machine_update(_Pid, _Options, _Namespace, _ID, status, NewStatus, Machine) ->
     Machine#{status:=NewStatus};
 apply_machine_update(Pid, Options, Namespace, ID, new_events, NewEvents, Machine=#{events_range:=EventsRange}) ->
     #{id:=NewLastEventID} = lists:last(NewEvents),
@@ -254,11 +195,7 @@ apply_machine_update(Pid, Options, Namespace, ID, new_events, NewEvents, Machine
             end,
             NewEvents
         ),
-    Machine#{events_range:=NewEventsRange};
-apply_machine_update(Pid, Options, Namespace, ID, new_tag, Tag, Machine=#{db_state:={Object, Tags}}) ->
-    _ = create_db_object(Pid, Options, Namespace, tag, Tag, ID),
-    NewMachine = Machine#{db_state:={Object, [Tag|Tags]}},
-    object_to_machine(put_db_object(Pid, machine_to_object(NewMachine), put_options(machine))).
+    Machine#{events_range:=NewEventsRange}.
 
 %%
 %% db interation
@@ -307,7 +244,7 @@ put_db_object(Pid, Object, Options) ->
 -spec get_bucket(db_obj_type(), mg:ns()) ->
     binary().
 get_bucket(Type, Namespace) ->
-    <<Namespace/binary, "-", (erlang:atom_to_binary(Type, utf8))/binary>>.
+    stringify({Namespace, Type}).
 
 %%
 %% Про опции посмотреть можно тут
@@ -332,13 +269,12 @@ put_options(_) ->
 object_to_machine(Object) ->
     #{
         status       := Status,
-        events_range := EventsRange,
-        tags         := Tags
+        events_range := EventsRange
     } = unpack(machine, riakc_obj:get_value(Object)),
     #{
         status       => Status,
         events_range => EventsRange,
-        db_state     => {Object, Tags}
+        db_state     => Object
     }.
 
 -spec machine_to_object(mg_storage:machine()) ->
@@ -347,9 +283,9 @@ machine_to_object(Machine) ->
     #{
         status       := Status,
         events_range := EventsRange,
-        db_state     := {Object, Tags}
+        db_state     := Object
     } = Machine,
-    riakc_obj:update_value(Object, pack(machine, #{status => Status, events_range => EventsRange, tags => Tags})).
+    riakc_obj:update_value(Object, pack(machine, #{status => Status, events_range => EventsRange})).
 
 -spec do(mg:ns(), fun((pid()) -> Result)) ->
     Result.
@@ -375,7 +311,7 @@ pool_options(Options=#{pool:=PoolOptions}, Namespace) ->
 -spec ns_to_atom(mg:ns()) ->
     atom().
 ns_to_atom(Namespace) ->
-    erlang:binary_to_atom(genlib:to_binary(Namespace), utf8).
+    erlang:binary_to_atom(stringify(Namespace), utf8).
 
 %%
 %% packer
@@ -384,14 +320,10 @@ ns_to_atom(Namespace) ->
 %% TODO подумать как правильно генерить ключи
 -spec pack(_, _) ->
     binary().
-pack({id, tag}, Tag) ->
-    Tag;
-pack({id, event}, {MachineID, EventID}) ->
-    <<MachineID/binary, "-", (erlang:integer_to_binary(EventID))/binary>>;
+pack({id, event}, FullEventID) ->
+    stringify(FullEventID);
 pack({id, machine}, MachineID) ->
     MachineID;
-pack(tag, MachineID) ->
-    pack({id, machine}, MachineID);
 pack(event, Event) ->
     <<(erlang:term_to_binary(Event))/binary>>;
 pack(machine, Machine) ->
@@ -399,15 +331,30 @@ pack(machine, Machine) ->
 
 -spec unpack(_, binary()) ->
     _.
-% unpack({id, tag}, Data) ->
-%     Data;
-% unpack({id, event}, _) ->
-%     exit(not_supported);
-unpack({id, machine}, Data) ->
-    Data;
-unpack(tag, Data) ->
-    unpack({id, machine}, Data);
 unpack(event, Data) ->
     erlang:binary_to_term(Data);
 unpack(machine, Data) ->
     erlang:binary_to_term(Data).
+
+%%
+
+-type stringify_primitive() ::
+      binary()
+    | atom()
+    | integer()
+    | list(stringify_primitive())
+    | tuple()
+.
+
+-spec stringify(stringify_primitive()) ->
+    binary().
+stringify(Binary) when is_binary(Binary) ->
+    Binary;
+stringify(Integer) when is_integer(Integer) ->
+    erlang:integer_to_binary(Integer);
+stringify(Atom) when is_atom(Atom) ->
+    erlang:atom_to_binary(Atom, utf8);
+stringify(Tuple) when is_tuple(Tuple) ->
+    stringify(erlang:tuple_to_list(Tuple));
+stringify(List) when is_list(List) ->
+    erlang:iolist_to_binary(mg_utils:join(<<"-">>, [stringify(Element) || Element <- List])).

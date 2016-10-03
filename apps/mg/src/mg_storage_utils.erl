@@ -1,20 +1,11 @@
 -module(mg_storage_utils).
 
 %% API
--export([try_set_timer         /3]).
 -export([get_machine_events_ids/3]).
 
 %%
 %% API
 %%
--spec try_set_timer(mg:ns(), mg:id(), mg_storage:status()) ->
-    ok.
-try_set_timer(Namespace, ID, {working, TimerDateTime})
-    when TimerDateTime =/= undefined ->
-    mg_timers:set(Namespace, ID, TimerDateTime);
-try_set_timer(Namespace, ID, _) ->
-    mg_timers:cancel(Namespace, ID).
-
 -spec get_machine_events_ids(mg:id(), mg_storage:machine(), mg:history_range() | undefined) ->
     [{mg:id(), mg:event_id()}].
 get_machine_events_ids(MachineID, #{events_range:=MachineEventsRange}, RequestedRange) ->

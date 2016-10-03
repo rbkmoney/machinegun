@@ -11,18 +11,16 @@
 
 %% API
 -export_type([status       /0]).
--export_type([timer_handler/0]).
 -export_type([events_range /0]).
 -export_type([machine      /0]).
 -export_type([update       /0]).
 -export_type([options      /0]).
 -export_type([storage      /0]).
 
--export([child_spec    /4]).
+-export([child_spec    /3]).
 -export([create_machine/4]).
 -export([get_machine   /3]).
 -export([get_history   /5]).
--export([resolve_tag   /3]).
 -export([update_machine/5]).
 
 %%
@@ -30,10 +28,9 @@
 %%
 -type status() ::
       {created, mg:args()}
-    | {working, calendar:datetime() | undefined}
+    |  working
     | {error  , _Reason}
 .
--type timer_handler() :: {module(), atom(), [_Arg]}.
 
 %% не очень удобно, что получилось 2 формата range'а
 %% надо подумать, как это исправить
@@ -48,8 +45,7 @@
 %% все поля опциональны
 -type update() :: #{
     status        => status(),
-    new_events    => [mg:event()],
-    new_tag       => mg:tag() | undefined
+    new_events    => [mg:event()]
 }.
 
 -type options() :: term().
@@ -57,7 +53,7 @@
 
 %%
 
--callback child_spec(options(), mg:ns(), atom(), timer_handler()) ->
+-callback child_spec(options(), mg:ns(), atom()) ->
     supervisor:child_spec().
 
 -callback create_machine(options(), mg:ns(), mg:id(), mg:args()) ->
@@ -69,18 +65,15 @@
 -callback get_history(options(), mg:ns(), mg:id(), machine(), mg:history_range() | undefined) ->
     mg:history().
 
--callback resolve_tag(options(), mg:ns(), mg:tag()) ->
-    mg:id() | undefined.
-
 -callback update_machine(options(), mg:ns(), mg:id(), machine(), update()) ->
     machine().
 
 %%
 
--spec child_spec(options(), mg:ns(), atom(), timer_handler()) ->
+-spec child_spec(options(), mg:ns(), atom()) ->
     supervisor:child_spec().
-child_spec(Options, Namespace, ChildID, TimerHandler) ->
-    mg_utils:apply_mod_opts(Options, child_spec, [Namespace, ChildID, TimerHandler]).
+child_spec(Options, Namespace, ChildID) ->
+    mg_utils:apply_mod_opts(Options, child_spec, [Namespace, ChildID]).
 
 -spec create_machine(options(), mg:ns(), mg:id(), mg:args()) ->
     mg_storage:machine().
@@ -98,12 +91,6 @@ get_machine(Options, Namespace, ID) ->
     mg:history().
 get_history(Options, Namespace, ID, Machine, Range) ->
     mg_utils:apply_mod_opts(Options, get_history, [Namespace, ID, Machine, Range]).
-
-%% Если машины с таким тэгом нет, то возвращает undefined
--spec resolve_tag(options(), mg:ns(), mg:tag()) ->
-    mg:id() | undefined.
-resolve_tag(Options, Namespace, Tag) ->
-    mg_utils:apply_mod_opts(Options, resolve_tag, [Namespace, Tag]).
 
 -spec update_machine(options(), mg:ns(), mg:id(), machine(), update()) ->
     machine().

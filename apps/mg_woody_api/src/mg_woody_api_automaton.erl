@@ -15,7 +15,7 @@
 %%
 %% API
 %%
--type options() :: #{mg:ns() => mg_machine:options()}.
+-type options() :: #{mg:ns() => mg_machine_complex:options()}.
 
 -spec handler(options()) ->
     mg_utils:woody_handler().
@@ -53,14 +53,14 @@ map_error(Other) ->
 
 handle_function('Start', {NS, ID, Args}, WoodyContext, Options) ->
     ok = ?safe_handle(
-            mg_machine:start(get_ns_options(NS, Options), unpack(id, ID), unpack(args, Args)),
+            mg_machine_complex:start(get_ns_options(NS, Options), unpack(id, ID), unpack(args, Args)),
             WoodyContext
         ),
     {ok, WoodyContext};
 
 handle_function('Repair', {NS, Ref, Args}, WoodyContext, Options) ->
     ok = ?safe_handle(
-            mg_machine:repair(get_ns_options(NS, Options), unpack(ref, Ref), unpack(args, Args)),
+            mg_machine_complex:repair(get_ns_options(NS, Options), unpack(ref, Ref), unpack(args, Args)),
             WoodyContext
         ),
     {ok, WoodyContext};
@@ -68,7 +68,7 @@ handle_function('Repair', {NS, Ref, Args}, WoodyContext, Options) ->
 handle_function('Call', {NS, Ref, Args}, WoodyContext, Options) ->
     Response =
         ?safe_handle(
-            mg_machine:call(get_ns_options(NS, Options), unpack(ref, Ref), unpack(args, Args)),
+            mg_machine_complex:call(get_ns_options(NS, Options), unpack(ref, Ref), unpack(args, Args)),
             WoodyContext
         ),
     {pack(call_response, Response), WoodyContext};
@@ -76,7 +76,7 @@ handle_function('Call', {NS, Ref, Args}, WoodyContext, Options) ->
 handle_function('GetHistory', {NS, Ref, Range}, WoodyContext, Options) ->
     History =
         ?safe_handle(
-            mg_machine:get_history(get_ns_options(NS, Options), unpack(ref, Ref), unpack(history_range, Range)),
+            mg_machine_complex:get_history(get_ns_options(NS, Options), unpack(ref, Ref), unpack(history_range, Range)),
             WoodyContext
         ),
     {pack(history, History), WoodyContext}.
@@ -85,7 +85,7 @@ handle_function('GetHistory', {NS, Ref, Range}, WoodyContext, Options) ->
 %% local
 %%
 -spec get_ns_options(mg_woody_api:ns(), options()) ->
-    mg_machine:options().
+    mg_machine_complex:options().
 get_ns_options(Namespace, Options) ->
     try
         maps:get(Namespace, Options)
