@@ -37,7 +37,7 @@ pool_do(PoolName, Fun) ->
     Pid =
         case pooler:take_member(PoolName, Timeout) of
             error_no_members ->
-                ok = error_logger:error_msg("pool '~s' is overloaded", [PoolName]).
+                ok = error_logger:error_msg("pool '~s' is overloaded", [PoolName]),
                 throw({temporary, storage_unavailable});
             Pid_ ->
                 Pid_
