@@ -7,10 +7,10 @@
         kernel,
         stdlib,
         genlib,
-        mg,
-        rfc3339,
         lager,
+        rfc3339,
         mg_proto,
+        mg,
         woody
     ]},
     {env, []},

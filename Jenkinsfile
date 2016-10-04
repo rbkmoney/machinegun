@@ -32,7 +32,7 @@ build('machinegun', 'docker-host', finalHook) {
       sh 'make wc_dialyze'
     }
     runStage('test') {
-      sh "make wc_test"
+      sh "make wdeps_test"
     }
 
     if (env.BRANCH_NAME == 'master') {

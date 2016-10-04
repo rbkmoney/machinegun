@@ -41,6 +41,7 @@ child_spec(ChildID, Options) ->
 start_link(Options, ID) ->
     gen_server:start_link(self_reg_name(ID), ?MODULE, {ID, Options}, []).
 
+%% TODO сделать проверку на размер очерди сообщений
 -spec call(_ID, _Call) ->
     _Result.
 call(ID, Call) ->
@@ -69,7 +70,7 @@ init({ID, Options}) ->
             mod               => Mod,
             status            => {loading, Args},
             unload_tref       => undefined,
-            % TODO customize
+            % TODO сделать выгрузку не по таймеру, а по занимаемой памяти и времени последней активности
             % hibernate_timeout => 5000,
             % unload_timeout    => 5 * 60 * 1000
             hibernate_timeout => 1,

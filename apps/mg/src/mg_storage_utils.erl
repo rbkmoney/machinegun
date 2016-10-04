@@ -1,21 +1,57 @@
 -module(mg_storage_utils).
 
 %% API
--export([try_set_timer         /3]).
 -export([get_machine_events_ids/3]).
+
+-export_type([pool_options/0]).
+-export([pool_child_spec/1]).
+-export([pool_do        /2]).
 
 %%
 %% API
 %%
--spec try_set_timer(mg:ns(), mg:id(), mg_storage:status()) ->
-    ok.
-try_set_timer(Namespace, ID, {working, TimerDateTime})
-    when TimerDateTime =/= undefined ->
-    mg_timers:set(Namespace, ID, TimerDateTime);
-try_set_timer(Namespace, ID, _) ->
-    mg_timers:cancel(Namespace, ID).
+%% в pooler'е нет типов :(
+-type pooler_time_interval() :: {non_neg_integer(), min | sec | ms}.
 
--spec get_machine_events_ids(mg:id(), mg_storage:machine(), mg:history_range() | undefined) ->
+-type pool_options() :: #{
+    name                 => term(),
+    start_mfa            => {atom(), atom(), list()},
+    max_count            => non_neg_integer     (),
+    init_count           => non_neg_integer     (),
+    cull_interval        => pooler_time_interval(),
+    max_age              => pooler_time_interval(),
+    member_start_timeout => pooler_time_interval()
+}.
+
+-spec pool_child_spec(pool_options()) ->
+    supervisor:child_spec().
+pool_child_spec(Options) ->
+    % ChildID pooler генерит сам добавляя префикс _pooler_
+    pooler:pool_child_spec(maps:to_list(Options)).
+
+-spec pool_do(atom(), fun((pid()) -> R)) ->
+    R.
+pool_do(PoolName, Fun) ->
+    % TODO сделать нормально
+    Timeout = {5, 'sec'},
+    Pid =
+        case pooler:take_member(PoolName, Timeout) of
+            error_no_members ->
+                ok = error_logger:error_msg("pool '~s' is overloaded", [PoolName]),
+                throw({temporary, storage_unavailable});
+            Pid_ ->
+                Pid_
+        end,
+    try
+        R = Fun(Pid),
+        ok = pooler:return_member(PoolName, Pid, ok),
+        R
+    catch Class:Reason ->
+        ok = pooler:return_member(PoolName, Pid, fail),
+        erlang:raise(Class, Reason, erlang:get_stacktrace())
+    end.
+
+-spec get_machine_events_ids(mg:id(), mg_storage:machine(), mg:history_range()) ->
     [{mg:id(), mg:event_id()}].
 get_machine_events_ids(MachineID, #{events_range:=MachineEventsRange}, RequestedRange) ->
     [{MachineID, EventID} || EventID <-
@@ -24,7 +60,7 @@ get_machine_events_ids(MachineID, #{events_range:=MachineEventsRange}, Requested
 %%
 %% local
 %%
--spec expand_request_range(mg:history_range() | undefined) ->
+-spec expand_request_range(mg:history_range()) ->
     mg:history_range().
 expand_request_range(undefined) ->
     {undefined, undefined, forward};

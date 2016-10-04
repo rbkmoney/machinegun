@@ -36,6 +36,8 @@
 -export([raise           /1]).
 -export([format_exception/1]).
 
+-export([join/2]).
+
 %%
 %% API
 %% OTP
@@ -177,3 +179,10 @@ raise({Class, Reason, Stacktrace}) ->
     iodata().
 format_exception({Class, Reason, Stacktrace}) ->
     io_lib:format("~s:~p~n~p", [Class, Reason, Stacktrace]).
+
+
+-spec join(D, list(E)) ->
+    list(D | E).
+join(_    , []   ) -> [];
+join(_    , [H]  ) ->  H;
+join(Delim, [H|T]) -> [H, Delim, join(Delim, T)].

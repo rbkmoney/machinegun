@@ -6,7 +6,9 @@
         kernel,
         stdlib,
         genlib,
-        gproc
+        gproc,
+        pooler,
+        riakc
     ]},
     {env, []},
     {modules, []},

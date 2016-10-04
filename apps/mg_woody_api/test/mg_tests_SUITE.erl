@@ -57,17 +57,23 @@
     [test_name() | {group, group_name()}].
 all() ->
     [
-        {group, base      },
-        {group, repair    },
-        {group, event_sink},
-        {group, test_door }
+        {group, memory},
+        {group, riak  }
     ].
 
-%% TODO проверить отмену таймера
 -spec groups() ->
     [{group_name(), list(_), test_name()}].
 groups() ->
     [
+        {memory, [sequence], tests_groups()},
+        {riak  , [sequence], tests_groups()}
+    ].
+
+-spec tests_groups() ->
+    [{group_name(), list(_), test_name()}].
+tests_groups() ->
+    [
+        % TODO проверить отмену таймера
         {base, [sequence], [
             namespace_not_found,
             machine_start,
@@ -124,7 +130,8 @@ groups() ->
     config().
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
-    % dbg:tpl({mg_machine_test_door, 'apply_events', '_'}, x),
+    % dbg:tpl({mg_machine_event_sink, '_', '_'}, x),
+    % dbg:tpl({mg_machine, 'get_history', '_'}, x),
     C.
 
 -spec end_per_suite(config()) ->
@@ -134,6 +141,17 @@ end_per_suite(_C) ->
 
 -spec init_per_group(group_name(), config()) ->
     config().
+init_per_group(memory, C) ->
+    [{storage, mg_storage_test} | C];
+init_per_group(riak, C) ->
+    [{storage, {mg_storage_riak, #{
+        host => "riakdb",
+        port => 8087,
+        pool => #{
+            init_count => 1,
+            max_count  => 10
+        }
+    }}} | C];
 init_per_group(TestGroup, C0) ->
     C = [{test_instance, erlang:atom_to_binary(TestGroup, utf8)} | C0],
     %% TODO сделать нормальную генерацию урлов
@@ -162,7 +180,7 @@ init_per_group(TestGroup, C0) ->
     list().
 mg_woody_api_config(event_sink, C) ->
     [
-        mg_woody_api_config_storage(),
+        {storage, ?config(storage, C)},
         {namespaces, #{
             ?NS(C) => #{
                 url        => <<"http://localhost:8023/processor">>,
@@ -170,9 +188,9 @@ mg_woody_api_config(event_sink, C) ->
             }
         }}
     ];
-mg_woody_api_config(_TestGroup, C) ->
+mg_woody_api_config(_, C) ->
     [
-        mg_woody_api_config_storage(),
+        {storage, ?config(storage, C)},
         {namespaces, #{
             ?NS(C) => #{
                 url => <<"http://localhost:8023/processor">>
@@ -180,13 +198,12 @@ mg_woody_api_config(_TestGroup, C) ->
         }}
     ].
 
--spec mg_woody_api_config_storage() ->
-    _.
-mg_woody_api_config_storage() ->
-    {storage, mg_storage_test}.
-
 -spec end_per_group(group_name(), config()) ->
     ok.
+end_per_group(memory, _) ->
+    ok;
+end_per_group(riak, _) ->
+    ok;
 end_per_group(_, C) ->
     true = erlang:exit(?config(processor_pid, C), kill),
     [application_stop(App) || App <- proplists:get_value(apps, C)].
@@ -246,22 +263,22 @@ machine_tag_not_found(C) ->
 -spec machine_processor_error(config()) ->
     _.
 machine_processor_error(C) ->
-    #'MachineFailed'{} = (catch mg_machine_test_door:do_action(a_opts(C), fail, ?Ref)).
+    #'MachineFailed'{} = (catch mg_machine_test_door:do_action(a_opts(C), fail, {id, ?ID})).
 
 -spec failed_machine_call(config()) ->
     _.
 failed_machine_call(C) ->
-    #'MachineFailed'{} = (catch mg_machine_test_door:do_action(a_opts(C), touch, ?Ref)).
+    #'MachineFailed'{} = (catch mg_machine_test_door:do_action(a_opts(C), touch, {id, ?ID})).
 
 -spec failed_machine_repair_error(config()) ->
     _.
 failed_machine_repair_error(C) ->
-    #'MachineFailed'{} = (catch mg_machine_test_door:repair(a_opts(C), ?Ref, error)).
+    #'MachineFailed'{} = (catch mg_machine_test_door:repair(a_opts(C), {id, ?ID}, error)).
 
 -spec failed_machine_repair(config()) ->
     _.
 failed_machine_repair(C) ->
-    ok = (catch mg_machine_test_door:repair(a_opts(C), ?Ref, ok)).
+    ok = (catch mg_machine_test_door:repair(a_opts(C), {id, ?ID}, ok)).
 
 %%
 %% event_sink group test
@@ -269,40 +286,40 @@ failed_machine_repair(C) ->
 -spec event_sink_get_empty_history(config()) ->
     _.
 event_sink_get_empty_history(C) ->
-    [] = event_sink_get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}).
+    [] = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}).
 
 -spec event_sink_get_not_empty_history(config()) ->
     _.
 event_sink_get_not_empty_history(C) ->
     _ID = mg_machine_test_door:start(a_opts(C), ?ID, ?Tag),
-    ok = test_door_do_action(C, close),
-    ok = test_door_do_action(C, open ),
+    ok = test_door_do_action(C, close, {id, ?ID}),
+    ok = test_door_do_action(C, open , {id, ?ID}),
     NS = ?NS(C),
     [
         #'SinkEvent'{id = 1, source_id = ?ID, source_ns = NS, event = #'Event'{}},
         #'SinkEvent'{id = 2, source_id = ?ID, source_ns = NS, event = #'Event'{}},
         #'SinkEvent'{id = 3, source_id = ?ID, source_ns = NS, event = #'Event'{}}
-    ] = event_sink_get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}).
+    ] = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}).
 
 -spec event_sink_get_last_event(config()) ->
     _.
 event_sink_get_last_event(C) ->
     NS = ?NS(C),
     [#'SinkEvent'{id = 3, source_id = ?ID, source_ns = NS, event = #'Event'{}}] =
-        event_sink_get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=backward, limit=1}).
+        mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=backward, limit=1}).
 
 -spec event_sink_incorrect_event_id(config()) ->
     _.
 event_sink_incorrect_event_id(C) ->
     #'EventNotFound'{}
-        = (catch event_sink_get_history(es_opts(C), ?ES_ID, #'HistoryRange'{'after'=42})).
+        = (catch mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{'after'=42})).
 
 
 -spec event_sink_incorrect_sink_id(config()) ->
     _.
 event_sink_incorrect_sink_id(C) ->
     #'EventSinkNotFound'{}
-        = (catch event_sink_get_history(es_opts(C), <<"incorrect_event_sink_id">>, #'HistoryRange'{})).
+        = (catch mg_event_sink_client:get_history(es_opts(C), <<"incorrect_event_sink_id">>, #'HistoryRange'{})).
 
 %%
 %% test_door group tests
@@ -350,33 +367,14 @@ test_door_update_state(C, CS) ->
 test_door_do_action(C, Action) ->
     mg_machine_test_door:do_action(a_opts(C), Action, ?Ref).
 
+-spec test_door_do_action(config(), mg_machine_test_door:action(), mg:ref()) ->
+    _.
+test_door_do_action(C, Action, Ref) ->
+    mg_machine_test_door:do_action(a_opts(C), Action, Ref).
+
 -spec a_opts(config()) -> _.
 a_opts(C) -> ?config(automaton_options, C).
 -spec es_opts(config()) -> _.
 es_opts(C) -> ?config(event_sink_options, C).
 
 
-%%
-%% event_sink client
-%%
--spec event_sink_get_history(_Options, mg_event_sink:id(), mg:history_range()) ->
-    mg:history().
-event_sink_get_history(BaseURL, EventSinkID, Range) ->
-    call_event_sink_service(BaseURL, 'GetHistory', [EventSinkID, Range]).
-
-%%
-
--spec call_event_sink_service(_BaseURL, atom(), [_arg]) ->
-    _.
-call_event_sink_service(BaseURL, Function, Args) ->
-    try
-        {R, _} =
-            woody_client:call(
-                woody_client:new_context(woody_client:make_id(<<"mg">>), mg_woody_api_event_handler),
-                {{mg_proto_state_processing_thrift, 'EventSink'}, Function, Args},
-                #{url => BaseURL ++ "/v1/event_sink"}
-            ),
-        R
-    catch throw:{{exception, Exception}, _} ->
-        throw(Exception)
-    end.

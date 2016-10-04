@@ -4,16 +4,16 @@
 %% mg_processor handler
 -behaviour(mg_processor).
 -export_type([options/0]).
--export([process_signal/2, process_call/2]).
+-export([process_signal/3, process_call/3]).
 
 %%
 %% mg_processor handler
 %%
 -type options() :: woody_t:url().
 
--spec process_signal(options(), mg:signal_args()) ->
+-spec process_signal(options(), mg_woody_api:id(), mg:signal_args()) ->
     mg:signal_result().
-process_signal(Options, SignalArgs) ->
+process_signal(Options, _, SignalArgs) ->
     {SignalResult, _} =
         call_processor(
             Options,
@@ -23,10 +23,10 @@ process_signal(Options, SignalArgs) ->
         ),
     mg_woody_api_packer:unpack(signal_result, SignalResult).
 
--spec process_call(options(), mg:call_args()) ->
+-spec process_call(options(), mg_woody_api:id(), mg:call_args()) ->
     mg:call_result().
-process_call(Options, CallArgs) ->
-    {SignalResult, _} =
+process_call(Options, _, CallArgs) ->
+    {CallResult, _} =
         call_processor(
             Options,
             % TODO woody context
@@ -34,7 +34,7 @@ process_call(Options, CallArgs) ->
             'ProcessCall',
             [mg_woody_api_packer:pack(call_args, CallArgs)]
         ),
-    mg_woody_api_packer:unpack(call_result, SignalResult).
+    mg_woody_api_packer:unpack(call_result, CallResult).
 
 %%
 %% local
