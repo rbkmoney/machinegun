@@ -46,12 +46,14 @@ process_signal(_, _, _) ->
 
 -spec process_call(_, mg:id(), mg:call_args()) ->
     mg:call_result().
-process_call(_, _, {{add_tag, MachineID}, History}) ->
+process_call(_, SelfID, {{add_tag, MachineID}, History}) ->
     case do_resolve_tag(fold_history(History)) of
         undefined ->
             {ok, [generate_add_tag_event(MachineID)], #{}};
-        ID ->
-            {{already_exists, ID}, [], #{}}
+        SelfID ->
+            {ok, [], #{}};
+        OtherMachineID ->
+            {{already_exists, OtherMachineID}, [], #{}}
     end.
 
 %%
