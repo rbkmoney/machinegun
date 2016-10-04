@@ -158,7 +158,7 @@ fetch_ready_timers(State) ->
     % TODO уменьшить сложность
     maps:fold(
         fun
-            (MachineID, DateTime, Acc) when DateTime >= Now ->
+            (MachineID, DateTime, Acc) when DateTime =< Now ->
                 [{MachineID, DateTime}|Acc];
             (_, _, Acc) ->
                 Acc
