@@ -57,17 +57,23 @@
     [test_name() | {group, group_name()}].
 all() ->
     [
-        {group, base      },
-        {group, repair    },
-        {group, event_sink},
-        {group, test_door }
+        {group, memory},
+        {group, riak  }
     ].
 
-%% TODO проверить отмену таймера
 -spec groups() ->
     [{group_name(), list(_), test_name()}].
 groups() ->
     [
+        {memory, [sequence], tests_groups()},
+        {riak  , [sequence], tests_groups()}
+    ].
+
+-spec tests_groups() ->
+    [{group_name(), list(_), test_name()}].
+tests_groups() ->
+    [
+        % TODO проверить отмену таймера
         {base, [sequence], [
             namespace_not_found,
             machine_start,
@@ -135,6 +141,17 @@ end_per_suite(_C) ->
 
 -spec init_per_group(group_name(), config()) ->
     config().
+init_per_group(memory, C) ->
+    [{storage, mg_storage_test} | C];
+init_per_group(riak, C) ->
+    [{storage, {mg_storage_riak, #{
+        host => "riakdb",
+        port => 8087,
+        pool => #{
+            init_count => 1,
+            max_count  => 10
+        }
+    }}} | C];
 init_per_group(TestGroup, C0) ->
     C = [{test_instance, erlang:atom_to_binary(TestGroup, utf8)} | C0],
     %% TODO сделать нормальную генерацию урлов
@@ -163,7 +180,7 @@ init_per_group(TestGroup, C0) ->
     list().
 mg_woody_api_config(event_sink, C) ->
     [
-        mg_woody_api_config_storage(),
+        {storage, ?config(storage, C)},
         {namespaces, #{
             ?NS(C) => #{
                 url        => <<"http://localhost:8023/processor">>,
@@ -171,9 +188,9 @@ mg_woody_api_config(event_sink, C) ->
             }
         }}
     ];
-mg_woody_api_config(_TestGroup, C) ->
+mg_woody_api_config(_, C) ->
     [
-        mg_woody_api_config_storage(),
+        {storage, ?config(storage, C)},
         {namespaces, #{
             ?NS(C) => #{
                 url => <<"http://localhost:8023/processor">>
@@ -181,22 +198,12 @@ mg_woody_api_config(_TestGroup, C) ->
         }}
     ].
 
--spec mg_woody_api_config_storage() ->
-    _.
-mg_woody_api_config_storage() ->
-    {storage, mg_storage_test}.
-    % {storage, {mg_storage_riak, #{
-    %     host => "riakdb",
-    %     port => 8087,
-    %     pool => #{
-    %         init_count => 1,
-    %         max_count  => 10
-    %     }
-    % }}}.
-
-
 -spec end_per_group(group_name(), config()) ->
     ok.
+end_per_group(memory, _) ->
+    ok;
+end_per_group(riak, _) ->
+    ok;
 end_per_group(_, C) ->
     true = erlang:exit(?config(processor_pid, C), kill),
     [application_stop(App) || App <- proplists:get_value(apps, C)].
