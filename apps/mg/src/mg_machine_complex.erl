@@ -176,8 +176,8 @@ add_tag(Options, ID, Tag) ->
     case mg_machine_tags:add_tag(tags_machine_options(Options), Tag, ID) of
         ok ->
             ok;
-        {already_exists, ID} ->
-            throw({double_tagging, ID})
+        {already_exists, OtherMachineID} ->
+            throw({double_tagging, OtherMachineID})
     end.
 
 -spec set_timer(options(), mg:id(), undefined | mg:timer()) ->
