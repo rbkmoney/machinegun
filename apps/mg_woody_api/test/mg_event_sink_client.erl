@@ -24,7 +24,7 @@ call_service(BaseURL, Function, Args) ->
         {R, _} =
             woody_client:call(
                 woody_client:new_context(
-                    woody_client:make_id(erlang:atom_to_binary(?MODULE, utf8)),
+                    woody_client:make_id(<<"ev_cl">>),
                     mg_woody_api_event_handler
                 ),
                 {{mg_proto_state_processing_thrift, 'EventSink'}, Function, Args},

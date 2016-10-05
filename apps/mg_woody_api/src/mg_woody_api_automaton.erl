@@ -53,14 +53,23 @@ map_error(Other) ->
 
 handle_function('Start', {NS, ID, Args}, WoodyContext, Options) ->
     ok = ?safe_handle(
-            mg_machine_complex:start(get_ns_options(NS, Options), unpack(id, ID), unpack(args, Args)),
+            mg_machine_complex:start(
+                get_ns_options(NS, Options),
+                unpack(id, ID),
+                {unpack(args, Args), WoodyContext}
+            ),
             WoodyContext
         ),
     {ok, WoodyContext};
 
 handle_function('Repair', {NS, Ref, Args}, WoodyContext, Options) ->
     ok = ?safe_handle(
-            mg_machine_complex:repair(get_ns_options(NS, Options), unpack(ref, Ref), unpack(args, Args), undefined),
+            mg_machine_complex:repair(
+                get_ns_options(NS, Options),
+                unpack(ref, Ref),
+                {unpack(args, Args), WoodyContext},
+                undefined
+            ),
             WoodyContext
         ),
     {ok, WoodyContext};
@@ -68,7 +77,12 @@ handle_function('Repair', {NS, Ref, Args}, WoodyContext, Options) ->
 handle_function('Call', {NS, Ref, Args}, WoodyContext, Options) ->
     Response =
         ?safe_handle(
-            mg_machine_complex:call(get_ns_options(NS, Options), unpack(ref, Ref), unpack(args, Args), undefined),
+            mg_machine_complex:call(
+                get_ns_options(NS, Options),
+                unpack(ref, Ref),
+                {unpack(args, Args), WoodyContext},
+                undefined
+            ),
             WoodyContext
         ),
     {pack(call_response, Response), WoodyContext};
