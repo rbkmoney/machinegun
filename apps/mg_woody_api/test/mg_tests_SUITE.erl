@@ -156,7 +156,8 @@ init_per_group(TestGroup, C0) ->
     C = [{test_instance, erlang:atom_to_binary(TestGroup, utf8)} | C0],
     %% TODO сделать нормальную генерацию урлов
     Apps =
-        genlib_app:start_application_with(lager, [{handlers, [{lager_common_test_backend, debug}]}])
+        % genlib_app:start_application_with(lager, [{handlers, [{lager_common_test_backend, debug}]}])
+        genlib_app:start_application_with(lager, [{handlers, [{lager_common_test_backend, info}]}])
         % genlib_app:start_application_with(lager, [{handlers, [{lager_common_test_backend, error}]}])
         ++
         genlib_app:start_application_with(woody, [{acceptors_pool_size, 1}])

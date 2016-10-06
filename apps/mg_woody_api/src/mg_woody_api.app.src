@@ -8,6 +8,7 @@
         stdlib,
         genlib,
         lager,
+        lager_logstash_formatter,
         rfc3339,
         mg_proto,
         mg,
