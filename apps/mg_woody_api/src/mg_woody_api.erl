@@ -167,16 +167,16 @@ event_sink_options(Storage) ->
 -spec collect_event_sinks(config_nss()) ->
     [mg_machine_event_sink:id()].
 collect_event_sinks(ConfigNSs) ->
-    maps:fold(
+    ordsets:to_list(maps:fold(
         fun
             (_, #{event_sink:=EventSinkID}, Acc) ->
-                [EventSinkID|Acc];
+                ordsets:add_element(EventSinkID, Acc);
             (_, _, Acc) ->
                 Acc
         end,
-        [],
+        ordsets:new(),
         ConfigNSs
-    ).
+    )).
 
 %%
 %% config utils
