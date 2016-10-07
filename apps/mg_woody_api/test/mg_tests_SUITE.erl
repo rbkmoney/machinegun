@@ -38,6 +38,8 @@
 %% test_door group tests
 -export([machine_test_door/1]).
 
+-export([config_with_multiple_event_sinks/1]).
+
 -define(NS(C), <<"mg_test_", (proplists:get_value(test_instance, C))/binary, "_ns">>).
 -define(ID, <<"ID">>).
 -define(Tag, <<"Tag">>).
@@ -58,7 +60,8 @@
 all() ->
     [
         {group, memory},
-        {group, riak  }
+        {group, riak  },
+        config_with_multiple_event_sinks
     ].
 
 -spec groups() ->
@@ -343,17 +346,37 @@ machine_test_door(C) ->
 
     CS4 = #{state:=closed} = test_door_update_state(C, CS3),
     % ждем, что таймер не сработает
-    ok = timer:sleep(2000),
+    ok = timer:sleep(3000),
     CS5 = #{state:=closed} = test_door_update_state(C, CS4),
     ok = test_door_do_action(C, open),
     CS6 = #{state:=open} = test_door_update_state(C, CS5),
     % ждем, что таймер сработает
-    ok = timer:sleep(2000),
+    ok = timer:sleep(3000),
     CS7 = #{state:=closed} = test_door_update_state(C, CS6),
     ok = test_door_do_action(C, {lock, <<"123">>}),
     {error, bad_passwd} = test_door_do_action(C, {unlock, <<"12">>}),
     ok = test_door_do_action(C, {unlock, <<"123">>}),
     _CS8 = #{state:=closed} = test_door_update_state(C, CS7).
+
+-spec config_with_multiple_event_sinks(config()) ->
+    _.
+config_with_multiple_event_sinks(_C) ->
+    Config = [
+        {storage, mg_storage_test},
+        {namespaces, #{
+            <<"1">> => #{
+                url        => <<"http://localhost:8023/processor">>,
+                event_sink => <<"SingleES">>
+            },
+            <<"2">> => #{
+                url        => <<"http://localhost:8023/processor">>,
+                event_sink => <<"SingleES">>
+            }
+        }}
+    ],
+
+    Apps = genlib_app:start_application_with(mg_woody_api, Config),
+    [application_stop(App) || App <- Apps].
 
 %%
 %% utils
