@@ -213,7 +213,7 @@ actions_from_events(Events=[Event], OldState) ->
 -spec set_timer(state()) ->
     mg:set_timer_action().
 set_timer(open) ->
-    #'SetTimerAction'{timer = {timeout, 1}};
+    #'SetTimerAction'{timer = {timeout, 2}};
 set_timer(_) ->
     undefined.
 

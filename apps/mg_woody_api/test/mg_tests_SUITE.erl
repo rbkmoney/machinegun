@@ -346,12 +346,12 @@ machine_test_door(C) ->
 
     CS4 = #{state:=closed} = test_door_update_state(C, CS3),
     % ждем, что таймер не сработает
-    ok = timer:sleep(2000),
+    ok = timer:sleep(3000),
     CS5 = #{state:=closed} = test_door_update_state(C, CS4),
     ok = test_door_do_action(C, open),
     CS6 = #{state:=open} = test_door_update_state(C, CS5),
     % ждем, что таймер сработает
-    ok = timer:sleep(2000),
+    ok = timer:sleep(3000),
     CS7 = #{state:=closed} = test_door_update_state(C, CS6),
     ok = test_door_do_action(C, {lock, <<"123">>}),
     {error, bad_passwd} = test_door_do_action(C, {unlock, <<"12">>}),
