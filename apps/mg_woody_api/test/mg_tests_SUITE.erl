@@ -34,9 +34,12 @@
 -export([event_sink_get_last_event       /1]).
 -export([event_sink_incorrect_event_id   /1]).
 -export([event_sink_incorrect_sink_id    /1]).
+-export([event_sink_lots_events_ordering /1]).
 
 %% test_door group tests
 -export([machine_test_door/1]).
+
+-export([config_with_multiple_event_sinks/1]).
 
 -define(NS(C), <<"mg_test_", (proplists:get_value(test_instance, C))/binary, "_ns">>).
 -define(ID, <<"ID">>).
@@ -58,7 +61,8 @@
 all() ->
     [
         {group, memory},
-        {group, riak  }
+        {group, riak  },
+        config_with_multiple_event_sinks
     ].
 
 -spec groups() ->
@@ -114,7 +118,8 @@ tests_groups() ->
             event_sink_get_last_event,
             % TODO event_not_found
             % event_sink_incorrect_event_id,
-            event_sink_incorrect_sink_id
+            event_sink_incorrect_sink_id,
+            event_sink_lots_events_ordering
         ]},
 
         {test_door, [sequence], [
@@ -322,6 +327,26 @@ event_sink_incorrect_sink_id(C) ->
     #'EventSinkNotFound'{}
         = (catch mg_event_sink_client:get_history(es_opts(C), <<"incorrect_event_sink_id">>, #'HistoryRange'{})).
 
+-spec event_sink_lots_events_ordering(config()) ->
+    _.
+event_sink_lots_events_ordering(C) ->
+    [#'SinkEvent'{id = LastEventID}] =
+        mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=backward, limit=1}),
+    % N = 35,
+    N = 20,
+    _ = lists:foreach(
+            fun(_) ->
+                ok = test_door_do_action(C, close, {id, ?ID}),
+                ok = test_door_do_action(C, open , {id, ?ID})
+            end,
+            lists:seq(1, N)
+        ),
+
+    Events = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}),
+    EventsIDs = lists:seq(1, N * 2 + LastEventID),
+    EventsIDs = [ID || #'SinkEvent'{id=ID} <- Events].
+
+
 %%
 %% test_door group tests
 %%
@@ -343,17 +368,37 @@ machine_test_door(C) ->
 
     CS4 = #{state:=closed} = test_door_update_state(C, CS3),
     % ждем, что таймер не сработает
-    ok = timer:sleep(2000),
+    ok = timer:sleep(3000),
     CS5 = #{state:=closed} = test_door_update_state(C, CS4),
     ok = test_door_do_action(C, open),
     CS6 = #{state:=open} = test_door_update_state(C, CS5),
     % ждем, что таймер сработает
-    ok = timer:sleep(2000),
+    ok = timer:sleep(3000),
     CS7 = #{state:=closed} = test_door_update_state(C, CS6),
     ok = test_door_do_action(C, {lock, <<"123">>}),
     {error, bad_passwd} = test_door_do_action(C, {unlock, <<"12">>}),
     ok = test_door_do_action(C, {unlock, <<"123">>}),
     _CS8 = #{state:=closed} = test_door_update_state(C, CS7).
+
+-spec config_with_multiple_event_sinks(config()) ->
+    _.
+config_with_multiple_event_sinks(_C) ->
+    Config = [
+        {storage, mg_storage_test},
+        {namespaces, #{
+            <<"1">> => #{
+                url        => <<"http://localhost:8023/processor">>,
+                event_sink => <<"SingleES">>
+            },
+            <<"2">> => #{
+                url        => <<"http://localhost:8023/processor">>,
+                event_sink => <<"SingleES">>
+            }
+        }}
+    ],
+
+    Apps = genlib_app:start_application_with(mg_woody_api, Config),
+    [application_stop(App) || App <- Apps].
 
 %%
 %% utils

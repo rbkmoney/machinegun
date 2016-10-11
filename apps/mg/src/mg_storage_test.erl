@@ -231,12 +231,8 @@ do_add_events(ID, NewMachineEvents, State) ->
     mg:history().
 do_get_history(ID, Machine, RequestedRange, State=#{events:=Events}) ->
     ok = check_machine_version(ID, Machine, State),
-    maps:values(
-        maps:with(
-            mg_storage_utils:get_machine_events_ids(ID, Machine, RequestedRange),
-            Events
-        )
-    ).
+    EventsIDs = mg_storage_utils:get_machine_events_ids(ID, Machine, RequestedRange),
+    [maps:get(EventID, Events) || EventID <- EventsIDs].
 
 -spec do_store_machine(mg:id(), mg_storage:machine(), state()) ->
     state().
