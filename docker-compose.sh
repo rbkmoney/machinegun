@@ -15,7 +15,7 @@ services:
       - riakdb
 
   riakdb:
-    image: basho/riak-kv:ubuntu-2.1.4
+    image: dr.rbkmoney.com/basho/riak-kv:ubuntu-2.1.4
     ports:
       - "8087:8087"
       - "8098:8098"
@@ -26,7 +26,7 @@ services:
     volumes:
       - schemas:/etc/riak/schemas
   member:
-    image: basho/riak-kv:ubuntu-2.1.4
+    image: dr.rbkmoney.com/basho/riak-kv:ubuntu-2.1.4
     ports:
       - "8087"
       - "8098"
