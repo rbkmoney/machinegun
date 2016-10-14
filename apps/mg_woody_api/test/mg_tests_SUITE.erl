@@ -120,11 +120,11 @@ tests_groups() ->
             % event_sink_incorrect_event_id,
             event_sink_incorrect_sink_id,
             event_sink_lots_events_ordering
-        ]},
-
-        {test_door, [sequence], [
-            machine_test_door
         ]}
+
+        % {test_door, [sequence], [
+        %     machine_test_door
+        % ]}
     ].
 
 
