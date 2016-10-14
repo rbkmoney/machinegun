@@ -58,8 +58,9 @@ call(_, _, _, 0) ->
     % такого быть не должно
     erlang:exit(unexpected_behaviour);
 call(Options, ID, Call, Attempts) ->
+    Name = maps:get(name, Options),
     try
-        mg_worker:call(ID, Call)
+        mg_worker:call(Name, ID, Call)
     catch
         exit:_ ->
             %
@@ -93,7 +94,7 @@ init(Options) ->
 -spec start_child(options(), _ID) ->
     {ok, pid()} | {error, term()}.
 start_child(Options, ID) ->
-    supervisor:start_child(self_ref(Options), [ID]).
+    supervisor:start_child(self_ref(Options), [maps:get(name, Options), ID]).
 
 
 -spec self_ref(options()) ->
