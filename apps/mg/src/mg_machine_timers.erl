@@ -220,6 +220,15 @@ apply_event({complete, MachineID}, State) ->
 
 -spec apply_hanlder(options(), mg:id()) ->
     _.
-apply_hanlder(#{timer_handler:={M, F, A}}, ID) ->
+apply_hanlder(#{timer_handler:={M, F, A}=MFA}, ID) ->
     % TODO тут косяк, если хэндлер упадёт, его никто не вызовет снова
-    erlang:spawn(M, F, A ++ [ID]).
+    erlang:spawn(
+        fun() ->
+            try
+                erlang:apply(M, F, A ++ [ID])
+            catch Class:Reason ->
+                Exception = {Class, Reason, erlang:get_stacktrace()},
+                ok = error_logger:error_msg("unexpected error while applying handler:~n~p~n~p", [MFA, Exception])
+            end
+        end
+    ).

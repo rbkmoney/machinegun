@@ -5,8 +5,8 @@
 -export_type([options/0]).
 
 -export([child_spec/2]).
--export([start_link/2]).
--export([call      /2]).
+-export([start_link/3]).
+-export([call      /3]).
 
 %% gen_server callbacks
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3, code_change/3, terminate/2]).
@@ -36,16 +36,16 @@ child_spec(ChildID, Options) ->
         shutdown => brutal_kill
     }.
 
--spec start_link(options(), _ID) ->
+-spec start_link(options(), _NS, _ID) ->
     mg_utils:gen_start_ret().
-start_link(Options, ID) ->
-    gen_server:start_link(self_reg_name(ID), ?MODULE, {ID, Options}, []).
+start_link(Options, NS, ID) ->
+    gen_server:start_link(self_reg_name({NS, ID}), ?MODULE, {ID, Options}, []).
 
 %% TODO сделать проверку на размер очерди сообщений
--spec call(_ID, _Call) ->
+-spec call(_NS, _ID, _Call) ->
     _Result.
-call(ID, Call) ->
-    gen_server:call(self_ref(ID), {call, Call}).
+call(NS, ID, Call) ->
+    gen_server:call(self_ref({NS, ID}), {call, Call}).
 
 %%
 %% gen_server callbacks
