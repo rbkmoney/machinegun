@@ -38,14 +38,16 @@
 
 -type machine() :: #{
     status       => status(),
+    aux_state    => mg:aux_state(),
     events_range => events_range(),
     db_state     => _ % опционально
 }.
 
 %% все поля опциональны
 -type update() :: #{
-    status        => status(),
-    new_events    => [mg:event()]
+    status     => status(),
+    aux_state  => mg:aux_state(),
+    new_events => [mg:event()]
 }.
 
 -type options() :: term().

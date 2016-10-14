@@ -87,13 +87,13 @@ handle_function('Call', {NS, Ref, Args}, WoodyContext, Options) ->
         ),
     {pack(call_response, Response), WoodyContext};
 
-handle_function('GetHistory', {NS, Ref, Range}, WoodyContext, Options) ->
+handle_function('GetMachine', {NS, Ref, Range}, WoodyContext, Options) ->
     History =
         ?safe_handle(
-            mg_machine_complex:get_history(get_ns_options(NS, Options), unpack(ref, Ref), unpack(history_range, Range)),
+            mg_machine_complex:get_machine(get_ns_options(NS, Options), unpack(ref, Ref), unpack(history_range, Range)),
             WoodyContext
         ),
-    {pack(history, History), WoodyContext}.
+    {pack(machine, History), WoodyContext}.
 
 %%
 %% local

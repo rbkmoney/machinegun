@@ -71,8 +71,10 @@ format_event('invoke service handler', Meta) ->
     {info, append_msg({"[server] handling ", []}, format_service_request(Meta))};
 format_event('service handler result', #{status:=ok, result:={Result, _}}) ->
     {info, {"[server] handling result ~p", [Result]}};
+format_event('service handler result', #{status:=error, class:=throw, reason:=Reason}) ->
+    {info,  {"[server] handling result logic error: ~p", [Reason]}};
 format_event('service handler result', #{status:=error, class:=Class, reason:=Reason, stack:=Stacktrace}) ->
-    {warning,  append_msg({"handling exception ", []}, format_exception({Class, Reason, Stacktrace}))};
+    {warning,  append_msg({"[server] handling exception ", []}, format_exception({Class, Reason, Stacktrace}))};
 format_event('thrift error', #{stage:=Stage, reason:=Reason}) ->
     {warning, {" thrift error ~p, ~p", [Stage, Reason]}};
 format_event('internal error', #{error:=Error, reason:=Reason}) ->

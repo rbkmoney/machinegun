@@ -12,10 +12,12 @@
 -export_type([direction/0]).
 
 %% events and history
+-export_type([aux_state    /0]).
 -export_type([event_id     /0]).
 -export_type([event_body   /0]).
 -export_type([event        /0]).
 -export_type([history      /0]).
+-export_type([machine      /0]).
 
 %% actions
 -export_type([tag_action      /0]).
@@ -23,6 +25,7 @@
 -export_type([complex_action  /0]).
 
 %% calls, signals, get_gistory
+-export_type([state_change /0]).
 -export_type([signal       /0]).
 -export_type([call_response/0]).
 -export_type([signal_args  /0]).
@@ -46,7 +49,8 @@
 -type ref      () :: {id, id()} | {tag, tag()}.
 -type direction() :: forward | backward.
 
-%% events and history
+%% state, events and history
+-type aux_state    () :: _ | undefined.
 -type event_id     () :: pos_integer().
 -type event_body   () :: _.
 -type event        () :: #{
@@ -55,22 +59,27 @@
     body       => event_body()
 }.
 -type history      () :: [event()].
+-type machine      () :: #{
+    history   => history(),
+    aux_state => aux_state()
+}.
 
 %% actions
--type tag_action      () :: tag().
--type set_timer_action() :: timer().
+-type tag_action         () :: tag().
+-type set_timer_action   () :: timer().
 -type complex_action  () :: #{
     timer => set_timer_action() | undefined,
     tag   => tag_action      () | undefined
 }.
 
 %% calls, signals, get_gistory
+-type state_change () :: {aux_state(), [event_body()]}.
 -type signal       () :: {init, id(), args()} | timeout | {repair, args()}.
 -type call_response() :: term().
--type signal_args  () :: {signal(), history()}.
--type call_args    () :: {args(), history()}.
--type signal_result() :: {[event_body()], complex_action()}.
--type call_result  () :: {call_response(), [event_body()], complex_action()}.
+-type signal_args  () :: {signal(), machine()}.
+-type call_args    () :: {args(), machine()}.
+-type signal_result() :: {state_change(), complex_action()}.
+-type call_result  () :: {call_response(), state_change(), complex_action()}.
 -type history_range() :: {After::id() | undefined, Limit::non_neg_integer() | undefined, direction()} | undefined.
 
 %% event sink

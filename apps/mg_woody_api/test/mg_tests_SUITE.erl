@@ -6,12 +6,12 @@
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 %% tests descriptions
--export([all           /0]).
--export([groups        /0]).
--export([init_per_suite/1]).
--export([end_per_suite /1]).
--export([init_per_group/2]).
--export([end_per_group /2]).
+-export([all             /0]).
+-export([groups          /0]).
+-export([init_per_suite  /1]).
+-export([end_per_suite   /1]).
+-export([init_per_group  /2]).
+-export([end_per_group   /2]).
 
 %% base group tests
 -export([namespace_not_found   /1]).
@@ -136,7 +136,6 @@ tests_groups() ->
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
     % dbg:tpl({mg_machine_event_sink, '_', '_'}, x),
-    % dbg:tpl({mg_machine, 'get_history', '_'}, x),
     C.
 
 -spec end_per_suite(config()) ->
@@ -161,9 +160,11 @@ init_per_group(TestGroup, C0) ->
     C = [{test_instance, erlang:atom_to_binary(TestGroup, utf8)} | C0],
     %% TODO сделать нормальную генерацию урлов
     Apps =
-        % genlib_app:start_application_with(lager, [{handlers, [{lager_common_test_backend, debug}]}])
-        genlib_app:start_application_with(lager, [{handlers, [{lager_common_test_backend, info}]}])
-        % genlib_app:start_application_with(lager, [{handlers, [{lager_common_test_backend, error}]}])
+        genlib_app:start_application_with(lager, [
+            {handlers, [{lager_common_test_backend, info}]},
+            {async_threshold, undefined}
+            % {error_logger_hwm, undefined}
+        ])
         ++
         genlib_app:start_application_with(woody, [{acceptors_pool_size, 1}])
         ++

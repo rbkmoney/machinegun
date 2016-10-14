@@ -120,6 +120,7 @@ create_machine(Options, Namespace, ID, Args) ->
             object_to_machine(
                 create_db_object(Pid, Options, Namespace, machine, ID,
                     #{
+                        aux_state    => undefined,
                         status       => {created, Args},
                         events_range => undefined,
                         tags         => []
@@ -179,6 +180,8 @@ update_machine(Options, Namespace, ID, Machine, Update) ->
     mg_storage:machine().
 apply_machine_update(_Pid, _Options, _Namespace, _ID, status, NewStatus, Machine) ->
     Machine#{status:=NewStatus};
+apply_machine_update(_Pid, _Options, _Namespace, _ID, aux_state, NewAuxState, Machine) ->
+    Machine#{aux_state:=NewAuxState};
 apply_machine_update(Pid, Options, Namespace, ID, new_events, NewEvents, Machine=#{events_range:=EventsRange}) ->
     #{id:=NewLastEventID} = lists:last(NewEvents),
     NewEventsRange =
@@ -201,10 +204,6 @@ apply_machine_update(Pid, Options, Namespace, ID, new_events, NewEvents, Machine
 %% db interation
 %%
 -type db_obj_type() :: machine | event | tag.
-% -type db_machine() :: #{
-%     status =>  mg:status(),
-%     events => [mg:event_id()]
-% }.
 -type object() :: riakc_obj:riakc_obj().
 % -type db_event_id() :: {mg:id(), mg:event_id()}.
 
@@ -269,11 +268,13 @@ put_options(_) ->
 object_to_machine(Object) ->
     #{
         status       := Status,
+        aux_state    := AuxState,
         events_range := EventsRange
     } = unpack(machine, riakc_obj:get_value(Object)),
     #{
         status       => Status,
         events_range => EventsRange,
+        aux_state    => AuxState,
         db_state     => Object
     }.
 
@@ -282,10 +283,12 @@ object_to_machine(Object) ->
 machine_to_object(Machine) ->
     #{
         status       := Status,
+        aux_state    := AuxState,
         events_range := EventsRange,
         db_state     := Object
     } = Machine,
-    riakc_obj:update_value(Object, pack(machine, #{status => Status, events_range => EventsRange})).
+    DBMachine = #{status => Status, aux_state => AuxState, events_range => EventsRange},
+    riakc_obj:update_value(Object, pack(machine, DBMachine)).
 
 -spec do(mg:ns(), fun((pid()) -> Result)) ->
     Result.

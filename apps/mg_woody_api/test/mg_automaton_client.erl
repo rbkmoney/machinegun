@@ -5,7 +5,7 @@
 -export([start      /3]).
 -export([repair     /3]).
 -export([call       /3]).
--export([get_history/3]).
+-export([get_machine/3]).
 
 %%
 %% API
@@ -27,10 +27,10 @@ repair({BaseURL, NS}, Ref, Args) ->
 call({BaseURL, NS}, Ref, Args) ->
     call_service(BaseURL, 'Call', [NS, Ref, Args]).
 
--spec get_history(options(), mg:ref(), mg:history_range()) ->
-    mg:history().
-get_history({BaseURL, NS}, Ref, Range) ->
-    call_service(BaseURL, 'GetHistory', [NS, Ref, Range]).
+-spec get_machine(options(), mg:ref(), mg:history_range()) ->
+    mg:machine().
+get_machine({BaseURL, NS}, Ref, Range) ->
+    call_service(BaseURL, 'GetMachine', [NS, Ref, Range]).
 
 %%
 %% local

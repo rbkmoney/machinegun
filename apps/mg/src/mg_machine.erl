@@ -46,10 +46,10 @@
 -export([start      /3]).
 -export([repair     /4]).
 -export([call       /4]).
--export([get_history/3]).
+-export([get_machine/3]).
 
 -export([call_with_lazy_start       /5]).
--export([get_history_with_lazy_start/4]).
+-export([get_machine_with_lazy_start/4]).
 -export([do_with_lazy_start         /4]).
 
 %% supervisor
@@ -107,14 +107,17 @@ repair(Options, ID, Args, HRange) ->
 call(Options, ID, Call, HRange) ->
     mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {call, Call, HRange})).
 
--spec get_history(options(), mg:id(), mg:history_range()) ->
-    mg:history() | throws().
-get_history(Options, ID, HRange) ->
+-spec get_machine(options(), mg:id(), mg:history_range()) ->
+    mg:machine() | throws().
+get_machine(Options, ID, HRange) ->
     case mg_storage:get_machine(get_options(storage, Options), get_options(namespace, Options), ID) of
         undefined ->
             throw(machine_not_found);
-        Machine ->
-            get_history_by_id(Options, ID, Machine, HRange)
+        DBMachine=#{aux_state:=AuxState} ->
+            #{
+                history   => get_history_by_id(Options, ID, DBMachine, HRange),
+                aux_state => AuxState
+            }
     end.
 
 %% TODO придумуть имена получше, ревьюверы, есть идеи?
@@ -123,10 +126,10 @@ get_history(Options, ID, HRange) ->
 call_with_lazy_start(Options, ID, Call, HRange, StartArgs) ->
     do_with_lazy_start(Options, ID, StartArgs, fun() -> call(Options, ID, Call, HRange) end).
 
--spec get_history_with_lazy_start(options(), mg:id(), mg:history_range(), mg:args()) ->
-    mg:history() | throws().
-get_history_with_lazy_start(Options, ID, HRange, StartArgs) ->
-    do_with_lazy_start(Options, ID, StartArgs, fun() -> get_history(Options, ID, HRange) end).
+-spec get_machine_with_lazy_start(options(), mg:id(), mg:history_range(), mg:args()) ->
+    mg:machine() | throws().
+get_machine_with_lazy_start(Options, ID, HRange, StartArgs) ->
+    do_with_lazy_start(Options, ID, StartArgs, fun() -> get_machine(Options, ID, HRange) end).
 
 -spec do_with_lazy_start(options(), mg:id(), mg:args(), fun(() -> R)) ->
     R.
@@ -265,28 +268,36 @@ process_creation(Args, State=#{id:=ID, options:=Options}) ->
 
 -spec process_call(_Call, mg:history_range(), state()) ->
     {{ok, _Resp}, state()}.
-process_call(Call, HRange, State=#{options:=Options, id:=ID, machine:=Machine}) ->
-    History = get_history_by_id(Options, ID, Machine, HRange),
-    {Response, EventsBodies, ComplexAction} =
-        mg_processor:process_call(get_options(processor, Options), ID, {Call, History}),
-    {{ok, Response}, handle_processor_result(EventsBodies, ComplexAction, State)}.
+process_call(Call, HRange, State=#{options:=Options, id:=ID, machine:=#{aux_state:=AuxState}=DBMachine}) ->
+    Machine =
+        #{
+            aux_state => AuxState,
+            history   => get_history_by_id(Options, ID, DBMachine, HRange)
+        },
+    {Response, StateChange, ComplexAction} =
+        mg_processor:process_call(get_options(processor, Options), ID, {Call, Machine}),
+    {{ok, Response}, handle_processor_result(StateChange, ComplexAction, State)}.
 
 -spec process_signal(mg:signal(), mg:history_range(), state()) ->
     state().
-process_signal(Signal, HRange, State=#{options:=Options, id:=ID, machine:=Machine}) ->
-    History = get_history_by_id(Options, ID, Machine, HRange),
-    {EventsBodies, ComplexAction} =
-        mg_processor:process_signal(get_options(processor, Options), ID, {Signal, History}),
-    handle_processor_result(EventsBodies, ComplexAction, State).
+process_signal(Signal, HRange, State=#{options:=Options, id:=ID, machine:=#{aux_state:=AuxState}=DBMachine}) ->
+    Machine =
+        #{
+            aux_state => AuxState,
+            history   => get_history_by_id(Options, ID, DBMachine, HRange)
+        },
+    {StateChange, ComplexAction} =
+        mg_processor:process_signal(get_options(processor, Options), ID, {Signal, Machine}),
+    handle_processor_result(StateChange, ComplexAction, State).
 
 %%
 
--spec handle_processor_result([mg:event_body()], mg:complex_action(), state()) ->
+-spec handle_processor_result(mg:state_change(), mg:complex_action(), state()) ->
     state().
-handle_processor_result(EventsBodies, _ComplexAction, State) ->
+handle_processor_result({NewAuxState, EventsBodies}, _ComplexAction, State) ->
     Events = generate_events(EventsBodies, get_last_event_id(State)),
     ok     = notify_observer(Events, State),
-    State#{update := add_events_to_update(Events, #{status => working})}.
+    State#{update := add_events_to_update(Events, #{aux_state => NewAuxState, status => working})}.
 
 -spec add_events_to_update([mg:event()], mg_storage:update()) ->
     mg_storage:update().
