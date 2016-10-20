@@ -16,9 +16,6 @@ services:
 
   riakdb:
     image: dr.rbkmoney.com/basho/riak-kv:ubuntu-2.1.4
-    ports:
-      - "8087:8087"
-      - "8098:8098"
     environment:
       - CLUSTER_NAME=riakkv
     labels:
@@ -27,9 +24,6 @@ services:
       - schemas:/etc/riak/schemas
   member:
     image: dr.rbkmoney.com/basho/riak-kv:ubuntu-2.1.4
-    ports:
-      - "8087"
-      - "8098"
     labels:
       - "com.basho.riak.cluster.name=riakkv"
     links:
