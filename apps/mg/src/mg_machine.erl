@@ -113,11 +113,8 @@ get_machine(Options, ID, HRange) ->
     case mg_storage:get_machine(get_options(storage, Options), get_options(namespace, Options), ID) of
         undefined ->
             throw(machine_not_found);
-        DBMachine=#{aux_state:=AuxState} ->
-            #{
-                history   => get_history_by_id(Options, ID, DBMachine, HRange),
-                aux_state => AuxState
-            }
+        DBMachine ->
+            machine(Options, ID, DBMachine, HRange)
     end.
 
 %% TODO придумуть имена получше, ревьюверы, есть идеи?
@@ -268,24 +265,16 @@ process_creation(Args, State=#{id:=ID, options:=Options}) ->
 
 -spec process_call(_Call, mg:history_range(), state()) ->
     {{ok, _Resp}, state()}.
-process_call(Call, HRange, State=#{options:=Options, id:=ID, machine:=#{aux_state:=AuxState}=DBMachine}) ->
-    Machine =
-        #{
-            aux_state => AuxState,
-            history   => get_history_by_id(Options, ID, DBMachine, HRange)
-        },
+process_call(Call, HRange, State=#{options:=Options, id:=ID, machine:=DBMachine}) ->
+    Machine = machine(Options, ID, DBMachine, HRange),
     {Response, StateChange, ComplexAction} =
         mg_processor:process_call(get_options(processor, Options), ID, {Call, Machine}),
     {{ok, Response}, handle_processor_result(StateChange, ComplexAction, State)}.
 
 -spec process_signal(mg:signal(), mg:history_range(), state()) ->
     state().
-process_signal(Signal, HRange, State=#{options:=Options, id:=ID, machine:=#{aux_state:=AuxState}=DBMachine}) ->
-    Machine =
-        #{
-            aux_state => AuxState,
-            history   => get_history_by_id(Options, ID, DBMachine, HRange)
-        },
+process_signal(Signal, HRange, State=#{options:=Options, id:=ID, machine:=DBMachine}) ->
+    Machine = machine(Options, ID, DBMachine, HRange),
     {StateChange, ComplexAction} =
         mg_processor:process_signal(get_options(processor, Options), ID, {Signal, Machine}),
     handle_processor_result(StateChange, ComplexAction, State).
@@ -364,10 +353,18 @@ manager_options(Options) ->
         worker_options => {?MODULE, Options}
     }.
 
+-spec machine(options(), mg:id(), mg_storage:machine(), mg:history_range()) ->
+    mg:machine().
+machine(Options, ID, #{aux_state:=AuxState}=DBMachine, HRange) ->
+    #{
+        history   => get_history_by_id(Options, ID, DBMachine, HRange),
+        aux_state => AuxState
+    }.
+
 -spec get_history_by_id(options(), mg:id(), mg_storage:machine(), mg:history_range()) ->
     mg:history().
-get_history_by_id(Options, ID, Machine, Range) ->
-    mg_storage:get_history(get_options(storage, Options), get_options(namespace, Options), ID, Machine, Range).
+get_history_by_id(Options, ID, DBMachine, HRange) ->
+    mg_storage:get_history(get_options(storage, Options), get_options(namespace, Options), ID, DBMachine, HRange).
 
 -spec get_options(namespace | processor | storage | observer, options()) ->
     _.
