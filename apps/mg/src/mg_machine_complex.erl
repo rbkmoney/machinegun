@@ -13,7 +13,7 @@
 -export([start      /3]).
 -export([repair     /4]).
 -export([call       /4]).
--export([get_history/3]).
+-export([get_machine/3]).
 
 %% internal API
 -export([start_link    /1]).
@@ -62,10 +62,10 @@ repair(Options, Ref, Args, HRange) ->
 call(Options, Ref, Call, HRange) ->
     mg_machine:call(Options, ref2id(Options, Ref), {call, Call}, HRange).
 
--spec get_history(options(), mg:ref(), mg:history_range()) ->
-    mg:history().
-get_history(Options, Ref, Range) ->
-    mg_machine:get_history(Options, ref2id(Options, Ref), Range).
+-spec get_machine(options(), mg:ref(), mg:history_range()) ->
+    mg:machine().
+get_machine(Options, Ref, Range) ->
+    mg_machine:get_machine(Options, ref2id(Options, Ref), Range).
 
 %%
 %% internal API
@@ -105,21 +105,21 @@ init(Options) ->
 -spec process_signal(options(), mg:id(), mg:signal_args()) ->
     mg:signal_result().
 process_signal(Options, ID, SignalArgs) ->
-    {EventsBodies, ComplexAction} =
+    {StateChange, ComplexAction} =
         mg_processor:process_signal(get_option(processor, Options), ID, SignalArgs),
     ok = handle_processor_result(Options, ID, ComplexAction),
-    {EventsBodies, #{}}.
+    {StateChange, #{}}.
 
 -spec process_call(options(), mg:id(), mg:call_args()) ->
     mg:call_result().
-process_call(Options, ID, {handle_timeout, History}) ->
-    {EventsBodies, ComplexAction} = process_signal(Options, ID, {timeout, History}),
-    {ok, EventsBodies, ComplexAction};
-process_call(Options, ID, {{call, Call}, History}) ->
-    {Response, EventsBodies, ComplexAction} =
-        mg_processor:process_call(get_option(processor, Options), ID, {Call, History}),
+process_call(Options, ID, {handle_timeout, Machine}) ->
+    {StateChange, ComplexAction} = process_signal(Options, ID, {timeout, Machine}),
+    {ok, StateChange, ComplexAction};
+process_call(Options, ID, {{call, Call}, Machine}) ->
+    {Response, StateChange, ComplexAction} =
+        mg_processor:process_call(get_option(processor, Options), ID, {Call, Machine}),
     ok = handle_processor_result(Options, ID, ComplexAction),
-    {Response, EventsBodies, #{}}.
+    {Response, StateChange, #{}}.
 
 -spec handle_processor_result(options(), mg:id(), mg:complex_action()) ->
     ok.

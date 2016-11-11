@@ -21,6 +21,8 @@
 -type processor_options() :: {_Host, _Port, _Path}.
 -type automaton_options() :: {_BaseURL, _NS}.
 
+-define(aux_state, <<"aux_state">>).
+
 %%
 %% API
 %%
@@ -78,8 +80,8 @@ repair(Options, Ref, RepairResult) ->
 -spec update_state(automaton_options(), mg:ref(), client_state()) ->
     client_state().
 update_state(Options, Ref, ClientState=#{last_event_id:=LastEventID, state:=State}) ->
-    History =
-        mg_automaton_client:get_history(
+    #'Machine'{history=History} =
+        mg_automaton_client:get_machine(
             Options, Ref, #'HistoryRange'{'after'=LastEventID, limit=1, direction=forward}
         ),
     case History of
@@ -127,23 +129,31 @@ handle_function('ProcessCall', {CallArgs}, WoodyContext, Options) ->
 %%
 -spec process_signal(_, mg:signal_args()) ->
     mg:signal_result().
-process_signal(_, #'SignalArgs'{signal=Signal, history=History}) ->
+process_signal(_, #'SignalArgs'{signal=Signal, machine=#'Machine'{history=History}}) ->
     State = collapse_history(History),
     Events = handle_signal_(Signal, State),
     #'SignalResult'{
-        events = pack(events, Events),
+        change =
+            #'MachineStateChange'{
+                aux_state = ?aux_state,
+                events    = pack(events, Events)
+            },
         action = actions_from_events(Events, State)
     }.
 
 -spec process_call(_, mg:call_args()) ->
     mg:call_result().
-process_call(_, #'CallArgs'{arg=Action, history=History}) ->
+process_call(_, #'CallArgs'{arg=Action, machine=#'Machine'{aux_state=?aux_state, history=History}}) ->
     State = collapse_history(History),
     {Resp, Events} = handle_action(unpack(action, Action), State),
     #'CallResult'{
-        events   = pack(events, Events),
-        action   = actions_from_events(Events, State),
-        response = pack(resp, Resp)
+        response = pack(resp, Resp),
+        change =
+            #'MachineStateChange'{
+                aux_state = ?aux_state,
+                events    = pack(events, Events)
+            },
+        action   = actions_from_events(Events, State)
     }.
 
 -spec handle_signal_(mg:signal(), state()) ->

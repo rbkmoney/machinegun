@@ -13,26 +13,26 @@
 
 -spec process_signal(options(), mg_woody_api:id(), mg:signal_args()) ->
     mg:signal_result().
-process_signal(Options, _, {SignalAndWoodyContext, History}) ->
+process_signal(Options, _, {SignalAndWoodyContext, Machine}) ->
     {Signal, WoodyContext} = signal_and_woody_context(SignalAndWoodyContext),
     {SignalResult, _} =
         call_processor(
             Options,
             WoodyContext,
             'ProcessSignal',
-            [mg_woody_api_packer:pack(signal_args, {Signal, History})]
+            [mg_woody_api_packer:pack(signal_args, {Signal, Machine})]
         ),
     mg_woody_api_packer:unpack(signal_result, SignalResult).
 
 -spec process_call(options(), mg_woody_api:id(), mg:call_args()) ->
     mg:call_result().
-process_call(Options, _, {{Call, WoodyContext}, History}) ->
+process_call(Options, _, {{Call, WoodyContext}, Machine}) ->
     {CallResult, _} =
         call_processor(
             Options,
             WoodyContext,
             'ProcessCall',
-            [mg_woody_api_packer:pack(call_args, {Call, History})]
+            [mg_woody_api_packer:pack(call_args, {Call, Machine})]
         ),
     mg_woody_api_packer:unpack(call_result, CallResult).
 

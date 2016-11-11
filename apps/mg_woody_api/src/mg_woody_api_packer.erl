@@ -46,6 +46,8 @@ pack(direction, Direction) ->
     Direction;
 
 %% events and history
+pack(aux_state, AuxState) ->
+    pack(binary, AuxState);
 pack(event_id, ID) ->
     pack(integer, ID);
 pack(event_body, Body) ->
@@ -58,6 +60,11 @@ pack(event, #{id := ID, created_at := CreatedAt, body := Body}) ->
     };
 pack(history, History) ->
     pack({list, event}, History);
+pack(machine, #{aux_state:=AuxState, history:=History}) ->
+    #'Machine'{
+        aux_state = pack(aux_state, AuxState),
+        history   = pack(history  , History )
+    };
 
 %% actions
 pack(complex_action, #{timer := SetTimerAction, tag := TagAction}) ->
@@ -71,6 +78,11 @@ pack(tag_action, Tag) ->
     #'TagAction'{tag = pack(tag, Tag)};
 
 %% calls, signals, get_gistory
+pack(state_change, {AuxState, EventBodies}) ->
+    #'MachineStateChange'{
+        aux_state = pack( aux_state        , AuxState   ),
+        events    = pack({list, event_body}, EventBodies)
+    };
 pack(signal, timeout) ->
     {timeout, #'TimeoutSignal'{}};
 pack(signal, {init, ID, Args}) ->
@@ -88,27 +100,27 @@ pack(signal, {repair, Args}) ->
     };
 pack(call_response, CallResponse) ->
     pack(binary, CallResponse);
-pack(signal_args, {Signal, History}) ->
+pack(signal_args, {Signal, Machine}) ->
     #'SignalArgs'{
         signal  = pack(signal , Signal ),
-        history = pack(history, History)
+        machine = pack(machine, Machine)
     };
-pack(call_args, {Args, History}) ->
+pack(call_args, {Args, Machine}) ->
     #'CallArgs'{
         arg     = pack(args   , Args   ),
-        history = pack(history, History)
+        machine = pack(machine, Machine)
     };
-pack(signal_result, {EventBodies, ComplexAction}) ->
+pack(signal_result, {StateChange, ComplexAction}) ->
     #'SignalResult'{
-        events = pack({list, event_body}, EventBodies  ),
-        action = pack(complex_action    , ComplexAction)
+        change = pack(state_change  , StateChange  ),
+        action = pack(complex_action, ComplexAction)
     };
 
-pack(call_result, {Response, EventBodies, ComplexAction}) ->
+pack(call_result, {Response, StateChange, ComplexAction}) ->
     #'CallResult'{
-        response = pack(call_response     , Response     ),
-        events   = pack({list, event_body}, EventBodies  ),
-        action   = pack(complex_action    , ComplexAction)
+        response = pack(call_response , Response     ),
+        change   = pack(state_change  , StateChange  ),
+        action   = pack(complex_action, ComplexAction)
     };
 
 pack(history_range, {After, Limit, Direction}) ->
@@ -171,6 +183,8 @@ unpack(direction, Direction) ->
     Direction;
 
 %% events and history
+unpack(aux_state, AuxState) ->
+    unpack(binary, AuxState);
 unpack(event_id, ID) ->
     unpack(integer, ID);
 unpack(event_body, Body) ->
@@ -183,6 +197,11 @@ unpack(event, #'Event'{id = ID, created_at = CreatedAt, event_payload = Body}) -
     };
 unpack(history, History) ->
     unpack({list, event}, History);
+unpack(machine, #'Machine'{aux_state=AuxState, history=History}) ->
+    #{
+        aux_state => unpack(aux_state, AuxState),
+        history   => unpack(history  , History )
+    };
 
 %% actions
 unpack(complex_action, #'ComplexAction'{set_timer = SetTimerAction, tag = TagAction}) ->
@@ -196,6 +215,11 @@ unpack(tag_action, #'TagAction'{tag = Tag}) ->
     unpack(tag, Tag);
 
 %% calls, signals, get_gistory
+unpack(state_change, #'MachineStateChange'{aux_state=AuxState, events=EventBodies}) ->
+    {
+        unpack( aux_state        , AuxState   ),
+        unpack({list, event_body}, EventBodies)
+    };
 unpack(signal, {timeout, #'TimeoutSignal'{}}) ->
     timeout;
 unpack(signal, {init, #'InitSignal'{id = ID, arg = Args}}) ->
@@ -204,15 +228,21 @@ unpack(signal, {repair, #'RepairSignal'{arg = Args}}) ->
     {repair, unpack(args, Args)};
 unpack(call_response, CallResponse) ->
     unpack(binary, CallResponse);
-unpack(signal_args, #'SignalArgs'{signal = Signal, history = History}) ->
-    {unpack(signal , Signal ), unpack(history, History)};
-unpack(call_args, #'CallArgs'{arg = Args, history = History}) ->
-    {unpack(args, Args), unpack(history, History)};
-unpack(signal_result, #'SignalResult'{events = EventBodies, action = ComplexAction}) ->
-    {unpack({list, event_body}, EventBodies), unpack(complex_action, ComplexAction)};
-
-unpack(call_result, #'CallResult'{response = Response, events = EventBodies, action = ComplexAction}) ->
-    {unpack(call_response, Response), unpack({list, event_body}, EventBodies), unpack(complex_action, ComplexAction)};
+unpack(signal_args, #'SignalArgs'{signal = Signal, machine = Machine}) ->
+    {unpack(signal , Signal), unpack(machine, Machine)};
+unpack(call_args, #'CallArgs'{arg = Args, machine = Machine}) ->
+    {unpack(args, Args), unpack(machine, Machine)};
+unpack(signal_result, #'SignalResult'{change = StateChange, action = ComplexAction}) ->
+    {
+        unpack(state_change  , StateChange  ),
+        unpack(complex_action, ComplexAction)
+    };
+unpack(call_result, #'CallResult'{response=Response, change = StateChange, action=ComplexAction}) ->
+    {
+        unpack(call_response , Response     ),
+        unpack(state_change  , StateChange  ),
+        unpack(complex_action, ComplexAction)
+    };
 
 unpack(history_range, #'HistoryRange'{'after' = After, limit = Limit, direction = Direction}) ->
     {unpack(event_id, After), unpack(integer , Limit), unpack(direction, Direction)};

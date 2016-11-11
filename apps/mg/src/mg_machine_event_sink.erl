@@ -43,7 +43,9 @@ handle_events({Options, SourceNS, EventSinkID}, SourceID, Events) ->
 -spec get_history(options(), id(), mg:history_range()) ->
     mg:sink_history().
 get_history(Options, EventSinkID, Range) ->
-    mg_machine:get_history_with_lazy_start(machine_options(Options, EventSinkID), EventSinkID, Range, undefined).
+    #{history:=History} =
+        mg_machine:get_machine_with_lazy_start(machine_options(Options, EventSinkID), EventSinkID, Range, undefined),
+    History.
 
 %%
 %% mg_processor handler
@@ -51,13 +53,13 @@ get_history(Options, EventSinkID, Range) ->
 -spec process_signal(_, id(), mg:signal_args()) ->
     mg:signal_result().
 process_signal(_, _, _) ->
-    {[], #{}}.
+    {{undefined, []}, #{}}.
 
 -spec process_call(_, id(), mg:call_args()) ->
     mg:call_result().
-process_call(_, _, {{handle_events, SourceNS, SourceID, Events}, []}) ->
+process_call(_, _, {{handle_events, SourceNS, SourceID, Events}, #{}}) ->
     SinkEvents = generate_sink_events(SourceNS, SourceID, Events),
-    {ok, SinkEvents, #{}}.
+    {ok, {undefined, SinkEvents}, #{}}.
 
 %%
 %% local

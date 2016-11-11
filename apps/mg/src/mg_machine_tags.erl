@@ -30,11 +30,9 @@ add_tag(Options, Tag, MachineID) ->
 -spec resolve_tag(options(), mg:tag()) ->
     mg:id() | undefined.
 resolve_tag(Options, Tag) ->
-    do_resolve_tag(
-        fold_history(
-            mg_machine:get_history_with_lazy_start(machine_options(Options), Tag, undefined, undefined)
-        )
-    ).
+    #{history:=History} =
+        mg_machine:get_machine_with_lazy_start(machine_options(Options), Tag, undefined, undefined),
+    do_resolve_tag(fold_history(History)).
 
 %%
 %% mg_processor handler
@@ -42,18 +40,18 @@ resolve_tag(Options, Tag) ->
 -spec process_signal(_, mg:id(), mg:signal_args()) ->
     mg:signal_result().
 process_signal(_, _, _) ->
-    {[], #{}}.
+    {{undefined, []}, #{}}.
 
 -spec process_call(_, mg:id(), mg:call_args()) ->
     mg:call_result().
-process_call(_, SelfID, {{add_tag, MachineID}, History}) ->
+process_call(_, SelfID, {{add_tag, MachineID}, #{history:=History}}) ->
     case do_resolve_tag(fold_history(History)) of
         undefined ->
-            {ok, [generate_add_tag_event(MachineID)], #{}};
+            {ok, {undefined, [generate_add_tag_event(MachineID)]}, #{}};
         SelfID ->
-            {ok, [], #{}};
+            {ok, undefined, [], #{}};
         OtherMachineID ->
-            {{already_exists, OtherMachineID}, [], #{}}
+            {{already_exists, OtherMachineID}, {undefined, []}, #{}}
     end.
 
 %%

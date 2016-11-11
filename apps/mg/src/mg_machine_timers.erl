@@ -100,15 +100,15 @@ init(Options=#{namespace:=Namespace}) ->
 -spec process_signal(_, mg:id(), mg:signal_args()) ->
     mg:signal_result().
 process_signal(_, _, _) ->
-    {[], #{}}.
+    {{undefined, []}, #{}}.
 
 -spec process_call(mg:ns(), mg:id(), mg:call_args()) ->
     mg:call_result().
-process_call(Options, TimersID, {Call, History}) ->
+process_call(Options, TimersID, {Call, #{history:=History}}) ->
     State = fold_history(History),
     CallEvents = process_call_(Options, Call, State),
     ok = refresh_global_timer(Options, TimersID, get_next_timer(apply_events(CallEvents, State))),
-    {ok, CallEvents, #{}}.
+    {ok, {undefined, CallEvents}, #{}}.
 
 -spec process_call_(options(), _, state()) ->
     [event()].

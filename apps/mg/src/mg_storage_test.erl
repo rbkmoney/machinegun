@@ -157,6 +157,7 @@ do_create_machine(ID, Args, State) ->
     Machine =
         #{
             status       => {created, Args},
+            aux_state    => undefined,
             events_range => undefined,
             db_state     => 1
         },
@@ -170,6 +171,8 @@ do_update_machine(ID, Machine, Update, State) ->
 
     OldStatus = maps:get(status, Machine),
     NewStatus = maps:get(status, Update, OldStatus),
+    OldAuxState = maps:get(aux_state , Machine),
+    NewAuxState = maps:get(aux_state , Update, OldAuxState),
 
     NewMachineEvents = maps:get(new_events, Update, []),
 
@@ -177,6 +180,7 @@ do_update_machine(ID, Machine, Update, State) ->
         Machine#{
             status       := NewStatus,
             events_range := update_events_range(maps:get(events_range, Machine, undefined), NewMachineEvents),
+            aux_state    := NewAuxState,
             db_state     := maps:get(db_state  , Machine) + 1
         },
     NewState =
