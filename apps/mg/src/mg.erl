@@ -16,6 +16,7 @@
 -export_type([event_id     /0]).
 -export_type([event_body   /0]).
 -export_type([event        /0]).
+-export_type([history_range/0]).
 -export_type([history      /0]).
 -export_type([machine      /0]).
 
@@ -32,7 +33,8 @@
 -export_type([call_args    /0]).
 -export_type([signal_result/0]).
 -export_type([call_result  /0]).
--export_type([history_range/0]).
+
+-export_type([machine_descriptor/0]).
 
 %% event sink
 -export_type([sink_event  /0]).
@@ -58,10 +60,14 @@
     created_at => calendar:datetime(),
     body       => event_body()
 }.
+-type history_range() :: {After::id() | undefined, Limit::non_neg_integer() | undefined, direction()}.
 -type history      () :: [event()].
 -type machine      () :: #{
-    history   => history(),
-    aux_state => aux_state()
+    ns            => ns(),
+    id            => id(),
+    history       => history(),
+    history_range => history_range(),
+    aux_state     => aux_state()
 }.
 
 %% actions
@@ -74,13 +80,14 @@
 
 %% calls, signals, get_gistory
 -type state_change () :: {aux_state(), [event_body()]}.
--type signal       () :: {init, id(), args()} | timeout | {repair, args()}.
+-type signal       () :: {init, args()} | timeout | {repair, args()}.
 -type call_response() :: term().
 -type signal_args  () :: {signal(), machine()}.
 -type call_args    () :: {args(), machine()}.
 -type signal_result() :: {state_change(), complex_action()}.
 -type call_result  () :: {call_response(), state_change(), complex_action()}.
--type history_range() :: {After::id() | undefined, Limit::non_neg_integer() | undefined, direction()} | undefined.
+
+-type machine_descriptor() :: {ns(), ref(), history_range()}.
 
 %% event sink
 -type sink_event() :: #{

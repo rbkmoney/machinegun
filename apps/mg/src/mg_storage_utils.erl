@@ -55,18 +55,11 @@ pool_do(PoolName, Fun) ->
     [{mg:id(), mg:event_id()}].
 get_machine_events_ids(MachineID, #{events_range:=MachineEventsRange}, RequestedRange) ->
     [{MachineID, EventID} || EventID <-
-        get_event_ids(MachineEventsRange, expand_request_range(RequestedRange))].
+        get_event_ids(MachineEventsRange, RequestedRange)].
 
 %%
 %% local
 %%
--spec expand_request_range(mg:history_range()) ->
-    mg:history_range().
-expand_request_range(undefined) ->
-    {undefined, undefined, forward};
-expand_request_range(V={_, _, _}) ->
-    V.
-
 -spec get_event_ids(mg_storage:events_range(), mg:history_range()) ->
     _.
 get_event_ids(undefined, _) ->

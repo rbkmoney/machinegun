@@ -62,35 +62,38 @@ handle_function('Start', {NS, ID, Args}, WoodyContext, Options) ->
         ),
     {ok, WoodyContext};
 
-handle_function('Repair', {NS, Ref, Args}, WoodyContext, Options) ->
+handle_function('Repair', {MachineDesc, Args}, WoodyContext, Options) ->
+    {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
     ok = ?safe_handle(
             mg_machine_complex:repair(
                 get_ns_options(NS, Options),
-                unpack(ref, Ref),
+                Ref,
                 {unpack(args, Args), WoodyContext},
-                undefined
+                Range
             ),
             WoodyContext
         ),
     {ok, WoodyContext};
 
-handle_function('Call', {NS, Ref, Args}, WoodyContext, Options) ->
+handle_function('Call', {MachineDesc, Args}, WoodyContext, Options) ->
+    {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
     Response =
         ?safe_handle(
             mg_machine_complex:call(
                 get_ns_options(NS, Options),
-                unpack(ref, Ref),
+                Ref,
                 {unpack(args, Args), WoodyContext},
-                undefined
+                Range
             ),
             WoodyContext
         ),
     {pack(call_response, Response), WoodyContext};
 
-handle_function('GetMachine', {NS, Ref, Range}, WoodyContext, Options) ->
+handle_function('GetMachine', {MachineDesc}, WoodyContext, Options) ->
+    {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
     History =
         ?safe_handle(
-            mg_machine_complex:get_machine(get_ns_options(NS, Options), unpack(ref, Ref), unpack(history_range, Range)),
+            mg_machine_complex:get_machine(get_ns_options(NS, Options), Ref, Range),
             WoodyContext
         ),
     {pack(machine, History), WoodyContext}.

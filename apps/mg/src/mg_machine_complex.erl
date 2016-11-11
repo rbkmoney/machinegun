@@ -25,7 +25,7 @@
 
 %% mg_processor handler
 -behaviour(mg_processor).
--export([process_signal/3, process_call/3]).
+-export([process_signal/2, process_call/2]).
 
 %%
 %% API
@@ -84,7 +84,7 @@ start_link(Options) ->
 -spec handle_timeout(options(), mg:id()) ->
     ok.
 handle_timeout(Options, MachineID) ->
-    ok = mg_machine:call(Options, MachineID, handle_timeout, undefined).
+    ok = mg_machine:call(Options, MachineID, handle_timeout, {undefined, undefined, forward}).
 
 %%
 %% supervisor callbacks
@@ -102,22 +102,22 @@ init(Options) ->
 %%
 %% mg_processor handler
 %%
--spec process_signal(options(), mg:id(), mg:signal_args()) ->
+-spec process_signal(options(), mg:signal_args()) ->
     mg:signal_result().
-process_signal(Options, ID, SignalArgs) ->
+process_signal(Options, SignalArgs={_, #{id:=ID}}) ->
     {StateChange, ComplexAction} =
-        mg_processor:process_signal(get_option(processor, Options), ID, SignalArgs),
+        mg_processor:process_signal(get_option(processor, Options), SignalArgs),
     ok = handle_processor_result(Options, ID, ComplexAction),
     {StateChange, #{}}.
 
--spec process_call(options(), mg:id(), mg:call_args()) ->
+-spec process_call(options(), mg:call_args()) ->
     mg:call_result().
-process_call(Options, ID, {handle_timeout, Machine}) ->
-    {StateChange, ComplexAction} = process_signal(Options, ID, {timeout, Machine}),
+process_call(Options, {handle_timeout, Machine}) ->
+    {StateChange, ComplexAction} = process_signal(Options, {timeout, Machine}),
     {ok, StateChange, ComplexAction};
-process_call(Options, ID, {{call, Call}, Machine}) ->
+process_call(Options, {{call, Call}, Machine=#{id:=ID}}) ->
     {Response, StateChange, ComplexAction} =
-        mg_processor:process_call(get_option(processor, Options), ID, {Call, Machine}),
+        mg_processor:process_call(get_option(processor, Options), {Call, Machine}),
     ok = handle_processor_result(Options, ID, ComplexAction),
     {Response, StateChange, #{}}.
 

@@ -4,16 +4,16 @@
 %% mg_processor handler
 -behaviour(mg_processor).
 -export_type([options/0]).
--export([process_signal/3, process_call/3]).
+-export([process_signal/2, process_call/2]).
 
 %%
 %% mg_processor handler
 %%
 -type options() :: woody_t:url().
 
--spec process_signal(options(), mg_woody_api:id(), mg:signal_args()) ->
+-spec process_signal(options(), mg:signal_args()) ->
     mg:signal_result().
-process_signal(Options, _, {SignalAndWoodyContext, Machine}) ->
+process_signal(Options, {SignalAndWoodyContext, Machine}) ->
     {Signal, WoodyContext} = signal_and_woody_context(SignalAndWoodyContext),
     {SignalResult, _} =
         call_processor(
@@ -24,9 +24,9 @@ process_signal(Options, _, {SignalAndWoodyContext, Machine}) ->
         ),
     mg_woody_api_packer:unpack(signal_result, SignalResult).
 
--spec process_call(options(), mg_woody_api:id(), mg:call_args()) ->
+-spec process_call(options(), mg:call_args()) ->
     mg:call_result().
-process_call(Options, _, {{Call, WoodyContext}, Machine}) ->
+process_call(Options, {{Call, WoodyContext}, Machine}) ->
     {CallResult, _} =
         call_processor(
             Options,
@@ -54,7 +54,7 @@ call_processor(Options, WoodyContext, Function, Args) ->
     {mg:signal(), woody_client:context()}.
 signal_and_woody_context(Signal=timeout) ->
     {Signal, woody_client:new_context(woody_client:make_id(<<"mg">>), mg_woody_api_event_handler)};
-signal_and_woody_context({init, ID, {Arg, WoodyContext}}) ->
-    {{init, ID, Arg}, WoodyContext};
+signal_and_woody_context({init, {Arg, WoodyContext}}) ->
+    {{init, Arg}, WoodyContext};
 signal_and_woody_context({repair, {Arg, WoodyContext}}) ->
     {{repair, Arg}, WoodyContext}.
