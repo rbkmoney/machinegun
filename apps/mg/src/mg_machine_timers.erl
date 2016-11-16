@@ -22,7 +22,7 @@
 
 %% mg_processor handler
 -behaviour(mg_processor).
--export([process_signal/3, process_call/3]).
+-export([process_signal/2, process_call/2]).
 
 %%
 %% API
@@ -38,6 +38,7 @@
 
 %% пока это синглтон, но везде фигурирует TimersID, чтобы потом было проще
 -define(TIMERS_ID, <<"main">>).
+-define(all_history, {undefined, undefined, forward}).
 
 -spec child_spec(options(), atom()) ->
     supervisor:child_spec().
@@ -54,14 +55,14 @@ child_spec(Options, ChildID) ->
 set_timer(Options, MachineID, DateTime) ->
     % TODO подумать об ошибках тут
     ok = mg_machine:call_with_lazy_start(
-            machine_options(Options), ?TIMERS_ID, {set_timer, MachineID, DateTime}, undefined, undefined
+            machine_options(Options), ?TIMERS_ID, {set_timer, MachineID, DateTime}, ?all_history, undefined
         ).
 
 -spec cancel_timer(options(), mg:id()) ->
     ok.
 cancel_timer(Options, MachineID) ->
     ok = mg_machine:call_with_lazy_start(
-            machine_options(Options), ?TIMERS_ID, {cancel_timer, MachineID}, undefined, undefined
+            machine_options(Options), ?TIMERS_ID, {cancel_timer, MachineID}, ?all_history, undefined
         ).
 
 -spec handle_timeout(options()) ->
@@ -72,7 +73,7 @@ handle_timeout(Options) ->
 -spec handle_timeout(options(), id()) ->
     ok.
 handle_timeout(Options, TimersID) ->
-    ok = mg_machine:call_with_lazy_start(Options, TimersID, handle_timeout, undefined, undefined).
+    ok = mg_machine:call_with_lazy_start(Options, TimersID, handle_timeout, ?all_history, undefined).
 
 %%
 %% internal API
@@ -97,14 +98,14 @@ init(Options=#{namespace:=Namespace}) ->
 %%
 %% mg_processor handler
 %%
--spec process_signal(_, mg:id(), mg:signal_args()) ->
+-spec process_signal(_, mg:signal_args()) ->
     mg:signal_result().
-process_signal(_, _, _) ->
+process_signal(_, _) ->
     {{undefined, []}, #{}}.
 
--spec process_call(mg:ns(), mg:id(), mg:call_args()) ->
+-spec process_call(mg:ns(), mg:call_args()) ->
     mg:call_result().
-process_call(Options, TimersID, {Call, #{history:=History}}) ->
+process_call(Options, {Call, #{id:=TimersID, history:=History}}) ->
     State = fold_history(History),
     CallEvents = process_call_(Options, Call, State),
     ok = refresh_global_timer(Options, TimersID, get_next_timer(apply_events(CallEvents, State))),

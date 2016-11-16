@@ -232,8 +232,8 @@ transit_state(State=#{id:=ID, options:=Options, machine:=Machine, update:=Update
 
 -spec handle_load_(state()) ->
     state().
-handle_load_(State=#{id:=ID, machine:=#{status:={created, Args}}}) ->
-    process_signal({init, ID, Args}, undefined, State);
+handle_load_(State=#{machine:=#{status:={created, Args}}}) ->
+    process_signal({init, Args}, {undefined, undefined, forward}, State);
 handle_load_(State) ->
     State.
 
@@ -268,7 +268,7 @@ process_creation(Args, State=#{id:=ID, options:=Options}) ->
 process_call(Call, HRange, State=#{options:=Options, id:=ID, machine:=DBMachine}) ->
     Machine = machine(Options, ID, DBMachine, HRange),
     {Response, StateChange, ComplexAction} =
-        mg_processor:process_call(get_options(processor, Options), ID, {Call, Machine}),
+        mg_processor:process_call(get_options(processor, Options), {Call, Machine}),
     {{ok, Response}, handle_processor_result(StateChange, ComplexAction, State)}.
 
 -spec process_signal(mg:signal(), mg:history_range(), state()) ->
@@ -276,7 +276,7 @@ process_call(Call, HRange, State=#{options:=Options, id:=ID, machine:=DBMachine}
 process_signal(Signal, HRange, State=#{options:=Options, id:=ID, machine:=DBMachine}) ->
     Machine = machine(Options, ID, DBMachine, HRange),
     {StateChange, ComplexAction} =
-        mg_processor:process_signal(get_options(processor, Options), ID, {Signal, Machine}),
+        mg_processor:process_signal(get_options(processor, Options), {Signal, Machine}),
     handle_processor_result(StateChange, ComplexAction, State).
 
 %%
@@ -355,10 +355,13 @@ manager_options(Options) ->
 
 -spec machine(options(), mg:id(), mg_storage:machine(), mg:history_range()) ->
     mg:machine().
-machine(Options, ID, #{aux_state:=AuxState}=DBMachine, HRange) ->
+machine(Options=#{namespace:=NS}, ID, #{aux_state:=AuxState}=DBMachine, HRange) ->
     #{
-        history   => get_history_by_id(Options, ID, DBMachine, HRange),
-        aux_state => AuxState
+        ns            => NS,
+        id            => ID,
+        history       => get_history_by_id(Options, ID, DBMachine, HRange),
+        history_range => HRange,
+        aux_state     => AuxState
     }.
 
 -spec get_history_by_id(options(), mg:id(), mg_storage:machine(), mg:history_range()) ->

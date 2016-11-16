@@ -60,10 +60,13 @@ pack(event, #{id := ID, created_at := CreatedAt, body := Body}) ->
     };
 pack(history, History) ->
     pack({list, event}, History);
-pack(machine, #{aux_state:=AuxState, history:=History}) ->
+pack(machine, #{ns:=NS, id:=ID, history_range:=HistoryRange, history:=History, aux_state:=AuxState}) ->
     #'Machine'{
-        aux_state = pack(aux_state, AuxState),
-        history   = pack(history  , History )
+        ns            = pack(ns           , NS          ),
+        id            = pack(id           , ID          ),
+        history       = pack(history      , History     ),
+        history_range = pack(history_range, HistoryRange),
+        aux_state     = pack(aux_state    , AuxState    )
     };
 
 %% actions
@@ -85,12 +88,9 @@ pack(state_change, {AuxState, EventBodies}) ->
     };
 pack(signal, timeout) ->
     {timeout, #'TimeoutSignal'{}};
-pack(signal, {init, ID, Args}) ->
+pack(signal, {init, Args}) ->
     {init,
-        #'InitSignal'{
-            id  = pack(id  , ID  ),
-            arg = pack(args, Args)
-        }
+        #'InitSignal'{ arg = pack(args, Args) }
     };
 pack(signal, {repair, Args}) ->
     {repair,
@@ -128,6 +128,13 @@ pack(history_range, {After, Limit, Direction}) ->
         'after'    = pack(event_id , After    ),
          limit     = pack(integer  , Limit    ),
          direction = pack(direction, Direction)
+    };
+
+pack(machine_descriptor, {NS, Ref, Range}) ->
+    #'MachineDescriptor'{
+        ns    = pack(ns           , NS   ),
+        ref   = pack(ref          , Ref  ),
+        range = pack(history_range, Range)
     };
 
 pack(sink_event, #{id := ID, body := #{ source_ns := SourceNS, source_id := SourceID, event := Event}}) ->
@@ -197,10 +204,13 @@ unpack(event, #'Event'{id = ID, created_at = CreatedAt, event_payload = Body}) -
     };
 unpack(history, History) ->
     unpack({list, event}, History);
-unpack(machine, #'Machine'{aux_state=AuxState, history=History}) ->
+unpack(machine, #'Machine'{ns=NS, id=ID, history_range=HistoryRange, history=History, aux_state=AuxState}) ->
     #{
-        aux_state => unpack(aux_state, AuxState),
-        history   => unpack(history  , History )
+        ns            => unpack(ns           , NS          ),
+        id            => unpack(id           , ID          ),
+        history_range => unpack(history_range, HistoryRange),
+        history       => unpack(history      , History     ),
+        aux_state     => unpack(aux_state    , AuxState    )
     };
 
 %% actions
@@ -222,8 +232,8 @@ unpack(state_change, #'MachineStateChange'{aux_state=AuxState, events=EventBodie
     };
 unpack(signal, {timeout, #'TimeoutSignal'{}}) ->
     timeout;
-unpack(signal, {init, #'InitSignal'{id = ID, arg = Args}}) ->
-    {init, unpack(id, ID), unpack(args, Args)};
+unpack(signal, {init, #'InitSignal'{arg = Args}}) ->
+    {init, unpack(args, Args)};
 unpack(signal, {repair, #'RepairSignal'{arg = Args}}) ->
     {repair, unpack(args, Args)};
 unpack(call_response, CallResponse) ->
@@ -246,6 +256,9 @@ unpack(call_result, #'CallResult'{response=Response, change = StateChange, actio
 
 unpack(history_range, #'HistoryRange'{'after' = After, limit = Limit, direction = Direction}) ->
     {unpack(event_id, After), unpack(integer , Limit), unpack(direction, Direction)};
+
+unpack(machine_descriptor, #'MachineDescriptor'{ns=NS, ref=Ref, range=Range}) ->
+    {unpack(ns, NS), unpack(ref, Ref), unpack(history_range, Range)};
 
 unpack(sink_event, #'SinkEvent'{id = ID, source_ns = SourceNS, source_id = SourceID, event = Event}) ->
     #{

@@ -8,7 +8,7 @@
 
 %% mg_processor handler
 -behaviour(mg_processor).
--export([process_signal/3, process_call/3]).
+-export([process_signal/2, process_call/2]).
 
 %% mg_observer handler
 -behaviour(mg_observer).
@@ -50,14 +50,14 @@ get_history(Options, EventSinkID, Range) ->
 %%
 %% mg_processor handler
 %%
--spec process_signal(_, id(), mg:signal_args()) ->
+-spec process_signal(_, mg:signal_args()) ->
     mg:signal_result().
-process_signal(_, _, _) ->
+process_signal(_, _) ->
     {{undefined, []}, #{}}.
 
--spec process_call(_, id(), mg:call_args()) ->
+-spec process_call(_, mg:call_args()) ->
     mg:call_result().
-process_call(_, _, {{handle_events, SourceNS, SourceID, Events}, #{}}) ->
+process_call(_, {{handle_events, SourceNS, SourceID, Events}, #{}}) ->
     SinkEvents = generate_sink_events(SourceNS, SourceID, Events),
     {ok, {undefined, SinkEvents}, #{}}.
 

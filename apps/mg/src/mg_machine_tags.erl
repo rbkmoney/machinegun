@@ -8,7 +8,9 @@
 
 %% mg_processor handler
 -behaviour(mg_processor).
--export([process_signal/3, process_call/3]).
+-export([process_signal/2, process_call/2]).
+
+-define(all_history, {undefined, undefined, forward}).
 
 
 -type options() :: #{
@@ -25,26 +27,26 @@ child_spec(Options, ChildID) ->
     ok | {already_exists, mg:id()}.
 add_tag(Options, Tag, MachineID) ->
     % TODO подумать об ошибках тут
-    mg_machine:call_with_lazy_start(machine_options(Options), Tag, {add_tag, MachineID}, undefined, undefined).
+    mg_machine:call_with_lazy_start(machine_options(Options), Tag, {add_tag, MachineID}, ?all_history, undefined).
 
 -spec resolve_tag(options(), mg:tag()) ->
     mg:id() | undefined.
 resolve_tag(Options, Tag) ->
     #{history:=History} =
-        mg_machine:get_machine_with_lazy_start(machine_options(Options), Tag, undefined, undefined),
+        mg_machine:get_machine_with_lazy_start(machine_options(Options), Tag, ?all_history, undefined),
     do_resolve_tag(fold_history(History)).
 
 %%
 %% mg_processor handler
 %%
--spec process_signal(_, mg:id(), mg:signal_args()) ->
+-spec process_signal(_, mg:signal_args()) ->
     mg:signal_result().
-process_signal(_, _, _) ->
+process_signal(_, _) ->
     {{undefined, []}, #{}}.
 
--spec process_call(_, mg:id(), mg:call_args()) ->
+-spec process_call(_, mg:call_args()) ->
     mg:call_result().
-process_call(_, SelfID, {{add_tag, MachineID}, #{history:=History}}) ->
+process_call(_, {{add_tag, MachineID}, #{id:=SelfID, history:=History}}) ->
     case do_resolve_tag(fold_history(History)) of
         undefined ->
             {ok, {undefined, [generate_add_tag_event(MachineID)]}, #{}};
