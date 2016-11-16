@@ -21,6 +21,7 @@
   0},
  {<<"metrics">>,{pkg,<<"metrics">>,<<"1.0.1">>},2},
  {<<"mimerl">>,{pkg,<<"mimerl">>,<<"1.0.2">>},2},
+ {<<"msgpack">>,{pkg,<<"msgpack">>,<<"0.6.0">>},0},
  {<<"pooler">>,{pkg,<<"pooler">>,<<"1.5.0">>},0},
  {<<"protobuffs">>,{pkg,<<"protobuffs">>,<<"0.8.4">>},2},
  {<<"ranch">>,{pkg,<<"ranch">>,<<"1.2.1">>},2},

@@ -1,21 +1,17 @@
 %%%
 %%% Riak хранилище для machinegun'а.
 %%%
-%%% Важный момент, что в один момент времени не может существовать 2х процессов записи в бд по одной машине,
+%%% Важный момент, что в одиновременно не может существовать 2-х процессов записи в БД по одной машине,
 %%%  это гарантируется самим MG.
 %%%
 %%%
 %%% ## Схема хранения
 %%%
 %%% Схема хранения следующая. Есть 3 бакета:
-%%%     - для тэгов <ns>_tags(tag, machine_id);
-%%%     - для эвентов <ns>_events(machine_id, event_id, created_at, body);
-%%%     - для машин <ns>_machines(machine_id, event_ids, tags, status).
-%%%  Всё энкодится в thrift (схему ещё нужно сделать, поэтому пока в term_to_binary) (
-%%%    в json не вариант потому, что нужно хранить много бинарей,
-%%%    в msgpack — потому, что мы его нигде больше не используем, и у нас уже есть thrift
-%%%  )
-%%%  Первичная запись — это машина, если ссылки из машины на эвент или тэг нет, то это потерянная запись.
+%%%     - для эвентов <ns>_events({machine_id, event_id}, {created_at  , body             });
+%%%     - для машин <ns>_machines( machine_id           , {events_range, aux_state, status}).
+%%%  Всё энкодится в msgpack и версионируется в метадате.
+%%%  Первичная запись — это машина, если ссылки из машины на эвент нет, то это потерянная запись.
 %%%
 %%%
 %%% ## Процессы
@@ -35,60 +31,37 @@
 %%%  - получить эвенты
 %%%  - венуть эвенты
 %%%
-%%% Резолвинг тэга(пока сделано попроще, без проверки коллизии тэгов):
-%%%  - найти все ID машин по тегу
-%%%  - получить все объекты
-%%%  - все те тэги которых нет в объекте удалить (они просто потеряны)
-%%%  - если машин больше одной, перевести их в ошибочное состояние (как?)
-%%%  - если одна, вернуть её id
-%%%
 %%% Обновление машины:
 %%%  - добавить новые эвенты
-%%%  - добавить новый тэг
 %%%  - обновить объект с машиной
 %%%
 %%% Удаление машины:
-%%%  - удаление записи из таблицы машины (остальное станет мусором и удалится gc)
-%%%
-%%%
-%%% ## Таймеры
-%%%
-%%% Таймеров пока нет.
-%%% Для реализации таймеров есть 2 рабочих варианта:
-%%%  - Таймеры работают как пара отдельных процессов, один является mg_timers,
-%%%     второй — просто gen_server, котрый раз в dT / 2 выгружает ближайшие таймеры и выставляет их в mg_timers
-%%%     Самый главный вопрос тут — это сложность реализации.
-%%%  - При старте вычитываются все таймеры и загружаются в mg_timers, дальше в процессе работы все изменения
-%%%     тоже туда применяются. Тут всё просто, но есть подозрения, что могут быть проблемы из-за слишком
-%%%     большого количества таймеров.
-%%%
-%%% Как можно сделать хранение таймеров:
-%%%  bucket type "timers"
-%%%  bucket "<ns>_timers"
-%%%  для начала можно сделать только одну запись
-%%%  а вообще {Year, Month, Day} - TimersCRDTSet
-%%% Остаётся вопрос с тем, как в эту табличку писать (писать до основной и проверять, что данные корректны).
+%%%  - удаление записи из таблицы машины (остальное станет мусором и удалится gc) (?)
 %%%
 %%%
 %%% Требования:
-%%%  - Данные риака, не хранятся на ceph, а лежат локально
+%%%  - Данные риака лежат локально желательно на SSD
 %%%  - N >= 3, при этом мы сможем безболезненно терять minority
-%%%    от N машины из кластера размером S (PR, PW, DW = quorum).
+%%%    от N машины из кластера размером S (R=W=PR=PW=DW=quorum).
 %%%
-%%% Для append only бакетов (эвентов, тэгов) можно будет сделать хак с r=1 и notfound_ok=false
+%%% Для append only бакетов (эвентов) можно подумать о чтении с R=PR=1 и notfound_ok=false
 %%%
-%%% Ответ {error, timeout} — это неопределённость и нужно понять, что с этим делать!
+%%% Ошибка {error, timeout} — это неопределённость и нужно понять, что с этим делать!
 %%%  (Мы предполагаем, что тот факт, что мы получили неопределённость от одной из нод
 %%%    транслируется в неопределённость на один запрос)
+%%% Нужно делать все записи в базу идемпотентными и при любой ошибке неопределённости или недоступности ретраить.
 %%%
 %%% Вопросы:
-%%%  - Равен ли размера cp кластера mg размеру кластера riak? (нет, это совсем разные кластеры)
-%%%  - Что делать с riak и cross-dc?
-%%%  - можно ли при отсутствии after эвента возвращать [] (обсудили — нет)
+%%%  - Равен ли размера cp кластера MG размеру кластера riak? (нет, это совсем разные кластеры)
+%%%  - Что делать с Riak и cross-dc? (пока не думаем)
+%%%  - Можно ли при отсутствии after эвента возвращать []? (обсудили — нет)
+%%%  - Верна ли гипотеза, что при записи в один поток с R=W=PR=PW=quorum не будет slibing'ов?
+%%%  -
 %%%
 %%% TODO:
-%%%  - нужно сделать процесс очистки потеряных данных (gc)
-%%%  -
+%%%  - нужно сделать процесс очистки потеряных данных (gc) (а нужно ли?)
+%%%  - классификация и обработка ошибок
+%%%  - при отсутствии after эвента венуть исключение
 %%%
 -module(mg_storage_riak).
 
@@ -122,8 +95,7 @@ create_machine(Options, Namespace, ID, Args) ->
                     #{
                         aux_state    => undefined,
                         status       => {created, Args},
-                        events_range => undefined,
-                        tags         => []
+                        events_range => undefined
                     }
                 )
             )
@@ -151,9 +123,12 @@ get_history(Options, Namespace, ID, Machine, Range) ->
         Namespace,
         fun(Pid) ->
             [
-                unpack(event, riakc_obj:get_value(get_db_object(Pid, Options, Namespace, event, FullEventID)))
+                begin
+                    Event = unpack_from_object(event, get_db_object(Pid, Options, Namespace, event, FullEventID)),
+                    Event#{id=>EventID}
+                end
                 ||
-                FullEventID <- mg_storage_utils:get_machine_events_ids(ID, Machine, Range)
+                FullEventID={_, EventID} <- mg_storage_utils:get_machine_events_ids(ID, Machine, Range)
             ]
         end
     ).
@@ -203,21 +178,24 @@ apply_machine_update(Pid, Options, Namespace, ID, new_events, NewEvents, Machine
 %%
 %% db interation
 %%
--type db_obj_type() :: machine | event | tag.
+-type db_obj_type() :: machine | event.
 -type object() :: riakc_obj:riakc_obj().
-% -type db_event_id() :: {mg:id(), mg:event_id()}.
 
 -spec create_db_object(pid(), options(), mg:ns(), db_obj_type(), mg:id(), _Data) ->
     object().
 create_db_object(Pid, _Options, Namespace, Type, ID, Data) ->
-    Object = riakc_obj:new(get_bucket(Type, Namespace), pack({id, Type}, ID), pack(Type, Data)),
+    Object =
+        pack_to_object(
+            Type,
+            riakc_obj:new(get_bucket(Type, Namespace), pack_key(Type, ID)),
+            Data
+        ),
     put_db_object(Pid, Object, put_options(Type)).
-
 
 -spec get_db_object(pid(), options(), mg:ns(), db_obj_type(), mg:id()) ->
     object().
 get_db_object(Pid, _Options, Namespace, Type, ID) ->
-    case riakc_pb_socket:get(Pid, get_bucket(Type, Namespace), pack({id, Type}, ID), get_options(Type)) of
+    case riakc_pb_socket:get(Pid, get_bucket(Type, Namespace), pack_key(Type, ID), get_options(Type)) of
         {ok, Object} ->
             Object;
         {error, notfound} ->
@@ -248,6 +226,7 @@ get_bucket(Type, Namespace) ->
 %%
 %% Про опции посмотреть можно тут
 %% https://github.com/basho/riak-erlang-client/blob/develop/src/riakc_pb_socket.erl#L1526
+%% Почитать про NRW и прочую магию можно тут http://basho.com/posts/technical/riaks-config-behaviors-part-2/
 %%
 %% Пока идея в том, чтобы оставить всё максимально консистентно
 -spec get_options(_) ->
@@ -270,7 +249,7 @@ object_to_machine(Object) ->
         status       := Status,
         aux_state    := AuxState,
         events_range := EventsRange
-    } = unpack(machine, riakc_obj:get_value(Object)),
+    } = unpack_from_object(machine, Object),
     #{
         status       => Status,
         events_range => EventsRange,
@@ -288,7 +267,9 @@ machine_to_object(Machine) ->
         db_state     := Object
     } = Machine,
     DBMachine = #{status => Status, aux_state => AuxState, events_range => EventsRange},
-    riakc_obj:update_value(Object, pack(machine, DBMachine)).
+    % TODO можно апдейтить только в том случае, если изменилось
+    pack_to_object(machine, Object, DBMachine).
+
 
 -spec do(mg:ns(), fun((pid()) -> Result)) ->
     Result.
@@ -314,30 +295,58 @@ pool_options(Options=#{pool:=PoolOptions}, Namespace) ->
 -spec ns_to_atom(mg:ns()) ->
     atom().
 ns_to_atom(Namespace) ->
+    % !!! осторожнее, тут можно нечаянно нагенерить атомов
+    % предполагается, что их конечное и небольшое кол-во
     erlang:binary_to_atom(stringify(Namespace), utf8).
 
 %%
 %% packer
 %%
-%% TODO thrift
-%% TODO подумать как правильно генерить ключи
--spec pack(_, _) ->
-    binary().
-pack({id, event}, FullEventID) ->
-    stringify(FullEventID);
-pack({id, machine}, MachineID) ->
-    MachineID;
-pack(event, Event) ->
-    <<(erlang:term_to_binary(Event))/binary>>;
-pack(machine, Machine) ->
-    <<(erlang:term_to_binary(Machine))/binary>>.
+-type type     () :: event | machine.
+-type riak_key () :: binary().
+-type msg_value() :: _.
+-define(msgpack_ct, "application/x-msgpack").
+-define(msgpack_options, [
+    {spec           , new        },
+    {allow_atom     , none       },
+    {unpack_str     , as_binary  },
+    {validate_string, false      },
+    {pack_str       , none       },
+    {map_format     , map        }
+]).
 
--spec unpack(_, binary()) ->
-    _.
-unpack(event, Data) ->
-    erlang:binary_to_term(Data);
-unpack(machine, Data) ->
-    erlang:binary_to_term(Data).
+-spec pack_key(type(), _) ->
+    riak_key().
+pack_key(event, FullEventID) ->
+    stringify(FullEventID);
+pack_key(machine, MachineID) ->
+    MachineID.
+
+-spec pack_to_object(type(), object(), _TODO) ->
+    object().
+pack_to_object(Type, Object, Data) ->
+    riakc_obj:update_value(
+        riakc_obj:update_content_type(
+            riakc_obj:update_metadata(
+                Object,
+                riakc_obj:set_user_metadata_entry(
+                    riakc_obj:get_metadata(Object),
+                    {<<"schema-version">>, <<"1">>}
+                )
+            ),
+            ?msgpack_ct
+        ),
+        msgpack_pack(Type, Data)
+    ).
+
+-spec unpack_from_object(type(), object()) ->
+    _TODO.
+unpack_from_object(Type, Object) ->
+    % TODO сделать через версионирование
+    Metadata    = riakc_obj:get_metadata(Object),
+    <<"1">>     = riakc_obj:get_user_metadata_entry(Metadata, <<"schema-version">>),
+    ?msgpack_ct = riakc_obj:get_content_type(Object),
+    msgpack_unpack(Type, riakc_obj:get_value(Object)).
 
 %%
 
@@ -361,3 +370,109 @@ stringify(Tuple) when is_tuple(Tuple) ->
     stringify(erlang:tuple_to_list(Tuple));
 stringify(List) when is_list(List) ->
     erlang:iolist_to_binary(mg_utils:join(<<"-">>, [stringify(Element) || Element <- List])).
+
+%% в функции msgpack:pack неверный спек
+-dialyzer({nowarn_function, msgpack_pack/2}).
+-spec msgpack_pack(Type::atom(), _) ->
+    msg_value().
+msgpack_pack(Type, Value) ->
+    case msgpack:pack(msgpack_pack_(Type, Value), ?msgpack_options) of
+        Data when is_binary(Data) ->
+            Data;
+        {error, Reason} ->
+            erlang:error(msgpack_pack_error, [Type, Value, Reason])
+    end.
+
+-spec msgpack_unpack(Type::atom(), msg_value()) ->
+    _.
+msgpack_unpack(Type, MsgpackValue) ->
+    case msgpack:unpack(MsgpackValue, ?msgpack_options) of
+        {ok, Data} ->
+            msgpack_unpack_(Type, Data);
+        {error, Reason} ->
+            erlang:error(msgpack_unpack_error, [Type, MsgpackValue, Reason])
+    end.
+
+
+-spec msgpack_pack_(Type::atom(), _) ->
+    msg_value().
+msgpack_pack_(_, undefined) ->
+    null;
+msgpack_pack_(binary_term, Term) ->
+    erlang:term_to_binary(Term);
+msgpack_pack_(date, Time) when is_integer(Time) ->
+    Time;
+msgpack_pack_(integer, Integer) when is_integer(Integer) ->
+    Integer;
+msgpack_pack_(event, #{created_at:=CreatedAt, body:=Body}) ->
+    #{
+        <<"created_at">> => msgpack_pack_(date       , CreatedAt),
+        <<"body"      >> => msgpack_pack_(binary_term, Body     )
+    };
+msgpack_pack_(machine_status, {created, Args}) ->
+    #{
+        <<"name">> => <<"created">>,
+        <<"args">> => msgpack_pack_(binary_term, Args)
+    };
+msgpack_pack_(machine_status, working) ->
+    #{
+        <<"name">> => <<"working">>
+    };
+msgpack_pack_(machine_status, {error, Reason}) ->
+    #{
+        <<"name"  >> => <<"error">>,
+        <<"reason">> => msgpack_pack_(binary_term, Reason)
+    };
+msgpack_pack_(event_id, EventID) ->
+    msgpack_pack_(integer, EventID);
+msgpack_pack_(events_range, {FirstEventID, LastEventID}) ->
+    #{
+        <<"first">> => msgpack_pack_(event_id, FirstEventID),
+        <<"last" >> => msgpack_pack_(event_id, LastEventID )
+    };
+msgpack_pack_(aux_state, Status) ->
+    msgpack_pack_(binary_term, Status);
+msgpack_pack_(machine, #{status:=Status, events_range:=EventRange, aux_state:=AuxState}) ->
+    #{
+        <<"status"      >> => msgpack_pack_(machine_status, Status    ),
+        <<"events_range">> => msgpack_pack_(events_range   , EventRange),
+        <<"aux_state"   >> => msgpack_pack_(aux_state     , AuxState  )
+    };
+msgpack_pack_(Type, Value) ->
+    erlang:error(badarg, [Type, Value]).
+
+-spec msgpack_unpack_(Type::atom(), msg_value()) ->
+    _.
+msgpack_unpack_(_, null) ->
+    undefined;
+msgpack_unpack_(binary_term, Binary) when is_binary(Binary) ->
+    erlang:binary_to_term(Binary);
+msgpack_unpack_(date, Time) when is_integer(Time) ->
+    Time;
+msgpack_unpack_(integer, Integer) when is_integer(Integer) ->
+    Integer;
+msgpack_unpack_(event, #{<<"created_at">> := CreatedAt, <<"body">> := Body}) ->
+    #{
+        created_at => msgpack_unpack_(date       , CreatedAt),
+        body       => msgpack_unpack_(binary_term, Body     )
+    };
+msgpack_unpack_(machine_status, #{<<"name">> := <<"created">>, <<"args">> := Args}) ->
+    {created, msgpack_unpack_(binary_term, Args)};
+msgpack_unpack_(machine_status, #{<<"name">> := <<"working">>}) ->
+    working;
+msgpack_unpack_(machine_status, #{<<"name">> := <<"error">>, <<"reason">> := Reason}) ->
+    {error, msgpack_unpack_(binary_term, Reason)};
+msgpack_unpack_(event_id, EventID) ->
+    msgpack_unpack_(integer, EventID);
+msgpack_unpack_(events_range, #{<<"first">> := FirstEventID, <<"last">> := LastEventID}) ->
+    {msgpack_unpack_(event_id, FirstEventID), msgpack_unpack_(event_id, LastEventID)};
+msgpack_unpack_(aux_state, Status) ->
+    msgpack_unpack_(binary_term, Status);
+msgpack_unpack_(machine, #{<<"status">> := Status, <<"events_range">> := EventRange, <<"aux_state">> := AuxState}) ->
+    #{
+        status       => msgpack_unpack_(machine_status, Status    ),
+        events_range => msgpack_unpack_(events_range  , EventRange),
+        aux_state    => msgpack_unpack_(aux_state     , AuxState  )
+    };
+msgpack_unpack_(Type, Value) ->
+    erlang:error(badarg, [Type, Value]).
