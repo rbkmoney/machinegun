@@ -38,6 +38,7 @@
 
 %% пока это синглтон, но везде фигурирует TimersID, чтобы потом было проще
 -define(TIMERS_ID, <<"main">>).
+-define(all_history, {undefined, undefined, forward}).
 
 -spec child_spec(options(), atom()) ->
     supervisor:child_spec().
@@ -54,16 +55,14 @@ child_spec(Options, ChildID) ->
 set_timer(Options, MachineID, DateTime) ->
     % TODO подумать об ошибках тут
     ok = mg_machine:call_with_lazy_start(
-            machine_options(Options), ?TIMERS_ID, {set_timer, MachineID, DateTime},
-            {undefined, undefined, forward}, undefined
+            machine_options(Options), ?TIMERS_ID, {set_timer, MachineID, DateTime}, ?all_history, undefined
         ).
 
 -spec cancel_timer(options(), mg:id()) ->
     ok.
 cancel_timer(Options, MachineID) ->
     ok = mg_machine:call_with_lazy_start(
-            machine_options(Options), ?TIMERS_ID, {cancel_timer, MachineID},
-            {undefined, undefined, forward}, undefined
+            machine_options(Options), ?TIMERS_ID, {cancel_timer, MachineID}, ?all_history, undefined
         ).
 
 -spec handle_timeout(options()) ->
@@ -74,8 +73,7 @@ handle_timeout(Options) ->
 -spec handle_timeout(options(), id()) ->
     ok.
 handle_timeout(Options, TimersID) ->
-    ok = mg_machine:call_with_lazy_start(Options, TimersID, handle_timeout,
-        {undefined, undefined, forward}, undefined).
+    ok = mg_machine:call_with_lazy_start(Options, TimersID, handle_timeout, ?all_history, undefined).
 
 %%
 %% internal API

@@ -10,6 +10,8 @@
 -behaviour(mg_processor).
 -export([process_signal/2, process_call/2]).
 
+-define(all_history, {undefined, undefined, forward}).
+
 
 -type options() :: #{
     namespace => mg:ns(),
@@ -25,15 +27,13 @@ child_spec(Options, ChildID) ->
     ok | {already_exists, mg:id()}.
 add_tag(Options, Tag, MachineID) ->
     % TODO подумать об ошибках тут
-    mg_machine:call_with_lazy_start(machine_options(Options), Tag, {add_tag, MachineID},
-        {undefined, undefined, forward}, undefined).
+    mg_machine:call_with_lazy_start(machine_options(Options), Tag, {add_tag, MachineID}, ?all_history, undefined).
 
 -spec resolve_tag(options(), mg:tag()) ->
     mg:id() | undefined.
 resolve_tag(Options, Tag) ->
     #{history:=History} =
-        mg_machine:get_machine_with_lazy_start(machine_options(Options), Tag,
-            {undefined, undefined, forward}, undefined),
+        mg_machine:get_machine_with_lazy_start(machine_options(Options), Tag, ?all_history, undefined),
     do_resolve_tag(fold_history(History)).
 
 %%
