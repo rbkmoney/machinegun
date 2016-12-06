@@ -18,14 +18,15 @@
 %%    - машина уже существует -- machine_already_exist
 %%    - машина находится в упавшем состоянии -- machine_failed
 %%    - что-то ещё?
-%%   - временные -- temporary
+%%   - временные -- transient
 %%    - сервис перегружен —- overload
 %%    - хранилище недоступно -- storage_unavailable
 %%    - процессор недоступн -- processor_unavailable
+%%   - таймауты -- timeout
 %%  - неожиданные
 %%   - что-то пошло не так -- падение с любой другой ошибкой
 %%
-%% Например: throw:machine_not_found, throw:{temporary, storage_unavailable}, error:badarg
+%% Например: throw:machine_not_found, throw:{transient, storage_unavailable}, error:badarg
 %%
 %% Если в процессе обработки внешнего запроса происходит ожидаемая ошибка, она мапится код ответа,
 %%  если неожидаемая ошибка, то запрос падает с internal_error, ошибка пишется в лог.
@@ -70,9 +71,9 @@
     observer  => mg_utils:mod_opts()   % опционально
 }.
 
--type thrown_error() :: logic_error() | {temporary, temporary_error()}.
+-type thrown_error() :: logic_error() | {transient, transient_error()} | timeout.
 -type logic_error() :: machine_already_exist | machine_not_found | machine_failed.
--type temporary_error() :: overload | storage_unavailable | processor_unavailable.
+-type transient_error() :: overload | storage_unavailable | processor_unavailable.
 
 -type throws() :: no_return().
 
@@ -224,9 +225,15 @@ handle_exception(Exception, State=#{id:=ID}) ->
 transit_state(State=#{machine:=Machine, update:=Update}) when erlang:map_size(Update) =:= 0; Machine =:= undefined ->
     State;
 transit_state(State=#{id:=ID, options:=Options, machine:=Machine, update:=Update}) ->
-    NewMachine =
-        mg_storage:update_machine(get_options(storage, Options), get_options(namespace, Options), ID, Machine, Update),
-    State#{machine:=NewMachine, update:=#{}}.
+    F = fun() ->
+            mg_storage:update_machine(
+                get_options(storage, Options), get_options(namespace, Options), ID, Machine, Update
+            )
+        end,
+    % TODO брать из опций
+    RetryStrategy = genlib_retry:exponential(infinity, 2, 10, 60 * 1000),
+    {ok, NewMachine} = do_with_retry(ID, F, RetryStrategy),
+    State#{ machine := NewMachine, update := #{} }.
 
 %%
 
@@ -252,7 +259,7 @@ handle_call_(Call, State=#{machine:=Machine}) ->
 
         % если машина в статусе _created_, а ей пришел запрос,
         % то это значит, что-то пошло не так, такого быть не должно
-        { _               , #{status:={created, _}}} -> exit({something_went_wrong, Call, Machine})
+        {_ , #{status:={created, _}}} -> exit({something_went_wrong, Call, Machine})
     end.
 
 %%
@@ -378,7 +385,41 @@ get_options(Subj=observer, Options) ->
 get_options(Subj, Options) ->
     maps:get(Subj, Options).
 
+%%
+%% retrying
+%%
+-spec do_with_retry(mg:id(), fun(() -> R), genlib_retry:strategy()) ->
+    {ok, R} | timeout.
+do_with_retry(ID, Fun, RetryStrategy) ->
+    try
+        {ok, Fun()}
+    catch throw:(Reason={temporary, _}) ->
+        Exception = {throw, Reason, erlang:get_stacktrace()},
+        ok = log_transient_exception(ID, Exception),
+        case genlib_retry:next_step(RetryStrategy) of
+            {wait, Timeout, NewRetryStrategy} ->
+                ok = log_retry(ID, Timeout),
+                ok = timer:sleep(Timeout),
+                do_with_retry(ID, Fun, NewRetryStrategy);
+            finish ->
+                timeout
+        end
+    end.
+
+%%
+%% logging
+%%
 -spec log_machine_error(mg:id(), mg_utils:exception()) ->
     ok.
 log_machine_error(ID, Exception) ->
     ok = error_logger:error_msg("[~p] machine failed ~s", [ID, mg_utils:format_exception(Exception)]).
+
+-spec log_transient_exception(mg:id(), mg_utils:exception()) ->
+    ok.
+log_transient_exception(ID, Exception) ->
+    ok = error_logger:error_msg("[~p] transient error ~s", [ID, mg_utils:format_exception(Exception)]).
+
+-spec log_retry(mg:id(), Timeout::pos_integer()) ->
+    ok.
+log_retry(ID, RetryTimeout) ->
+    ok = error_logger:error_msg("[~p] retrying in ~p msec", [ID, RetryTimeout]).
