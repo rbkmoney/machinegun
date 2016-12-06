@@ -37,8 +37,9 @@
 -type event_body() :: binary().
 
 %% config
+-type processor_config() :: mg_woody_api_processor:options().
 -type config_ns() :: #{
-    url        => _URL,
+    processor  => processor_config(),
     event_sink => mg_machine_event_sink:id()
 }.
 -type config_nss() :: #{ns() => config_ns()}.
@@ -135,19 +136,24 @@ api_automaton_options(Config) ->
 
 -spec ns_options(mg:ns(), config_ns(), mg_storage:storage()) ->
     mg_machine:options().
-ns_options(NS, #{url:=URL, event_sink:=EventSinkID}, Storage) ->
+ns_options(NS, #{processor:=ProcessorConfig, event_sink:=EventSinkID}, Storage) ->
     #{
         namespace => NS,
         storage   => Storage,
-        processor => {mg_woody_api_processor, URL},
+        processor => processor(ProcessorConfig),
         observer  => {mg_machine_event_sink, {event_sink_options(Storage), NS, EventSinkID}}
     };
-ns_options(NS, #{url:=URL}, Storage) ->
+ns_options(NS, #{processor:=ProcessorConfig}, Storage) ->
     #{
         namespace => NS,
         storage   => Storage,
-        processor => {mg_woody_api_processor, URL}
+        processor => processor(ProcessorConfig)
     }.
+
+-spec processor(processor_config()) ->
+    mg_utils:mod_opts().
+processor(ProcessorConfig) ->
+    {mg_woody_api_processor, ProcessorConfig}.
 
 -spec api_event_sink_options(config()) ->
     mg_woody_api_event_sink:options().
