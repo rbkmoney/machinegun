@@ -9,7 +9,7 @@
 %%
 %% mg_processor handler
 %%
--type options() :: woody_t:url().
+-type options() :: woody_client:options().
 
 -spec process_signal(options(), mg:signal_args()) ->
     mg:signal_result().
@@ -42,11 +42,10 @@ process_call(Options, {{Call, WoodyContext}, Machine}) ->
 -spec call_processor(options(), woody_client:context(), atom(), list(_)) ->
     _.
 call_processor(Options, WoodyContext, Function, Args) ->
-    URL = Options,
     woody_client:call(
         WoodyContext,
         {{mg_proto_state_processing_thrift, 'Processor'}, Function, Args},
-        #{url => URL}
+        Options
     ).
 
 %% TODO такой хак пока в таймауте нет контекста

@@ -190,7 +190,7 @@ mg_woody_api_config(event_sink, C) ->
         {storage, ?config(storage, C)},
         {namespaces, #{
             ?NS(C) => #{
-                url        => <<"http://localhost:8023/processor">>,
+                processor  => #{ url => <<"http://localhost:8023/processor">>, recv_timeout => 5000 },
                 event_sink => ?ES_ID
             }
         }}
@@ -200,7 +200,7 @@ mg_woody_api_config(_, C) ->
         {storage, ?config(storage, C)},
         {namespaces, #{
             ?NS(C) => #{
-                url => <<"http://localhost:8023/processor">>
+                processor => #{ url => <<"http://localhost:8023/processor">> }
             }
         }}
     ].
@@ -388,11 +388,11 @@ config_with_multiple_event_sinks(_C) ->
         {storage, mg_storage_test},
         {namespaces, #{
             <<"1">> => #{
-                url        => <<"http://localhost:8023/processor">>,
+                processor  => #{ url => <<"http://localhost:8023/processor">> },
                 event_sink => <<"SingleES">>
             },
             <<"2">> => #{
-                url        => <<"http://localhost:8023/processor">>,
+                processor  => #{ url => <<"http://localhost:8023/processor">> },
                 event_sink => <<"SingleES">>
             }
         }}
