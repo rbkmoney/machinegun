@@ -124,7 +124,7 @@ stress_test(_C) ->
     TestTimeout        = 5 * 1000,
     WorkersCount       = 50,
     TestProcessesCount = 1000,
-    UnloadTimeout      = 2,
+    UnloadTimeout      = 0, % чтобы машины выгружались в процессе теста
 
     Options = workers_options(UnloadTimeout, #{link_pid=>erlang:self()}),
     WorkersPid = start_workers(Options),
@@ -160,7 +160,8 @@ stress_test_do_test_call(Options, WorkersCount) ->
     mg_workers_manager:options().
 workers_options(UnloadTimeout, WorkerParams) ->
     #{
-        name           => base_test_workers,
+        name => base_test_workers,
+        message_queue_len_limit => 10000,
         worker_options => #{
             worker            => {?MODULE, WorkerParams},
             hibernate_timeout => UnloadTimeout div 2,

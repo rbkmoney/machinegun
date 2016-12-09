@@ -19,6 +19,8 @@
 -export_type([gen_server_code_change_ret/1]).
 -export_type([supervisor_ret            /0]).
 -export([gen_reg_name2_ref/1]).
+-export([gen_where        /1]).
+-export([get_msg_queue_len/1]).
 
 %% Woody
 -export_type([woody_handlers/0]).
@@ -30,11 +32,12 @@
 -export([apply_mod_opts   /3]).
 -export([separate_mod_opts/1]).
 
--export([throw_if_error  /1]).
--export([throw_if_error  /2]).
--export_type([exception  /0]).
--export([raise           /1]).
--export([format_exception/1]).
+-export([throw_if_error   /1]).
+-export([throw_if_error   /2]).
+-export([exit_if_undefined/2]).
+-export_type([exception   /0]).
+-export([raise            /1]).
+-export([format_exception /1]).
 
 -export([join/2]).
 
@@ -118,6 +121,22 @@ gen_reg_name2_ref({local, Name} ) -> Name;
 gen_reg_name2_ref(V={global, _} ) -> V;
 gen_reg_name2_ref(V={via, _, _} ) -> V. % Is this correct?
 
+-spec gen_where(gen_reg_name()) ->
+    pid().
+gen_where({global, Name}) ->
+    global:whereis_name(Name);
+gen_where({via, Module, Name}) ->
+    Module:whereis_name(Name);
+gen_where({local, Name})  ->
+    erlang:whereis(Name).
+
+-spec get_msg_queue_len(gen_reg_name()) ->
+    pos_integer() | undefined.
+get_msg_queue_len(Name) ->
+    Pid = exit_if_undefined(gen_where(Name), noproc),
+    {message_queue_len, Len} = exit_if_undefined(erlang:process_info(Pid, message_queue_len), noproc),
+    Len.
+
 
 %%
 %% Woody
@@ -153,7 +172,7 @@ throw_if_error(ok) ->
 throw_if_error({ok, R}) ->
     R;
 throw_if_error({error, Error}) ->
-    throw(Error).
+    erlang:throw(Error).
 
 -spec throw_if_error
     (ok             , _ExceptionTag) -> ok;
@@ -164,9 +183,16 @@ throw_if_error(ok, _) ->
 throw_if_error({ok, R}, _) ->
     R;
 throw_if_error(error, Exception) ->
-    throw(Exception);
+    erlang:throw(Exception);
 throw_if_error({error, Error}, Exception) ->
-    throw({Exception, Error}).
+    erlang:throw({Exception, Error}).
+
+-spec exit_if_undefined (Result, _Reason) ->
+    Result | no_return().
+exit_if_undefined(undefined, Reason) ->
+    erlang:exit(Reason);
+exit_if_undefined(Value, _) ->
+    Value.
 
 -type exception() :: {exit | error | throw, term(), list()}.
 

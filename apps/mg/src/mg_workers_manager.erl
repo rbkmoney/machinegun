@@ -27,9 +27,12 @@
 %% API
 %%
 -type options() :: #{
-    name           => _,
-    worker_options => mg_worker:options()
+    name                    => _,
+    message_queue_len_limit => pos_integer(),
+    worker_options          => mg_worker:options()
 }.
+
+-define(default_message_queue_len_limit, 50).
 
 -spec child_spec(atom(), options()) ->
     supervisor:child_spec().
@@ -60,10 +63,11 @@ call(_, _, _, 0) ->
 call(Options, ID, Call, Attempts) ->
     Name = maps:get(name, Options),
     try
-        mg_worker:call(Name, ID, Call)
+        mg_worker:call(Name, ID, Call, message_queue_len_limit(Options))
     catch
         exit:Reason ->
             case Reason of
+                  noproc         -> start_and_retry_call(Options, ID, Call, Attempts);
                 { noproc    , _} -> start_and_retry_call(Options, ID, Call, Attempts);
                 { normal    , _} -> start_and_retry_call(Options, ID, Call, Attempts);
                 { shutdown  , _} -> start_and_retry_call(Options, ID, Call, Attempts);
@@ -106,8 +110,22 @@ init(Options) ->
 -spec start_child(options(), _ID) ->
     {ok, pid()} | {error, term()}.
 start_child(Options, ID) ->
-    supervisor:start_child(self_ref(Options), [maps:get(name, Options), ID]).
+    case mg_utils:get_msg_queue_len(self_reg_name(Options)) < message_queue_len_limit(Options) of
+        true ->
+            try
+                supervisor:start_child(self_ref(Options), [maps:get(name, Options), ID])
+            catch
+                exit:{timeout, _} ->
+                    {error, timeout}
+            end;
+        false ->
+            {error, {transient, overload}}
+    end.
 
+-spec message_queue_len_limit(options()) ->
+    pos_integer().
+message_queue_len_limit(Options) ->
+    maps:get(message_queue_len_limit, Options, ?default_message_queue_len_limit).
 
 -spec self_ref(options()) ->
     mg_utils:gen_ref().
