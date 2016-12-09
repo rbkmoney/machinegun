@@ -69,39 +69,43 @@ end_per_suite(C) ->
 -spec base_test(config()) ->
     _.
 base_test(_C) ->
+    % чтобы увидеть падение воркера линкуемся к нему
     Options = workers_options(?UNLOAD_TIMEOUT, #{link_pid=>erlang:self()}),
     Pid     = start_workers(Options),
     hello   = mg_workers_manager:call(Options, 42, hello),
-    ok      = timer:sleep(?UNLOAD_TIMEOUT * 2),
+    ok      = wait_machines_unload(?UNLOAD_TIMEOUT),
     ok      = stop_workers(Pid).
 
 -spec load_fail_test(config()) ->
     _.
 load_fail_test(_C) ->
+    % тут процесс специально падает, поэтому линк не нужен
     Options = workers_options(?UNLOAD_TIMEOUT, #{fail_on=>load}),
     Pid     = start_workers(Options),
     {error, {unexpected_exit, _}} =
         mg_workers_manager:call(Options, 42, hello),
-    ok      = timer:sleep(?UNLOAD_TIMEOUT * 2),
+    ok      = wait_machines_unload(?UNLOAD_TIMEOUT),
     ok      = stop_workers(Pid).
 
 -spec load_error_test(config()) ->
     _.
 load_error_test(_C) ->
-    Options = workers_options(?UNLOAD_TIMEOUT, #{load_error=>test_error}),
+    % чтобы увидеть падение воркера линкуемся к нему
+    Options = workers_options(?UNLOAD_TIMEOUT, #{load_error=>test_error, link_pid=>erlang:self()}),
     Pid     = start_workers(Options),
     {error, test_error} = mg_workers_manager:call(Options, 42, hello),
-    ok      = timer:sleep(?UNLOAD_TIMEOUT * 2),
+    ok      = wait_machines_unload(?UNLOAD_TIMEOUT),
     ok      = stop_workers(Pid).
 
 -spec call_fail_test(config()) ->
     _.
 call_fail_test(_C) ->
+    % тут процесс специально падает, поэтому линк не нужен
     Options = workers_options(?UNLOAD_TIMEOUT, #{fail_on=>call}),
     Pid     = start_workers(Options),
     {error, {unexpected_exit, _}} =
         mg_workers_manager:call(Options, 43, hello),
-    ok      = timer:sleep(?UNLOAD_TIMEOUT * 2),
+    ok      = wait_machines_unload(?UNLOAD_TIMEOUT),
     ok      = stop_workers(Pid).
 
 -spec unload_fail_test(config()) ->
@@ -111,7 +115,7 @@ unload_fail_test(_C) ->
     Options = workers_options(?UNLOAD_TIMEOUT, #{fail_on=>unload}),
     Pid     = start_workers(Options),
     hello   = mg_workers_manager:call(Options, 42, hello),
-    ok      = timer:sleep(?UNLOAD_TIMEOUT * 2),
+    ok      = wait_machines_unload(?UNLOAD_TIMEOUT),
     ok      = stop_workers(Pid).
 
 -spec stress_test(config()) ->
@@ -129,7 +133,7 @@ stress_test(_C) ->
     ok = timer:sleep(TestTimeout),
 
     ok = stop_wait_all(TestProcesses, shutdown, 1000),
-    ok = timer:sleep(UnloadTimeout * 2),
+    ok = wait_machines_unload(UnloadTimeout),
     ok = stop_workers(WorkersPid).
 
 -spec stress_test_start_process(mg_workers_manager:options(), pos_integer()) ->
@@ -146,10 +150,9 @@ stress_test_process(Options, WorkersCount) ->
 -spec stress_test_do_test_call(mg_workers_manager:options(), pos_integer()) ->
     ok.
 stress_test_do_test_call(Options, WorkersCount) ->
-    ok = random_seed(),
-    ID = random:uniform(WorkersCount),
+    ID = rand:uniform(WorkersCount),
     % проверим, что отвечают действительно на наш запрос
-    Call = {hello, ID, erlang:self()},
+    Call = {hello, erlang:make_ref()},
     Call = mg_workers_manager:call(Options, ID, Call),
     ok.
 
@@ -267,12 +270,7 @@ stop_wait(Pid, Reason, Timeout) ->
     process_flag(trap_exit, OldTrap),
     R.
 
--spec random_seed() ->
+-spec wait_machines_unload(pos_integer()) ->
     ok.
-random_seed() ->
-    _ = random:seed(
-        erlang:phash2([node()]),
-        erlang:monotonic_time(),
-        erlang:unique_integer()
-    ),
-    ok.
+wait_machines_unload(UnloadTimeout) ->
+    ok = timer:sleep(UnloadTimeout * 2).
