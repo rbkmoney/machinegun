@@ -6,7 +6,7 @@
 %%%
 %%% TODO:
 %%%  - сделать автоматические ретраи со внешней политикой
-%%%  - сделать контроль очереди
+%%%  - сделать выгрузку не по таймеру, а по занимаемой памяти и времени последней активности
 %%%  -
 %%%
 -module(mg_workers_manager).
@@ -56,28 +56,40 @@ call(Options, ID, Call) ->
     _Reply | {error, _}.
 call(_, _, _, 0) ->
     % такого быть не должно
-    erlang:exit(unexpected_behaviour);
+    {error, unexpected_behaviour};
 call(Options, ID, Call, Attempts) ->
     Name = maps:get(name, Options),
     try
         mg_worker:call(Name, ID, Call)
     catch
-        exit:_ ->
-            %
-            % NOTE возможно тут будут проблемы и это место надо очень хорошо отсмотреть
-            %  чтобы потом не ловить неожиданных проблем
-            %
-            % идея в том, что если нет процесса, то мы его запускаем
-            %
-            case start_child(Options, ID) of
-                {ok, _} ->
-                    call(Options, ID, Call, Attempts - 1);
-                {error, {already_started, _}} ->
-                    call(Options, ID, Call, Attempts - 1);
-                Error={error, _} ->
-                    Error
+        exit:Reason ->
+            case Reason of
+                { noproc    , _} -> start_and_retry_call(Options, ID, Call, Attempts);
+                { normal    , _} -> start_and_retry_call(Options, ID, Call, Attempts);
+                { shutdown  , _} -> start_and_retry_call(Options, ID, Call, Attempts);
+                { timeout   , _} -> {error, timeout};
+                Unknown       -> {error, {unexpected_exit, Unknown}}
             end
     end.
+
+-spec start_and_retry_call(options(), _ID, _Call, non_neg_integer()) ->
+    _Reply | {error, _}.
+start_and_retry_call(Options, ID, Call, Attempts) ->
+    %
+    % NOTE возможно тут будут проблемы и это место надо очень хорошо отсмотреть
+    %  чтобы потом не ловить неожиданных проблем
+    %
+    % идея в том, что если нет процесса, то мы его запускаем
+    %
+    case start_child(Options, ID) of
+        {ok, _} ->
+            call(Options, ID, Call, Attempts - 1);
+        {error, {already_started, _}} ->
+            call(Options, ID, Call, Attempts - 1);
+        Error={error, _} ->
+            Error
+    end.
+
 
 %%
 %% supervisor callbacks
