@@ -72,29 +72,29 @@
 
 %%
 
--spec child_spec(options(), mg:ns(), atom()) ->
+-spec child_spec(storage(), mg:ns(), atom()) ->
     supervisor:child_spec().
 child_spec(Options, Namespace, ChildID) ->
     mg_utils:apply_mod_opts(Options, child_spec, [Namespace, ChildID]).
 
--spec create_machine(options(), mg:ns(), mg:id(), mg:args()) ->
+-spec create_machine(storage(), mg:ns(), mg:id(), mg:args()) ->
     mg_storage:machine().
 create_machine(Options, Namespace, ID, Args) ->
     mg_utils:apply_mod_opts(Options, create_machine, [Namespace, ID, Args]).
 
 %% Если машины нет, то возвращает undefined
--spec get_machine(options(), mg:ns(), mg:id()) ->
+-spec get_machine(storage(), mg:ns(), mg:id()) ->
     machine() | undefined.
 get_machine(Options, Namespace, ID) ->
     mg_utils:apply_mod_opts(Options, get_machine, [Namespace, ID]).
 
 %% Если машины нет, то возвращает пустой список
--spec get_history(options(), mg:ns(), mg:id(), machine(), mg:history_range()) ->
+-spec get_history(storage(), mg:ns(), mg:id(), machine(), mg:history_range()) ->
     mg:history().
 get_history(Options, Namespace, ID, Machine, Range) ->
     mg_utils:apply_mod_opts(Options, get_history, [Namespace, ID, Machine, Range]).
 
--spec update_machine(options(), mg:ns(), mg:id(), machine(), update()) ->
+-spec update_machine(storage(), mg:ns(), mg:id(), machine(), update()) ->
     machine().
 update_machine(Options, Namespace, ID, Machine, Update) ->
     mg_utils:apply_mod_opts(Options, update_machine, [Namespace, ID, Machine, Update]).
