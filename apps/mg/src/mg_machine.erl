@@ -350,7 +350,9 @@ get_next_event_id(N) ->
 manager_options(Options) ->
     #{
         name           => maps:get(namespace, Options),
-        worker_options => {?MODULE, Options}
+        worker_options => #{
+            worker => {?MODULE, Options}
+        }
     }.
 
 -spec machine(options(), mg:id(), mg_storage:machine(), mg:history_range()) ->

@@ -24,7 +24,11 @@
     {_Reply, _State}.
 
 
--type options() :: mg_utils:mod_opts().
+-type options() :: #{
+    worker            => mg_utils:mod_opts(),
+    hibernate_timeout => pos_integer(),
+    unload_timeout    => pos_integer()
+}.
 
 -spec child_spec(atom(), options()) ->
     supervisor:child_spec().
@@ -62,19 +66,18 @@ call(NS, ID, Call) ->
 
 -spec init(_) ->
     mg_utils:gen_server_init_ret(state()).
-init({ID, Options}) ->
-    {Mod, Args} = mg_utils:separate_mod_opts(Options),
+init({ID, Options = #{worker := WorkerModOpts}}) ->
+    HibernateTimeout = maps:get(hibernate_timeout, Options,      5 * 1000),
+    UnloadTimeout    = maps:get(unload_timeout   , Options, 5 * 60 * 1000),
+    {Mod, Args} = mg_utils:separate_mod_opts(WorkerModOpts),
     State =
         #{
             id                => ID,
             mod               => Mod,
             status            => {loading, Args},
             unload_tref       => undefined,
-            % TODO сделать выгрузку не по таймеру, а по занимаемой памяти и времени последней активности
-            % hibernate_timeout => 5000,
-            % unload_timeout    => 5 * 60 * 1000
-            hibernate_timeout => 1,
-            unload_timeout    => 1000
+            hibernate_timeout => HibernateTimeout,
+            unload_timeout    => UnloadTimeout
         },
     {ok, State}.
 
@@ -116,6 +119,9 @@ handle_info({timeout, TRef, unload}, State=#{mod:=Mod, unload_tref:=TRef, status
             ok
     end,
     {stop, normal, State};
+handle_info({timeout, _, unload}, State=#{}) ->
+    % А кто-то опаздал!
+    {noreply, schedule_unload_timer(State), hibernate_timeout(State)};
 handle_info(Info, State) ->
     ok = error_logger:error_msg("unexpected gen_server info ~p", [Info]),
     {noreply, schedule_unload_timer(State), hibernate_timeout(State)}.
