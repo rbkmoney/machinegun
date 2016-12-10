@@ -6,7 +6,7 @@
 
 -export([child_spec/2]).
 -export([start_link/3]).
--export([call      /3]).
+-export([call      /4]).
 
 %% gen_server callbacks
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3, code_change/3, terminate/2]).
@@ -45,11 +45,15 @@ child_spec(ChildID, Options) ->
 start_link(Options, NS, ID) ->
     gen_server:start_link(self_reg_name({NS, ID}), ?MODULE, {ID, Options}, []).
 
-%% TODO сделать проверку на размер очерди сообщений
--spec call(_NS, _ID, _Call) ->
-    _Result.
-call(NS, ID, Call) ->
-    gen_server:call(self_ref({NS, ID}), {call, Call}).
+-spec call(_NS, _ID, _Call, pos_integer()) ->
+    _Result | {error, _}.
+call(NS, ID, Call, MaxQueueLength) ->
+    case mg_utils:get_msg_queue_len(self_reg_name({NS, ID})) < MaxQueueLength of
+        true ->
+            gen_server:call(self_ref({NS, ID}), {call, Call});
+        false ->
+            {error, {transient, overload}}
+    end.
 
 %%
 %% gen_server callbacks
