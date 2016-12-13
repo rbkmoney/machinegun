@@ -2,17 +2,17 @@
 
 %% woody_event_handler callbacks
 -behaviour(woody_event_handler).
--export([handle_event/3]).
+-export([handle_event/4]).
 
 %%
 %% woody_event_handler callbacks
 %%
--spec handle_event(EventType, RpcID, EventMeta)
+-spec handle_event(EventType, RpcID, EventMeta, _)
     -> _ when
-        EventType :: woody_event_handler:event_type     (),
-        RpcID     :: woody_t            :rpc_id         (),
-        EventMeta :: woody_event_handler:event_meta_type().
-handle_event(EventType, RpcID, Meta) ->
+        EventType :: woody_event_handler:event     (),
+        RpcID     :: woody              :rpc_id    (),
+        EventMeta :: woody_event_handler:event_meta().
+handle_event(EventType, RpcID, Meta, _) ->
     {Level, Msg} = format_event(EventType, Meta),
     _ = log(EventType, RpcID, Meta, {Level, append_msg(format_rpc_id(RpcID), Msg)}).
 
@@ -23,17 +23,17 @@ handle_event(EventType, RpcID, Meta) ->
 -type msg    () :: {_, _    }.
 -type log_msg() :: {_, msg()}.
 
--spec lager_meta(woody_event_handler:event_type(), woody_t:rpc_id(), woody_event_handler:event_meta_type()) ->
+-spec lager_meta(woody_event_handler:event(), woody:rpc_id(), woody_event_handler:event_meta()) ->
     list().
 lager_meta(EventType, RpcID, Meta) ->
     maps:to_list(add_rpc_id(RpcID, Meta#{woody_role => server, woody_event => EventType})).
 
--spec add_rpc_id(woody_t:rpc_id(), woody_event_handler:event_meta_type()) ->
+-spec add_rpc_id(woody:rpc_id(), woody_event_handler:event_meta()) ->
     #{}.
 add_rpc_id(RpcID, Meta) ->
     maps:merge(RpcID, Meta).
 
--spec log(woody_event_handler:event_type(), woody_t:rpc_id(), woody_event_handler:event_meta_type(), log_msg()) ->
+-spec log(woody_event_handler:event(), woody:rpc_id(), woody_event_handler:event_meta(), log_msg()) ->
     ok.
 log(EventType, RpcID, Meta, {Level, {Format, Args}}) ->
     ok = lager:log(Level, lager_meta(EventType, RpcID, Meta), Format, Args).
@@ -41,7 +41,7 @@ log(EventType, RpcID, Meta, {Level, {Format, Args}}) ->
 %%
 %% events formatting
 %%
--spec format_event(woody_event_handler:event_type(), woody_event_handler:event_meta_type()) ->
+-spec format_event(woody_event_handler:event(), woody_event_handler:event_meta()) ->
     log_msg().
 format_event('call service', Meta) ->
     {info, append_msg({"[client] calling ", []}, format_service_request(Meta))};
@@ -82,19 +82,19 @@ format_event('internal error', #{error:=Error, reason:=Reason}) ->
 format_event('trace_event', #{event:=Event}) ->
     {debug, {"trace ~s", [Event]}};
 format_event(UnknownEventType, Meta) ->
-    {warning, {"unknown woody event type '~s' with meta ~p", [UnknownEventType, Meta]}}.
+    {warning, {" unknown woody event type '~s' with meta ~p", [UnknownEventType, Meta]}}.
 
 -spec format_exception(_) -> % TODO exception type
     msg().
 format_exception({Class, Reason, Stacktrace}) ->
     {"~s:~p ~s", [Class, Reason, genlib_format:format_stacktrace(Stacktrace, [newlines])]}.
 
--spec format_rpc_id(woody_t:rpc_id()) ->
+-spec format_rpc_id(woody:rpc_id()) ->
     msg().
 format_rpc_id(#{span_id:=Span, trace_id:=Trace, parent_id:=Parent}) ->
     {"[~s ~s ~s]", [Trace, Parent, Span]}.
 
--spec format_service_request(woody_event_handler:event_meta_type()) ->
+-spec format_service_request(woody_event_handler:event_meta()) ->
     msg().
 format_service_request(#{service:=Service, function:=Function, args:=Args}) ->
     {ArgsFormat, ArgsArgs} = format_args(Args),

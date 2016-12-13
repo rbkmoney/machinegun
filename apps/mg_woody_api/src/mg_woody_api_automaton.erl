@@ -20,49 +20,51 @@
 -spec handler(options()) ->
     mg_utils:woody_handler().
 handler(Options) ->
-    {"/v1/automaton",
-        {{mg_proto_state_processing_thrift, 'Automaton'}, ?MODULE, Options}}.
+    {"/v1/automaton", {{mg_proto_state_processing_thrift, 'Automaton'}, {?MODULE, Options}}}.
 
 %%
 %% woody handler
 %%
 %% TODO errors
--define(safe_handle(Expr, WoodyContext),
+-define(safe_handle(Expr),
     try
         Expr
     catch throw:Error ->
-        throw({map_error(Error), WoodyContext})
+        case map_error(Error) of
+            {throw, NewError} ->
+                erlang:throw(NewError);
+            {woody_error, {WoodyErrorClass, Description}} ->
+                woody_error:raise(system, {internal, WoodyErrorClass, genlib:to_binary(Description)})
+        end
     end
 ).
 
--spec map_error(_) ->
-    _.
-map_error(machine_not_found) ->
-    #'MachineNotFound'{};
-map_error(machine_already_exist) ->
-    #'MachineAlreadyExists'{};
-map_error(machine_failed) ->
-    #'MachineFailed'{};
-map_error(Other) ->
-    Other.
+-spec map_error(mg_machine:thrown_error() | namespace_not_found) ->
+    {throw, _} | {woody_error, {woody_error:class(), _Details}}.
+map_error(machine_not_found    ) -> {throw, #'MachineNotFound'     {}};
+map_error(machine_already_exist) -> {throw, #'MachineAlreadyExists'{}};
+map_error(machine_failed       ) -> {throw, #'MachineFailed'       {}};
+map_error(namespace_not_found  ) -> {throw, #'NamespaceNotFound'   {}};
 
-%% в вуди сейчас Options — это list()
--dialyzer({nowarn_function, handle_function/4}).
--spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), options()) ->
-    {ok | term(), woody_client:context()} | no_return().
+map_error({transient, Error}) -> {woody_error, {resource_unavailable, Error}};
+map_error( timeout          ) -> {woody_error, {result_unexpected, <<"">>}};
 
-handle_function('Start', {NS, ID, Args}, WoodyContext, Options) ->
+map_error(UnknownError) -> erlang:error(badarg, [UnknownError]).
+
+
+-spec handle_function(woody:func(), woody:args(), woody_context:ctx(), options()) ->
+    ok | _Result | no_return().
+
+handle_function('Start', [NS, ID, Args], WoodyContext, Options) ->
     ok = ?safe_handle(
             mg_machine_complex:start(
                 get_ns_options(NS, Options),
                 unpack(id, ID),
                 {unpack(args, Args), WoodyContext}
-            ),
-            WoodyContext
-        ),
-    {ok, WoodyContext};
+            )
+        );
 
-handle_function('Repair', {MachineDesc, Args}, WoodyContext, Options) ->
+handle_function('Repair', [MachineDesc, Args], WoodyContext, Options) ->
     {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
     ok = ?safe_handle(
             mg_machine_complex:repair(
@@ -70,12 +72,10 @@ handle_function('Repair', {MachineDesc, Args}, WoodyContext, Options) ->
                 Ref,
                 {unpack(args, Args), WoodyContext},
                 Range
-            ),
-            WoodyContext
-        ),
-    {ok, WoodyContext};
+            )
+        );
 
-handle_function('Call', {MachineDesc, Args}, WoodyContext, Options) ->
+handle_function('Call', [MachineDesc, Args], WoodyContext, Options) ->
     {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
     Response =
         ?safe_handle(
@@ -84,19 +84,17 @@ handle_function('Call', {MachineDesc, Args}, WoodyContext, Options) ->
                 Ref,
                 {unpack(args, Args), WoodyContext},
                 Range
-            ),
-            WoodyContext
+            )
         ),
-    {pack(call_response, Response), WoodyContext};
+    pack(call_response, Response);
 
-handle_function('GetMachine', {MachineDesc}, WoodyContext, Options) ->
+handle_function('GetMachine', [MachineDesc], _WoodyContext, Options) ->
     {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
     History =
         ?safe_handle(
-            mg_machine_complex:get_machine(get_ns_options(NS, Options), Ref, Range),
-            WoodyContext
+            mg_machine_complex:get_machine(get_ns_options(NS, Options), Ref, Range)
         ),
-    {pack(machine, History), WoodyContext}.
+    pack(machine, History).
 
 %%
 %% local
@@ -108,5 +106,5 @@ get_ns_options(Namespace, Options) ->
         maps:get(Namespace, Options)
     catch
         error:{badkey, Namespace} ->
-            throw(#'NamespaceNotFound'{})
+            throw(namespace_not_found)
     end.

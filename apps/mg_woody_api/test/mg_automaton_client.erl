@@ -49,16 +49,11 @@ machine_desc(NS, Ref, HRange) ->
     _.
 call_service(BaseURL, Function, Args) ->
     try
-        {R, _} =
-            woody_client:call(
-                woody_client:new_context(
-                    woody_client:make_id(<<"a_cl">>),
-                    mg_woody_api_event_handler
-                ),
-                {{mg_proto_state_processing_thrift, 'Automaton'}, Function, Args},
-                #{url => BaseURL ++ "/v1/automaton"}
-            ),
-        R
+        woody_client:call(
+            {{mg_proto_state_processing_thrift, 'Automaton'}, Function, Args},
+            #{url => BaseURL ++ "/v1/automaton"},
+            woody_context:new(undefined, {mg_woody_api_event_handler, client})
+        )
     catch throw:{{exception, Exception}, _} ->
         throw(Exception)
     end.

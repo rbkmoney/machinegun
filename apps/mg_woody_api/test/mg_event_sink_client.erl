@@ -21,16 +21,11 @@ get_history(BaseURL, EventSinkID, Range) ->
     _.
 call_service(BaseURL, Function, Args) ->
     try
-        {R, _} =
-            woody_client:call(
-                woody_client:new_context(
-                    woody_client:make_id(<<"ev_cl">>),
-                    mg_woody_api_event_handler
-                ),
-                {{mg_proto_state_processing_thrift, 'EventSink'}, Function, Args},
-                #{url => BaseURL ++ "/v1/event_sink"}
-            ),
-        R
+        woody_client:call(
+            {{mg_proto_state_processing_thrift, 'EventSink'}, Function, Args},
+            #{url => BaseURL ++ "/v1/event_sink"},
+            woody_context:new(undefined, {mg_woody_api_event_handler, undefined})
+        )
     catch throw:{{exception, Exception}, _} ->
         throw(Exception)
     end.

@@ -65,10 +65,12 @@
 %% API
 %%
 -type options() :: #{
-    namespace => mg:ns(),
-    storage   => mg_storage:storage(),
-    processor => mg_utils:mod_opts(),
-    observer  => mg_utils:mod_opts()   % опционально
+    namespace              => mg:ns(),
+    storage                => mg_storage:storage          (),
+    storage_retry_policy   => mg_utils:genlib_retry_policy(),
+    processor              => mg_utils:mod_opts           (),
+    processor_retry_policy => mg_utils:genlib_retry_policy(),
+    observer               => mg_utils:mod_opts           ()   % опционально
 }.
 
 -type thrown_error() :: logic_error() | {transient, transient_error()} | timeout.
@@ -230,9 +232,8 @@ transit_state(State=#{id:=ID, options:=Options, machine:=Machine, update:=Update
                 get_options(storage, Options), get_options(namespace, Options), ID, Machine, Update
             )
         end,
-    % TODO брать из опций
-    RetryStrategy = genlib_retry:exponential(infinity, 2, 10, 60 * 1000),
-    {ok, NewMachine} = do_with_retry(ID, F, RetryStrategy),
+    RetryStrategy = mg_utils:genlib_retry_new(get_options(storage_retry_policy, Options)),
+    NewMachine    = do_with_retry(ID, F, RetryStrategy),
     State#{ machine := NewMachine, update := #{} }.
 
 %%
@@ -282,8 +283,11 @@ process_call(Call, HRange, State=#{options:=Options, id:=ID, machine:=DBMachine}
     state().
 process_signal(Signal, HRange, State=#{options:=Options, id:=ID, machine:=DBMachine}) ->
     Machine = machine(Options, ID, DBMachine, HRange),
-    {StateChange, ComplexAction} =
-        mg_processor:process_signal(get_options(processor, Options), {Signal, Machine}),
+    RetryStrategy = mg_utils:genlib_retry_new(get_options(processor_retry_policy, Options)),
+    F = fun() ->
+            mg_processor:process_signal(get_options(processor, Options), {Signal, Machine})
+        end,
+    {StateChange, ComplexAction} = do_with_retry(ID, F, RetryStrategy),
     handle_processor_result(StateChange, ComplexAction, State).
 
 %%
@@ -378,22 +382,39 @@ machine(Options=#{namespace:=NS}, ID, #{aux_state:=AuxState}=DBMachine, HRange) 
 get_history_by_id(Options, ID, DBMachine, HRange) ->
     mg_storage:get_history(get_options(storage, Options), get_options(namespace, Options), ID, DBMachine, HRange).
 
--spec get_options(namespace | processor | storage | observer, options()) ->
+-type option_name() ::
+      namespace
+    | processor
+    | storage
+    | observer
+    | storage_retry_policy
+    | processor_retry_policy
+.
+-spec get_options(option_name(), options()) ->
     _.
 get_options(Subj=observer, Options) ->
     maps:get(Subj, Options, undefined);
+get_options(Subj=storage_retry_policy, Options) ->
+    maps:get(Subj, Options, default_retry_policy());
+get_options(Subj=processor_retry_policy, Options) ->
+    maps:get(Subj, Options, default_retry_policy());
 get_options(Subj, Options) ->
     maps:get(Subj, Options).
+
+-spec default_retry_policy() ->
+    mg_utils:genlib_retry_policy().
+default_retry_policy() ->
+    {exponential, infinity, 2, 10, 60 * 1000}.
 
 %%
 %% retrying
 %%
 -spec do_with_retry(mg:id(), fun(() -> R), genlib_retry:strategy()) ->
-    {ok, R} | timeout.
+    R | timeout.
 do_with_retry(ID, Fun, RetryStrategy) ->
     try
-        {ok, Fun()}
-    catch throw:(Reason={temporary, _}) ->
+        Fun()
+    catch throw:(Reason={transient, _}) ->
         Exception = {throw, Reason, erlang:get_stacktrace()},
         ok = log_transient_exception(ID, Exception),
         case genlib_retry:next_step(RetryStrategy) of
@@ -402,7 +423,7 @@ do_with_retry(ID, Fun, RetryStrategy) ->
                 ok = timer:sleep(Timeout),
                 do_with_retry(ID, Fun, NewRetryStrategy);
             finish ->
-                timeout
+                throw(timeout)
         end
     end.
 

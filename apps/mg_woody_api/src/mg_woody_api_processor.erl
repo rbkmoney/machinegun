@@ -15,7 +15,7 @@
     mg:signal_result().
 process_signal(Options, {SignalAndWoodyContext, Machine}) ->
     {Signal, WoodyContext} = signal_and_woody_context(SignalAndWoodyContext),
-    {SignalResult, _} =
+    SignalResult =
         call_processor(
             Options,
             WoodyContext,
@@ -27,7 +27,7 @@ process_signal(Options, {SignalAndWoodyContext, Machine}) ->
 -spec process_call(options(), mg:call_args()) ->
     mg:call_result().
 process_call(Options, {{Call, WoodyContext}, Machine}) ->
-    {CallResult, _} =
+    CallResult =
         call_processor(
             Options,
             WoodyContext,
@@ -39,20 +39,25 @@ process_call(Options, {{Call, WoodyContext}, Machine}) ->
 %%
 %% local
 %%
--spec call_processor(options(), woody_client:context(), atom(), list(_)) ->
-    _.
+-spec call_processor(options(), woody_context:ctx(), atom(), list(_)) ->
+    _Result.
 call_processor(Options, WoodyContext, Function, Args) ->
-    woody_client:call(
-        WoodyContext,
-        {{mg_proto_state_processing_thrift, 'Processor'}, Function, Args},
-        Options
-    ).
+    try
+        woody_client:call(
+            {{mg_proto_state_processing_thrift, 'Processor'}, Function, Args},
+            Options,
+            WoodyContext
+        )
+    catch
+        error:{woody_error, {_, resource_unavailable, _}} -> throw({transient, processor_unavailable});
+        error:{woody_error, {_, result_unknown      , _}} -> throw({transient, processor_unavailable})
+    end.
 
 %% TODO такой хак пока в таймауте нет контекста
--spec signal_and_woody_context({mg:signal(), woody_client:context()} | mg:signal()) ->
-    {mg:signal(), woody_client:context()}.
+-spec signal_and_woody_context({mg:signal(), woody_context:ctx()} | mg:signal()) ->
+    {mg:signal(), woody_context:ctx()}.
 signal_and_woody_context(Signal=timeout) ->
-    {Signal, woody_client:new_context(woody_client:make_id(<<"mg">>), mg_woody_api_event_handler)};
+    {Signal, woody_context:new(undefined, {mg_woody_api_event_handler, client})};
 signal_and_woody_context({init, {Arg, WoodyContext}}) ->
     {{init, Arg}, WoodyContext};
 signal_and_woody_context({repair, {Arg, WoodyContext}}) ->
