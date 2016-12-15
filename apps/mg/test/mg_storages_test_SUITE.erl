@@ -23,6 +23,9 @@
 
 %% base group tests
 -export([base_test/1]).
+-export([utils_test/1]).
+-export([memory_stress_test/1]).
+-export([riak_stress_test/1]).
 
 %%
 %% tests descriptions
@@ -43,16 +46,25 @@ all() ->
     [{group_name(), list(_), test_name()}].
 groups() ->
     [
-        {memory, [sequence], tests()},
-        {riak  , [sequence], tests()}
+        {memory, [sequence], memory_tests()},
+        {riak  , [sequence], riak_tests()}
     ].
 
 -spec tests() ->
     [{group_name(), list(_), test_name()}].
-tests() ->
+memory_tests() ->
     [
-        base_test
+        base_test,
+        utils_test,
+        memory_stress_test
     ].
+
+riak_tests() ->
+    [
+        base_test,
+        utils_test,
+        riak_stress_test
+    ]
 
 %%
 %% starting/stopping
@@ -73,7 +85,7 @@ end_per_suite(C) ->
 -spec init_per_group(group_name(), config()) ->
     config().
 init_per_group(memory, C) ->
-    start_storage(mg_storage_test, C);
+    start_storage(mg_storage_test, <<"ns">>, C);
 init_per_group(riak, C) ->
     start_storage(
         {mg_storage_riak, #{
@@ -84,6 +96,7 @@ init_per_group(riak, C) ->
                 max_count  => 10
             }
         }},
+        <<"ns">>,
         C
     ).
 
@@ -92,10 +105,9 @@ init_per_group(riak, C) ->
 end_per_group(_, C) ->
     true = erlang:exit(?config(storage_pid, C), kill).
 
--spec start_storage(mg_storage:storage(), config()) ->
+-spec start_storage(mg_storage:storage(), mg:ns(), config()) ->
     config().
-start_storage(Storage, C) ->
-    Namespace = <<"ns">>,
+start_storage(Storage, Namespace, C) ->
     {ok, Pid} =
         mg_utils_supervisor_wrapper:start_link(
             #{strategy => one_for_all},
@@ -155,6 +167,58 @@ base_test(C) ->
     Events     = mg_storage:get_history(storage(C), namespace(C), ID, NewMachine, AllEvents),
 
     ok.
+
+%%
+%% utils_test
+%%
+-spec utils_test(config()) ->
+    _.
+utils_test(C) ->
+    ID = <<"42">>,
+    Args = <<"Args">>,
+
+    % create
+    Machine = mg_storage:create_machine(storage(C), namespace(C), ID, Args),
+    #{
+        status       := {created, Args},
+        aux_state    := undefined,
+        events_range := undefined
+    } = Machine,
+
+    EventsCount = 100,
+    Events = [make_event(EventID) || EventID <- lists:seq(1, EventsCount)],
+    AuxState = <<"AuxState">>,
+
+    Update =
+        #{
+            status     => working,
+            aux_state  => AuxState,
+            new_events => Events
+        },
+    NewMachine = mg_storage:update_machine(storage(C), namespace(C), ID, Machine, Update),
+
+    [
+        {<<"42">>, 6},
+        {<<"42">>, 7},
+        {<<"42">>, 8}
+    ] = mg_storage_utils:get_machine_events_ids(ID, NewMachine, {5, 3, forward}),
+
+    [
+        {<<"42">>, 4},
+        {<<"42">>, 3},
+        {<<"42">>, 2}
+    ] = mg_storage_utils:get_machine_events_ids(ID, NewMachine, {5, 3, backward}).
+
+%%
+%% helpers
+%%
+-spec batch_create_machines(C, IDs, Args) ->
+    Machine = mg_storage:create_machine(storage(C), namespace(C), ID, Args),
+    #{
+        status       := {created, Args},
+        aux_state    := undefined,
+        events_range := undefined
+    } = Machine,
 
 -spec make_event(mg:event_id()) ->
     mg:event().
