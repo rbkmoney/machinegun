@@ -2,7 +2,6 @@
 %%% Тесты всех возможных бэкендов хранилищ.
 %%%
 %%% TODO:
-%%%  - тесты диапазонов
 %%%  - множество ns
 %%%  - множество машин
 %%%  - простой нагрузочный
@@ -24,7 +23,6 @@
 %% base group tests
 -export([base_test/1]).
 -export([utils_test/1]).
--export([memory_stress_test/1]).
 -export([riak_stress_test/1]).
 
 %%
@@ -38,33 +36,32 @@
     [test_name() | {group, group_name()}].
 all() ->
     [
-        {group, memory},
-        {group, riak  }
+        {group, base},
+        {group, riak}
     ].
 
 -spec groups() ->
     [{group_name(), list(_), test_name()}].
 groups() ->
     [
-        {memory, [sequence], memory_tests()},
-        {riak  , [sequence], riak_tests()}
+        {base, [sequence], base_tests()},
+        {riak, [sequence], riak_tests()}
     ].
 
--spec tests() ->
+-spec base_tests() ->
     [{group_name(), list(_), test_name()}].
-memory_tests() ->
+base_tests() ->
     [
         base_test,
-        utils_test,
-        memory_stress_test
+        utils_test
     ].
 
+-spec riak_tests() ->
+    [{group_name(), list(_), test_name()}].
 riak_tests() ->
     [
-        base_test,
-        utils_test,
         riak_stress_test
-    ]
+    ].
 
 %%
 %% starting/stopping
@@ -84,6 +81,8 @@ end_per_suite(C) ->
 
 -spec init_per_group(group_name(), config()) ->
     config().
+init_per_group(base, C) ->
+    start_storage(mg_storage_test, <<"ns">>, C);
 init_per_group(memory, C) ->
     start_storage(mg_storage_test, <<"ns">>, C);
 init_per_group(riak, C) ->
@@ -132,8 +131,6 @@ base_test(C) ->
     Args = <<"Args">>,
     AllEvents = {undefined, undefined, forward},
 
-    undefined = mg_storage:get_machine(storage(C), namespace(C), ID),
-
     % create
     Machine = mg_storage:create_machine(storage(C), namespace(C), ID, Args),
     #{
@@ -167,6 +164,93 @@ base_test(C) ->
     Events     = mg_storage:get_history(storage(C), namespace(C), ID, NewMachine, AllEvents),
 
     ok.
+
+-spec base_riak_test(binary(), binary(), binary()) -> term().
+base_riak_test(Storage, Namespace, ID) ->
+    Args = <<"Args">>,
+    AllEvents = {undefined, undefined, forward},
+
+    % create
+    Machine = mg_storage_riak:create_machine(Storage, Namespace, ID, Args),
+    #{
+        status       := {created, Args},
+        aux_state    := undefined,
+        events_range := undefined
+    } = Machine,
+
+    % get
+    Machine = mg_storage_riak:get_machine(Storage, Namespace, ID),
+    []      = mg_storage_riak:get_history(Storage, Namespace, ID, Machine, AllEvents),
+
+    AuxState = <<"AuxState">>,
+    EventsCount = 100,
+    Events = [make_event(EventID) || EventID <- lists:seq(1, EventsCount)],
+
+    Update =
+        #{
+            status     => working,
+            aux_state  => AuxState,
+            new_events => Events
+        },
+    NewMachine = mg_storage_riak:update_machine(Storage, Namespace, ID, Machine, Update),
+    #{
+        status       := working,
+        aux_state    := AuxState,
+        events_range := {1, EventsCount}
+    } = NewMachine,
+
+    NewMachine = mg_storage_riak:get_machine(Storage, Namespace, ID),
+    Events     = mg_storage_riak:get_history(Storage, Namespace, ID, NewMachine, AllEvents),
+
+    ok.
+
+-spec riak_stress_test(_C) -> term().
+riak_stress_test(C) ->
+    ProcessCount = 50,
+    Processes = [stress_test_start_process(C) || _ <- lists:seq(1, ProcessCount)],
+    ok = stop_wait_all(Processes, shutdown, 1000).
+
+-spec stress_test_start_process(config()) ->
+    pid().
+stress_test_start_process(Options) ->
+    erlang:spawn_link(fun() -> stress_test_process(Options) end).
+
+-spec stress_test_process(config()) ->
+    no_return().
+stress_test_process(Options) ->
+    ID = genlib:to_binary(rand:uniform(10)),
+    Namespace = genlib:to_binary(rand:uniform(10)),
+    Storage = storage(Options),
+    ok = base_riak_test(Storage, Namespace, ID),
+    stress_test_process(Options).
+
+
+-spec stop_wait_all([pid()], _Reason, timeout()) ->
+    ok.
+stop_wait_all(Pids, Reason, Timeout) ->
+    lists:foreach(
+        fun(Pid) ->
+            case stop_wait(Pid, Reason, Timeout) of
+                ok      -> ok;
+                timeout -> exit(stop_timeout)
+            end
+        end,
+        Pids
+    ).
+
+-spec stop_wait(pid(), _Reason, timeout()) ->
+    ok | timeout.
+stop_wait(Pid, Reason, Timeout) ->
+    OldTrap = process_flag(trap_exit, true),
+    erlang:exit(Pid, Reason),
+    R =
+        receive
+            {'EXIT', Pid, Reason} -> ok
+        after
+            Timeout -> timeout
+        end,
+    process_flag(trap_exit, OldTrap),
+    R.
 
 %%
 %% utils_test
@@ -212,13 +296,6 @@ utils_test(C) ->
 %%
 %% helpers
 %%
--spec batch_create_machines(C, IDs, Args) ->
-    Machine = mg_storage:create_machine(storage(C), namespace(C), ID, Args),
-    #{
-        status       := {created, Args},
-        aux_state    := undefined,
-        events_range := undefined
-    } = Machine,
 
 -spec make_event(mg:event_id()) ->
     mg:event().
