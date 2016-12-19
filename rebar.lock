@@ -39,5 +39,5 @@
   1},
  {<<"woody">>,
   {git,"git@github.com:rbkmoney/woody_erlang.git",
-       {ref,"0124ec5f20b0668e38b6c1e5c3d9877e1e5107f4"}},
+       {ref,"ac84da3d5b38d8a7644a1788bc31a0ee0347bdc0"}},
   0}].

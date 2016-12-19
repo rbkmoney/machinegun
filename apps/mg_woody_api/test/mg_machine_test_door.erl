@@ -103,11 +103,11 @@ init({Host, Port, Path}) ->
         woody_server:child_spec(
             ?MODULE,
             #{
-                ip         => Host,
-                port       => Port,
-                net_opts   => #{},
-                ev_handler => {mg_woody_api_event_handler, client},
-                handlers   => [{Path, {{mg_proto_state_processing_thrift, 'Processor'}, {?MODULE, []}}}]
+                ip            => Host,
+                port          => Port,
+                net_opts      => #{},
+                event_handler => {mg_woody_api_event_handler, undefined},
+                handlers      => [{Path, {{mg_proto_state_processing_thrift, 'Processor'}, {?MODULE, []}}}]
             }
         )
     ]}}.
@@ -116,15 +116,15 @@ init({Host, Port, Path}) ->
 %% processor woody handler
 %%
 -spec handle_function(woody:func(), woody:args(), woody_context:ctx(), _Options) ->
-    ok | _Result | no_return().
+    {ok, _Result} | no_return().
 
 handle_function('ProcessSignal', [SignalArgs], _WoodyContext, Options) ->
     % _ = woody_error:raise(system, {internal, resource_unavailable, <<"hello">>}),
-    process_signal(Options, SignalArgs);
+    {ok, process_signal(Options, SignalArgs)};
 
 handle_function('ProcessCall', [CallArgs], _WoodyContext, Options) ->
     % _ = woody_error:raise(system, {internal, resource_unavailable, <<"hello">>}),
-    process_call(Options, CallArgs).
+    {ok, process_call(Options, CallArgs)}.
 
 %%
 %% local

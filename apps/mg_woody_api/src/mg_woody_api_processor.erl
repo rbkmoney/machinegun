@@ -43,11 +43,13 @@ process_call(Options, {{Call, WoodyContext}, Machine}) ->
     _Result.
 call_processor(Options, WoodyContext, Function, Args) ->
     try
-        woody_client:call(
-            {{mg_proto_state_processing_thrift, 'Processor'}, Function, Args},
-            Options,
-            WoodyContext
-        )
+        {ok, R} =
+            woody_client:call(
+                {{mg_proto_state_processing_thrift, 'Processor'}, Function, Args},
+                Options,
+                WoodyContext
+            ),
+        R
     catch
         error:{woody_error, {_, resource_unavailable, _}} -> throw({transient, processor_unavailable});
         error:{woody_error, {_, result_unknown      , _}} -> throw({transient, processor_unavailable})
@@ -57,7 +59,7 @@ call_processor(Options, WoodyContext, Function, Args) ->
 -spec signal_and_woody_context({mg:signal(), woody_context:ctx()} | mg:signal()) ->
     {mg:signal(), woody_context:ctx()}.
 signal_and_woody_context(Signal=timeout) ->
-    {Signal, woody_context:new(undefined, {mg_woody_api_event_handler, client})};
+    {Signal, woody_context:new()};
 signal_and_woody_context({init, {Arg, WoodyContext}}) ->
     {{init, Arg}, WoodyContext};
 signal_and_woody_context({repair, {Arg, WoodyContext}}) ->

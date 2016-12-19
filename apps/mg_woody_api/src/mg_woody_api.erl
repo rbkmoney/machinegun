@@ -111,11 +111,11 @@ woody_child_spec(Config, ChildID) ->
     woody_server:child_spec(
         ChildID,
         #{
-            ip         => get_config_element(host    , Config, {0, 0, 0, 0}),
-            port       => get_config_element(port    , Config, 8022        ),
-            net_opts   => get_config_element(net_opts, Config, #{}         ),
-            ev_handler => {mg_woody_api_event_handler, server},
-            handlers   => [
+            ip            => get_config_element(host    , Config, {0, 0, 0, 0}),
+            port          => get_config_element(port    , Config, 8022        ),
+            net_opts      => get_config_element(net_opts, Config, #{}         ),
+            event_handler => {mg_woody_api_event_handler, server},
+            handlers      => [
                 mg_woody_api_automaton :handler(api_automaton_options (Config)),
                 mg_woody_api_event_sink:handler(api_event_sink_options(Config))
             ]
@@ -154,7 +154,7 @@ ns_options(NS, #{processor:=ProcessorConfig}, Storage) ->
 -spec processor(processor_config()) ->
     mg_utils:mod_opts().
 processor(ProcessorConfig) ->
-    {mg_woody_api_processor, ProcessorConfig}.
+    {mg_woody_api_processor, ProcessorConfig#{event_handler => mg_woody_api_event_handler}}.
 
 -spec api_event_sink_options(config()) ->
     mg_woody_api_event_sink:options().

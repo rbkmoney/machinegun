@@ -48,12 +48,17 @@ machine_desc(NS, Ref, HRange) ->
 -spec call_service(_BaseURL, atom(), [_arg]) ->
     _.
 call_service(BaseURL, Function, Args) ->
-    try
-        woody_client:call(
+    WR = woody_client:call(
             {{mg_proto_state_processing_thrift, 'Automaton'}, Function, Args},
-            #{url => BaseURL ++ "/v1/automaton"},
-            woody_context:new(undefined, {mg_woody_api_event_handler, client})
-        )
-    catch throw:{{exception, Exception}, _} ->
-        throw(Exception)
+            #{
+                url           => BaseURL ++ "/v1/automaton",
+                event_handler => {mg_woody_api_event_handler, undefined}
+            },
+            woody_context:new()
+        ),
+    case WR of
+        {ok, R} ->
+            R;
+        {exception, Exception} ->
+            erlang:throw(Exception)
     end.

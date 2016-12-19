@@ -23,7 +23,7 @@ handler(Options) ->
 %% woody handler
 %%
 -spec handle_function(woody:func(), woody:args(), woody_context:ctx(), options()) ->
-    _Result | no_return().
+    {ok, _Result} | no_return().
 
 handle_function('GetHistory', [EventSinkID, Range], _WoodyContext, {AvaliableEventSinks, Options}) ->
     _ = check_event_sink(AvaliableEventSinks, EventSinkID),
@@ -33,7 +33,7 @@ handle_function('GetHistory', [EventSinkID, Range], _WoodyContext, {AvaliableEve
             EventSinkID,
             mg_woody_api_packer:unpack(history_range, Range)
         ),
-    mg_woody_api_packer:pack(sink_history, SinkHistory).
+    {ok, mg_woody_api_packer:pack(sink_history, SinkHistory)}.
 
 -spec check_event_sink([mg_machine_event_sink:id()], mg_machine_event_sink:id()) ->
     ok | no_return().

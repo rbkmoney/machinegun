@@ -25,7 +25,6 @@ handler(Options) ->
 %%
 %% woody handler
 %%
-%% TODO errors
 -define(safe_handle(Expr),
     try
         Expr
@@ -53,7 +52,7 @@ map_error(UnknownError) -> erlang:error(badarg, [UnknownError]).
 
 
 -spec handle_function(woody:func(), woody:args(), woody_context:ctx(), options()) ->
-    ok | _Result | no_return().
+    {ok, _Result} | no_return().
 
 handle_function('Start', [NS, ID, Args], WoodyContext, Options) ->
     ok = ?safe_handle(
@@ -62,7 +61,8 @@ handle_function('Start', [NS, ID, Args], WoodyContext, Options) ->
                 unpack(id, ID),
                 {unpack(args, Args), WoodyContext}
             )
-        );
+        ),
+    {ok, ok};
 
 handle_function('Repair', [MachineDesc, Args], WoodyContext, Options) ->
     {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
@@ -73,7 +73,8 @@ handle_function('Repair', [MachineDesc, Args], WoodyContext, Options) ->
                 {unpack(args, Args), WoodyContext},
                 Range
             )
-        );
+        ),
+    {ok, ok};
 
 handle_function('Call', [MachineDesc, Args], WoodyContext, Options) ->
     {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
@@ -86,7 +87,7 @@ handle_function('Call', [MachineDesc, Args], WoodyContext, Options) ->
                 Range
             )
         ),
-    pack(call_response, Response);
+    {ok, pack(call_response, Response)};
 
 handle_function('GetMachine', [MachineDesc], _WoodyContext, Options) ->
     {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
@@ -94,7 +95,7 @@ handle_function('GetMachine', [MachineDesc], _WoodyContext, Options) ->
         ?safe_handle(
             mg_machine_complex:get_machine(get_ns_options(NS, Options), Ref, Range)
         ),
-    pack(machine, History).
+    {ok, pack(machine, History)}.
 
 %%
 %% local
