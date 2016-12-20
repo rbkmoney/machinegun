@@ -1,12 +1,7 @@
 %%%
 %%% Тесты всех возможных бэкендов хранилищ.
 %%%
-%%% TODO:
-%%%  - множество ns
-%%%  - множество машин
-%%%  - простой нагрузочный
-%%%
-%%% После выполнения задач выше, можно будет вырезать тесты риака из wg_woody_api тестов
+%%% TODO вырезать тесты риака из wg_woody_api тестов
 %%%
 
 -module(mg_storages_test_SUITE).
@@ -51,7 +46,7 @@ groups() ->
     [{group_name(), list(_), test_name()}].
 base_tests() ->
     [
-        base_test,
+        % base_test,
         stress_test
     ].
 
@@ -80,36 +75,43 @@ end_per_suite(C) ->
 
 -spec init_per_group(group_name(), config()) ->
     config().
-init_per_group(base, C) ->
-    start_storage(mg_storage_test, <<"ns">>, C);
-init_per_group(riak, C) ->
-    start_storage(
-        {mg_storage_riak, #{
-            host => "riakdb",
-            port => 8087,
-            pool => #{
-                init_count => 1,
-                max_count  => 10
-            }
-        }},
-        <<"ns">>,
-        C
-    ).
+init_per_group(Group, C) ->
+    [{storage, Group} | C].
 
 -spec end_per_group(group_name(), config()) ->
     ok.
-end_per_group(_, C) ->
-    true = erlang:exit(?config(storage_pid, C), kill).
+end_per_group(_, _C) ->
+    ok.
 
--spec start_storage(mg_storage:storage(), mg:ns(), config()) ->
+-spec make_storage(config()) -> config().
+make_storage(C) ->
+    Group = ?config(storage, C),
+    Namespace = <<"ns">>,
+    make_storage(Group, Namespace).
+
+-spec make_storage(atom(), binary()) -> config().
+make_storage(riak, Namespace) ->
+    {{mg_storage_riak, #{
+        host => "riakdb",
+        port => 8087,
+        pool => #{
+            init_count => 1,
+            max_count  => 10
+        }
+    }},
+    Namespace};
+make_storage(base, Namespace) ->
+    {mg_storage_test, Namespace}.
+
+-spec start_storage(config()) ->
     config().
-start_storage(Storage, Namespace, C) ->
+start_storage(C) ->
+    {Storage, Namespace} = make_storage(C),
     {ok, Pid} =
         mg_utils_supervisor_wrapper:start_link(
             #{strategy => one_for_all},
             [mg_storage:child_spec(Storage, Namespace, storage)]
         ),
-    true = unlink(Pid),
     [
         {storage_pid, Pid      },
         {storage    , Storage  },
@@ -174,98 +176,26 @@ base_test(C) ->
 
     ok.
 
--spec base_test(binary(), binary(), binary()) ->
-    _.
-base_test(Storage, Namespace, ID) ->
-    Args = <<"Args">>,
-    AllEvents = {undefined, undefined, forward},
-
-    % create
-    Machine = mg_storage:create_machine(Storage, Namespace, ID, Args),
-    #{
-        status       := {created, Args},
-        aux_state    := undefined,
-        events_range := undefined
-    } = Machine,
-
-    % get
-    Machine = mg_storage:get_machine(Storage, Namespace, ID),
-    []      = mg_storage:get_history(Storage, Namespace, ID, Machine, AllEvents),
-
-    AuxState = <<"AuxState">>,
-    EventsCount = 100,
-    Events = [make_event(EventID) || EventID <- lists:seq(1, EventsCount)],
-
-    Update =
-        #{
-            status     => working,
-            aux_state  => AuxState,
-            new_events => Events
-        },
-    NewMachine = mg_storage:update_machine(Storage, Namespace, ID, Machine, Update),
-    #{
-        status       := working,
-        aux_state    := AuxState,
-        events_range := {1, EventsCount}
-    } = NewMachine,
-
-    NewMachine = mg_storage:get_machine(Storage, Namespace, ID),
-    Events     = mg_storage:get_history(Storage, Namespace, ID, NewMachine, AllEvents),
-
-    ok.
-
 -spec stress_test(_C) -> term().
-stress_test(C) ->
-    ProcessCount = 50,
-    Processes = [stress_test_start_process(C) || _ <- lists:seq(1, ProcessCount)],
-    ok = stop_wait_all(Processes, shutdown, 10000).
+stress_test(C0) ->
+    C = start_storage(C0),
+    ProcessCount = 5,
+    _Processes = [stress_test_start_process(C) || _ <- lists:seq(1, ProcessCount)].
 
 -spec stress_test_start_process(config()) ->
     pid().
-stress_test_start_process(Options) ->
-    erlang:spawn_link(fun() -> stress_test_process(Options) end).
+stress_test_start_process(C) ->
+    erlang:spawn_link(fun() -> stress_test_process(C) end).
 
 -spec stress_test_process(config()) ->
     no_return().
-stress_test_process(Options) ->
-    ID = genlib:to_binary(rand:uniform(10)),
-    Namespace = genlib:to_binary(rand:uniform(10)),
-    Storage = storage(Options),
-    ok = base_test(Storage, Namespace, ID),
-    stress_test_process(Options).
-
-
--spec stop_wait_all([pid()], _Reason, timeout()) ->
-    ok.
-stop_wait_all(Pids, Reason, Timeout) ->
-    lists:foreach(
-        fun(Pid) ->
-            case stop_wait(Pid, Reason, Timeout) of
-                ok      -> ok;
-                timeout -> exit(stop_timeout)
-            end
-        end,
-        Pids
-    ).
-
--spec stop_wait(pid(), _Reason, timeout()) ->
-    ok | timeout.
-stop_wait(Pid, Reason, Timeout) ->
-    OldTrap = process_flag(trap_exit, true),
-    erlang:exit(Pid, Reason),
-    R =
-        receive
-            {'EXIT', Pid, Reason} -> ok
-        after
-            Timeout -> timeout
-        end,
-    process_flag(trap_exit, OldTrap),
-    R.
+stress_test_process(C) ->
+    ok = base_test(C),
+    stress_test_process(C).
 
 %%
 %% helpers
 %%
-
 -spec make_event(mg:event_id()) ->
     mg:event().
 make_event(ID) ->
