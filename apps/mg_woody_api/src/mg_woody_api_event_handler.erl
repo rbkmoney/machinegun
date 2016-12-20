@@ -14,4 +14,4 @@
         EventMeta :: woody_event_handler:event_meta().
 handle_event(Event, RpcID, Meta, _) ->
     {Level, {MsgFormat, MsgArgs}} = woody_event_handler:format_event(Event, Meta, RpcID),
-    ok = lager:log(Level, [{pid, erlang:self()}], MsgFormat, MsgArgs).
+    ok = lager:log(Level, [{pid, erlang:self()}|maps:to_list(RpcID)], MsgFormat, MsgArgs).

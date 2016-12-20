@@ -82,7 +82,7 @@ repair(Options, Ref, RepairResult) ->
 update_state(Options, Ref, ClientState=#{last_event_id:=LastEventID, state:=State}) ->
     #'Machine'{history=History} =
         mg_automaton_client:get_machine(
-            Options, Ref, #'HistoryRange'{'after'=LastEventID, limit=1, direction=forward}
+            Options, Ref, {LastEventID, 1, forward}
         ),
     case History of
         [] ->

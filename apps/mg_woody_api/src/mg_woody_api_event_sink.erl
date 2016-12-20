@@ -5,7 +5,6 @@
 -export_type([options/0]).
 
 %% woody handler
--include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 -behaviour(woody_server_thrift_handler).
 -export([handle_function/4]).
 
@@ -26,12 +25,16 @@ handler(Options) ->
     {ok, _Result} | no_return().
 
 handle_function('GetHistory', [EventSinkID, Range], _WoodyContext, {AvaliableEventSinks, Options}) ->
-    _ = check_event_sink(AvaliableEventSinks, EventSinkID),
     SinkHistory =
-        mg_machine_event_sink:get_history(
-            Options,
-            EventSinkID,
-            mg_woody_api_packer:unpack(history_range, Range)
+        mg_woody_api_utils:handle_safe(
+            fun() ->
+                _ = check_event_sink(AvaliableEventSinks, EventSinkID),
+                mg_machine_event_sink:get_history(
+                    Options,
+                    EventSinkID,
+                    mg_woody_api_packer:unpack(history_range, Range)
+                )
+            end
         ),
     {ok, mg_woody_api_packer:pack(sink_history, SinkHistory)}.
 
@@ -42,5 +45,5 @@ check_event_sink(AvaliableEventSinks, EventSinkID) ->
         true ->
             ok;
         false ->
-            throw(#'EventSinkNotFound'{})
+            throw(event_sink_not_found)
     end.

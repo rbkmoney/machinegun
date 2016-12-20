@@ -51,8 +51,10 @@ call_processor(Options, WoodyContext, Function, Args) ->
             ),
         R
     catch
-        error:{woody_error, {_, resource_unavailable, _}} -> throw({transient, processor_unavailable});
-        error:{woody_error, {_, result_unknown      , _}} -> throw({transient, processor_unavailable})
+        error:Reason={woody_error, {_, resource_unavailable, _}} ->
+            throw({transient, {processor_unavailable, Reason}});
+        error:Reason={woody_error, {_, result_unknown, _}} ->
+            throw({transient, {processor_unavailable, Reason}})
     end.
 
 %% TODO такой хак пока в таймауте нет контекста

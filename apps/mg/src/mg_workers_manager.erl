@@ -115,8 +115,8 @@ start_child(Options, ID) ->
             try
                 supervisor:start_child(self_ref(Options), [maps:get(name, Options), ID])
             catch
-                exit:{timeout, _} ->
-                    {error, timeout}
+                exit:{timeout, Reason} ->
+                    {error, {timeout, Reason}}
             end;
         false ->
             {error, {transient, overload}}

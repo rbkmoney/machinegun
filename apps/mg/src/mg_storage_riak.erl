@@ -208,9 +208,8 @@ get_db_object(Pid, _Options, Namespace, Type, ID) ->
         {error, notfound} ->
             throw(not_found);
         % TODO понять какие проблемы временные, а какие постоянные
-        {error, _Reason} ->
-            % TODO log
-            erlang:throw({temporary, storage_unavailable})
+        {error, Reason} ->
+            erlang:throw({transient, {storage_unavailable, Reason}})
     end.
 
 -spec put_db_object(pid(), object(), list()) ->
@@ -220,9 +219,8 @@ put_db_object(Pid, Object, Options) ->
         {ok, NewObject} ->
             NewObject;
         % TODO понять какие проблемы временные, а какие постоянные
-        {error, _Reason} ->
-            % TODO log
-            erlang:throw({temporary, storage_unavailable})
+        {error, Reason} ->
+            erlang:throw({transient, {storage_unavailable, Reason}})
     end.
 
 -spec get_bucket(db_object_type(), mg:ns()) ->

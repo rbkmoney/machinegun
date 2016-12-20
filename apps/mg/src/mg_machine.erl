@@ -20,15 +20,15 @@
 %%    - что-то ещё?
 %%   - временные -- transient
 %%    - сервис перегружен —- overload
-%%    - хранилище недоступно -- storage_unavailable
-%%    - процессор недоступн -- processor_unavailable
-%%   - таймауты -- timeout
+%%    - хранилище недоступно -- {storage_unavailable  , Details}
+%%    - процессор недоступен -- {processor_unavailable, Details}
+%%   - таймауты -- {timeout, Details}
 %%  - неожиданные
 %%   - что-то пошло не так -- падение с любой другой ошибкой
 %%
-%% Например: throw:machine_not_found, throw:{transient, storage_unavailable}, error:badarg
+%% Например: throw:machine_not_found, throw:{transient, {storage_unavailable, ...}}, error:badarg
 %%
-%% Если в процессе обработки внешнего запроса происходит ожидаемая ошибка, она мапится код ответа,
+%% Если в процессе обработки внешнего запроса происходит ожидаемая ошибка, она мапится в код ответа,
 %%  если неожидаемая ошибка, то запрос падает с internal_error, ошибка пишется в лог.
 %%
 %% Если в процессе обработки запроса машиной происходит ожидаемая ошибка, то она прокидывается вызывающему коду,
@@ -410,7 +410,7 @@ default_retry_policy() ->
 %% retrying
 %%
 -spec do_with_retry(mg:id(), fun(() -> R), genlib_retry:strategy()) ->
-    R | timeout.
+    R.
 do_with_retry(ID, Fun, RetryStrategy) ->
     try
         Fun()
@@ -423,7 +423,7 @@ do_with_retry(ID, Fun, RetryStrategy) ->
                 ok = timer:sleep(Timeout),
                 do_with_retry(ID, Fun, NewRetryStrategy);
             finish ->
-                throw(timeout)
+                throw({timeout, {retry_timeout, Reason}})
         end
     end.
 
@@ -438,9 +438,9 @@ log_machine_error(ID, Exception) ->
 -spec log_transient_exception(mg:id(), mg_utils:exception()) ->
     ok.
 log_transient_exception(ID, Exception) ->
-    ok = error_logger:error_msg("[~p] transient error ~s", [ID, mg_utils:format_exception(Exception)]).
+    ok = error_logger:warning_msg("[~p] transient error ~s", [ID, mg_utils:format_exception(Exception)]).
 
 -spec log_retry(mg:id(), Timeout::pos_integer()) ->
     ok.
 log_retry(ID, RetryTimeout) ->
-    ok = error_logger:error_msg("[~p] retrying in ~p msec", [ID, RetryTimeout]).
+    ok = error_logger:warning_msg("[~p] retrying in ~p msec", [ID, RetryTimeout]).
