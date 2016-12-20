@@ -16,7 +16,7 @@
 -export([end_per_group   /2]).
 
 %% base group tests
--export([base_test/1]).
+% -export([base_test/1]).
 -export([stress_test/1]).
 
 %%
@@ -122,10 +122,9 @@ start_storage(C) ->
 %%
 %% base group tests
 %%
--spec base_test(config()) ->
+-spec base_test(term(), config()) ->
     _.
-base_test(C) ->
-    ID = <<"42">>,
+base_test(ID, C) ->
     Args = <<"Args">>,
     AllEvents = {undefined, undefined, forward},
 
@@ -161,15 +160,15 @@ base_test(C) ->
     Events     = mg_storage:get_history(storage(C), namespace(C), ID, NewMachine, AllEvents),
 
     [
-        {<<"42">>, 6},
-        {<<"42">>, 7},
-        {<<"42">>, 8}
+        {ID, 6},
+        {ID, 7},
+        {ID, 8}
     ] = mg_storage_utils:get_machine_events_ids(ID, NewMachine, {5, 3, forward}),
 
     [
-        {<<"42">>, 4},
-        {<<"42">>, 3},
-        {<<"42">>, 2}
+        {ID, 4},
+        {ID, 3},
+        {ID, 2}
     ] = mg_storage_utils:get_machine_events_ids(ID, NewMachine, {5, 3, backward}),
 
     ok.
@@ -178,19 +177,21 @@ base_test(C) ->
 stress_test(C0) ->
     C = start_storage(C0),
     ProcessCount = 5,
-    Processes = [stress_test_start_process(C) || _ <- lists:seq(1, ProcessCount)],
+    Processes = [stress_test_start_process(ID, C) || ID <- lists:seq(1, ProcessCount)],
+
+    timer:sleep(5000),
     ok = stop_wait_all(Processes, shutdown, 5000).
 
--spec stress_test_start_process(config()) ->
+-spec stress_test_start_process(term(), config()) ->
     pid().
-stress_test_start_process(C) ->
-    erlang:spawn_link(fun() -> stress_test_process(C) end).
+stress_test_start_process(ID, C) ->
+    erlang:spawn_link(fun() -> stress_test_process(ID, C) end).
 
--spec stress_test_process(config()) ->
+-spec stress_test_process(term(), config()) ->
     no_return().
-stress_test_process(C) ->
-    ok = base_test(C),
-    stress_test_process(C).
+stress_test_process(ID, C) ->
+    ok = base_test(ID+6, C),
+    stress_test_process(ID+6, C).
 
 -spec stop_wait_all([pid()], _Reason, timeout()) ->
     ok.
