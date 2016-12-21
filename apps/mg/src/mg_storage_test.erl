@@ -6,7 +6,7 @@
 
 %% mg_storage callbacks
 -export_type([options/0]).
--export([child_spec/3, create_machine/4, get_machine/3, get_history/5, update_machine/5]).
+-export([child_spec/3, get_machine/3, get_history/5, update_machine/5]).
 
 %% gen_server callbacks
 -behaviour(gen_server).
@@ -34,11 +34,6 @@ child_spec(Options, Namespace, ChildID) ->
         restart  => permanent,
         shutdown => 5000
     }.
-
--spec create_machine(options(), mg:ns(), mg:id(), mg:args()) ->
-    mg_storage:machine().
-create_machine(_Options, Namespace, ID, Args) ->
-    gen_server:call(self_ref(Namespace), {create_machine, ID, Args}).
 
 -spec get_machine(options(), mg:ns(), mg:id()) ->
     mg_storage:machine() | undefined.
@@ -79,9 +74,6 @@ init({Options, Namespace}) ->
 
 -spec handle_call(_Call, mg_utils:gen_server_from(), state()) ->
     mg_utils:gen_server_handle_call_ret(state()).
-handle_call({create_machine, ID, Args}, _From, State) ->
-    {Resp, NewState} = do_create_machine(ID, Args, State),
-    {reply, Resp, NewState};
 handle_call({get_machine, ID}, _From, State) ->
     Resp = do_get_machine(ID, State),
     {reply, Resp, State};
@@ -151,28 +143,17 @@ do_get_machine(ID, #{machines:=Machines}) ->
         undefined
     end.
 
--spec do_create_machine(mg:id(), mg:args(), state()) ->
-    {mg_storage:machine(), state()}.
-do_create_machine(ID, Args, State) ->
-    Machine =
-        #{
-            status       => {created, Args},
-            aux_state    => undefined,
-            events_range => undefined,
-            db_state     => 1
-        },
-    NewState = do_store_machine(ID, Machine, State),
-    {Machine, NewState}.
-
 -spec do_update_machine(mg:id(), mg_storage:machine(), mg_storage:update(), state()) ->
     {mg_storage:machine(), state()}.
+do_update_machine(ID, Machine=#{db_state:=undefined}, Update, State) ->
+    do_update_machine(ID, Machine#{db_state:=0}, Update, State);
 do_update_machine(ID, Machine, Update, State) ->
     ok = check_machine_version(ID, Machine, State),
 
     OldStatus = maps:get(status, Machine),
     NewStatus = maps:get(status, Update, OldStatus),
-    OldAuxState = maps:get(aux_state , Machine),
-    NewAuxState = maps:get(aux_state , Update, OldAuxState),
+    OldAuxState = maps:get(aux_state, Machine),
+    NewAuxState = maps:get(aux_state, Update, OldAuxState),
 
     NewMachineEvents = maps:get(new_events, Update, []),
 
@@ -214,6 +195,8 @@ get_event_id(#{id:=ID}) ->
 check_machine_version(ID, Machine, State) ->
     % хотим убедится, что логика правильно работает с экземпляром machine
     case do_get_machine(ID, State) of
+        undefined ->
+            ok;
         DBMachine when DBMachine =:= Machine ->
             ok;
         DBMachine ->
