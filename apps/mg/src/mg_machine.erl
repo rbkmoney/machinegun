@@ -18,16 +18,17 @@
 %%    - машина уже существует -- machine_already_exist
 %%    - машина находится в упавшем состоянии -- machine_failed
 %%    - что-то ещё?
-%%   - временные -- temporary
+%%   - временные -- transient
 %%    - сервис перегружен —- overload
-%%    - хранилище недоступно -- storage_unavailable
-%%    - процессор недоступн -- processor_unavailable
+%%    - хранилище недоступно -- {storage_unavailable  , Details}
+%%    - процессор недоступен -- {processor_unavailable, Details}
+%%   - таймауты -- {timeout, Details}
 %%  - неожиданные
 %%   - что-то пошло не так -- падение с любой другой ошибкой
 %%
-%% Например: throw:machine_not_found, throw:{temporary, storage_unavailable}, error:badarg
+%% Например: throw:machine_not_found, throw:{transient, {storage_unavailable, ...}}, error:badarg
 %%
-%% Если в процессе обработки внешнего запроса происходит ожидаемая ошибка, она мапится код ответа,
+%% Если в процессе обработки внешнего запроса происходит ожидаемая ошибка, она мапится в код ответа,
 %%  если неожидаемая ошибка, то запрос падает с internal_error, ошибка пишется в лог.
 %%
 %% Если в процессе обработки запроса машиной происходит ожидаемая ошибка, то она прокидывается вызывающему коду,
@@ -64,15 +65,17 @@
 %% API
 %%
 -type options() :: #{
-    namespace => mg:ns(),
-    storage   => mg_storage:storage(),
-    processor => mg_utils:mod_opts(),
-    observer  => mg_utils:mod_opts()   % опционально
+    namespace              => mg:ns(),
+    storage                => mg_storage:storage          (),
+    storage_retry_policy   => mg_utils:genlib_retry_policy(),
+    processor              => mg_utils:mod_opts           (),
+    processor_retry_policy => mg_utils:genlib_retry_policy(),
+    observer               => mg_utils:mod_opts           ()   % опционально
 }.
 
--type thrown_error() :: logic_error() | {temporary, temporary_error()}.
+-type thrown_error() :: logic_error() | {transient, transient_error()} | timeout.
 -type logic_error() :: machine_already_exist | machine_not_found | machine_failed.
--type temporary_error() :: overload | storage_unavailable | processor_unavailable.
+-type transient_error() :: overload | storage_unavailable | processor_unavailable.
 
 -type throws() :: no_return().
 
@@ -224,9 +227,14 @@ handle_exception(Exception, State=#{id:=ID}) ->
 transit_state(State=#{machine:=Machine, update:=Update}) when erlang:map_size(Update) =:= 0; Machine =:= undefined ->
     State;
 transit_state(State=#{id:=ID, options:=Options, machine:=Machine, update:=Update}) ->
-    NewMachine =
-        mg_storage:update_machine(get_options(storage, Options), get_options(namespace, Options), ID, Machine, Update),
-    State#{machine:=NewMachine, update:=#{}}.
+    F = fun() ->
+            mg_storage:update_machine(
+                get_options(storage, Options), get_options(namespace, Options), ID, Machine, Update
+            )
+        end,
+    RetryStrategy = mg_utils:genlib_retry_new(get_options(storage_retry_policy, Options)),
+    NewMachine    = do_with_retry(ID, F, RetryStrategy),
+    State#{ machine := NewMachine, update := #{} }.
 
 %%
 
@@ -252,7 +260,7 @@ handle_call_(Call, State=#{machine:=Machine}) ->
 
         % если машина в статусе _created_, а ей пришел запрос,
         % то это значит, что-то пошло не так, такого быть не должно
-        { _               , #{status:={created, _}}} -> exit({something_went_wrong, Call, Machine})
+        {_ , #{status:={created, _}}} -> exit({something_went_wrong, Call, Machine})
     end.
 
 %%
@@ -275,8 +283,11 @@ process_call(Call, HRange, State=#{options:=Options, id:=ID, machine:=DBMachine}
     state().
 process_signal(Signal, HRange, State=#{options:=Options, id:=ID, machine:=DBMachine}) ->
     Machine = machine(Options, ID, DBMachine, HRange),
-    {StateChange, ComplexAction} =
-        mg_processor:process_signal(get_options(processor, Options), {Signal, Machine}),
+    RetryStrategy = mg_utils:genlib_retry_new(get_options(processor_retry_policy, Options)),
+    F = fun() ->
+            mg_processor:process_signal(get_options(processor, Options), {Signal, Machine})
+        end,
+    {StateChange, ComplexAction} = do_with_retry(ID, F, RetryStrategy),
     handle_processor_result(StateChange, ComplexAction, State).
 
 %%
@@ -371,14 +382,65 @@ machine(Options=#{namespace:=NS}, ID, #{aux_state:=AuxState}=DBMachine, HRange) 
 get_history_by_id(Options, ID, DBMachine, HRange) ->
     mg_storage:get_history(get_options(storage, Options), get_options(namespace, Options), ID, DBMachine, HRange).
 
--spec get_options(namespace | processor | storage | observer, options()) ->
+-type option_name() ::
+      namespace
+    | processor
+    | storage
+    | observer
+    | storage_retry_policy
+    | processor_retry_policy
+.
+-spec get_options(option_name(), options()) ->
     _.
 get_options(Subj=observer, Options) ->
     maps:get(Subj, Options, undefined);
+get_options(Subj=storage_retry_policy, Options) ->
+    maps:get(Subj, Options, default_retry_policy());
+get_options(Subj=processor_retry_policy, Options) ->
+    maps:get(Subj, Options, default_retry_policy());
 get_options(Subj, Options) ->
     maps:get(Subj, Options).
 
+-spec default_retry_policy() ->
+    mg_utils:genlib_retry_policy().
+default_retry_policy() ->
+    {exponential, infinity, 2, 10, 60 * 1000}.
+
+%%
+%% retrying
+%%
+-spec do_with_retry(mg:id(), fun(() -> R), genlib_retry:strategy()) ->
+    R.
+do_with_retry(ID, Fun, RetryStrategy) ->
+    try
+        Fun()
+    catch throw:(Reason={transient, _}) ->
+        Exception = {throw, Reason, erlang:get_stacktrace()},
+        ok = log_transient_exception(ID, Exception),
+        case genlib_retry:next_step(RetryStrategy) of
+            {wait, Timeout, NewRetryStrategy} ->
+                ok = log_retry(ID, Timeout),
+                ok = timer:sleep(Timeout),
+                do_with_retry(ID, Fun, NewRetryStrategy);
+            finish ->
+                throw({timeout, {retry_timeout, Reason}})
+        end
+    end.
+
+%%
+%% logging
+%%
 -spec log_machine_error(mg:id(), mg_utils:exception()) ->
     ok.
 log_machine_error(ID, Exception) ->
     ok = error_logger:error_msg("[~p] machine failed ~s", [ID, mg_utils:format_exception(Exception)]).
+
+-spec log_transient_exception(mg:id(), mg_utils:exception()) ->
+    ok.
+log_transient_exception(ID, Exception) ->
+    ok = error_logger:warning_msg("[~p] transient error ~s", [ID, mg_utils:format_exception(Exception)]).
+
+-spec log_retry(mg:id(), Timeout::pos_integer()) ->
+    ok.
+log_retry(ID, RetryTimeout) ->
+    ok = error_logger:warning_msg("[~p] retrying in ~p msec", [ID, RetryTimeout]).

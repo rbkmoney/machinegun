@@ -43,11 +43,12 @@
     event_sink => mg_machine_event_sink:id()
 }.
 -type config_nss() :: #{ns() => config_ns()}.
+-type net_opts() :: woody_server_thrift_http_handler:net_opts().
 -type config_element() ::
       {namespaces,      config_nss   ()}
     | {api_host  , inet:ip_address   ()}
     | {api_port  , inet:port_number  ()}
-    | {net_opts  , []                  } % в вуди нет для этого типа :(
+    | {net_opts  ,      net_opts     ()}
     | {storage   , mg_storage:storage()}
 .
 -type config() :: [config_element()].
@@ -112,8 +113,8 @@ woody_child_spec(Config, ChildID) ->
         #{
             ip            => get_config_element(host    , Config, {0, 0, 0, 0}),
             port          => get_config_element(port    , Config, 8022        ),
-            net_opts      => get_config_element(net_opts, Config, []          ),
-            event_handler => mg_woody_api_event_handler,
+            net_opts      => get_config_element(net_opts, Config, #{}         ),
+            event_handler => {mg_woody_api_event_handler, server},
             handlers      => [
                 mg_woody_api_automaton :handler(api_automaton_options (Config)),
                 mg_woody_api_event_sink:handler(api_event_sink_options(Config))
@@ -153,7 +154,7 @@ ns_options(NS, #{processor:=ProcessorConfig}, Storage) ->
 -spec processor(processor_config()) ->
     mg_utils:mod_opts().
 processor(ProcessorConfig) ->
-    {mg_woody_api_processor, ProcessorConfig}.
+    {mg_woody_api_processor, ProcessorConfig#{event_handler => mg_woody_api_event_handler}}.
 
 -spec api_event_sink_options(config()) ->
     mg_woody_api_event_sink:options().

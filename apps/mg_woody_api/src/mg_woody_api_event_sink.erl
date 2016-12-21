@@ -5,7 +5,6 @@
 -export_type([options/0]).
 
 %% woody handler
--include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 -behaviour(woody_server_thrift_handler).
 -export([handle_function/4]).
 
@@ -17,26 +16,34 @@
 -spec handler(options()) ->
     mg_utils:woody_handler().
 handler(Options) ->
-    {"/v1/event_sink", {{mg_proto_state_processing_thrift, 'EventSink'}, ?MODULE, Options}}.
+    {"/v1/event_sink", {{mg_proto_state_processing_thrift, 'EventSink'}, {?MODULE, Options}}}.
 
 %%
 %% woody handler
 %%
--spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), options()) ->
-    {term(), woody_client:context()} | no_return().
+-spec handle_function(woody:func(), woody:args(), woody_context:ctx(), options()) ->
+    {ok, _Result} | no_return().
 
-handle_function('GetHistory', {EventSinkID, Range}, WoodyContext, {AvaliableEventSinks, Options}) ->
-    _ = check_event_sink(AvaliableEventSinks, EventSinkID, WoodyContext),
+handle_function('GetHistory', [EventSinkID, Range], _WoodyContext, {AvaliableEventSinks, Options}) ->
     SinkHistory =
-        mg_machine_event_sink:get_history(Options, EventSinkID, mg_woody_api_packer:unpack(history_range, Range)),
-    {mg_woody_api_packer:pack(sink_history, SinkHistory), WoodyContext}.
+        mg_woody_api_utils:handle_safe(
+            fun() ->
+                _ = check_event_sink(AvaliableEventSinks, EventSinkID),
+                mg_machine_event_sink:get_history(
+                    Options,
+                    EventSinkID,
+                    mg_woody_api_packer:unpack(history_range, Range)
+                )
+            end
+        ),
+    {ok, mg_woody_api_packer:pack(sink_history, SinkHistory)}.
 
--spec check_event_sink([mg_machine_event_sink:id()], mg_machine_event_sink:id(), woody_client:context()) ->
+-spec check_event_sink([mg_machine_event_sink:id()], mg_machine_event_sink:id()) ->
     ok | no_return().
-check_event_sink(AvaliableEventSinks, EventSinkID, WoodyContext) ->
+check_event_sink(AvaliableEventSinks, EventSinkID) ->
     case lists:member(EventSinkID, AvaliableEventSinks) of
         true ->
             ok;
         false ->
-            throw({#'EventSinkNotFound'{}, WoodyContext})
+            throw(event_sink_not_found)
     end.
