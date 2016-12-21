@@ -152,7 +152,7 @@ do_get_machine(ID, #{machines:=Machines}) ->
     end.
 
 -spec do_create_machine(mg:id(), mg:args(), state()) ->
-    {mg_storage:machine(), state()}.
+    {mg_storage:machine(), state()} | {error, machine_already_exists}.
 do_create_machine(ID, Args, State) ->
     case do_get_machine(ID, State) of
         undefined ->
@@ -166,7 +166,7 @@ do_create_machine(ID, Args, State) ->
             NewState = do_store_machine(ID, Machine, State),
             {Machine, NewState};
         _ ->
-            error
+            {error, machine_already_exists}
     end.
 
 
