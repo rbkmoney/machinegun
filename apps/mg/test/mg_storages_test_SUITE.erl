@@ -30,7 +30,7 @@
     [test_name() | {group, group_name()}].
 all() ->
     [
-        {group, base},
+        % {group, base},
         {group, riak}
     ].
 
@@ -98,7 +98,7 @@ make_storage(riak, Namespace) ->
             max_count  => 10
         }
     }},
-    Namespace};
+    {namespace, Namespace}};
 make_storage(base, Namespace) ->
     {mg_storage_test, Namespace}.
 
@@ -124,7 +124,8 @@ start_storage(C) ->
 %%
 -spec base_test(term(), config()) ->
     _.
-base_test(ID, C) ->
+base_test(ID0, C) ->
+    ID = genlib:to_binary(ID0),
     Args = <<"Args">>,
     AllEvents = {undefined, undefined, forward},
 
@@ -140,7 +141,7 @@ base_test(ID, C) ->
     Machine = mg_storage:get_machine(storage(C), namespace(C), ID),
     []      = mg_storage:get_history(storage(C), namespace(C), ID, Machine, AllEvents),
     AuxState = <<"AuxState">>,
-    EventsCount = 100,
+    EventsCount = 20,
     Events = [make_event(EventID) || EventID <- lists:seq(1, EventsCount)],
 
     Update =
@@ -159,43 +160,58 @@ base_test(ID, C) ->
     NewMachine = mg_storage:get_machine(storage(C), namespace(C), ID),
     Events     = mg_storage:get_history(storage(C), namespace(C), ID, NewMachine, AllEvents),
 
-    [
-        {ID, 6},
-        {ID, 7},
-        {ID, 8}
-    ] = mg_storage_utils:get_machine_events_ids(ID, NewMachine, {5, 3, forward}),
-
-    [
-        {ID, 4},
-        {ID, 3},
-        {ID, 2}
-    ] = mg_storage_utils:get_machine_events_ids(ID, NewMachine, {5, 3, backward}),
+    % [
+    %     {ID, 6},
+    %     {ID, 7},
+    %     {ID, 8}
+    % ] = mg_storage_utils:get_machine_events_ids(ID, NewMachine, {5, 3, forward}),
+    %
+    % [
+    %     {ID, 4},
+    %     {ID, 3},
+    %     {ID, 2}
+    % ] = mg_storage_utils:get_machine_events_ids(ID, NewMachine, {5, 3, backward}),
 
     ok.
 
 -spec stress_test(_C) -> term().
 stress_test(C0) ->
     C = start_storage(C0),
-    ProcessCount = 5,
-    Processes = [stress_test_start_process(ID, C) || ID <- lists:seq(1, ProcessCount)],
+    ProcessCount = 20,
+    Processes = [stress_test_start_process(ID, ProcessCount, C) || ID <- lists:seq(1, ProcessCount)],
 
     timer:sleep(5000),
     ok = stop_wait_all(Processes, shutdown, 5000).
 
--spec stress_test_start_process(term(), config()) ->
+-spec stress_test_start_process(term(), pos_integer(), config()) ->
     pid().
-stress_test_start_process(ID, C) ->
-    erlang:spawn_link(fun() -> stress_test_process(ID, C) end).
+stress_test_start_process(ID, ProcessCount, C) ->
+    erlang:spawn_link(fun() -> stress_test_process(ID, ProcessCount, 0, C) end).
 
--spec stress_test_process(term(), config()) ->
+-spec stress_test_process(term(), pos_integer(), integer(), config()) ->
     no_return().
-stress_test_process(ID, C) ->
-    ok = base_test(ID+6, C),
-    stress_test_process(ID+6, C).
+stress_test_process(ID, ProcessCount, RunCount, C) ->
+    % Добавляем смещение ID, чтобы не было пересечения ID машин
+    ok = base_test(ID, C),
+
+    receive
+        {stop, Reason} ->
+            ct:print("Number of runs: ~p", [RunCount]),
+            exit(Reason)
+    after
+        0 -> stress_test_process(ID + ProcessCount, ProcessCount, RunCount + 1, C)
+    end.
 
 -spec stop_wait_all([pid()], _Reason, timeout()) ->
     ok.
 stop_wait_all(Pids, Reason, Timeout) ->
+    OldTrap = process_flag(trap_exit, true),
+
+    lists:foreach(
+        fun(Pid) -> send_stop(Pid, Reason) end,
+        Pids
+    ),
+
     lists:foreach(
         fun(Pid) ->
             case stop_wait(Pid, Reason, Timeout) of
@@ -204,21 +220,25 @@ stop_wait_all(Pids, Reason, Timeout) ->
             end
         end,
         Pids
-    ).
+    ),
+
+    true = process_flag(trap_exit, OldTrap),
+    ok.
+
+-spec send_stop(pid(), _Reason) ->
+    ok.
+send_stop(Pid, Reason) ->
+    Pid ! {stop, Reason},
+    ok.
 
 -spec stop_wait(pid(), _Reason, timeout()) ->
     ok | timeout.
 stop_wait(Pid, Reason, Timeout) ->
-    OldTrap = process_flag(trap_exit, true),
-    true = erlang:exit(Pid, Reason),
-    R =
-        receive
-            {'EXIT', Pid, Reason} -> ok
-        after
-            Timeout -> timeout
-        end,
-    true = process_flag(trap_exit, OldTrap),
-    R.
+    receive
+        {'EXIT', Pid, Reason} -> ok
+    after
+        Timeout -> timeout
+    end.
 
 %%
 %% helpers
