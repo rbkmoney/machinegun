@@ -223,6 +223,7 @@ apply_event({complete, MachineID}, State) ->
     _.
 apply_hanlder(#{timer_handler:={M, F, A}=MFA}, ID) ->
     % TODO тут косяк, если хэндлер упадёт, его никто не вызовет снова
+    % при транзиентных ошибках будет аналогично, нужно чинить
     erlang:spawn(
         fun() ->
             try

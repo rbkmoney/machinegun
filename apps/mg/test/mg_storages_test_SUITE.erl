@@ -117,22 +117,16 @@ start_storage(Storage, C) ->
     _.
 base_test(C) ->
     ID = <<"42">>,
-    Args = <<"Args">>,
     AllEvents = {undefined, undefined, forward},
 
     undefined = mg_storage:get_machine(storage(C), namespace(C), ID),
 
-    % create
-    Machine = mg_storage:create_machine(storage(C), namespace(C), ID, Args),
-    #{
-        status       := {created, Args},
-        aux_state    := undefined,
-        events_range := undefined
-    } = Machine,
-
-    % get
-    Machine = mg_storage:get_machine(storage(C), namespace(C), ID),
-    []      = mg_storage:get_history(storage(C), namespace(C), ID, Machine, AllEvents),
+    Machine = #{
+        status       => working,
+        aux_state    => undefined,
+        events_range => undefined,
+        db_state     => undefined
+    },
 
     AuxState = <<"AuxState">>,
     EventsCount = 100,

@@ -69,7 +69,6 @@
     storage                => mg_storage:storage          (),
     storage_retry_policy   => mg_utils:genlib_retry_policy(),
     processor              => mg_utils:mod_opts           (),
-    processor_retry_policy => mg_utils:genlib_retry_policy(),
     observer               => mg_utils:mod_opts           ()   % опционально
 }.
 
@@ -98,12 +97,12 @@ start_link(Options) ->
 -spec start(options(), mg:id(), mg:args()) ->
     ok | throws().
 start(Options, ID, Args) ->
-    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {create, Args})).
+    ok = mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {start, Args})).
 
 -spec repair(options(), mg:id(), mg:args(), mg:history_range()) ->
     ok | throws().
 repair(Options, ID, Args, HRange) ->
-    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {repair, Args, HRange})).
+    ok = mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {repair, Args, HRange})).
 
 -spec call(options(), mg:id(), mg:args(), mg:history_range()) ->
     _Resp | throws().
@@ -170,41 +169,37 @@ init(Options) ->
     update  => mg_storage:update()
 }.
 
--spec handle_load(_ID, module()) ->
-    {ok, state()} | {error, _}.
+-spec handle_load(_ID, options()) ->
+    {ok, state()}.
 handle_load(ID, Options) ->
-    try
-        State =
-            #{
-                id      => ID,
-                options => Options,
-                machine => mg_storage:get_machine(get_options(storage, Options), get_options(namespace, Options), ID),
-                update  => #{}
-            },
-        % есть подозрения, что это не очень хорошо, но нет понимания, что именно
-        {ok, transit_state(handle_load_(State))}
-    catch
-        throw:Reason ->
-            {error, Reason};
-        Class:Reason ->
-            Exception = {Class, Reason, erlang:get_stacktrace()},
-            ok = log_machine_error(ID, Exception),
-            {error, machine_failed}
-    end.
+    State =
+        #{
+            id      => ID,
+            options => Options,
+            machine => mg_storage:get_machine(get_options(storage, Options), get_options(namespace, Options), ID),
+            update  => #{}
+        },
+    {ok, State}.
+
 
 -spec handle_call(_Call, state()) ->
     {_Resp, state()}.
 handle_call(Call, State) ->
     try
-        {Resp, Update} = handle_call_(Call, State),
-        {Resp, transit_state(Update)}
+        {Resp, UpdatedState} = handle_call_(Call, State),
+        {Resp, transit_state(UpdatedState)}
     catch
         throw:Reason ->
             {{error, Reason}, State};
         Class:Reason ->
             {
                 {error, machine_failed},
-                transit_state(handle_exception({Class, Reason, erlang:get_stacktrace()}, State))
+                % TODO нужно это нормально переписать
+                try
+                    transit_state(handle_exception({Class, Reason, erlang:get_stacktrace()}, State))
+                catch throw:Reason ->
+                    State
+                end
             }
     end.
 
@@ -238,20 +233,13 @@ transit_state(State=#{id:=ID, options:=Options, machine:=Machine, update:=Update
 
 %%
 
--spec handle_load_(state()) ->
-    state().
-handle_load_(State=#{machine:=#{status:={created, Args}}}) ->
-    process_signal({init, Args}, {undefined, undefined, forward}, State);
-handle_load_(State) ->
-    State.
-
 -spec handle_call_(_Call, state()) ->
     {_Resp, state()}.
 handle_call_(Call, State=#{machine:=Machine}) ->
     case {Call, Machine} of
-        {{create, Args           }, undefined              } -> {ok, process_creation(Args, State)};
-        {{create, _              }, #{status:=           _}} -> {{error, machine_already_exist}, State};
-        {{call  , SubCall, HRange}, #{status:= working    }} -> process_call(SubCall, HRange, State);
+        {{start , Args           }, undefined              } -> { ok, process_start(Args, State)};
+        {{start , _              }, #{status:=           _}} -> {{error, machine_already_exist}, State};
+        {{call  , SubCall, HRange}, #{status:= working    }} ->  process_call(SubCall, HRange, State);
         {{call  , _      , _     }, #{status:={error  , _}}} -> {{error, machine_failed       }, State};
         {{call  , _      , _     }, undefined              } -> {{error, machine_not_found    }, State};
         {{repair, Args   , HRange}, #{status:={error  , _}}} -> { ok, process_signal({repair, Args}, HRange, State)};
@@ -265,14 +253,20 @@ handle_call_(Call, State=#{machine:=Machine}) ->
 
 %%
 
--spec process_creation(_Args, state()) ->
+-spec process_start(_Args, state()) ->
     state().
-process_creation(Args, State=#{id:=ID, options:=Options}) ->
-    Machine = mg_storage:create_machine(get_options(storage, Options), get_options(namespace, Options), ID, Args),
-    handle_load_(State#{machine:=Machine}).
+process_start(Args, State) ->
+    Machine =
+        #{
+            aux_state    => undefined,
+            status       => working,
+            events_range => undefined,
+            db_state     => undefined
+        },
+    process_signal({init, Args}, {undefined, undefined, forward}, State#{machine:=Machine}).
 
 -spec process_call(_Call, mg:history_range(), state()) ->
-    {{ok, _Resp}, state()}.
+    {_Resp, state()}.
 process_call(Call, HRange, State=#{options:=Options, id:=ID, machine:=DBMachine}) ->
     Machine = machine(Options, ID, DBMachine, HRange),
     {Response, StateChange, ComplexAction} =
@@ -283,11 +277,7 @@ process_call(Call, HRange, State=#{options:=Options, id:=ID, machine:=DBMachine}
     state().
 process_signal(Signal, HRange, State=#{options:=Options, id:=ID, machine:=DBMachine}) ->
     Machine = machine(Options, ID, DBMachine, HRange),
-    RetryStrategy = mg_utils:genlib_retry_new(get_options(processor_retry_policy, Options)),
-    F = fun() ->
-            mg_processor:process_signal(get_options(processor, Options), {Signal, Machine})
-        end,
-    {StateChange, ComplexAction} = do_with_retry(ID, F, RetryStrategy),
+    {StateChange, ComplexAction} = mg_processor:process_signal(get_options(processor, Options), {Signal, Machine}),
     handle_processor_result(StateChange, ComplexAction, State).
 
 %%
@@ -388,15 +378,12 @@ get_history_by_id(Options, ID, DBMachine, HRange) ->
     | storage
     | observer
     | storage_retry_policy
-    | processor_retry_policy
 .
 -spec get_options(option_name(), options()) ->
     _.
 get_options(Subj=observer, Options) ->
     maps:get(Subj, Options, undefined);
 get_options(Subj=storage_retry_policy, Options) ->
-    maps:get(Subj, Options, default_retry_policy());
-get_options(Subj=processor_retry_policy, Options) ->
     maps:get(Subj, Options, default_retry_policy());
 get_options(Subj, Options) ->
     maps:get(Subj, Options).

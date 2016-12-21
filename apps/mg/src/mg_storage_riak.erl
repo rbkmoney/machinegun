@@ -68,7 +68,7 @@
 %% mg_storage callbacks
 -behaviour(mg_storage).
 -export_type([options/0]).
--export([child_spec/3, create_machine/4, get_machine/3, get_history/5, update_machine/5]).
+-export([child_spec/3, get_machine/3, get_history/5, update_machine/5]).
 
 -type options() :: #{
     host => inet            :ip_address  (),
@@ -83,24 +83,6 @@
     supervisor:child_spec().
 child_spec(Options, Namespace, _ChildID) ->
     mg_storage_utils:pool_child_spec(pool_options(Options, Namespace)).
-
--spec create_machine(options(), mg:ns(), mg:id(), mg:args()) ->
-    mg_storage:machine().
-create_machine(Options, Namespace, ID, Args) ->
-    do(
-        Namespace,
-        fun(Pid) ->
-            object_to_machine(
-                create_db_object(Pid, Options, Namespace, machine, ID,
-                    #{
-                        aux_state    => undefined,
-                        status       => {created, Args},
-                        events_range => undefined
-                    }
-                )
-            )
-        end
-    ).
 
 -spec get_machine(options(), mg:ns(), mg:id()) ->
     mg_storage:machine() | undefined.
@@ -135,6 +117,8 @@ get_history(Options, Namespace, ID, Machine, Range) ->
 
 -spec update_machine(options(), mg:ns(), mg:id(), mg_storage:machine(), mg_storage:update()) ->
     mg_storage:machine().
+update_machine(Options, Namespace, ID, Machine=#{db_state:=undefined}, Update) ->
+    update_machine(Options, Namespace, ID, Machine#{db_state:=new_db_object(Namespace, machine, ID)}, Update);
 update_machine(Options, Namespace, ID, Machine, Update) ->
     do(
         Namespace,
@@ -188,13 +172,20 @@ apply_machine_update(Pid, Options, Namespace, ID, new_events, NewEvents, Machine
 -type db_object() :: db_machine() | db_event().
 -type object() :: riakc_obj:riakc_obj().
 
+
+
+-spec new_db_object(mg:ns(), db_object_type(), mg:id()) ->
+    object().
+new_db_object(Namespace, Type, ID) ->
+    riakc_obj:new(get_bucket(Type, Namespace), pack_key(Type, ID)).
+
 -spec create_db_object(pid(), options(), mg:ns(), db_object_type(), mg:id(), db_object()) ->
     object().
 create_db_object(Pid, _Options, Namespace, Type, ID, Data) ->
     Object =
         pack_to_object(
             Type,
-            riakc_obj:new(get_bucket(Type, Namespace), pack_key(Type, ID)),
+            new_db_object(Namespace, Type, ID),
             Data
         ),
     put_db_object(Pid, Object, put_options(Type)).
@@ -416,11 +407,6 @@ msgpack_pack_(event, #{created_at:=CreatedAt, body:=Body}) ->
         <<"ca">> => msgpack_pack_(date, CreatedAt),
         <<"b" >> => msgpack_pack_(term, Body     )
     };
-msgpack_pack_(machine_status, {created, Args}) ->
-    #{
-        <<"n">> => <<"c">>,
-        <<"a">> => msgpack_pack_(term, Args)
-    };
 msgpack_pack_(machine_status, working) ->
     #{
         <<"n">> => <<"w">>
@@ -463,8 +449,6 @@ msgpack_unpack_(event, #{<<"ca">> := CreatedAt, <<"b">> := Body}) ->
         created_at => msgpack_unpack_(date, CreatedAt),
         body       => msgpack_unpack_(term, Body     )
     };
-msgpack_unpack_(machine_status, #{<<"n">> := <<"c">>, <<"a">> := Args}) ->
-    {created, msgpack_unpack_(term, Args)};
 msgpack_unpack_(machine_status, #{<<"n">> := <<"w">>}) ->
     working;
 msgpack_unpack_(machine_status, #{<<"n">> := <<"e">>, <<"r">> := Reason}) ->

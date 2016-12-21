@@ -18,7 +18,6 @@
 -export_type([storage      /0]).
 
 -export([child_spec    /3]).
--export([create_machine/4]).
 -export([get_machine   /3]).
 -export([get_history   /5]).
 -export([update_machine/5]).
@@ -27,8 +26,7 @@
 %% API
 %%
 -type status() ::
-      {created, mg:args()}
-    |  working
+      working
     | {error  , _Reason}
 .
 
@@ -40,7 +38,7 @@
     status       => status(),
     aux_state    => mg:aux_state(),
     events_range => events_range(),
-    db_state     => _ % опционально
+    db_state     => _ | undefined % когда машина создается это поле undefined
 }.
 
 %% все поля опциональны
@@ -58,9 +56,6 @@
 -callback child_spec(options(), mg:ns(), atom()) ->
     supervisor:child_spec().
 
--callback create_machine(options(), mg:ns(), mg:id(), mg:args()) ->
-    mg_storage:machine().
-
 -callback get_machine(options(), mg:ns(), mg:id()) ->
     machine() | undefined.
 
@@ -76,11 +71,6 @@
     supervisor:child_spec().
 child_spec(Options, Namespace, ChildID) ->
     mg_utils:apply_mod_opts(Options, child_spec, [Namespace, ChildID]).
-
--spec create_machine(storage(), mg:ns(), mg:id(), mg:args()) ->
-    mg_storage:machine().
-create_machine(Options, Namespace, ID, Args) ->
-    mg_utils:apply_mod_opts(Options, create_machine, [Namespace, ID, Args]).
 
 %% Если машины нет, то возвращает undefined
 -spec get_machine(storage(), mg:ns(), mg:id()) ->

@@ -75,6 +75,7 @@ get_machine(Options, Ref, Range) ->
 start_link(Options) ->
     case supervisor:start_link(?MODULE, Options) of
         {ok, Pid} ->
+            % подгрузка и запуск активных таймеров
             ok = mg_machine_timers:handle_timeout(timers_machine_options(Options)),
             {ok, Pid};
         Error={error, _} ->
