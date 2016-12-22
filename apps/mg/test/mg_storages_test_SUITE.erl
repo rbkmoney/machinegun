@@ -137,20 +137,14 @@ start_storage(C) ->
     _.
 base_test(ID0, C) ->
     ID = genlib:to_binary(ID0),
-    Args = <<"Args">>,
     AllEvents = {undefined, undefined, forward},
 
-    % create
-    Machine = mg_storage:create_machine(storage(C), namespace(C), ID, Args),
-    #{
-        status       := {created, Args},
-        aux_state    := undefined,
-        events_range := undefined
-    } = Machine,
-
-    % get
-    Machine = mg_storage:get_machine(storage(C), namespace(C), ID),
-    []      = mg_storage:get_history(storage(C), namespace(C), ID, Machine, AllEvents),
+    Machine = #{
+        status       => working,
+        aux_state    => undefined,
+        events_range => undefined,
+        db_state     => undefined
+    },
 
     % update
     AuxState = <<"AuxState">>,
@@ -255,10 +249,11 @@ range_direction_test(_C) ->
     ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {5, 3, backward}),
 
     [
+        {ID, 5},
         {ID, 6},
         {ID, 7},
         {ID, 8}
-    ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {5, 3, forward}),
+    ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {4, 4, forward}),
 
     ok.
 
@@ -273,10 +268,9 @@ range_border_test(_C) ->
     },
 
     [
-        {ID, 6},
-        {ID, 7},
-        {ID, 8}
-    ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {5, 3, forward}),
+        {ID, 1},
+        {ID, 2}
+    ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {0, 2, forward}),
 
     [
         {ID, 6},
@@ -309,10 +303,9 @@ range_missing_params_test(_C) ->
     ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {undefined, 3, forward}),
 
     [
-        {ID, 6},
         {ID, 7},
         {ID, 8}
-    ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {5, undefined, forward}),
+    ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {6, undefined, forward}),
 
     ok.
 
