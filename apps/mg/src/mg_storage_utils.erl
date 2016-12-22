@@ -68,7 +68,7 @@ get_event_ids(R0, {Ef, N, Direction}) ->
     R2 = limit_range(R1, N, Direction),
     enumerate_range(R2, Direction).
 
--spec intersect_range({mg:event_id(), mg:event_id()}, mg:event_id(), mg:direction()) ->
+-spec intersect_range({mg:event_id(), mg:event_id()}, undefined | mg:event_id(), mg:direction()) ->
     {mg:event_id(), mg:event_id()}.
 intersect_range(R, undefined, _) ->
     R;
