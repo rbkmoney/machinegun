@@ -270,7 +270,12 @@ range_border_test(_C) ->
     [
         {ID, 1},
         {ID, 2}
-    ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {0, 2, forward}),
+    ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {undefined, 2, forward}),
+
+    [
+        {ID, 8},
+        {ID, 7}
+    ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {undefined, 2, backward}),
 
     [
         {ID, 6},
@@ -282,13 +287,6 @@ range_border_test(_C) ->
 -spec range_missing_params_test(_C) ->
     ok.
 range_missing_params_test(_C) ->
-    ID = <<"42">>,
-    Machine = #{
-        status       => working,
-        aux_state    => undefined,
-        events_range => {1, 8}
-    },
-
     ID = <<"42">>,
     Machine = #{
         status       => working,
