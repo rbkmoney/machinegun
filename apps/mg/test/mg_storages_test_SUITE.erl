@@ -321,7 +321,7 @@ range_no_intersection_test(_C) ->
         events_range => {5, 10}
     },
 
-    [] = mg_storage_utils:get_machine_events_ids(ID, Machine, {1, 3, forward}),
+    event_not_found = (catch mg_storage_utils:get_machine_events_ids(ID, Machine, {1, 3, forward})),
 
     ok.
 
