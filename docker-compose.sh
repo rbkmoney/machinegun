@@ -22,6 +22,8 @@ services:
       - "com.basho.riak.cluster.name=riakkv"
     volumes:
       - schemas:/etc/riak/schemas
+    ports:
+      - 8098:8098
   member:
     image: dr.rbkmoney.com/basho/riak-kv:ubuntu-2.1.4
     labels:

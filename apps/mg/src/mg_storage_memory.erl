@@ -1,4 +1,4 @@
--module(mg_storage_test).
+-module(mg_storage_memory).
 -include_lib("stdlib/include/ms_transform.hrl").
 
 %% internal API
