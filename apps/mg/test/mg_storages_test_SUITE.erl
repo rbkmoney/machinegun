@@ -16,7 +16,9 @@
 -export([end_per_group   /2]).
 
 %% base group tests
--export([range_test/1]).
+-export([range_direction_test/1]).
+-export([range_border_test/1]).
+-export([range_missing_params_test/1]).
 -export([stress_test/1]).
 
 %%
@@ -38,15 +40,23 @@ all() ->
     [{group_name(), list(_), test_name()}].
 groups() ->
     [
-        {base, [sequence], base_tests()},
-        {riak, [sequence], riak_tests()}
+        {base, [sequence], range_tests() ++ base_tests()},
+        {riak, [sequence], range_tests() ++ riak_tests()}
+    ].
+
+-spec range_tests() ->
+    [{group_name(), list(_), test_name()}].
+range_tests() ->
+    [
+        range_direction_test,
+        range_border_test,
+        range_missing_params_test
     ].
 
 -spec base_tests() ->
     [{group_name(), list(_), test_name()}].
 base_tests() ->
     [
-        range_test,
         stress_test
     ].
 
@@ -54,7 +64,6 @@ base_tests() ->
     [{group_name(), list(_), test_name()}].
 riak_tests() ->
     [
-        range_test,
         stress_test
     ].
 
@@ -144,22 +153,33 @@ base_test(ID0, C) ->
     []      = mg_storage:get_history(storage(C), namespace(C), ID, Machine, AllEvents),
 
     % update
+    AuxState = <<"AuxState">>,
     EventsCount = 20,
-    {NewMachine, Events} = update_machine(Machine, EventsCount, ID, C),
+    Events = [make_event(EventID) || EventID <- lists:seq(1, EventsCount)],
+
+    Update =
+        #{
+            status     => working,
+            aux_state  => AuxState,
+            new_events => Events
+        },
+    NewMachine = mg_storage:update_machine(storage(C), namespace(C), ID, Machine, Update),
 
     NewMachine = mg_storage:get_machine(storage(C), namespace(C), ID),
     Events     = mg_storage:get_history(storage(C), namespace(C), ID, NewMachine, AllEvents),
 
     ok.
 
--spec stress_test(_C) -> term().
+-spec stress_test(_C) ->
+    ok.
 stress_test(C0) ->
     C = start_storage(C0),
     ProcessCount = 20,
     Processes = [stress_test_start_process(ID, ProcessCount, C) || ID <- lists:seq(1, ProcessCount)],
 
     timer:sleep(5000),
-    ok = stop_wait_all(Processes, shutdown, 5000).
+    ok = stop_wait_all(Processes, shutdown, 5000),
+    ok.
 
 -spec stress_test_start_process(term(), pos_integer(), config()) ->
     pid().
@@ -174,7 +194,7 @@ stress_test_process(ID, ProcessCount, RunCount, C) ->
 
     receive
         {stop, Reason} ->
-            ct:print("Number of runs: ~p", [RunCount]),
+            ct:print("Process: ~p. Number of runs: ~p", [self(), RunCount]),
             exit(Reason)
     after
         0 -> stress_test_process(ID + ProcessCount, ProcessCount, RunCount + 1, C)
@@ -218,33 +238,82 @@ stop_wait(Pid, Reason, Timeout) ->
         Timeout -> timeout
     end.
 
--spec range_test(_C) -> term().
-range_test(C0) ->
-    C = start_storage(C0),
-
+-spec range_direction_test(_C) ->
+    ok.
+range_direction_test(_C) ->
     ID = <<"42">>,
-    Args = <<"Args">>,
-
-    Machine = mg_storage:create_machine(storage(C), namespace(C), ID, Args),
-    #{
-        status       := {created, Args},
-        aux_state    := undefined,
-        events_range := undefined
-    } = Machine,
-
-    EventsCount = 20,
-    {NewMachine, _Events} = update_machine(Machine, EventsCount, ID, C),
-    [
-        {ID, 6},
-        {ID, 7},
-        {ID, 8}
-    ] = mg_storage_utils:get_machine_events_ids(ID, NewMachine, {5, 3, forward}),
+    Machine = #{
+        status       => working,
+        aux_state    => undefined,
+        events_range => {1, 100}
+    },
 
     [
         {ID, 4},
         {ID, 3},
         {ID, 2}
-    ] = mg_storage_utils:get_machine_events_ids(ID, NewMachine, {5, 3, backward}),
+    ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {5, 3, backward}),
+
+    [
+        {ID, 6},
+        {ID, 7},
+        {ID, 8}
+    ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {5, 3, forward}),
+
+    ok.
+
+-spec range_border_test(_C) ->
+    ok.
+range_border_test(_C) ->
+    ID = <<"42">>,
+    Machine = #{
+        status       => working,
+        aux_state    => undefined,
+        events_range => {1, 8}
+    },
+
+    [
+        {ID, 6},
+        {ID, 7},
+        {ID, 8}
+    ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {5, 3, forward}),
+
+    [
+        {ID, 6},
+        {ID, 7},
+        {ID, 8}
+    ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {5, 5, forward}),
+    ok.
+
+-spec range_missing_params_test(_C) ->
+    ok.
+range_missing_params_test(_C) ->
+    ID = <<"42">>,
+    Machine = #{
+        status       => working,
+        aux_state    => undefined,
+        events_range => {1, 8}
+    },
+
+    ID = <<"42">>,
+    Machine = #{
+        status       => working,
+        aux_state    => undefined,
+        events_range => {1, 8}
+    },
+
+    [
+        {ID, 1},
+        {ID, 2},
+        {ID, 3}
+    ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {undefined, 3, forward}),
+
+    [
+        {ID, 6},
+        {ID, 7},
+        {ID, 8}
+    ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {5, undefined, forward}),
+
     ok.
 
 %%
@@ -258,21 +327,6 @@ make_event(ID) ->
         created_at => erlang:system_time(),
         body       => <<(integer_to_binary(ID))/binary>>
     }.
-
--spec update_machine(mg_storage:machine(), pos_integer(), binary(), config()) ->
-    {mg_storage:machine(), _Events}.
-update_machine(Machine, EventsCount, ID, C) ->
-    AuxState = <<"AuxState">>,
-    Events = [make_event(EventID) || EventID <- lists:seq(1, EventsCount)],
-
-    Update =
-        #{
-            status     => working,
-            aux_state  => AuxState,
-            new_events => Events
-        },
-    NewMachine = mg_storage:update_machine(storage(C), namespace(C), ID, Machine, Update),
-    {NewMachine, Events}.
 
 -spec storage(config()) ->
     mg_storage:storage().
