@@ -146,7 +146,7 @@ end_per_suite(_C) ->
 -spec init_per_group(group_name(), config()) ->
     config().
 init_per_group(memory, C) ->
-    [{storage, mg_storage_test} | C];
+    [{storage, mg_storage_memory} | C];
 init_per_group(riak, C) ->
     [{storage, {mg_storage_riak, #{
         host => "riakdb",
@@ -385,7 +385,7 @@ machine_test_door(C) ->
     _.
 config_with_multiple_event_sinks(_C) ->
     Config = [
-        {storage, mg_storage_test},
+        {storage, mg_storage_memory},
         {namespaces, #{
             <<"1">> => #{
                 processor  => #{ url => <<"http://localhost:8023/processor">> },
@@ -423,5 +423,3 @@ test_door_do_action(C, Action, Ref) ->
 a_opts(C) -> ?config(automaton_options, C).
 -spec es_opts(config()) -> _.
 es_opts(C) -> ?config(event_sink_options, C).
-
-

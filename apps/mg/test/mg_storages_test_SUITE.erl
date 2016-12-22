@@ -19,6 +19,7 @@
 -export([range_direction_test/1]).
 -export([range_border_test/1]).
 -export([range_missing_params_test/1]).
+-export([range_no_intersection_test/1]).
 -export([stress_test/1]).
 
 %%
@@ -32,16 +33,18 @@
     [test_name() | {group, group_name()}].
 all() ->
     [
-        {group, base},
-        {group, riak}
+        {group, memory},
+        {group, riak},
+        {group, range}
     ].
 
 -spec groups() ->
     [{group_name(), list(_), test_name()}].
 groups() ->
     [
-        {base, [sequence], range_tests() ++ base_tests()},
-        {riak, [sequence], range_tests() ++ riak_tests()}
+        {memory,  [sequence], memory_tests()},
+        {riak,  [sequence], riak_tests()},
+        {range, [sequence], range_tests()}
     ].
 
 -spec range_tests() ->
@@ -49,13 +52,14 @@ groups() ->
 range_tests() ->
     [
         range_direction_test,
+        % range_no_intersection_test,
         range_border_test,
         range_missing_params_test
     ].
 
--spec base_tests() ->
+-spec memory_tests() ->
     [{group_name(), list(_), test_name()}].
-base_tests() ->
+memory_tests() ->
     [
         stress_test
     ].
@@ -110,8 +114,8 @@ make_storage(riak, Namespace) ->
         }
     }},
     {namespace, Namespace}};
-make_storage(base, Namespace) ->
-    {mg_storage_test, Namespace}.
+make_storage(memory, Namespace) ->
+    {mg_storage_memory, Namespace}.
 
 -spec start_storage(config()) ->
     config().
@@ -304,6 +308,20 @@ range_missing_params_test(_C) ->
         {ID, 7},
         {ID, 8}
     ] = mg_storage_utils:get_machine_events_ids(ID, Machine, {6, undefined, forward}),
+
+    ok.
+
+-spec range_no_intersection_test(_C) ->
+    ok.
+range_no_intersection_test(_C) ->
+    ID = <<"42">>,
+    Machine = #{
+        status       => working,
+        aux_state    => undefined,
+        events_range => {5, 10}
+    },
+
+    [] = mg_storage_utils:get_machine_events_ids(ID, Machine, {1, 3, forward}),
 
     ok.
 
