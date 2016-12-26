@@ -37,7 +37,8 @@
 -export([event_sink_lots_events_ordering /1]).
 
 %% test_door group tests
--export([machine_test_door/1]).
+%% -export([machine_test_door/1]).
+-export([base_test/1]).
 
 -export([config_with_multiple_event_sinks/1]).
 
@@ -87,7 +88,7 @@ tests_groups() ->
             machine_tag_not_found,
 
             % machine_tag_action,
-            machine_call_by_tag
+            machine_call_by_tag,
 
             % machine_timer_action
             % machine_get_history_by,
@@ -100,6 +101,7 @@ tests_groups() ->
 
             % machine_negative_timeout
             % machine_negative_deadline
+            base_test
         ]},
 
         {repair, [sequence], [
@@ -347,40 +349,6 @@ event_sink_lots_events_ordering(C) ->
     EventsIDs = lists:seq(1, N * 2 + LastEventID),
     EventsIDs = [ID || #'SinkEvent'{id=ID} <- Events].
 
-
-%%
-%% test_door group tests
-%%
--spec machine_test_door(config()) ->
-    _.
-machine_test_door(C) ->
-    % запустить автомат
-    _ID = mg_machine_test_door:start(a_opts(C), ?ID, ?Tag),
-    CS0 = #{last_event_id => undefined, state => undefined},
-    CS1 = #{state:=open} = test_door_update_state(C, CS0),
-
-    % прогнать по стейтам
-    ok = test_door_do_action(C, close),
-    CS2 = #{state:=closed} = test_door_update_state(C, CS1),
-
-    ok = test_door_do_action(C, open),
-    CS3 = #{state:=open} = test_door_update_state(C, CS2),
-    ok = test_door_do_action(C, close),
-
-    CS4 = #{state:=closed} = test_door_update_state(C, CS3),
-    % ждем, что таймер не сработает
-    ok = timer:sleep(3000),
-    CS5 = #{state:=closed} = test_door_update_state(C, CS4),
-    ok = test_door_do_action(C, open),
-    CS6 = #{state:=open} = test_door_update_state(C, CS5),
-    % ждем, что таймер сработает
-    ok = timer:sleep(3000),
-    CS7 = #{state:=closed} = test_door_update_state(C, CS6),
-    ok = test_door_do_action(C, {lock, <<"123">>}),
-    {error, bad_passwd} = test_door_do_action(C, {unlock, <<"12">>}),
-    ok = test_door_do_action(C, {unlock, <<"123">>}),
-    _CS8 = #{state:=closed} = test_door_update_state(C, CS7).
-
 -spec config_with_multiple_event_sinks(config()) ->
     _.
 config_with_multiple_event_sinks(_C) ->
@@ -401,24 +369,20 @@ config_with_multiple_event_sinks(_C) ->
     Apps = genlib_app:start_application_with(mg_woody_api, Config),
     [application_stop(App) || App <- Apps].
 
+base_test(C) ->
+    URL = ?config(url, C),
+    NS = ?config(ns, C),
+    Tag = ?config(tag, C),
+    Action = action,
+    ID = id,
+    Functor = fun() -> ok end,
+    ok = mg_test_processor:start(NS, Functor),
+    ok = mg_automaton_client:start({URL, NS}, ID, Tag),
+    _Result = mg_automaton_client:call({URL, NS}, ID, Action).
+
 %%
 %% utils
 %%
--spec test_door_update_state(config(), mg_machine_test_door:client_state()) ->
-    mg_machine_test_door:client_state().
-test_door_update_state(C, CS) ->
-    mg_machine_test_door:update_state(a_opts(C), ?Ref, CS).
-
--spec test_door_do_action(config(), mg_machine_test_door:action()) ->
-    _.
-test_door_do_action(C, Action) ->
-    mg_machine_test_door:do_action(a_opts(C), Action, ?Ref).
-
--spec test_door_do_action(config(), mg_machine_test_door:action(), mg:ref()) ->
-    _.
-test_door_do_action(C, Action, Ref) ->
-    mg_machine_test_door:do_action(a_opts(C), Action, Ref).
-
 -spec a_opts(config()) -> _.
 a_opts(C) -> ?config(automaton_options, C).
 -spec es_opts(config()) -> _.
