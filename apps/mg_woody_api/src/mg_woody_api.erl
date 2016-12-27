@@ -7,13 +7,6 @@
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 %% API
--export_type([ns        /0]).
--export_type([id        /0]).
--export_type([tag       /0]).
--export_type([args      /0]).
--export_type([event_id  /0]).
--export_type([event_body/0]).
-
 -export_type([config/0]).
 
 -export([start/0]).
@@ -29,12 +22,6 @@
 -export([stop /1]).
 
 %% API
--type ns        () :: binary().
--type id        () :: binary().
--type tag       () :: binary().
--type args      () :: binary().
--type event_id  () :: binary().
--type event_body() :: binary().
 
 %% config
 -type processor_config() :: mg_woody_api_processor:options().
@@ -42,7 +29,7 @@
     processor  => processor_config(),
     event_sink => mg_machine_event_sink:id()
 }.
--type config_nss() :: #{ns() => config_ns()}.
+-type config_nss() :: #{mg:ns() => config_ns()}.
 -type net_opts() :: woody_server_thrift_http_handler:net_opts().
 -type config_element() ::
       {namespaces,         config_nss()}

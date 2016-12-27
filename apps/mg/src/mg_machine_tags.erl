@@ -42,18 +42,18 @@ resolve_tag(Options, Tag) ->
 -spec process_signal(_, mg:signal_args()) ->
     mg:signal_result().
 process_signal(_, _) ->
-    {{undefined, []}, #{}}.
+    {{null, []}, #{}}.
 
 -spec process_call(_, mg:call_args()) ->
     mg:call_result().
 process_call(_, {{add_tag, MachineID}, #{id:=SelfID, history:=History}}) ->
     case do_resolve_tag(fold_history(History)) of
         undefined ->
-            {ok, {undefined, [generate_add_tag_event(MachineID)]}, #{}};
+            {ok, {null, [pack_event(generate_add_tag_event(MachineID))]}, #{}};
         SelfID ->
-            {ok, undefined, [], #{}};
+            {ok, {null, []}, #{}};
         OtherMachineID ->
-            {{already_exists, OtherMachineID}, {undefined, []}, #{}}
+            {{already_exists, OtherMachineID}, {null, []}, #{}}
     end.
 
 %%
@@ -76,9 +76,17 @@ machine_options(#{namespace:=Namespace, storage:=Storage}) ->
 
 -spec fold_history(mg:history()) ->
     state().
-fold_history([]) ->
-    undefined;
-fold_history([#{body:={add, MachineID}}]) ->
+fold_history(History) ->
+    apply_events(unpack_events([EventBody || #{body := EventBody} <- History]), undefined).
+
+-spec apply_events([event()], state()) ->
+    state().
+apply_events(History, State) ->
+    lists:foldl(fun apply_event/2, State, History).
+
+-spec apply_event(event(), state()) ->
+    state().
+apply_event({add, MachineID}, undefined) ->
     MachineID.
 
 -spec do_resolve_tag(state()) ->
@@ -90,3 +98,21 @@ do_resolve_tag(MachineID) ->
     event().
 generate_add_tag_event(ID) ->
     {add, ID}.
+
+%%
+%% packer to opaque
+%%
+-spec pack_event(event()) ->
+    mg:event_body().
+pack_event({add, MachineID}) ->
+    [<<"add">>, MachineID].
+
+-spec unpack_event(mg:event_body()) ->
+    event().
+unpack_event([<<"add">>, MachineID]) ->
+    {add, MachineID}.
+
+-spec unpack_events([mg:event_body()]) ->
+    [event()].
+unpack_events(History) ->
+    lists:map(fun unpack_event/1, History).

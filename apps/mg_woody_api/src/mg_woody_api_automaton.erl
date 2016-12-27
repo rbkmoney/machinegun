@@ -84,7 +84,7 @@ handle_function('GetMachine', [MachineDesc], _WoodyContext, Options) ->
 %%
 %% local
 %%
--spec get_ns_options(mg_woody_api:ns(), options()) ->
+-spec get_ns_options(mg:ns(), options()) ->
     mg_machine_complex:options().
 get_ns_options(Namespace, Options) ->
     try

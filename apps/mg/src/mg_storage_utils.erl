@@ -60,7 +60,7 @@ get_machine_events_ids(MachineID, #{events_range:=MachineEventsRange}, Requested
 %% local
 %%
 -spec get_event_ids(mg_storage:events_range(), mg:history_range()) ->
-    _.
+    [mg:event_id()].
 get_event_ids(undefined, _) ->
     [];
 get_event_ids(R0, {Ef, N, Direction}) ->

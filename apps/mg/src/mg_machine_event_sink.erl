@@ -18,6 +18,11 @@
 %% API
 %%
 -type id() :: mg:id().
+-type event() :: #{
+    source_ns => mg:ns(),
+    source_id => mg:id(),
+    event     => mg:event()
+}.
 -type options() :: #{
     storage => mg_storage:storage()
 }.
@@ -41,11 +46,11 @@ handle_events({Options, SourceNS, EventSinkID}, SourceID, Events) ->
         ).
 
 -spec get_history(options(), id(), mg:history_range()) ->
-    mg:sink_history().
+    mg:history().
 get_history(Options, EventSinkID, Range) ->
     #{history:=History} =
         mg_machine:get_machine_with_lazy_start(machine_options(Options, EventSinkID), EventSinkID, Range, undefined),
-    History.
+    [Event#{body:=unpack_sink_event(Body)} || Event=#{body:=Body} <- History].
 
 %%
 %% mg_processor handler
@@ -53,13 +58,13 @@ get_history(Options, EventSinkID, Range) ->
 -spec process_signal(_, mg:signal_args()) ->
     mg:signal_result().
 process_signal(_, _) ->
-    {{undefined, []}, #{}}.
+    {{null, []}, #{}}.
 
 -spec process_call(_, mg:call_args()) ->
     mg:call_result().
 process_call(_, {{handle_events, SourceNS, SourceID, Events}, #{}}) ->
     SinkEvents = generate_sink_events(SourceNS, SourceID, Events),
-    {ok, {undefined, SinkEvents}, #{}}.
+    {ok, {null, pack_sink_events(SinkEvents)}, #{}}.
 
 %%
 %% local
@@ -74,15 +79,60 @@ machine_options(#{storage:=Storage}, EventSinkID) ->
     }.
 
 -spec generate_sink_events(mg:ns(), mg:id(), [mg:event()]) ->
-    [mg:sink_event()].
+    [event()].
 generate_sink_events(SourceNS, SourceID, Events) ->
     [generate_sink_event(SourceNS, SourceID, Event) || Event <- Events].
 
 -spec generate_sink_event(mg:ns(), mg:id(), mg:event()) ->
-    mg:sink_event().
+    event().
 generate_sink_event(SourceNS, SourceID, Event) ->
     #{
         source_ns => SourceNS,
         source_id => SourceID,
         event     => Event
+    }.
+
+%%
+%% packer to opaque
+%%
+-spec pack_event(mg:event()) ->
+    mg:opaque().
+pack_event(#{id := EventID, created_at := Date, body := Body}) ->
+    #{
+        <<"id">> => EventID,
+        <<"ca">> => Date,
+        <<"b" >> => Body
+    }.
+-spec pack_sink_event(event()) ->
+    mg:event_body().
+pack_sink_event(#{source_ns := SourceNS, source_id := SourceID, event := Event}) ->
+    #{
+        <<"sn">> => SourceNS,
+        <<"si">> => SourceID,
+        <<"e" >> => pack_event(Event)
+    }.
+
+-spec pack_sink_events([event()]) ->
+    [mg:event_body()].
+pack_sink_events(Events) ->
+    lists:map(fun pack_sink_event/1, Events).
+
+
+
+-spec unpack_event(mg:event()) ->
+    mg:event().
+unpack_event(#{<<"id">> := EventID, <<"ca">> := Date, <<"b" >> := Body}) ->
+    #{
+        id         => EventID,
+        created_at => Date,
+        body       => Body
+    }.
+
+-spec unpack_sink_event(mg:event_body()) ->
+    event().
+unpack_sink_event(#{<<"sn">> := SourceNS, <<"si">> := SourceID, <<"e" >> := Event}) ->
+    #{
+        source_ns => SourceNS,
+        source_id => SourceID,
+        event     => unpack_event(Event)
     }.
