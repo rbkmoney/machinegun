@@ -101,15 +101,15 @@ init(Options=#{namespace:=Namespace}) ->
 -spec process_signal(_, mg:signal_args()) ->
     mg:signal_result().
 process_signal(_, _) ->
-    {{undefined, []}, #{}}.
+    {{null, []}, #{}}.
 
--spec process_call(mg:ns(), mg:call_args()) ->
+-spec process_call(options(), mg:call_args()) ->
     mg:call_result().
 process_call(Options, {Call, #{id:=TimersID, history:=History}}) ->
     State = fold_history(History),
     CallEvents = process_call_(Options, Call, State),
     ok = refresh_global_timer(Options, TimersID, get_next_timer(apply_events(CallEvents, State))),
-    {ok, {undefined, CallEvents}, #{}}.
+    {ok, {null, pack_events(CallEvents)}, #{}}.
 
 -spec process_call_(options(), _, state()) ->
     [event()].
@@ -203,7 +203,7 @@ get_next_timer(State) ->
 -spec fold_history([event()]) ->
     state().
 fold_history(History) ->
-    apply_events([Event || #{body:=Event} <- History], #{}).
+    apply_events(unpack_events([EventBody || #{body := EventBody} <- History]), #{}).
 
 -spec apply_events([event()], state()) ->
     state().
@@ -234,3 +234,44 @@ apply_hanlder(#{timer_handler:={M, F, A}=MFA}, ID) ->
             end
         end
     ).
+
+%%
+%% packer to opaque
+%%
+-spec pack_event(event()) ->
+    mg:event_body().
+pack_event({set, MachineID, DateTime}) ->
+    #{
+        <<"a">> => <<"s">>,
+        <<"m">> => MachineID,
+        <<"d">> => genlib_format:format_datetime_iso8601(DateTime)
+    };
+pack_event({cancel, MachineID}) ->
+    #{
+        <<"a">> => <<"can">>,
+        <<"m">> => MachineID
+    };
+pack_event({complete, MachineID}) ->
+    #{
+        <<"a">> => <<"com">>,
+        <<"m">> => MachineID
+    }.
+
+-spec unpack_event(mg:event_body()) ->
+    event().
+unpack_event(#{<<"a">> := <<"s">>, <<"m">> := MachineID, <<"d">> := BinDateTime}) ->
+    {set, MachineID, genlib_format:parse_datetime_iso8601(BinDateTime)};
+unpack_event(#{<<"a">> := <<"can">>, <<"m">> := MachineID}) ->
+    {cancel, MachineID};
+unpack_event(#{<<"a">> := <<"com">>, <<"m">> := MachineID}) ->
+    {complete, MachineID}.
+
+-spec pack_events([event()]) ->
+    [mg:event_body()].
+pack_events(Events) ->
+    lists:map(fun pack_event/1, Events).
+
+-spec unpack_events([mg:event_body()]) ->
+    [event()].
+unpack_events(Events) ->
+    lists:map(fun unpack_event/1, Events).

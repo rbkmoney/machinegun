@@ -2,6 +2,7 @@
 
 %% Types
 %% base
+-export_type([opaque   /0]).
 -export_type([ns       /0]).
 -export_type([id       /0]).
 -export_type([tag      /0]).
@@ -36,25 +37,22 @@
 
 -export_type([machine_descriptor/0]).
 
-%% event sink
--export_type([sink_event  /0]).
--export_type([sink_history/0]).
-
 
 %% base
--type ns       () :: _.
--type id       () :: _.
--type tag      () :: _.
--type args     () :: _.
+-type opaque   () :: null | true | false | number() | binary() | [opaque()] | #{opaque() => opaque()}.
+-type ns       () :: binary().
+-type id       () :: binary().
+-type tag      () :: binary().
+-type args     () :: term().
 -type timeout_ () :: non_neg_integer().
 -type timer    () :: {timeout, timeout_()} | {deadline, calendar:datetime()}.
 -type ref      () :: {id, id()} | {tag, tag()}.
 -type direction() :: forward | backward.
 
 %% state, events and history
--type aux_state    () :: _ | undefined.
+-type aux_state    () :: opaque().
 -type event_id     () :: pos_integer().
--type event_body   () :: _.
+-type event_body   () :: opaque().
 -type event        () :: #{
     id         => id(),
     created_at => calendar:datetime(),
@@ -88,11 +86,3 @@
 -type call_result  () :: {call_response(), state_change(), complex_action()}.
 
 -type machine_descriptor() :: {ns(), ref(), history_range()}.
-
-%% event sink
--type sink_event() :: #{
-    source_ns => ns(),
-    source_id => id(),
-    event     => event()
-}.
--type sink_history() :: [sink_event()].

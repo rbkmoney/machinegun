@@ -162,6 +162,7 @@ apply_machine_update(Pid, Options, Namespace, ID, new_events, NewEvents, Machine
 %%
 %% db interation
 %%
+-type db_object_id() :: mg:id() | {mg:id(), mg:event_id()}.
 -type db_object_type() :: machine | event.
 -type db_event() :: mg:event().
 -type db_machine() :: #{
@@ -174,12 +175,12 @@ apply_machine_update(Pid, Options, Namespace, ID, new_events, NewEvents, Machine
 
 
 
--spec new_db_object(mg:ns(), db_object_type(), mg:id()) ->
+-spec new_db_object(mg:ns(), db_object_type(), db_object_id()) ->
     object().
 new_db_object(Namespace, Type, ID) ->
     riakc_obj:new(get_bucket(Type, Namespace), pack_key(Type, ID)).
 
--spec create_db_object(pid(), options(), mg:ns(), db_object_type(), mg:id(), db_object()) ->
+-spec create_db_object(pid(), options(), mg:ns(), db_object_type(), db_object_id(), db_object()) ->
     object().
 create_db_object(Pid, _Options, Namespace, Type, ID, Data) ->
     Object =
@@ -190,7 +191,7 @@ create_db_object(Pid, _Options, Namespace, Type, ID, Data) ->
         ),
     put_db_object(Pid, Object, put_options(Type)).
 
--spec get_db_object(pid(), options(), mg:ns(), db_object_type(), mg:id()) ->
+-spec get_db_object(pid(), options(), mg:ns(), db_object_type(), db_object_id()) ->
     object().
 get_db_object(Pid, _Options, Namespace, Type, ID) ->
     case riakc_pb_socket:get(Pid, get_bucket(Type, Namespace), pack_key(Type, ID), get_options(Type)) of
@@ -217,7 +218,7 @@ put_db_object(Pid, Object, Options) ->
 -spec get_bucket(db_object_type(), mg:ns()) ->
     binary().
 get_bucket(Type, Namespace) ->
-    stringify({Namespace, Type}).
+    mg_utils:concatenate_namespaces(Namespace, erlang:atom_to_binary(Type, utf8)).
 
 %%
 %% Про опции посмотреть можно тут
@@ -285,6 +286,7 @@ pool_options(Options=#{pool:=PoolOptions}, Namespace) ->
                     maps:get(port, Options, 8087    )
                 ]
             },
+        % имя пула может быть только атомом  :-\
         name => ns_to_atom(Namespace)
     }.
 
@@ -293,7 +295,7 @@ pool_options(Options=#{pool:=PoolOptions}, Namespace) ->
 ns_to_atom(Namespace) ->
     % !!! осторожнее, тут можно нечаянно нагенерить атомов
     % предполагается, что их конечное и небольшое кол-во
-    erlang:binary_to_atom(stringify(Namespace), utf8).
+    erlang:binary_to_atom(Namespace, utf8).
 
 %%
 %% packer
@@ -315,8 +317,8 @@ ns_to_atom(Namespace) ->
 
 -spec pack_key(type(), _) ->
     riak_key().
-pack_key(event, FullEventID) ->
-    stringify(FullEventID);
+pack_key(event, {MachineID, EventID}) ->
+    <<MachineID/binary, "_", (erlang:integer_to_binary(EventID))/binary>>;
 pack_key(machine, MachineID) ->
     MachineID.
 
@@ -345,29 +347,6 @@ unpack_from_object(Type, Object) ->
     ?schema_version_1 = riakc_obj:get_user_metadata_entry(Metadata, ?schema_version_md_key),
     ?msgpack_ct       = riakc_obj:get_content_type(Object),
     msgpack_unpack(Type, riakc_obj:get_value(Object)).
-
-%%
-
--type stringify_primitive() ::
-      binary()
-    | atom()
-    | integer()
-    | list(stringify_primitive())
-    | tuple()
-.
-
--spec stringify(stringify_primitive()) ->
-    binary().
-stringify(Binary) when is_binary(Binary) ->
-    Binary;
-stringify(Integer) when is_integer(Integer) ->
-    erlang:integer_to_binary(Integer);
-stringify(Atom) when is_atom(Atom) ->
-    erlang:atom_to_binary(Atom, utf8);
-stringify(Tuple) when is_tuple(Tuple) ->
-    stringify(erlang:tuple_to_list(Tuple));
-stringify(List) when is_list(List) ->
-    erlang:iolist_to_binary(mg_utils:join(<<"-">>, [stringify(Element) || Element <- List])).
 
 %% в функции msgpack:pack неверный спек
 -dialyzer({nowarn_function, msgpack_pack/2}).
@@ -398,14 +377,16 @@ msgpack_pack_(_, undefined) ->
     null;
 msgpack_pack_(term, Term) ->
     erlang:term_to_binary(Term);
+msgpack_pack_(opaque, Opaque) ->
+    Opaque;
 msgpack_pack_(date, Time) ->
     msgpack_pack_(integer, Time);
 msgpack_pack_(integer, Integer) when is_integer(Integer) ->
     Integer;
 msgpack_pack_(event, #{created_at:=CreatedAt, body:=Body}) ->
     #{
-        <<"ca">> => msgpack_pack_(date, CreatedAt),
-        <<"b" >> => msgpack_pack_(term, Body     )
+        <<"ca">> => msgpack_pack_(date  , CreatedAt),
+        <<"b" >> => msgpack_pack_(opaque, Body     )
     };
 msgpack_pack_(machine_status, working) ->
     #{
@@ -424,7 +405,7 @@ msgpack_pack_(events_range, {FirstEventID, LastEventID}) ->
         <<"l">> => msgpack_pack_(event_id, LastEventID )
     };
 msgpack_pack_(aux_state, Status) ->
-    msgpack_pack_(term, Status);
+    msgpack_pack_(opaque, Status);
 msgpack_pack_(machine, #{status:=Status, events_range:=EventRange, aux_state:=AuxState}) ->
     #{
         <<"s" >> => msgpack_pack_(machine_status, Status    ),
@@ -440,14 +421,16 @@ msgpack_unpack_(_, null) ->
     undefined;
 msgpack_unpack_(term, Binary) when is_binary(Binary) ->
     erlang:binary_to_term(Binary);
+msgpack_unpack_(opaque, Opaque) ->
+    Opaque;
 msgpack_unpack_(date, Time) ->
     msgpack_unpack_(integer, Time);
 msgpack_unpack_(integer, Integer) when is_integer(Integer) ->
     Integer;
 msgpack_unpack_(event, #{<<"ca">> := CreatedAt, <<"b">> := Body}) ->
     #{
-        created_at => msgpack_unpack_(date, CreatedAt),
-        body       => msgpack_unpack_(term, Body     )
+        created_at => msgpack_unpack_(date  , CreatedAt),
+        body       => msgpack_unpack_(opaque, Body     )
     };
 msgpack_unpack_(machine_status, #{<<"n">> := <<"w">>}) ->
     working;
@@ -458,7 +441,7 @@ msgpack_unpack_(event_id, EventID) ->
 msgpack_unpack_(events_range, #{<<"f">> := FirstEventID, <<"l">> := LastEventID}) ->
     {msgpack_unpack_(event_id, FirstEventID), msgpack_unpack_(event_id, LastEventID)};
 msgpack_unpack_(aux_state, Status) ->
-    msgpack_unpack_(term, Status);
+    msgpack_unpack_(opaque, Status);
 msgpack_unpack_(machine, #{<<"s">> := Status, <<"er">> := EventRange, <<"as">> := AuxState}) ->
     #{
         status       => msgpack_unpack_(machine_status, Status    ),

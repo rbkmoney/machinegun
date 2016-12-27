@@ -105,15 +105,17 @@ make_storage(C) ->
 
 -spec make_storage(atom(), binary()) -> config().
 make_storage(riak, Namespace) ->
-    {{mg_storage_riak, #{
-        host => "riakdb",
-        port => 8087,
-        pool => #{
-            init_count => 1,
-            max_count  => 10
-        }
-    }},
-    {namespace, Namespace}};
+    {
+        {mg_storage_riak, #{
+            host => "riakdb",
+            port => 8087,
+            pool => #{
+                init_count => 1,
+                max_count  => 10
+            }
+        }},
+        Namespace
+    };
 make_storage(memory, Namespace) ->
     {mg_storage_memory, Namespace}.
 

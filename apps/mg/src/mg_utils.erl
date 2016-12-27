@@ -46,6 +46,8 @@
 
 -export([stop_wait_all/3]).
 
+-export([concatenate_namespaces/2]).
+
 %%
 %% API
 %% OTP
@@ -267,3 +269,8 @@ stop_wait(Pid, Reason, Timeout) ->
         end,
     process_flag(trap_exit, OldTrap),
     R.
+
+-spec concatenate_namespaces(mg:ns(), mg:ns()) ->
+    mg:ns().
+concatenate_namespaces(NamespaceA, NamespaceB) ->
+    <<NamespaceA/binary, "_", NamespaceB/binary>>.

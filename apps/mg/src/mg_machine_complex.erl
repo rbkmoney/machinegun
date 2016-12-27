@@ -143,7 +143,7 @@ machine_options(Options) ->
     mg_machine_timers:options().
 timers_machine_options(Options = #{namespace:=Namespace, storage:=Storage}) ->
     #{
-        namespace     => {Namespace, timers},
+        namespace     => mg_utils:concatenate_namespaces(Namespace, <<"timers">>),
         storage       => Storage,
         timer_handler => {?MODULE, handle_timeout, [Options]}
     }.
@@ -153,7 +153,7 @@ timers_machine_options(Options = #{namespace:=Namespace, storage:=Storage}) ->
     mg_machine_tags:options().
 tags_machine_options(#{namespace:=Namespace, storage:=Storage}) ->
     #{
-        namespace => {Namespace, tags},
+        namespace => mg_utils:concatenate_namespaces(Namespace, <<"tags">>),
         storage   => Storage
     }.
 
