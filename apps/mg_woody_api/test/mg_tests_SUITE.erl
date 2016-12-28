@@ -171,14 +171,13 @@ init_per_group(TestGroup, C0) ->
         genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(TestGroup, C))
     ,
 
-    {ok, ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, "/processor"}),
-    true = erlang:unlink(ProcessorPid),
+    % {ok, ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, Fun}),
 
     [
         {apps              , Apps                             },
-        {processor_pid     , ProcessorPid                     },
         {automaton_options , {"http://localhost:8022", ?NS(C)}},
-        {event_sink_options,  "http://localhost:8022"         }
+        {event_sink_options,  "http://localhost:8022"         },
+        {processor_options , {"http://localhost:8022", "/processor"}}
     |
         C
     ].
@@ -211,9 +210,9 @@ end_per_group(memory, _) ->
     ok;
 end_per_group(riak, _) ->
     ok;
-end_per_group(_, C) ->
-    true = erlang:exit(?config(processor_pid, C), kill),
-    [application_stop(App) || App <- proplists:get_value(apps, C)],
+end_per_group(_, _C) ->
+    % true = erlang:exit(?config(processor_pid, C), kill),
+    % [application_stop(App) || App <- proplists:get_value(apps, C)],
     ok.
 -spec application_stop(atom()) ->
     _.
@@ -365,14 +364,30 @@ config_with_multiple_event_sinks(_C) ->
     [application_stop(App) || App <- Apps].
 
 -spec base_test(_C) -> ok.
-base_test(_C) ->
-    URL = "http://localhost:8023",
+base_test(C) ->
+    {URL, Path} = ?config(processor_options, C),
     NS = <<"mg_test_base_ns">>,
     Tag = <<"Tag">>,
     ID = <<"42">>,
-    Functor = fun() -> ok end,
-    ok = mg_test_processor:start(NS, Functor),
-    ok = mg_automaton_client:start({URL, NS}, ID, Tag).
+    Fun =
+        fun() ->
+            #'SignalResult'{
+                change =
+                    #'MachineStateChange'{
+                        aux_state = <<"aasdasd">>,
+                        events    = []
+                    },
+                action = #'ComplexAction'{}
+            }
+        end,
+
+    {ok, ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, Fun}),
+
+    ok = mg_automaton_client:start({URL, NS}, ID, Tag),
+
+    true = erlang:exit(ProcessorPid, normal),
+
+    ok.
 
 %%
 %% utils

@@ -1,6 +1,5 @@
 -module(mg_test_processor).
 
--export([start/2]).
 -export([start_link/1]).
 
 %% processor woody handler
@@ -21,28 +20,23 @@
 start_link(Options) ->
     supervisor:start_link(?MODULE, Options).
 
--spec start(_NS, _Functor) -> ok.
-start(_NS, _Functor) ->
-    ok.
-
 %%
 %% processor woody handler
 %%
-
-%% Тут будет выполняться интересная нам функция
 -spec handle_function(woody:func(), woody:args(), woody_context:ctx(), _Options) ->
-                             {ok, _Result} | no_return().
-handle_function('ProcessSignal', [_SignalArgs], _WoodyContext, _Options) ->
-    ok;
-handle_function('ProcessCall', [_CallArgs], _WoodyContext, _Options) ->
-    ok.
+                         {ok, _Result} | no_return().
+handle_function('ProcessSignal', [_SignalArgs], _WoodyContext, Fun) ->
+    Result = Fun(),
+    {ok, Result};
+handle_function('ProcessCall', [_CallArgs], _WoodyContext, _Fun) ->
+    {ok, ok}.
 
 %%
 %% supervisor callbacks
 %%
 -spec init(_Opts) ->
     mg_utils:supervisor_ret().
-init({Host, Port, Path}) ->
+init({Host, Port, Path, Fun}) ->
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags, [
         woody_server:child_spec(
@@ -52,7 +46,7 @@ init({Host, Port, Path}) ->
                 port          => Port,
                 net_opts      => #{},
                 event_handler => {mg_woody_api_event_handler, undefined},
-                handlers      => [{Path, {{mg_proto_state_processing_thrift, 'Processor'}, {?MODULE, []}}}]
+                handlers      => [{Path, {{mg_proto_state_processing_thrift, 'Processor'}, {?MODULE, Fun}}}]
             }
         )
     ]}}.
