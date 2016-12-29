@@ -16,7 +16,6 @@
 %% base group tests
 -export([namespace_not_found   /1]).
 -export([machine_start         /1]).
--export([machine_already_exists/1]).
 -export([machine_call_by_id    /1]).
 -export([machine_id_not_found  /1]).
 -export([machine_tag_not_found /1]).
@@ -79,9 +78,8 @@ tests_groups() ->
     [
         % TODO проверить отмену таймера
         {base, [sequence], [
-            % namespace_not_found,
-            % machine_start,
-            % machine_already_exists,
+            namespace_not_found,
+            %% machine_start,
             % machine_call_by_id,
             % machine_id_not_found,
             % machine_tag_not_found,
@@ -231,16 +229,24 @@ application_stop(App) ->
 %%
 -spec namespace_not_found(config()) -> _.
 namespace_not_found(C) ->
-    {URL, _NS} = a_opts(C),
-    #'NamespaceNotFound'{} = (catch mg_machine_test_door:start({URL, <<"incorrect_NS">>}, ?ID, ?Tag)).
+    {URL, Path} = ?config(processor_options, C),
+    NS = <<"incorrect_NS">>,
+    Tag = ?Tag,
+    ID = ?ID,
+    Fun = mg_test_processor:default_func(signal_result, {{<<>>, []}, #{timer => undefined, tag => undefined}}),
+    {ok, _ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, Fun}),
+
+    #'NamespaceNotFound'{} = (catch mg_automaton_client:start({URL, NS}, ID, Tag)).
 
 -spec machine_start(config()) -> _.
 machine_start(C) ->
-    ok = mg_machine_test_door:start(a_opts(C), ?ID, ?Tag).
-
--spec machine_already_exists(config()) -> _.
-machine_already_exists(C) ->
-    #'MachineAlreadyExists'{} = (catch mg_machine_test_door:start(a_opts(C), ?ID, <<"another_Tag">>)).
+    {URL, Path} = ?config(processor_options, C),
+    NS = ?NS(C),
+    Tag = ?Tag,
+    ID = ?ID,
+    Fun = mg_test_processor:default_func(signal_result, {{<<>>, []}, #{timer => undefined, tag => undefined}}),
+    {ok, _ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, Fun}),
+    ok = mg_automaton_client:start({URL, NS}, ID, Tag).
 
 -spec machine_call_by_id(config()) -> _.
 machine_call_by_id(C) ->
@@ -366,24 +372,10 @@ config_with_multiple_event_sinks(_C) ->
 -spec base_test(_C) -> ok.
 base_test(C) ->
     {URL, Path} = ?config(processor_options, C),
-    NS = <<"mg_test_base_ns">>,
-    Tag = <<"Tag">>,
-    ID = <<"42">>,
-    Fun =
-        fun() ->
-            #'SignalResult'{
-                change =
-                    #'MachineStateChange'{
-                        aux_state = <<"aasdasd">>,
-                        events    = []
-                    },
-                action = #'ComplexAction'{}
-            }
-        end,
-
+    Fun = mg_test_processor:default_func(signal_result, {{<<>>, []}, #{timer => undefined, tag => undefined}}),
     {ok, ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, Fun}),
 
-    ok = mg_automaton_client:start({URL, NS}, ID, Tag),
+    ok = mg_automaton_client:start({URL, ?NS(C)}, ?ID, ?Tag),
 
     true = erlang:exit(ProcessorPid, normal),
 

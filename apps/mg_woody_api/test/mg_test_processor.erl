@@ -1,6 +1,7 @@
 -module(mg_test_processor).
 
 -export([start_link/1]).
+-export([default_func/2]).
 
 %% processor woody handler
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
@@ -10,6 +11,9 @@
 %% supervisor callbacks
 -behaviour(supervisor).
 -export([init/1]).
+
+-export_type([processor_function/0]).
+-type processor_function() :: fun((call | signal, term(), mg:id()) -> term()).
 
 %%
 %% API
@@ -23,7 +27,7 @@ start_link(Options) ->
 %%
 %% processor woody handler
 %%
--spec handle_function(woody:func(), woody:args(), woody_context:ctx(), _Options) ->
+-spec handle_function(woody:func(), woody:args(), woody_context:ctx(), processor_function()) ->
                          {ok, _Result} | no_return().
 handle_function('ProcessSignal', [_SignalArgs], _WoodyContext, Fun) ->
     Result = Fun(),
@@ -50,3 +54,12 @@ init({Host, Port, Path, Fun}) ->
             }
         )
     ]}}.
+
+-spec default_func(atom(), term()) -> fun((atom(), term()) -> term()).
+default_func(Action, Args) ->
+    Func =
+        fun() ->
+            mg_woody_api_packer:pack(Action, Args)
+        end,
+    Func.
+
