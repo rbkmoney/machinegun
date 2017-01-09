@@ -33,7 +33,8 @@ handle_function('ProcessSignal', [_SignalArgs], _WoodyContext, Fun) ->
     Result = Fun(),
     {ok, Result};
 handle_function('ProcessCall', [_CallArgs], _WoodyContext, _Fun) ->
-    {ok, ok}.
+    Result = Fun(),
+    {ok, Result}.
 
 %%
 %% supervisor callbacks
@@ -62,4 +63,3 @@ default_func(Action, Args) ->
             mg_woody_api_packer:pack(Action, Args)
         end,
     Func.
-
