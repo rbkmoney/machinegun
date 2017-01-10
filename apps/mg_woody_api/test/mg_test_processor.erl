@@ -32,7 +32,7 @@ start_link(Options) ->
 handle_function('ProcessSignal', [_SignalArgs], _WoodyContext, Fun) ->
     Result = Fun(),
     {ok, Result};
-handle_function('ProcessCall', [_CallArgs], _WoodyContext, _Fun) ->
+handle_function('ProcessCall', [_CallArgs], _WoodyContext, Fun) ->
     Result = Fun(),
     {ok, Result}.
 

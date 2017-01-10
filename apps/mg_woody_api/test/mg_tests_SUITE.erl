@@ -16,10 +16,7 @@
 %% base group tests
 -export([namespace_not_found   /1]).
 -export([machine_start         /1]).
--export([machine_call_by_id    /1]).
--export([machine_id_not_found  /1]).
--export([machine_tag_not_found /1]).
--export([machine_call_by_tag   /1]).
+-export([machine_new_state     /1]).
 
 %% repair group tests
 -export([machine_processor_error    /1]).
@@ -60,7 +57,7 @@
 all() ->
     [
         {group, memory}
-        %% config_with_multiple_event_sinks
+        % config_with_multiple_event_sinks
     ].
 
 -spec groups() ->
@@ -78,10 +75,7 @@ tests_groups() ->
         {base, [sequence], [
             namespace_not_found,
             machine_start,
-            machine_call_by_id,
-            % machine_id_not_found,
-            % machine_tag_not_found,
-            % machine_call_by_tag,
+            machine_new_state,
             base_test
         ]},
 
@@ -96,13 +90,13 @@ tests_groups() ->
         ]},
 
         {event_sink, [sequence], [
-            %% event_sink_get_empty_history,
-            %% event_sink_get_not_empty_history,
-            %% event_sink_get_last_event,
+            % event_sink_get_empty_history,
+            % event_sink_get_not_empty_history,
+            % event_sink_get_last_event,
             % TODO event_not_found
             % event_sink_incorrect_event_id,
-            %% event_sink_incorrect_sink_id,
-            %% event_sink_lots_events_ordering
+            % event_sink_incorrect_sink_id,
+            % event_sink_lots_events_ordering
         ]}
     ].
 
@@ -207,50 +201,25 @@ application_stop(App) ->
 %%
 -spec namespace_not_found(config()) -> _.
 namespace_not_found(C) ->
-    {URL, Path} = ?config(processor_options, C),
+    {URL, Path, _NS, Tag, ID} = test_opts(<<"_namespace_not_found_id">>, C),
     NS = <<"incorrect_NS">>,
-    Tag = ?Tag,
-    ID = <<(proplists:get_value(test_instance, C))/binary, "_namespace_not_found_id">>,
     Fun = mg_test_processor:default_func(signal_result, {{<<>>, []}, #{timer => undefined, tag => undefined}}),
     {ok, _ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, Fun}),
-
     #'NamespaceNotFound'{} = (catch mg_automaton_client:start({URL, NS}, ID, Tag)).
 
 -spec machine_start(config()) -> _.
 machine_start(C) ->
-    {URL, Path} = ?config(processor_options, C),
-    {Port, Path} =
-    NS = ?NS(C),
-    Tag = ?Tag,
-    ID = <<(proplists:get_value(test_instance, C))/binary, "_machine_start_id">>,
+    {URL, Path, NS, Tag, ID} = test_opts(<<"_machine_start_id">>, C),
     Fun = mg_test_processor:default_func(signal_result, {{<<>>, []}, #{timer => undefined, tag => undefined}}),
     {ok, _ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, Fun}),
     ok = mg_automaton_client:start({URL, NS}, ID, Tag).
 
--spec machine_call_by_id(config()) -> _.
-machine_call_by_id(C) ->
-    {URL, Path} = ?config(processor_options, C),
-    NS = ?NS(C),
-    Tag = ?Tag,
-    ID = <<(proplists:get_value(test_instance, C))/binary, "_machine_call_by_id">>,
-    Fun = mg_test_processor:default_func(machine_descriptor, {NS, {id, ID}, {1, 10, forward}}),
+-spec machine_new_state(config()) -> _.
+machine_new_state(C) ->
+    {URL, Path, NS, Tag, ID} = test_opts(<<"_machine_call_by_id">>, C),
+    Fun = mg_test_processor:default_func(signal_result, {{<<>>, [<<"1">>, <<"2">>]}, #{timer => undefined, tag => undefined}}),
     {ok, _ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, Fun}),
     ok = mg_automaton_client:start({URL, NS}, ID, Tag).
-
--spec machine_id_not_found(config()) -> _.
-machine_id_not_found(C) ->
-    #'MachineNotFound'{} = (catch mg_machine_test_door:do_action(a_opts(C), touch, {id, <<"incorrect_ID">>})).
-
--spec machine_call_by_tag(config()) -> _.
-machine_call_by_tag(C) ->
-    ok = mg_machine_test_door:do_action(a_opts(C), touch, {tag, ?Tag}).
-
--spec machine_tag_not_found(config()) -> _.
-machine_tag_not_found(C) ->
-    #'MachineNotFound'{} = (catch mg_machine_test_door:do_action(a_opts(C), touch, {tag, <<"incorrect_Tag">>})).
-
-%% get history к несущестующему эвенту
-%% двойное тэгирование
 
 %%
 %% repair group tests
@@ -287,7 +256,9 @@ event_sink_get_empty_history(C) ->
 -spec event_sink_get_not_empty_history(config()) ->
     _.
 event_sink_get_not_empty_history(C) ->
-    _ID = mg_machine_test_door:start(a_opts(C), ?ID, ?Tag),
+    ok = mg_automaton_client:start(a_opts(C), ?ID, ?Tag),
+    % ok = test_door_do_action(C, close, {id, ?ID}),
+    % ok = test_door_do_action(C, open , {id, ?ID}),
     NS = ?NS(C),
     [
         #'SinkEvent'{id = 1, source_id = ?ID, source_ns = NS, event = #'Event'{}},
@@ -299,7 +270,7 @@ event_sink_get_not_empty_history(C) ->
     _.
 event_sink_get_last_event(C) ->
     NS = ?NS(C),
-    [#'SinkEvent'{id = 3, source_id = ?ES_ID, source_ns = NS, event = #'Event'{}}] =
+    [#'SinkEvent'{id = 3, source_id = ?ID, source_ns = NS, event = #'Event'{}}] =
         mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=backward, limit=1}).
 
 -spec event_sink_incorrect_event_id(config()) ->
@@ -323,7 +294,8 @@ event_sink_lots_events_ordering(C) ->
     N = 20,
     _ = lists:foreach(
             fun(_) ->
-                ok
+                ok = test_door_do_action(C, close, {id, ?ID}),
+                ok = test_door_do_action(C, open , {id, ?ID})
             end,
             lists:seq(1, N)
         ),
@@ -331,6 +303,7 @@ event_sink_lots_events_ordering(C) ->
     Events = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}),
     EventsIDs = lists:seq(1, N * 2 + LastEventID),
     EventsIDs = [ID || #'SinkEvent'{id=ID} <- Events].
+
 
 -spec config_with_multiple_event_sinks(config()) ->
     _.
@@ -367,6 +340,14 @@ base_test(C) ->
 %%
 %% utils
 %%
+-spec test_opts(binary(), config()) -> _.
+test_opts(Name, C) ->
+    {URL, Path} = ?config(processor_options, C),
+    NS = ?NS(C),
+    Tag = ?Tag,
+    ID = <<(proplists:get_value(test_instance, C))/binary, Name/binary>>,
+    {URL, Path, NS, Tag, ID}.
+
 -spec a_opts(config()) -> _.
 a_opts(C) -> ?config(automaton_options, C).
 -spec es_opts(config()) -> _.
