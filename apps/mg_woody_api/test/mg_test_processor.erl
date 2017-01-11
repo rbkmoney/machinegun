@@ -1,7 +1,8 @@
 -module(mg_test_processor).
 
--export([start_link/1]).
--export([default_func/2]).
+-export([start_link   /1]).
+-export([default_func /1]).
+-export([default_func /2]).
 
 %% processor woody handler
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
@@ -29,12 +30,14 @@ start_link(Options) ->
 %%
 -spec handle_function(woody:func(), woody:args(), woody_context:ctx(), processor_function()) ->
                          {ok, _Result} | no_return().
-handle_function('ProcessSignal', [_SignalArgs], _WoodyContext, Fun) ->
-    Result = Fun(),
-    {ok, Result};
-handle_function('ProcessCall', [_CallArgs], _WoodyContext, Fun) ->
-    Result = Fun(),
-    {ok, Result}.
+handle_function('ProcessSignal', [SignalArgs], _WoodyContext, {SignalFun, _CallFun}) ->
+    Args = mg_woody_api_packer:unpack(signal_args, SignalArgs),
+    Result = SignalFun(Args),
+    {ok, mg_woody_api_packer:pack(signal_result, Result)};
+handle_function('ProcessCall', [CallArgs], _WoodyContext, {_SignalFun, CallFun}) ->
+    Args = mg_woody_api_packer:unpack(call_args, CallArgs),
+    Result = CallFun(Args),
+    {ok, mg_woody_api_packer:pack(call_result, Result)}.
 
 %%
 %% supervisor callbacks
@@ -56,10 +59,17 @@ init({Host, Port, Path, Fun}) ->
         )
     ]}}.
 
+-spec default_func(signal | call) -> fun((atom(), term()) -> term()).
+default_func(signal) ->
+    default_func(signal_result, {{<<>>, []}, #{timer => undefined, tag => undefined}});
+default_func(call) ->
+    default_func(call_result, {<<>>, {<<>>, []}, #{timer => undefined, tag => undefined}}).
+
+
 -spec default_func(atom(), term()) -> fun((atom(), term()) -> term()).
 default_func(Action, Args) ->
     Func =
-        fun() ->
+        fun(_FunctionArgs) ->
             mg_woody_api_packer:pack(Action, Args)
         end,
     Func.

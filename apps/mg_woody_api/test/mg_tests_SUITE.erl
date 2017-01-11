@@ -203,23 +203,32 @@ application_stop(App) ->
 namespace_not_found(C) ->
     {URL, Path, _NS, Tag, ID} = test_opts(<<"_namespace_not_found_id">>, C),
     NS = <<"incorrect_NS">>,
-    Fun = mg_test_processor:default_func(signal_result, {{<<>>, []}, #{timer => undefined, tag => undefined}}),
-    {ok, _ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, Fun}),
+    SignalFun = mg_test_processor:default_func(signal),
+    CallFun = mg_test_processor:default_func(call),
+    {ok, _ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, {SignalFun, CallFun}}),
     #'NamespaceNotFound'{} = (catch mg_automaton_client:start({URL, NS}, ID, Tag)).
 
 -spec machine_start(config()) -> _.
 machine_start(C) ->
     {URL, Path, NS, Tag, ID} = test_opts(<<"_machine_start_id">>, C),
-    Fun = mg_test_processor:default_func(signal_result, {{<<>>, []}, #{timer => undefined, tag => undefined}}),
-    {ok, _ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, Fun}),
+    SignalFun = mg_test_processor:default_func(signal),
+    CallFun = mg_test_processor:default_func(call),
+    {ok, _ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, {SignalFun, CallFun}}),
     ok = mg_automaton_client:start({URL, NS}, ID, Tag).
 
 -spec machine_new_state(config()) -> _.
 machine_new_state(C) ->
     {URL, Path, NS, Tag, ID} = test_opts(<<"_machine_call_by_id">>, C),
-    Fun = mg_test_processor:default_func(signal_result, {{<<>>, [<<"1">>, <<"2">>]}, #{timer => undefined, tag => undefined}}),
-    {ok, _ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, Fun}),
-    ok = mg_automaton_client:start({URL, NS}, ID, Tag).
+    SignalFun = mg_test_processor:default_func(signal),
+    CallFun =
+        fun(Args) ->
+            mg_woody_packer:pack(call_response, Args)
+        end
+    ,
+    {ok, _ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, {SignalFun, CallFun}}),
+    ok = mg_automaton_client:start({URL, NS}, ID, Tag),
+
+    ok = mg_automaton_client:get_machine({URL, NS}, ID, {1, 10, forward}).
 
 %%
 %% repair group tests
@@ -292,13 +301,13 @@ event_sink_lots_events_ordering(C) ->
     [#'SinkEvent'{id = LastEventID}] =
         mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=backward, limit=1}),
     N = 20,
-    _ = lists:foreach(
-            fun(_) ->
-                ok = test_door_do_action(C, close, {id, ?ID}),
-                ok = test_door_do_action(C, open , {id, ?ID})
-            end,
-            lists:seq(1, N)
-        ),
+    % _ = lists:foreach(
+    %         fun(_) ->
+    %             ok = test_door_do_action(C, close, {id, ?ID}),
+    %             ok = test_door_do_action(C, open , {id, ?ID})
+    %         end,
+    %         lists:seq(1, N)
+    %     ),
 
     Events = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}),
     EventsIDs = lists:seq(1, N * 2 + LastEventID),
