@@ -2,7 +2,7 @@
 
 -export([start_link   /1]).
 
-%% processor woody handler
+%% processor handlers
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 -behaviour(woody_server_thrift_handler).
 -export([handle_function/4]).
@@ -17,14 +17,13 @@
 %%
 %% API
 %%
-
 -spec start_link(_Opts) ->
     mg_utils:gen_start_ret().
 start_link(Options) ->
     supervisor:start_link(?MODULE, Options).
 
 %%
-%% processor woody handler
+%% processor handlers
 %%
 -spec handle_function(woody:func(), woody:args(), woody_context:ctx(), processor_function()) ->
                          {ok, _Result} | no_return().
@@ -57,6 +56,9 @@ init({Host, Port, Path, Fun}) ->
         )
     ]}}.
 
+%%
+%% helpers
+%%
 -spec invoke_function(signal | call, default_func | processor_function(), term()) -> term().
 invoke_function(Type, default_func, _Args) ->
     case Type of
