@@ -16,7 +16,7 @@
 %% base group tests
 -export([namespace_not_found   /1]).
 -export([machine_start         /1]).
--export([machine_new_state     /1]).
+-export([machine_call_by_id     /1]).
 
 %% repair group tests
 -export([machine_processor_error    /1]).
@@ -31,9 +31,6 @@
 -export([event_sink_incorrect_event_id   /1]).
 -export([event_sink_incorrect_sink_id    /1]).
 -export([event_sink_lots_events_ordering /1]).
-
-%% test_door group tests
--export([base_test/1]).
 
 -export([config_with_multiple_event_sinks/1]).
 
@@ -75,8 +72,7 @@ tests_groups() ->
         {base, [sequence], [
             namespace_not_found,
             machine_start,
-            machine_new_state,
-            base_test
+            machine_call_by_id
         ]},
 
         {repair, [sequence], [
@@ -203,32 +199,27 @@ application_stop(App) ->
 namespace_not_found(C) ->
     {URL, Path, _NS, Tag, ID} = test_opts(<<"_namespace_not_found_id">>, C),
     NS = <<"incorrect_NS">>,
-    SignalFun = mg_test_processor:default_func(signal),
-    CallFun = mg_test_processor:default_func(call),
-    {ok, _ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, {SignalFun, CallFun}}),
+    {ok, _ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, {default_func, default_func}}),
     #'NamespaceNotFound'{} = (catch mg_automaton_client:start({URL, NS}, ID, Tag)).
 
 -spec machine_start(config()) -> _.
 machine_start(C) ->
     {URL, Path, NS, Tag, ID} = test_opts(<<"_machine_start_id">>, C),
-    SignalFun = mg_test_processor:default_func(signal),
-    CallFun = mg_test_processor:default_func(call),
-    {ok, _ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, {SignalFun, CallFun}}),
+    {ok, _ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, {default_func, default_func}}),
     ok = mg_automaton_client:start({URL, NS}, ID, Tag).
 
--spec machine_new_state(config()) -> _.
-machine_new_state(C) ->
+-spec machine_call_by_id(config()) -> _.
+machine_call_by_id(C) ->
     {URL, Path, NS, Tag, ID} = test_opts(<<"_machine_call_by_id">>, C),
-    SignalFun = mg_test_processor:default_func(signal),
-    CallFun =
-        fun(Args) ->
-            mg_woody_packer:pack(call_response, Args)
+    CallFunc =
+        fun({Args, _Machine}) ->
+            {Args, {<<>>, []}, #{timer => undefined, tag => undefined}}
         end
     ,
-    {ok, _ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, {SignalFun, CallFun}}),
+    {ok, _ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, {default_func, CallFunc}}),
     ok = mg_automaton_client:start({URL, NS}, ID, Tag),
 
-    ok = mg_automaton_client:get_machine({URL, NS}, ID, {1, 10, forward}).
+    <<"test">> = mg_automaton_client:call({URL, NS}, {id, ID}, <<"test">>).
 
 %%
 %% repair group tests
@@ -333,18 +324,6 @@ config_with_multiple_event_sinks(_C) ->
 
     Apps = genlib_app:start_application_with(mg_woody_api, Config),
     [application_stop(App) || App <- Apps].
-
--spec base_test(_C) -> ok.
-base_test(C) ->
-    {URL, Path} = ?config(processor_options, C),
-    Fun = mg_test_processor:default_func(signal_result, {{<<>>, []}, #{timer => undefined, tag => undefined}}),
-    {ok, ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, Fun}),
-
-    ok = mg_automaton_client:start({URL, ?NS(C)}, <<"base_test_id">>, ?Tag),
-
-    true = erlang:exit(ProcessorPid, normal),
-
-    ok.
 
 %%
 %% utils

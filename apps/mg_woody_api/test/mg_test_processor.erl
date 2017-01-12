@@ -1,8 +1,6 @@
 -module(mg_test_processor).
 
 -export([start_link   /1]).
--export([default_func /1]).
--export([default_func /2]).
 
 %% processor woody handler
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
@@ -14,7 +12,7 @@
 -export([init/1]).
 
 -export_type([processor_function/0]).
--type processor_function() :: fun((call | signal, term(), mg:id()) -> term()).
+-type processor_function() :: fun((term()) -> term()).
 
 %%
 %% API
@@ -30,13 +28,13 @@ start_link(Options) ->
 %%
 -spec handle_function(woody:func(), woody:args(), woody_context:ctx(), processor_function()) ->
                          {ok, _Result} | no_return().
-handle_function('ProcessSignal', [SignalArgs], _WoodyContext, {SignalFun, _CallFun}) ->
-    Args = mg_woody_api_packer:unpack(signal_args, SignalArgs),
-    Result = SignalFun(Args),
+handle_function('ProcessSignal', [Args], _WoodyContext, {SignalFun, _CallFun}) ->
+    UnpackedArgs = mg_woody_api_packer:unpack(signal_args, Args),
+    Result = invoke_function(signal, SignalFun, UnpackedArgs),
     {ok, mg_woody_api_packer:pack(signal_result, Result)};
-handle_function('ProcessCall', [CallArgs], _WoodyContext, {_SignalFun, CallFun}) ->
-    Args = mg_woody_api_packer:unpack(call_args, CallArgs),
-    Result = CallFun(Args),
+handle_function('ProcessCall', [Args], _WoodyContext, {_SignalFun, CallFun}) ->
+    UnpackedArgs = mg_woody_api_packer:unpack(call_args, Args),
+    Result = invoke_function(call, CallFun, UnpackedArgs),
     {ok, mg_woody_api_packer:pack(call_result, Result)}.
 
 %%
@@ -59,17 +57,11 @@ init({Host, Port, Path, Fun}) ->
         )
     ]}}.
 
--spec default_func(signal | call) -> fun((atom(), term()) -> term()).
-default_func(signal) ->
-    default_func(signal_result, {{<<>>, []}, #{timer => undefined, tag => undefined}});
-default_func(call) ->
-    default_func(call_result, {<<>>, {<<>>, []}, #{timer => undefined, tag => undefined}}).
-
-
--spec default_func(atom(), term()) -> fun((atom(), term()) -> term()).
-default_func(Action, Args) ->
-    Func =
-        fun(_FunctionArgs) ->
-            mg_woody_api_packer:pack(Action, Args)
-        end,
-    Func.
+-spec invoke_function(signal | call, default_func | processor_function(), term()) -> term().
+invoke_function(Type, default_func, _Args) ->
+    case Type of
+        signal -> {{<<>>, []}, #{timer => undefined, tag => undefined}};
+        call -> {<<>>, {<<>>, []}, #{timer => undefined, tag => undefined}}
+    end;
+invoke_function(_Type, Func, Args) ->
+    Func(Args).
