@@ -197,13 +197,13 @@ application_stop(App) ->
 namespace_not_found(C) ->
     {URL, Path, _NS, Tag, ID} = test_opts(<<"_namespace_not_found_id">>, C),
     NS = <<"incorrect_NS">>,
-    {ok, _ProcessorPid} = start_processor(default_func, default_func),
+    {ok, _ProcessorPid} = start_processor(Path, default_func, default_func),
     #'NamespaceNotFound'{} = (catch mg_automaton_client:start({URL, NS}, ID, Tag)).
 
 -spec machine_start(config()) -> _.
 machine_start(C) ->
     {URL, Path, NS, Tag, ID} = test_opts(<<"_machine_start_id">>, C),
-    {ok, _ProcessorPid} = start_processor(default_func, default_func),
+    {ok, _ProcessorPid} = start_processor(Path, default_func, default_func),
     ok = mg_automaton_client:start({URL, NS}, ID, Tag).
 
 -spec machine_call_by_id(config()) -> _.
@@ -214,7 +214,7 @@ machine_call_by_id(C) ->
             {Args, {<<>>, []}, #{timer => undefined, tag => undefined}}
         end
     ,
-    {ok, _ProcessorPid} = start_processor(default_func, CallFunc),
+    {ok, _ProcessorPid} = start_processor(Path, default_func, CallFunc),
     ok = mg_automaton_client:start({URL, NS}, ID, Tag),
 
     <<"test_id">> = mg_automaton_client:call({URL, NS}, {id, ID}, <<"test_id">>).
@@ -222,7 +222,7 @@ machine_call_by_id(C) ->
 -spec machine_id_not_found(config()) -> _.
 machine_id_not_found(C) ->
     {URL, Path, NS, Tag, ID} = test_opts(<<"_machine_id_not_found">>, C),
-    {ok, _ProcessorPid} = start_processor(default_func, default_func),
+    {ok, _ProcessorPid} = start_processor(Path, default_func, default_func),
 
     ok = mg_automaton_client:start({URL, NS}, ID, Tag),
 
@@ -242,7 +242,7 @@ failed_machine_call(C) ->
             erlang:error(fail)
         end
     ,
-    {ok, _ProcessorPid} = start_processor(default_func, CallFunc),
+    {ok, _ProcessorPid} = start_processor(Path, default_func, CallFunc),
     ok = mg_automaton_client:start({URL, NS}, ID, Tag),
 
     #'MachineFailed'{} = (catch mg_automaton_client:call({URL, NS}, {id, ID}, <<"test_fail">>)).
@@ -264,7 +264,7 @@ event_sink_get_not_empty_history(C) ->
             {Args, {<<>>, [<<"event_body">>]}, #{timer => undefined, tag => undefined}}
         end
     ,
-    {ok, _ProcessorPid} = start_processor(default_func, CallFunc),
+    {ok, _ProcessorPid} = start_processor(Path, default_func, CallFunc),
     ok = mg_automaton_client:start({URL, NS}, ID, Tag),
 
     <<"test1">> = mg_automaton_client:call({URL, NS}, {id, ID}, <<"test1">>),
@@ -304,7 +304,7 @@ event_sink_lots_events_ordering(C) ->
             {Args, {<<>>, [<<"event_body1">>]}, #{timer => undefined, tag => undefined}}
         end
     ,
-    {ok, _ProcessorPid} = start_processor(default_func, CallFunc),
+    {ok, _ProcessorPid} = start_processor(Path, default_func, CallFunc),
     ok = mg_automaton_client:start({URL, NS}, ID, Tag),
 
     [#'SinkEvent'{id = LastEventID}] =
@@ -345,12 +345,8 @@ config_with_multiple_event_sinks(_C) ->
 %%
 %% utils
 %%
--spec simple_action_response() -> _.
-simple_action_response() ->
-    {{<<>>, [<<"event_body">>]}, #{timer => undefined, tag => undefined}}.
-
--spec start_processor(atom(), atom()) -> _.
-start_processor(SignalFunc, CallFunc) ->
+-spec start_processor(term(), atom(), atom()) -> _.
+start_processor(Path, SignalFunc, CallFunc) ->
     mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, {SignalFunc, CallFunc}}).
 
 -spec test_opts(binary(), config()) -> _.
