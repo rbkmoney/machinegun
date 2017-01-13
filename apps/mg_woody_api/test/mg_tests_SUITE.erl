@@ -69,18 +69,18 @@ groups() ->
 tests_groups() ->
     [
         % TODO проверить отмену таймера
-        % {base, [sequence], [
-        %     namespace_not_found,
-        %     machine_start,
-        %     machine_call_by_id,
-        %     machine_id_not_found
-        % ]},
+        {base, [sequence], [
+            namespace_not_found,
+            machine_start,
+            machine_call_by_id,
+            machine_id_not_found
+        ]},
 
-        % {repair, [sequence], [
-        %     machine_start,
-        %     failed_machine_call,
-        %     machine_call_by_id
-        % ]},
+        {repair, [sequence], [
+            machine_start,
+            failed_machine_call,
+            machine_call_by_id
+        ]},
 
         {event_sink, [sequence], [
             event_sink_get_empty_history,
@@ -113,15 +113,6 @@ end_per_suite(_C) ->
     config().
 init_per_group(memory, C) ->
     [{storage, mg_storage_memory} | C];
-init_per_group(riak, C) ->
-    [{storage, {mg_storage_riak, #{
-        host => "riakdb",
-        port => 8087,
-        pool => #{
-            init_count => 1,
-            max_count  => 10
-        }
-    }}} | C];
 init_per_group(TestGroup, C0) ->
     C = [{test_instance, erlang:atom_to_binary(TestGroup, utf8)} | C0],
     %% TODO сделать нормальную генерацию урлов
@@ -171,8 +162,6 @@ mg_woody_api_config(_, C) ->
 -spec end_per_group(group_name(), config()) ->
     ok.
 end_per_group(memory, _) ->
-    ok;
-end_per_group(riak, _) ->
     ok;
 end_per_group(_, _C) ->
     % true = erlang:exit(?config(processor_pid, C), kill),
