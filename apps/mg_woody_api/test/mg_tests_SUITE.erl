@@ -18,6 +18,8 @@
 -export([machine_start         /1]).
 -export([machine_call_by_id    /1]).
 -export([machine_id_not_found  /1]).
+-export([machine_call_by_tag   /1]).
+-export([machine_tag_not_found /1]).
 
 %% repair group tests
 % -export([machine_processor_error    /1]).
@@ -73,24 +75,26 @@ tests_groups() ->
             namespace_not_found,
             machine_start,
             machine_call_by_id,
-            machine_id_not_found
-        ]},
-
-        {repair, [sequence], [
-            machine_start,
-            failed_machine_call,
-            machine_call_by_id
-        ]},
-
-        {event_sink, [sequence], [
-            event_sink_get_empty_history,
-            event_sink_get_not_empty_history,
-            event_sink_get_last_event,
-            % TODO event_not_found
-            % event_sink_incorrect_event_id,
-            event_sink_incorrect_sink_id,
-            event_sink_lots_events_ordering
+            machine_id_not_found,
+            machine_tag_not_found,
+            machine_call_by_tag
         ]}
+
+        % {repair, [sequence], [
+        %     machine_start,
+        %     failed_machine_call,
+        %     machine_call_by_id
+        % ]},
+
+        % {event_sink, [sequence], [
+        %     event_sink_get_empty_history,
+        %     event_sink_get_not_empty_history,
+        %     event_sink_get_last_event,
+        %     % TODO event_not_found
+        %     % event_sink_incorrect_event_id,
+        %     event_sink_incorrect_sink_id,
+        %     event_sink_lots_events_ordering
+        % ]}
     ].
 
 
@@ -186,38 +190,45 @@ application_stop(App) ->
 namespace_not_found(C) ->
     {URL, Path, _NS, Tag, ID} = test_opts(<<"_namespace_not_found_id">>, C),
     NS = <<"incorrect_NS">>,
-    {ok, _ProcessorPid} = start_processor(Path, default_func, default_func),
-    #'NamespaceNotFound'{} = (catch mg_automaton_client:start({URL, NS}, ID, Tag)).
-
--spec machine_start(config()) -> _.
-machine_start(C) ->
-    {URL, Path, NS, Tag, ID} = test_opts(<<"_machine_start_id">>, C),
-    {ok, _ProcessorPid} = start_processor(Path, default_func, default_func),
-    ok = mg_automaton_client:start({URL, NS}, ID, Tag).
-
--spec machine_call_by_id(config()) -> _.
-machine_call_by_id(C) ->
-    {URL, Path, NS, Tag, ID} = test_opts(<<"_machine_call_by_id">>, C),
     CallFunc =
         fun({Args, _Machine}) ->
             {Args, {<<>>, []}, #{timer => undefined, tag => undefined}}
         end
     ,
-    {ok, _ProcessorPid} = start_processor(Path, default_func, CallFunc),
-    ok = mg_automaton_client:start({URL, NS}, ID, Tag),
+    _ = start_processor(Path, default_func, CallFunc),
+    #'NamespaceNotFound'{} = (catch mg_automaton_client:start({URL, NS}, ID, Tag)).
 
+-spec machine_start(config()) -> _.
+machine_start(C) ->
+    {URL, _Path, NS, Tag, ID} = test_opts(<<"_machine_start_id">>, C),
+    ok = mg_automaton_client:start({URL, NS}, ID, Tag).
+
+-spec machine_call_by_id(config()) -> _.
+machine_call_by_id(C) ->
+    {URL, _Path, NS, Tag, ID} = test_opts(<<"_machine_call_by_id">>, C),
+    ok = mg_automaton_client:start({URL, NS}, ID, Tag),
     <<"test_id">> = mg_automaton_client:call({URL, NS}, {id, ID}, <<"test_id">>).
 
 -spec machine_id_not_found(config()) -> _.
 machine_id_not_found(C) ->
-    {URL, Path, NS, Tag, ID} = test_opts(<<"_machine_id_not_found">>, C),
-    {ok, _ProcessorPid} = start_processor(Path, default_func, default_func),
-
+    {URL, _Path, NS, Tag, ID} = test_opts(<<"_machine_id_not_found">>, C),
     ok = mg_automaton_client:start({URL, NS}, ID, Tag),
-
     IncorrectID = <<"incorrect_ID">>,
     #'MachineNotFound'{} = (catch mg_automaton_client:call({URL, NS}, {id, IncorrectID}, <<"test">>)).
 
+-spec machine_call_by_tag(config()) -> _.
+machine_call_by_tag(C) ->
+    {URL, _Path, NS, _Tag, ID} = test_opts(<<"_machine_call_by_tag">>, C),
+    Tag = <<"Tag_namespace_not_found">>,
+    ok = mg_automaton_client:start({URL, NS}, ID, Tag),
+    <<"test_id">> = mg_automaton_client:call({URL, NS}, {tag, Tag}, <<"test_id">>).
+
+-spec machine_tag_not_found(config()) -> _.
+machine_tag_not_found(C) ->
+    {URL, _Path, NS, Tag, ID} = test_opts(<<"_machine_tag_not_found">>, C),
+    ok = mg_automaton_client:start({URL, NS}, ID, Tag),
+    IncorrectTag = <<"incorrect_Tag">>,
+    #'MachineNotFound'{} = (catch mg_automaton_client:call({URL, NS}, {tag, IncorrectTag}, <<"test">>)).
 %%
 %% repair group tests
 %%
@@ -336,7 +347,8 @@ config_with_multiple_event_sinks(_C) ->
 %%
 -spec start_processor(term(), atom(), atom()) -> _.
 start_processor(Path, SignalFunc, CallFunc) ->
-    mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, {SignalFunc, CallFunc}}).
+    {ok, ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, {SignalFunc, CallFunc}}),
+    true = erlang:unlink(ProcessorPid).
 
 -spec test_opts(binary(), config()) -> _.
 test_opts(Name, C) ->
