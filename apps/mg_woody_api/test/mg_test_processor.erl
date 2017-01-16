@@ -13,7 +13,9 @@
 -export([init/1]).
 
 -export_type([processor_function/0]).
--type processor_function() :: fun((tuple()) -> term()).
+-type processor_function() :: fun((mg:signal_args() | mg:call_args()) -> processor_function_result()).
+-type processor_function_result() :: mg:signal_result() | mg:call_result().
+
 
 %%
 %% API
@@ -61,13 +63,14 @@ init(Opts) ->
 %%
 %% helpers
 %%
--spec invoke_function(signal | call, default_func | processor_function(), term()) -> term().
+-spec invoke_function(signal | call, default_func | processor_function(), term()) -> processor_function_result().
 invoke_function(Type, default_func, _Args) ->
     default_result(Type);
 invoke_function(_Type, Func, Args) ->
     Func(Args).
 
--spec default_result(signal | call) -> tuple().
+-spec default_result(signal | call) ->
+    processor_function_result().
 default_result(signal) ->
     {{<<>>, []}, #{timer => undefined, tag => undefined}};
 default_result(call) ->

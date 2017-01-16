@@ -14,12 +14,14 @@
 -export([end_per_group   /2]).
 
 %% base group tests
--export([namespace_not_found   /1]).
--export([machine_start         /1]).
--export([machine_call_by_id    /1]).
--export([machine_id_not_found  /1]).
--export([machine_call_by_tag   /1]).
--export([machine_tag_not_found /1]).
+-export([namespace_not_found    /1]).
+-export([machine_start          /1]).
+-export([machine_already_exists /1]).
+-export([machine_call_by_id     /1]).
+-export([machine_id_not_found   /1]).
+-export([machine_set_tag        /1]).
+-export([machine_call_by_tag    /1]).
+-export([machine_tag_not_found  /1]).
 
 %% repair group tests
 -export([machine_processor_error     /1]).
@@ -77,8 +79,10 @@ tests_groups() ->
         {base, [sequence], [
             namespace_not_found,
             machine_start,
+            machine_already_exists,
             machine_id_not_found,
             machine_call_by_id,
+            machine_set_tag,
             machine_tag_not_found,
             machine_call_by_tag
         ]},
@@ -151,7 +155,7 @@ init_per_group(TestGroup, C0) ->
     SignalFunc =
         fun({Args, _Machine}) ->
             case Args of
-                {repair,<<"error">>} -> erlang:error(error);
+                {repair, <<"error">>} -> erlang:error(error);
                 _ -> mg_test_processor:default_result(signal)
             end
         end
@@ -221,25 +225,32 @@ namespace_not_found(_C) ->
 
 -spec machine_start(config()) -> _.
 machine_start(_C) ->
-    ok = mg_automaton_client:start({?URL, ?NS}, ?ID, ?Tag).
+    ok = start_automaton().
+
+-spec machine_already_exists(config()) -> _.
+machine_already_exists(_C) ->
+    #'MachineAlreadyExists'{} = (catch mg_automaton_client:start({?URL, ?NS}, ?ID, ?Tag)).
 
 -spec machine_id_not_found(config()) -> _.
 machine_id_not_found(_C) ->
     IncorrectID = <<"incorrect_ID">>,
-    #'MachineNotFound'{} = (catch mg_automaton_client:call({?URL, ?NS}, {id, IncorrectID}, <<"test">>)).
+    #'MachineNotFound'{} = (catch mg_automaton_client:call({?URL, ?NS}, {id, IncorrectID}, <<"test_id">>)).
 
 -spec machine_call_by_id(config()) -> _.
 machine_call_by_id(_C) ->
     <<"test_id">> = mg_automaton_client:call({?URL, ?NS}, {id, ?ID}, <<"test_id">>).
 
+-spec machine_set_tag(config()) -> _.
+machine_set_tag(_C) ->
+    <<"tag">> = mg_automaton_client:call({?URL, ?NS}, {id, ?ID}, <<"tag">>).
+
 -spec machine_tag_not_found(config()) -> _.
 machine_tag_not_found(_C) ->
     IncorrectTag = <<"incorrect_Tag">>,
-    #'MachineNotFound'{} = (catch mg_automaton_client:call({?URL, ?NS}, {tag, IncorrectTag}, <<"test">>)).
+    #'MachineNotFound'{} = (catch mg_automaton_client:call({?URL, ?NS}, {tag, IncorrectTag}, <<"test_id">>)).
 
 -spec machine_call_by_tag(config()) -> _.
 machine_call_by_tag(_C) ->
-    <<"tag">> = mg_automaton_client:call({?URL, ?NS}, {id, ?ID}, <<"tag">>),
     <<"test_id">> = mg_automaton_client:call({?URL, ?NS}, ?Ref, <<"test_id">>).
 
 %%
@@ -277,11 +288,9 @@ event_sink_get_empty_history(C) ->
 -spec event_sink_get_not_empty_history(config()) ->
     _.
 event_sink_get_not_empty_history(C) ->
-    ok = mg_automaton_client:start({?URL, ?NS}, ?ID, ?Tag),
+    ok = start_automaton(),
 
-    <<"event">> = mg_automaton_client:call({?URL, ?NS}, {id, ?ID}, <<"event">>),
-    <<"event">> = mg_automaton_client:call({?URL, ?NS}, {id, ?ID}, <<"event">>),
-    <<"event">> = mg_automaton_client:call({?URL, ?NS}, {id, ?ID}, <<"event">>),
+    _ = create_events(3),
 
     [
         #'SinkEvent'{id = 1, source_id = ?ID, source_ns = ?NS, event = #'Event'{}},
@@ -313,12 +322,7 @@ event_sink_lots_events_ordering(C) ->
     [#'SinkEvent'{id = LastEventID}] =
         mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=backward, limit=1}),
     N = 20,
-    _ = lists:foreach(
-            fun(_) ->
-                _ = mg_automaton_client:call({?URL, ?NS}, {id, ?ID}, <<"event">>)
-            end,
-            lists:seq(1, N)
-        ),
+    _ = create_events(N),
 
     Events = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}),
     EventsIDs = lists:seq(1, N + LastEventID),
@@ -348,6 +352,19 @@ config_with_multiple_event_sinks(_C) ->
 %%
 %% utils
 %%
+-spec start_automaton() -> _.
+start_automaton() ->
+    mg_automaton_client:start({?URL, ?NS}, ?ID, ?Tag).
+
+-spec create_events(integer()) -> _.
+create_events(N) ->
+    lists:foreach(
+            fun(_) ->
+                _ = mg_automaton_client:call({?URL, ?NS}, {id, ?ID}, <<"event">>)
+            end,
+            lists:seq(1, N)
+    ).
+
 -spec start_processor(term(), atom(), atom()) -> _.
 start_processor(Path, SignalFunc, CallFunc) ->
     {ok, ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, {SignalFunc, CallFunc}}),
