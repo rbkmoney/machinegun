@@ -1,6 +1,7 @@
 -module(mg_test_processor).
 
--export([start_link   /1]).
+-export([start_link    /1]).
+-export([default_result/1]).
 
 %% processor handlers
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
@@ -12,15 +13,28 @@
 -export([init/1]).
 
 -export_type([processor_function/0]).
--type processor_function() :: fun((term()) -> term()).
+-type processor_function() :: fun((tuple()) -> term()).
 
 %%
 %% API
 %%
 -spec start_link(_Opts) ->
     mg_utils:gen_start_ret().
-start_link(Options) ->
-    supervisor:start_link(?MODULE, Options).
+start_link({Host, Port, Path, Fun}) ->
+    Flags = #{strategy => one_for_all},
+    ChildsSpecs = [
+        woody_server:child_spec(
+            ?MODULE,
+            #{
+                ip            => Host,
+                port          => Port,
+                net_opts      => #{},
+                event_handler => {mg_woody_api_event_handler, undefined},
+                handlers      => [{Path, {{mg_proto_state_processing_thrift, 'Processor'}, {?MODULE, Fun}}}]
+            }
+        )
+    ],
+    mg_utils_supervisor_wrapper:start_link(Flags, ChildsSpecs).
 
 %%
 %% processor handlers
@@ -41,29 +55,20 @@ handle_function('ProcessCall', [Args], _WoodyContext, {_SignalFun, CallFun}) ->
 %%
 -spec init(_Opts) ->
     mg_utils:supervisor_ret().
-init({Host, Port, Path, Fun}) ->
-    SupFlags = #{strategy => one_for_all},
-    {ok, {SupFlags, [
-        woody_server:child_spec(
-            ?MODULE,
-            #{
-                ip            => Host,
-                port          => Port,
-                net_opts      => #{},
-                event_handler => {mg_woody_api_event_handler, undefined},
-                handlers      => [{Path, {{mg_proto_state_processing_thrift, 'Processor'}, {?MODULE, Fun}}}]
-            }
-        )
-    ]}}.
+init(Opts) ->
+    mg_utils_supervisor_wrapper:init(Opts).
 
 %%
 %% helpers
 %%
 -spec invoke_function(signal | call, default_func | processor_function(), term()) -> term().
 invoke_function(Type, default_func, _Args) ->
-    case Type of
-        signal -> {{<<>>, []}, #{timer => undefined, tag => undefined}};
-        call -> {<<>>, {<<>>, []}, #{timer => undefined, tag => undefined}}
-    end;
+    default_result(Type);
 invoke_function(_Type, Func, Args) ->
     Func(Args).
+
+-spec default_result(signal | call) -> tuple().
+default_result(signal) ->
+    {{<<>>, []}, #{timer => undefined, tag => undefined}};
+default_result(call) ->
+    {<<>>, {<<>>, []}, #{timer => undefined, tag => undefined}}.
