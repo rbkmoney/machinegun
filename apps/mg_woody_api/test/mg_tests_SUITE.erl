@@ -14,19 +14,20 @@
 -export([end_per_group   /2]).
 
 %% base group tests
--export([namespace_not_found   /1]).
--export([machine_start         /1]).
--export([machine_already_exists/1]).
--export([machine_call_by_id    /1]).
--export([machine_id_not_found  /1]).
--export([machine_tag_not_found /1]).
--export([machine_call_by_tag   /1]).
+-export([namespace_not_found    /1]).
+-export([machine_start          /1]).
+-export([machine_already_exists /1]).
+-export([machine_call_by_id     /1]).
+-export([machine_id_not_found   /1]).
+-export([machine_set_tag        /1]).
+-export([machine_call_by_tag    /1]).
+-export([machine_tag_not_found  /1]).
 
 %% repair group tests
--export([machine_processor_error    /1]).
--export([failed_machine_call        /1]).
--export([failed_machine_repair_error/1]).
--export([failed_machine_repair      /1]).
+-export([machine_processor_error     /1]).
+-export([failed_machine_call         /1]).
+-export([failed_machine_repair_error /1]).
+-export([failed_machine_repair       /1]).
 
 %% event_sink group tests
 -export([event_sink_get_empty_history    /1]).
@@ -36,14 +37,11 @@
 -export([event_sink_incorrect_sink_id    /1]).
 -export([event_sink_lots_events_ordering /1]).
 
-%% test_door group tests
--export([machine_test_door/1]).
-
 -export([config_with_multiple_event_sinks/1]).
 
--define(NS(C), <<"mg_test_", (proplists:get_value(test_instance, C))/binary, "_ns">>).
+-define(NS, <<"NS">>).
 -define(ID, <<"ID">>).
--define(Tag, <<"Tag">>).
+-define(Tag, <<"tag">>).
 -define(Ref, {tag, ?Tag}).
 -define(ES_ID, <<"test_event_sink">>).
 
@@ -61,7 +59,6 @@
 all() ->
     [
         {group, memory},
-        {group, riak  },
         config_with_multiple_event_sinks
     ].
 
@@ -69,8 +66,7 @@ all() ->
     [{group_name(), list(_), test_name()}].
 groups() ->
     [
-        {memory, [sequence], tests_groups()},
-        {riak  , [sequence], tests_groups()}
+        {memory, [sequence], tests_groups()}
     ].
 
 -spec tests_groups() ->
@@ -82,24 +78,11 @@ tests_groups() ->
             namespace_not_found,
             machine_start,
             machine_already_exists,
-            machine_call_by_id,
             machine_id_not_found,
+            machine_call_by_id,
+            machine_set_tag,
             machine_tag_not_found,
-
-            % machine_tag_action,
             machine_call_by_tag
-
-            % machine_timer_action
-            % machine_get_history_by,
-
-            % machine_get_unexisted_event
-            % machine_double_tagging
-
-            % machine_timer_timeout_test
-            % machine_timer_deadline_test
-
-            % machine_negative_timeout
-            % machine_negative_deadline
         ]},
 
         {repair, [sequence], [
@@ -107,9 +90,7 @@ tests_groups() ->
             machine_processor_error,
             failed_machine_call,
             failed_machine_repair_error,
-            failed_machine_call,
-            failed_machine_repair,
-            machine_call_by_id
+            failed_machine_repair
         ]},
 
         {event_sink, [sequence], [
@@ -121,10 +102,6 @@ tests_groups() ->
             event_sink_incorrect_sink_id,
             event_sink_lots_events_ordering
         ]}
-
-        % {test_door, [sequence], [
-        %     machine_test_door
-        % ]}
     ].
 
 
@@ -147,15 +124,6 @@ end_per_suite(_C) ->
     config().
 init_per_group(memory, C) ->
     [{storage, mg_storage_memory} | C];
-init_per_group(riak, C) ->
-    [{storage, {mg_storage_riak, #{
-        host => "riakdb",
-        port => 8087,
-        pool => #{
-            init_count => 1,
-            max_count  => 10
-        }
-    }}} | C];
 init_per_group(TestGroup, C0) ->
     C = [{test_instance, erlang:atom_to_binary(TestGroup, utf8)} | C0],
     %% TODO сделать нормальную генерацию урлов
@@ -163,7 +131,6 @@ init_per_group(TestGroup, C0) ->
         genlib_app:start_application_with(lager, [
             {handlers, [{lager_common_test_backend, info}]},
             {async_threshold, undefined}
-            % {error_logger_hwm, undefined}
         ])
         ++
         genlib_app:start_application_with(woody, [{acceptors_pool_size, 1}])
@@ -171,14 +138,31 @@ init_per_group(TestGroup, C0) ->
         genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(TestGroup, C))
     ,
 
-    {ok, ProcessorPid} = mg_machine_test_door:start_link({{0, 0, 0, 0}, 8023, "/processor"}),
-    true = erlang:unlink(ProcessorPid),
+    CallFunc =
+        fun({Args, _Machine}) ->
+            case Args of
+                <<"tag">>   -> {Args, {<<>>, [<<"tag_body">>]}, #{timer => undefined, tag => Args}};
+                <<"event">> -> {Args, {<<>>, [<<"event_body">>]}, #{timer => undefined, tag => undefined}};
+                <<"fail">>  -> erlang:error(fail);
+                _           -> {Args, {<<>>, []}, #{timer => undefined, tag => undefined}}
+            end
+        end
+    ,
+    SignalFunc =
+        fun({Args, _Machine}) ->
+            case Args of
+                {repair, <<"error">>} -> erlang:error(error);
+                _ -> mg_test_processor:default_result(signal)
+            end
+        end
+    ,
+    {ok, ProcessorPid} = start_processor({0, 0, 0, 0}, 8023, "/processor", {SignalFunc, CallFunc}),
 
     [
         {apps              , Apps                             },
-        {processor_pid     , ProcessorPid                     },
-        {automaton_options , {"http://localhost:8022", ?NS(C)}},
-        {event_sink_options,  "http://localhost:8022"         }
+        {automaton_options , {"http://localhost:8022", ?NS   }},
+        {event_sink_options, "http://localhost:8022"          },
+        {processor_pid     , ProcessorPid                     }
     |
         C
     ].
@@ -189,7 +173,7 @@ mg_woody_api_config(event_sink, C) ->
     [
         {storage, ?config(storage, C)},
         {namespaces, #{
-            ?NS(C) => #{
+            ?NS => #{
                 processor  => #{ url => <<"http://localhost:8023/processor">>, recv_timeout => 5000 },
                 event_sink => ?ES_ID
             }
@@ -199,8 +183,9 @@ mg_woody_api_config(_, C) ->
     [
         {storage, ?config(storage, C)},
         {namespaces, #{
-            ?NS(C) => #{
-                processor => #{ url => <<"http://localhost:8023/processor">> }
+            ?NS => #{
+                processor => #{ url => <<"http://localhost:8023/processor">> },
+                event_sink => ?ES_ID
             }
         }}
     ].
@@ -208,8 +193,6 @@ mg_woody_api_config(_, C) ->
 -spec end_per_group(group_name(), config()) ->
     ok.
 end_per_group(memory, _) ->
-    ok;
-end_per_group(riak, _) ->
     ok;
 end_per_group(_, C) ->
     true = erlang:exit(?config(processor_pid, C), kill),
@@ -232,36 +215,39 @@ application_stop(App) ->
 %%
 -spec namespace_not_found(config()) -> _.
 namespace_not_found(C) ->
-    {URL, _NS} = a_opts(C),
-    #'NamespaceNotFound'{} = (catch mg_machine_test_door:start({URL, <<"incorrect_NS">>}, ?ID, ?Tag)).
+    {URL, _} = automaton_options(C),
+    NS = <<"incorrect_NS">>,
+    #'NamespaceNotFound'{} = (catch mg_automaton_client:start({URL, NS}, ?ID, ?Tag)).
 
 -spec machine_start(config()) -> _.
 machine_start(C) ->
-    ok = mg_machine_test_door:start(a_opts(C), ?ID, ?Tag).
+    ok = start_automaton(C).
 
 -spec machine_already_exists(config()) -> _.
 machine_already_exists(C) ->
-    #'MachineAlreadyExists'{} = (catch mg_machine_test_door:start(a_opts(C), ?ID, <<"another_Tag">>)).
-
--spec machine_call_by_id(config()) -> _.
-machine_call_by_id(C) ->
-    ok = mg_machine_test_door:do_action(a_opts(C), touch, {id, ?ID}).
+    #'MachineAlreadyExists'{} = (catch mg_automaton_client:start(automaton_options(C), ?ID, ?Tag)).
 
 -spec machine_id_not_found(config()) -> _.
 machine_id_not_found(C) ->
-    #'MachineNotFound'{} = (catch mg_machine_test_door:do_action(a_opts(C), touch, {id, <<"incorrect_ID">>})).
+    IncorrectID = <<"incorrect_ID">>,
+    #'MachineNotFound'{} = (catch mg_automaton_client:call(automaton_options(C), {id, IncorrectID}, <<"test_id">>)).
 
+-spec machine_call_by_id(config()) -> _.
+machine_call_by_id(C) ->
+    <<"test_id">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"test_id">>).
 
--spec machine_call_by_tag(config()) -> _.
-machine_call_by_tag(C) ->
-    ok = mg_machine_test_door:do_action(a_opts(C), touch, {tag, ?Tag}).
+-spec machine_set_tag(config()) -> _.
+machine_set_tag(C) ->
+    <<"tag">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"tag">>).
 
 -spec machine_tag_not_found(config()) -> _.
 machine_tag_not_found(C) ->
-    #'MachineNotFound'{} = (catch mg_machine_test_door:do_action(a_opts(C), touch, {tag, <<"incorrect_Tag">>})).
+    IncorrectTag = <<"incorrect_Tag">>,
+    #'MachineNotFound'{} = (catch mg_automaton_client:call(automaton_options(C), {tag, IncorrectTag}, <<"test_id">>)).
 
-%% get history к несущестующему эвенту
-%% двойное тэгирование
+-spec machine_call_by_tag(config()) -> _.
+machine_call_by_tag(C) ->
+    <<"test_id">> = mg_automaton_client:call(automaton_options(C), ?Ref, <<"test_id">>).
 
 %%
 %% repair group tests
@@ -270,22 +256,22 @@ machine_tag_not_found(C) ->
 -spec machine_processor_error(config()) ->
     _.
 machine_processor_error(C) ->
-    #'MachineFailed'{} = (catch mg_machine_test_door:do_action(a_opts(C), fail, {id, ?ID})).
+    #'MachineFailed'{} = (catch mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"fail">>)).
 
 -spec failed_machine_call(config()) ->
     _.
 failed_machine_call(C) ->
-    #'MachineFailed'{} = (catch mg_machine_test_door:do_action(a_opts(C), touch, {id, ?ID})).
+    #'MachineFailed'{} = (catch mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"ok">>)).
 
 -spec failed_machine_repair_error(config()) ->
     _.
 failed_machine_repair_error(C) ->
-    #'MachineFailed'{} = (catch mg_machine_test_door:repair(a_opts(C), {id, ?ID}, error)).
+    #'MachineFailed'{} = (catch mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"error">>)).
 
 -spec failed_machine_repair(config()) ->
     _.
 failed_machine_repair(C) ->
-    ok = (catch mg_machine_test_door:repair(a_opts(C), {id, ?ID}, ok)).
+    ok = mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"ok">>).
 
 %%
 %% event_sink group test
@@ -298,21 +284,20 @@ event_sink_get_empty_history(C) ->
 -spec event_sink_get_not_empty_history(config()) ->
     _.
 event_sink_get_not_empty_history(C) ->
-    _ID = mg_machine_test_door:start(a_opts(C), ?ID, ?Tag),
-    ok = test_door_do_action(C, close, {id, ?ID}),
-    ok = test_door_do_action(C, open , {id, ?ID}),
-    NS = ?NS(C),
+    ok = start_automaton(C),
+
+    _ = create_events(3, C),
+
     [
-        #'SinkEvent'{id = 1, source_id = ?ID, source_ns = NS, event = #'Event'{}},
-        #'SinkEvent'{id = 2, source_id = ?ID, source_ns = NS, event = #'Event'{}},
-        #'SinkEvent'{id = 3, source_id = ?ID, source_ns = NS, event = #'Event'{}}
+        #'SinkEvent'{id = 1, source_id = ?ID, source_ns = ?NS, event = #'Event'{}},
+        #'SinkEvent'{id = 2, source_id = ?ID, source_ns = ?NS, event = #'Event'{}},
+        #'SinkEvent'{id = 3, source_id = ?ID, source_ns = ?NS, event = #'Event'{}}
     ] = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}).
 
 -spec event_sink_get_last_event(config()) ->
     _.
 event_sink_get_last_event(C) ->
-    NS = ?NS(C),
-    [#'SinkEvent'{id = 3, source_id = ?ID, source_ns = NS, event = #'Event'{}}] =
+    [#'SinkEvent'{id = 3, source_id = _ID, source_ns = _NS, event = #'Event'{}}] =
         mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=backward, limit=1}).
 
 -spec event_sink_incorrect_event_id(config()) ->
@@ -320,7 +305,6 @@ event_sink_get_last_event(C) ->
 event_sink_incorrect_event_id(C) ->
     #'EventNotFound'{}
         = (catch mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{'after'=42})).
-
 
 -spec event_sink_incorrect_sink_id(config()) ->
     _.
@@ -333,53 +317,13 @@ event_sink_incorrect_sink_id(C) ->
 event_sink_lots_events_ordering(C) ->
     [#'SinkEvent'{id = LastEventID}] =
         mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=backward, limit=1}),
-    % N = 35,
     N = 20,
-    _ = lists:foreach(
-            fun(_) ->
-                ok = test_door_do_action(C, close, {id, ?ID}),
-                ok = test_door_do_action(C, open , {id, ?ID})
-            end,
-            lists:seq(1, N)
-        ),
+    _ = create_events(N, C),
 
     Events = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}),
-    EventsIDs = lists:seq(1, N * 2 + LastEventID),
-    EventsIDs = [ID || #'SinkEvent'{id=ID} <- Events].
+    EventsIDs = lists:seq(1, N + LastEventID),
+    EventsIDs = [ID0 || #'SinkEvent'{id=ID0} <- Events].
 
-
-%%
-%% test_door group tests
-%%
--spec machine_test_door(config()) ->
-    _.
-machine_test_door(C) ->
-    % запустить автомат
-    _ID = mg_machine_test_door:start(a_opts(C), ?ID, ?Tag),
-    CS0 = #{last_event_id => undefined, state => undefined},
-    CS1 = #{state:=open} = test_door_update_state(C, CS0),
-
-    % прогнать по стейтам
-    ok = test_door_do_action(C, close),
-    CS2 = #{state:=closed} = test_door_update_state(C, CS1),
-
-    ok = test_door_do_action(C, open),
-    CS3 = #{state:=open} = test_door_update_state(C, CS2),
-    ok = test_door_do_action(C, close),
-
-    CS4 = #{state:=closed} = test_door_update_state(C, CS3),
-    % ждем, что таймер не сработает
-    ok = timer:sleep(3000),
-    CS5 = #{state:=closed} = test_door_update_state(C, CS4),
-    ok = test_door_do_action(C, open),
-    CS6 = #{state:=open} = test_door_update_state(C, CS5),
-    % ждем, что таймер сработает
-    ok = timer:sleep(3000),
-    CS7 = #{state:=closed} = test_door_update_state(C, CS6),
-    ok = test_door_do_action(C, {lock, <<"123">>}),
-    {error, bad_passwd} = test_door_do_action(C, {unlock, <<"12">>}),
-    ok = test_door_do_action(C, {unlock, <<"123">>}),
-    _CS8 = #{state:=closed} = test_door_update_state(C, CS7).
 
 -spec config_with_multiple_event_sinks(config()) ->
     _.
@@ -404,22 +348,31 @@ config_with_multiple_event_sinks(_C) ->
 %%
 %% utils
 %%
--spec test_door_update_state(config(), mg_machine_test_door:client_state()) ->
-    mg_machine_test_door:client_state().
-test_door_update_state(C, CS) ->
-    mg_machine_test_door:update_state(a_opts(C), ?Ref, CS).
+-spec start_automaton(config()) -> _.
+start_automaton(C) ->
+    mg_automaton_client:start(automaton_options(C), ?ID, ?Tag).
 
--spec test_door_do_action(config(), mg_machine_test_door:action()) ->
-    _.
-test_door_do_action(C, Action) ->
-    mg_machine_test_door:do_action(a_opts(C), Action, ?Ref).
+-spec create_events(integer(), config()) -> _.
+create_events(N, C) ->
+    lists:foreach(
+            fun(_) ->
+                _ = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"event">>)
+            end,
+            lists:seq(1, N)
+    ).
 
--spec test_door_do_action(config(), mg_machine_test_door:action(), mg:ref()) ->
-    _.
-test_door_do_action(C, Action, Ref) ->
-    mg_machine_test_door:do_action(a_opts(C), Action, Ref).
+-spec start_processor(Address, Port, Path, Functions) -> {ok, pid()} when
+    Address   :: mg_test_processor:host_address(),
+    Port      :: integer(),
+    Path      :: string(),
+    Functions :: {mg_test_processor:processor_function(), mg_test_processor:processor_function()}.
+start_processor(Address, Port, Path, {SignalFunc, CallFunc}) ->
+    {ok, ProcessorPid} = mg_test_processor:start_link({Address, Port, Path, {SignalFunc, CallFunc}}),
+    true = erlang:unlink(ProcessorPid),
+    {ok, ProcessorPid}.
 
--spec a_opts(config()) -> _.
-a_opts(C) -> ?config(automaton_options, C).
+-spec automaton_options(config()) -> _.
+automaton_options(C) -> ?config(automaton_options, C).
+
 -spec es_opts(config()) -> _.
 es_opts(C) -> ?config(event_sink_options, C).
