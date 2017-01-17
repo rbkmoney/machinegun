@@ -8,19 +8,16 @@
 -behaviour(woody_server_thrift_handler).
 -export([handle_function/4]).
 
-%% supervisor callbacks
--behaviour(supervisor).
--export([init/1]).
-
 -export_type([processor_function/0]).
--type processor_function() :: fun((mg:signal_args() | mg:call_args()) -> processor_function_result()).
--type processor_function_result() :: mg:signal_result() | mg:call_result().
+-type processor_function() :: fun((mg:signal_args()) -> mg:signal_result()) |
+                              fun((mg:call_args()) -> mg:call_result()) | default_func.
+-type host_address() :: {integer(), integer(), integer(), integer()}.
 
 
 %%
 %% API
 %%
--spec start_link(_Opts) ->
+-spec start_link({host_address(), integer(), string(), {processor_function(), processor_function()}}) ->
     mg_utils:gen_start_ret().
 start_link({Host, Port, Path, Fun}) ->
     Flags = #{strategy => one_for_all},
@@ -41,7 +38,7 @@ start_link({Host, Port, Path, Fun}) ->
 %%
 %% processor handlers
 %%
--spec handle_function(woody:func(), woody:args(), woody_context:ctx(), processor_function()) ->
+-spec handle_function(woody:func(), woody:args(), woody_context:ctx(), {processor_function(), processor_function()}) ->
                          {ok, _Result} | no_return().
 handle_function('ProcessSignal', [Args], _WoodyContext, {SignalFun, _CallFun}) ->
     UnpackedArgs = mg_woody_api_packer:unpack(signal_args, Args),
@@ -53,24 +50,17 @@ handle_function('ProcessCall', [Args], _WoodyContext, {_SignalFun, CallFun}) ->
     {ok, mg_woody_api_packer:pack(call_result, Result)}.
 
 %%
-%% supervisor callbacks
-%%
--spec init(_Opts) ->
-    mg_utils:supervisor_ret().
-init(Opts) ->
-    mg_utils_supervisor_wrapper:init(Opts).
-
-%%
 %% helpers
 %%
--spec invoke_function(signal | call, default_func | processor_function(), term()) -> processor_function_result().
+-spec invoke_function(signal, processor_function(), term()) -> mg:signal_result()
+                   ; (call,   processor_function(), term()) -> mg:call_result().
 invoke_function(Type, default_func, _Args) ->
     default_result(Type);
 invoke_function(_Type, Func, Args) ->
     Func(Args).
 
--spec default_result(signal | call) ->
-    processor_function_result().
+-spec default_result(signal) -> mg:signal_result()
+                  ; (call  ) -> mg:call_result().
 default_result(signal) ->
     {{<<>>, []}, #{timer => undefined, tag => undefined}};
 default_result(call) ->
