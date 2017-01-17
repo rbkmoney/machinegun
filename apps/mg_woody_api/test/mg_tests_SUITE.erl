@@ -138,7 +138,6 @@ init_per_group(TestGroup, C0) ->
         genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(TestGroup, C))
     ,
 
-    {URL, Path} = {"http://localhost:8022", "/processor"},
     CallFunc =
         fun({Args, _Machine}) ->
             case Args of
@@ -157,14 +156,13 @@ init_per_group(TestGroup, C0) ->
             end
         end
     ,
-    {ok, ProcessorPid} = start_processor(Path, SignalFunc, CallFunc),
+    {ok, ProcessorPid} = start_processor({0, 0, 0, 0}, 8023, "/processor", {SignalFunc, CallFunc}),
 
     [
         {apps              , Apps                             },
         {automaton_options , {"http://localhost:8022", ?NS   }},
         {event_sink_options, "http://localhost:8022"          },
-        {processor_pid     , ProcessorPid                     },
-        {processor_options , {URL, ?NS                       }}
+        {processor_pid     , ProcessorPid                     }
     |
         C
     ].
@@ -217,7 +215,7 @@ application_stop(App) ->
 %%
 -spec namespace_not_found(config()) -> _.
 namespace_not_found(C) ->
-    {URL, _} = processor_opts(C),
+    {URL, _} = automaton_options(C),
     NS = <<"incorrect_NS">>,
     #'NamespaceNotFound'{} = (catch mg_automaton_client:start({URL, NS}, ?ID, ?Tag)).
 
@@ -227,29 +225,29 @@ machine_start(C) ->
 
 -spec machine_already_exists(config()) -> _.
 machine_already_exists(C) ->
-    #'MachineAlreadyExists'{} = (catch mg_automaton_client:start(processor_opts(C), ?ID, ?Tag)).
+    #'MachineAlreadyExists'{} = (catch mg_automaton_client:start(automaton_options(C), ?ID, ?Tag)).
 
 -spec machine_id_not_found(config()) -> _.
 machine_id_not_found(C) ->
     IncorrectID = <<"incorrect_ID">>,
-    #'MachineNotFound'{} = (catch mg_automaton_client:call(processor_opts(C), {id, IncorrectID}, <<"test_id">>)).
+    #'MachineNotFound'{} = (catch mg_automaton_client:call(automaton_options(C), {id, IncorrectID}, <<"test_id">>)).
 
 -spec machine_call_by_id(config()) -> _.
 machine_call_by_id(C) ->
-    <<"test_id">> = mg_automaton_client:call(processor_opts(C), {id, ?ID}, <<"test_id">>).
+    <<"test_id">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"test_id">>).
 
 -spec machine_set_tag(config()) -> _.
 machine_set_tag(C) ->
-    <<"tag">> = mg_automaton_client:call(processor_opts(C), {id, ?ID}, <<"tag">>).
+    <<"tag">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"tag">>).
 
 -spec machine_tag_not_found(config()) -> _.
 machine_tag_not_found(C) ->
     IncorrectTag = <<"incorrect_Tag">>,
-    #'MachineNotFound'{} = (catch mg_automaton_client:call(processor_opts(C), {tag, IncorrectTag}, <<"test_id">>)).
+    #'MachineNotFound'{} = (catch mg_automaton_client:call(automaton_options(C), {tag, IncorrectTag}, <<"test_id">>)).
 
 -spec machine_call_by_tag(config()) -> _.
 machine_call_by_tag(C) ->
-    <<"test_id">> = mg_automaton_client:call(processor_opts(C), ?Ref, <<"test_id">>).
+    <<"test_id">> = mg_automaton_client:call(automaton_options(C), ?Ref, <<"test_id">>).
 
 %%
 %% repair group tests
@@ -258,22 +256,22 @@ machine_call_by_tag(C) ->
 -spec machine_processor_error(config()) ->
     _.
 machine_processor_error(C) ->
-    #'MachineFailed'{} = (catch mg_automaton_client:call(processor_opts(C), {id, ?ID}, <<"fail">>)).
+    #'MachineFailed'{} = (catch mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"fail">>)).
 
 -spec failed_machine_call(config()) ->
     _.
 failed_machine_call(C) ->
-    #'MachineFailed'{} = (catch mg_automaton_client:call(processor_opts(C), {id, ?ID}, <<"ok">>)).
+    #'MachineFailed'{} = (catch mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"ok">>)).
 
 -spec failed_machine_repair_error(config()) ->
     _.
 failed_machine_repair_error(C) ->
-    #'MachineFailed'{} = (catch mg_automaton_client:repair(processor_opts(C), {id, ?ID}, <<"error">>)).
+    #'MachineFailed'{} = (catch mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"error">>)).
 
 -spec failed_machine_repair(config()) ->
     _.
 failed_machine_repair(C) ->
-    ok = mg_automaton_client:repair(processor_opts(C), {id, ?ID}, <<"ok">>).
+    ok = mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"ok">>).
 
 %%
 %% event_sink group test
@@ -352,25 +350,29 @@ config_with_multiple_event_sinks(_C) ->
 %%
 -spec start_automaton(config()) -> _.
 start_automaton(C) ->
-    mg_automaton_client:start(processor_opts(C), ?ID, ?Tag).
+    mg_automaton_client:start(automaton_options(C), ?ID, ?Tag).
 
 -spec create_events(integer(), config()) -> _.
 create_events(N, C) ->
     lists:foreach(
             fun(_) ->
-                _ = mg_automaton_client:call(processor_opts(C), {id, ?ID}, <<"event">>)
+                _ = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"event">>)
             end,
             lists:seq(1, N)
     ).
 
--spec start_processor(term(), atom(), atom()) -> _.
-start_processor(Path, SignalFunc, CallFunc) ->
-    {ok, ProcessorPid} = mg_test_processor:start_link({{0, 0, 0, 0}, 8023, Path, {SignalFunc, CallFunc}}),
+-spec start_processor(Address, Port, Path, Functions) -> {ok, pid()} when
+    Address   :: mg_test_processor:host_address(),
+    Port      :: integer(),
+    Path      :: string(),
+    Functions :: {mg_test_processor:processor_function(), mg_test_processor:processor_function()}.
+start_processor(Address, Port, Path, {SignalFunc, CallFunc}) ->
+    {ok, ProcessorPid} = mg_test_processor:start_link({Address, Port, Path, {SignalFunc, CallFunc}}),
     true = erlang:unlink(ProcessorPid),
     {ok, ProcessorPid}.
 
--spec processor_opts(config()) -> _.
-processor_opts(C) -> ?config(processor_options, C).
+-spec automaton_options(config()) -> _.
+automaton_options(C) -> ?config(automaton_options, C).
 
 -spec es_opts(config()) -> _.
 es_opts(C) -> ?config(event_sink_options, C).
