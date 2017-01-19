@@ -39,6 +39,9 @@
 
 -export([config_with_multiple_event_sinks/1]).
 
+%% stress_test group
+-export([stress_test/1]).
+
 -define(NS, <<"NS">>).
 -define(ID, <<"ID">>).
 -define(Tag, <<"tag">>).
@@ -101,9 +104,12 @@ tests_groups() ->
             % event_sink_incorrect_event_id,
             event_sink_incorrect_sink_id,
             event_sink_lots_events_ordering
+        ]},
+
+        {stress, [sequence] ,[
+            stress_test
         ]}
     ].
-
 
 %%
 %% starting/stopping
@@ -112,6 +118,7 @@ tests_groups() ->
     config().
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
+    % dbg:tpl({mg_woody_api_processor, '_', '_'}, x),
     % dbg:tpl({mg_machine_event_sink, '_', '_'}, x),
     C.
 
@@ -133,7 +140,9 @@ init_per_group(TestGroup, C0) ->
             {async_threshold, undefined}
         ])
         ++
-        genlib_app:start_application_with(woody, [{acceptors_pool_size, 1}])
+        genlib_app:start_application_with(hackney, [{use_default_pool, false}])
+        ++
+        genlib_app:start_application_with(woody, [{acceptors_pool_size, 100}])
         ++
         genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(TestGroup, C))
     ,
@@ -221,7 +230,7 @@ namespace_not_found(C) ->
 
 -spec machine_start(config()) -> _.
 machine_start(C) ->
-    ok = start_automaton(C).
+    ok = start_machine(C, ?ID).
 
 -spec machine_already_exists(config()) -> _.
 machine_already_exists(C) ->
@@ -284,9 +293,9 @@ event_sink_get_empty_history(C) ->
 -spec event_sink_get_not_empty_history(config()) ->
     _.
 event_sink_get_not_empty_history(C) ->
-    ok = start_automaton(C),
+    ok = start_machine(C, ?ID),
 
-    _ = create_events(3, C),
+    _ = create_events(3, C, ?ID),
 
     [
         #'SinkEvent'{id = 1, source_id = ?ID, source_ns = ?NS, event = #'Event'{}},
@@ -318,7 +327,7 @@ event_sink_lots_events_ordering(C) ->
     [#'SinkEvent'{id = LastEventID}] =
         mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=backward, limit=1}),
     N = 20,
-    _ = create_events(N, C),
+    _ = create_events(N, C, ?ID),
 
     Events = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}),
     EventsIDs = lists:seq(1, N + LastEventID),
@@ -346,17 +355,71 @@ config_with_multiple_event_sinks(_C) ->
     [application_stop(App) || App <- Apps].
 
 %%
+%% stress test
+%%
+-spec stress_test(config()) -> _.
+stress_test(C) ->
+    TestTimeout = 60 * 1000,
+    N = 100,
+
+    Processes = [stress_test_start_processes(C, integer_to_binary(ID)) || ID <- lists:seq(1, N)],
+
+    ok = timer:sleep(TestTimeout),
+    ok = stop_wait_all(Processes, shutdown, 1000).
+
+-spec stress_test_start_processes(term(), mg:id()) ->
+    _.
+stress_test_start_processes(C, ID) ->
+    Pid =
+        erlang:spawn_link(
+            fun() ->
+                lager:warning("starting: ~s", [ID]),
+                start_machine(C, ID),
+                create(C, ID)
+            end
+        ),
+    timer:sleep(1000),
+    Pid.
+
+%%
 %% utils
 %%
--spec start_automaton(config()) -> _.
-start_automaton(C) ->
-    mg_automaton_client:start(automaton_options(C), ?ID, ?Tag).
+-spec start_machine(config(), mg:id()) ->
+    _.
+start_machine(C, ID) ->
+    {T, R} =
+        timer:tc(
+            fun() ->
+                mg_automaton_client:start(automaton_options(C), ID, ID)
+            end
+        ),
+    lager:warning("machine started: ~s in ~p ms", [ID, T div 1000]),
+    R.
 
--spec create_events(integer(), config()) -> _.
-create_events(N, C) ->
+-spec create(term(), mg:id()) ->
+    _.
+create(C, ID) ->
+    <<"event">> = create_event(<<"event">>, C, ID),
+    timer:sleep(1000),
+    create(C, ID).
+
+-spec create_event(binary(), config(), mg:id()) ->
+    _.
+create_event(Event, C, ID) ->
+    {T, R} =
+        timer:tc(
+            fun() ->
+                mg_automaton_client:call(automaton_options(C), {id, ID}, Event)
+            end
+        ),
+    lager:warning("event created: ~s in ~p ms", [ID, T div 1000]),
+    R.
+
+-spec create_events(integer(), config(), mg:id()) -> _.
+create_events(N, C, ID) ->
     lists:foreach(
             fun(_) ->
-                _ = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"event">>)
+                _ = create_event(<<"event">>, C, ID)
             end,
             lists:seq(1, N)
     ).
@@ -376,3 +439,30 @@ automaton_options(C) -> ?config(automaton_options, C).
 
 -spec es_opts(config()) -> _.
 es_opts(C) -> ?config(event_sink_options, C).
+
+-spec stop_wait_all([pid()], _Reason, timeout()) ->
+    ok.
+stop_wait_all(Pids, Reason, Timeout) ->
+    lists:foreach(
+        fun(Pid) ->
+            case stop_wait(Pid, Reason, Timeout) of
+                ok      -> ok;
+                timeout -> exit(stop_timeout)
+            end
+        end,
+        Pids
+    ).
+
+-spec stop_wait(pid(), _Reason, timeout()) ->
+    ok | timeout.
+stop_wait(Pid, Reason, Timeout) ->
+    OldTrap = process_flag(trap_exit, true),
+    erlang:exit(Pid, Reason),
+    R =
+        receive
+            {'EXIT', Pid, Reason} -> ok
+        after
+            Timeout -> timeout
+        end,
+    process_flag(trap_exit, OldTrap),
+    R.

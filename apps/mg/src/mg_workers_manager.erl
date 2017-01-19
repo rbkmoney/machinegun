@@ -71,7 +71,7 @@ call(Options, ID, Call, Attempts) ->
                 { noproc    , _} -> start_and_retry_call(Options, ID, Call, Attempts);
                 { normal    , _} -> start_and_retry_call(Options, ID, Call, Attempts);
                 { shutdown  , _} -> start_and_retry_call(Options, ID, Call, Attempts);
-                { timeout   , _} -> {error, timeout};
+                { timeout   , _} -> {error, Reason};
                 Unknown       -> {error, {unexpected_exit, Unknown}}
             end
     end.
