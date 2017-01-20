@@ -48,22 +48,17 @@ machine_desc(NS, Ref, HRange) ->
 -spec call_service(_BaseURL, atom(), [_arg]) ->
     _.
 call_service(BaseURL, Function, Args) ->
-    try
-        {ok, R} =
-            woody_client:call(
-                {{mg_proto_state_processing_thrift, 'Automaton'}, Function, Args},
-                #{
-                    url           => BaseURL ++ "/v1/automaton",
-                    event_handler => {mg_woody_api_event_handler, undefined}
-                },
-                woody_context:new()
-            ),
-        R
-    catch
-        error:Reason={woody_error, {_, resource_unavailable, _}} ->
-            lager:warning("error '~p' retrying...", [Reason]),
-            call_service(BaseURL, Function, Args);
-        error:Reason={woody_error, {_, result_unknown, _}} ->
-            lager:warning("error '~p' retrying...", [Reason]),
-            call_service(BaseURL, Function, Args)
+    WR = woody_client:call(
+            {{mg_proto_state_processing_thrift, 'Automaton'}, Function, Args},
+            #{
+                url           => BaseURL ++ "/v1/automaton",
+                event_handler => {mg_woody_api_event_handler, undefined}
+            },
+            woody_context:new()
+        ),
+    case WR of
+        {ok, R} ->
+            R;
+        {exception, Exception} ->
+            erlang:throw(Exception)
     end.
