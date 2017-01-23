@@ -1,9 +1,5 @@
-%%%
-%%% TODO сделать нормальный тест автомата, как вариант, через пропер
-%%%
 -module(mg_stress_SUITE).
 -include_lib("common_test/include/ct.hrl").
--include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 %% tests descriptions
 -export([all             /0]).
@@ -17,11 +13,6 @@
 -export([stress_test/1]).
 
 -define(NS, <<"NS">>).
--define(ID, <<"ID">>).
--define(Tag, <<"tag">>).
--define(Ref, {tag, ?Tag}).
--define(ES_ID, <<"test_event_sink">>).
-
 
 %%
 %% tests descriptions
@@ -60,9 +51,6 @@ tests_groups() ->
 -spec init_per_suite(config()) ->
     config().
 init_per_suite(C) ->
-    % dbg:tracer(), dbg:p(all, c),
-    % dbg:tpl({mg_woody_api_processor, '_', '_'}, x),
-    % dbg:tpl({mg_machine_event_sink, '_', '_'}, x),
     C.
 
 -spec end_per_suite(config()) ->
@@ -76,7 +64,6 @@ init_per_group(memory, C) ->
     [{storage, mg_storage_memory} | C];
 init_per_group(TestGroup, C0) ->
     C = [{test_instance, erlang:atom_to_binary(TestGroup, utf8)} | C0],
-    %% TODO сделать нормальную генерацию урлов
     Apps =
         genlib_app:start_application_with(lager, [
             {handlers, [{lager_common_test_backend, info}]},
@@ -87,7 +74,7 @@ init_per_group(TestGroup, C0) ->
         ++
         genlib_app:start_application_with(woody, [{acceptors_pool_size, 100}])
         ++
-        genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(TestGroup, C))
+        genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(C))
     ,
 
     CallFunc =
@@ -112,7 +99,7 @@ init_per_group(TestGroup, C0) ->
         {automaton_options , #{
             url => "http://localhost:8022",
             ns => ?NS,
-            retry_strategy => mg_utils:genlib_retry_new({linear, 1, 1000})
+            retry_strategy => mg_utils:genlib_retry_new({exponential, 5, 2, 1000})
         }},
         {event_sink_options, "http://localhost:8022"          },
         {processor_pid     , ProcessorPid                     }
@@ -120,25 +107,14 @@ init_per_group(TestGroup, C0) ->
         C
     ].
 
--spec mg_woody_api_config(atom(), config()) ->
+-spec mg_woody_api_config(config()) ->
     list().
-mg_woody_api_config(event_sink, C) ->
+mg_woody_api_config(C) ->
     [
         {storage, ?config(storage, C)},
         {namespaces, #{
             ?NS => #{
-                processor  => #{ url => <<"http://localhost:8023/processor">>, recv_timeout => 5000 },
-                event_sink => ?ES_ID
-            }
-        }}
-    ];
-mg_woody_api_config(_, C) ->
-    [
-        {storage, ?config(storage, C)},
-        {namespaces, #{
-            ?NS => #{
-                processor => #{ url => <<"http://localhost:8023/processor">> },
-                event_sink => ?ES_ID
+                processor => #{ url => <<"http://localhost:8023/processor">> }
             }
         }}
     ].
@@ -201,9 +177,7 @@ start_machine(C, ID) ->
 -spec create_event(binary(), config(), mg:id()) ->
     _.
 create_event(Event, C, ID) ->
-    Strategy = mg_utils:genlib_retry_new({linear, 5, 1000}),
-    Opts = maps:update(retry_strategy, Strategy, automaton_options(C)),
-    mg_automaton_client:call(Opts, {id, ID}, Event).
+    mg_automaton_client:call(automaton_options(C), {id, ID}, Event).
 
 -spec create(config(), mg:id()) ->
     _.

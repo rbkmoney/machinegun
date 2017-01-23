@@ -161,7 +161,7 @@ init_per_group(TestGroup, C0) ->
         {automaton_options , #{
             url => "http://localhost:8022",
             ns => ?NS,
-            retry_strategy => mg_utils:genlib_retry_new({linear, 1, 1000})
+            retry_strategy => undefined
         }},
         {event_sink_options, "http://localhost:8022"          },
         {processor_pid     , ProcessorPid                     }
