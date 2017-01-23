@@ -49,7 +49,7 @@ groups() ->
     [{group_name(), list(_), test_name()}].
 tests_groups() ->
     [
-        {stress, [sequence] ,[
+        {stress, [sequence], [
             stress_test
         ]}
     ].
@@ -164,13 +164,13 @@ application_stop(App) ->
 %%
 -spec stress_test(config()) -> _.
 stress_test(C) ->
-    TestTimeout = 60 * 1000,
-    N = 100,
+    TestTimeout = 5 * 1000,
+    N = 10,
 
     Processes = [stress_test_start_processes(C, integer_to_binary(ID)) || ID <- lists:seq(1, N)],
 
     ok = timer:sleep(TestTimeout),
-    ok = stop_wait_all(Processes, shutdown, 1000).
+    ok = mg_utils:stop_wait_all(Processes, shutdown, 2000).
 
 -spec stress_test_start_processes(term(), mg:id()) ->
     _.
@@ -180,7 +180,7 @@ stress_test_start_processes(C, ID) ->
             fun() ->
                 lager:warning("starting: ~s", [ID]),
                 start_machine(C, ID),
-                create_events(5, C, ID)
+                create(C, ID)
             end
         ),
     timer:sleep(1000),
@@ -197,16 +197,15 @@ start_machine(C, ID) ->
 -spec create_event(binary(), config(), mg:id()) ->
     _.
 create_event(Event, C, ID) ->
-    mg_automaton_client:call(automaton_options(C), {id, ID}, Event).
+    Strategy = mg_utils:genlib_retry_new({linear, 5, 1000}),
+    mg_automaton_client:call_with_retry(automaton_options(C), {id, ID}, Event, Strategy).
 
--spec create_events(integer(), config(), mg:id()) -> _.
-create_events(N, C, ID) ->
-    lists:foreach(
-            fun(_) ->
-                _ = create_event(<<"event">>, C, ID)
-            end,
-            lists:seq(1, N)
-    ).
+-spec create(config(), mg:id()) ->
+    _.
+create(C, ID) ->
+    create_event(<<"event">>, C, ID),
+    timer:sleep(1000),
+    create(C, ID).
 
 -spec start_processor(Address, Port, Path, Functions) -> {ok, pid()} when
     Address   :: mg_test_processor:host_address(),
@@ -220,30 +219,3 @@ start_processor(Address, Port, Path, {SignalFunc, CallFunc}) ->
 
 -spec automaton_options(config()) -> _.
 automaton_options(C) -> ?config(automaton_options, C).
-
--spec stop_wait_all([pid()], _Reason, timeout()) ->
-    ok.
-stop_wait_all(Pids, Reason, Timeout) ->
-    lists:foreach(
-        fun(Pid) ->
-            case stop_wait(Pid, Reason, Timeout) of
-                ok      -> ok;
-                timeout -> exit(stop_timeout)
-            end
-        end,
-        Pids
-    ).
-
--spec stop_wait(pid(), _Reason, timeout()) ->
-    ok | timeout.
-stop_wait(Pid, Reason, Timeout) ->
-    OldTrap = process_flag(trap_exit, true),
-    erlang:exit(Pid, Reason),
-    R =
-        receive
-            {'EXIT', Pid, Reason} -> ok
-        after
-            Timeout -> timeout
-        end,
-    process_flag(trap_exit, OldTrap),
-    R.
