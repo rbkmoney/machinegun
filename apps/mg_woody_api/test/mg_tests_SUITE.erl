@@ -158,7 +158,11 @@ init_per_group(TestGroup, C0) ->
 
     [
         {apps              , Apps                             },
-        {automaton_options , {"http://localhost:8022", ?NS   }},
+        {automaton_options , #{
+            url => "http://localhost:8022",
+            ns => ?NS,
+            retry_strategy => mg_utils:genlib_retry_new({linear, 1, 1000})
+        }},
         {event_sink_options, "http://localhost:8022"          },
         {processor_pid     , ProcessorPid                     }
     |
@@ -213,9 +217,8 @@ application_stop(App) ->
 %%
 -spec namespace_not_found(config()) -> _.
 namespace_not_found(C) ->
-    {URL, _} = automaton_options(C),
-    NS = <<"incorrect_NS">>,
-    #'NamespaceNotFound'{} = (catch mg_automaton_client:start({URL, NS}, ?ID, ?Tag)).
+    Opts = maps:update(ns, <<"incorrect_NS">>, automaton_options(C)),
+    #'NamespaceNotFound'{} = (catch mg_automaton_client:start(Opts, ?ID, ?Tag)).
 
 -spec machine_start(config()) -> _.
 machine_start(C) ->
@@ -228,7 +231,8 @@ machine_already_exists(C) ->
 -spec machine_id_not_found(config()) -> _.
 machine_id_not_found(C) ->
     IncorrectID = <<"incorrect_ID">>,
-    #'MachineNotFound'{} = (catch mg_automaton_client:call(automaton_options(C), {id, IncorrectID}, <<"test_id">>)).
+    #'MachineNotFound'{} =
+        (catch mg_automaton_client:call(automaton_options(C), {id, IncorrectID}, <<"test_id">>)).
 
 -spec machine_call_by_id(config()) -> _.
 machine_call_by_id(C) ->
@@ -241,7 +245,8 @@ machine_set_tag(C) ->
 -spec machine_tag_not_found(config()) -> _.
 machine_tag_not_found(C) ->
     IncorrectTag = <<"incorrect_Tag">>,
-    #'MachineNotFound'{} = (catch mg_automaton_client:call(automaton_options(C), {tag, IncorrectTag}, <<"test_id">>)).
+    #'MachineNotFound'{} =
+        (catch mg_automaton_client:call(automaton_options(C), {tag, IncorrectTag}, <<"test_id">>)).
 
 -spec machine_call_by_tag(config()) -> _.
 machine_call_by_tag(C) ->

@@ -109,7 +109,11 @@ init_per_group(TestGroup, C0) ->
 
     [
         {apps              , Apps                             },
-        {automaton_options , {"http://localhost:8022", ?NS   }},
+        {automaton_options , #{
+            url => "http://localhost:8022",
+            ns => ?NS,
+            retry_strategy => mg_utils:genlib_retry_new({linear, 1, 1000})
+        }},
         {event_sink_options, "http://localhost:8022"          },
         {processor_pid     , ProcessorPid                     }
     |
@@ -198,7 +202,8 @@ start_machine(C, ID) ->
     _.
 create_event(Event, C, ID) ->
     Strategy = mg_utils:genlib_retry_new({linear, 5, 1000}),
-    mg_automaton_client:call_with_retry(automaton_options(C), {id, ID}, Event, Strategy).
+    Opts = maps:update(retry_strategy, Strategy, automaton_options(C)),
+    mg_automaton_client:call(Opts, {id, ID}, Event).
 
 -spec create(config(), mg:id()) ->
     _.
