@@ -132,7 +132,7 @@ stress_test(_C) ->
     TestProcesses = [stress_test_start_process(Options, WorkersCount) || _ <- lists:seq(1, TestProcessesCount)],
     ok = timer:sleep(TestTimeout),
 
-    ok = stop_wait_all(TestProcesses, shutdown, 1000),
+    ok = mg_utils:stop_wait_all(TestProcesses, shutdown, 1000),
     ok = wait_machines_unload(UnloadTimeout),
     ok = stop_workers(WorkersPid).
 
@@ -243,33 +243,6 @@ stop_workers(Pid) ->
     true = erlang:unlink(Pid),
     true = erlang:exit(Pid, kill),
     ok.
-
--spec stop_wait_all([pid()], _Reason, timeout()) ->
-    ok.
-stop_wait_all(Pids, Reason, Timeout) ->
-    lists:foreach(
-        fun(Pid) ->
-            case stop_wait(Pid, Reason, Timeout) of
-                ok      -> ok;
-                timeout -> exit(stop_timeout)
-            end
-        end,
-        Pids
-    ).
-
--spec stop_wait(pid(), _Reason, timeout()) ->
-    ok | timeout.
-stop_wait(Pid, Reason, Timeout) ->
-    OldTrap = process_flag(trap_exit, true),
-    erlang:exit(Pid, Reason),
-    R =
-        receive
-            {'EXIT', Pid, Reason} -> ok
-        after
-            Timeout -> timeout
-        end,
-    process_flag(trap_exit, OldTrap),
-    R.
 
 -spec wait_machines_unload(pos_integer()) ->
     ok.

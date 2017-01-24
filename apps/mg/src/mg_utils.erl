@@ -44,6 +44,8 @@
 -export_type([genlib_retry_policy/0]).
 -export([genlib_retry_new/1]).
 
+-export([stop_wait_all/3]).
+
 %%
 %% API
 %% OTP
@@ -238,3 +240,30 @@ genlib_retry_new({timecap, Timeout, Policy}) ->
     genlib_retry:timecap(Timeout, genlib_retry_new(Policy));
 genlib_retry_new(BadPolicy) ->
     erlang:error(badarg, [BadPolicy]).
+
+-spec stop_wait_all([pid()], _Reason, timeout()) ->
+    ok.
+stop_wait_all(Pids, Reason, Timeout) ->
+    lists:foreach(
+        fun(Pid) ->
+            case stop_wait(Pid, Reason, Timeout) of
+                ok      -> ok;
+                timeout -> exit(stop_timeout)
+            end
+        end,
+        Pids
+    ).
+
+-spec stop_wait(pid(), _Reason, timeout()) ->
+    ok | timeout.
+stop_wait(Pid, Reason, Timeout) ->
+    OldTrap = process_flag(trap_exit, true),
+    erlang:exit(Pid, Reason),
+    R =
+        receive
+            {'EXIT', Pid, Reason} -> ok
+        after
+            Timeout -> timeout
+        end,
+    process_flag(trap_exit, OldTrap),
+    R.

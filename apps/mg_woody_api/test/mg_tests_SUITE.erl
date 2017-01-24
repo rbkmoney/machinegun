@@ -104,7 +104,6 @@ tests_groups() ->
         ]}
     ].
 
-
 %%
 %% starting/stopping
 %%
@@ -112,6 +111,7 @@ tests_groups() ->
     config().
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
+    % dbg:tpl({mg_woody_api_processor, '_', '_'}, x),
     % dbg:tpl({mg_machine_event_sink, '_', '_'}, x),
     C.
 
@@ -132,8 +132,6 @@ init_per_group(TestGroup, C0) ->
             {handlers, [{lager_common_test_backend, info}]},
             {async_threshold, undefined}
         ])
-        ++
-        genlib_app:start_application_with(woody, [{acceptors_pool_size, 1}])
         ++
         genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(TestGroup, C))
     ,
@@ -160,7 +158,11 @@ init_per_group(TestGroup, C0) ->
 
     [
         {apps              , Apps                             },
-        {automaton_options , {"http://localhost:8022", ?NS   }},
+        {automaton_options , #{
+            url => "http://localhost:8022",
+            ns => ?NS,
+            retry_strategy => undefined
+        }},
         {event_sink_options, "http://localhost:8022"          },
         {processor_pid     , ProcessorPid                     }
     |
@@ -215,13 +217,12 @@ application_stop(App) ->
 %%
 -spec namespace_not_found(config()) -> _.
 namespace_not_found(C) ->
-    {URL, _} = automaton_options(C),
-    NS = <<"incorrect_NS">>,
-    #'NamespaceNotFound'{} = (catch mg_automaton_client:start({URL, NS}, ?ID, ?Tag)).
+    Opts = maps:update(ns, <<"incorrect_NS">>, automaton_options(C)),
+    #'NamespaceNotFound'{} = (catch mg_automaton_client:start(Opts, ?ID, ?Tag)).
 
 -spec machine_start(config()) -> _.
 machine_start(C) ->
-    ok = start_automaton(C).
+    ok = start_machine(C, ?ID).
 
 -spec machine_already_exists(config()) -> _.
 machine_already_exists(C) ->
@@ -230,7 +231,8 @@ machine_already_exists(C) ->
 -spec machine_id_not_found(config()) -> _.
 machine_id_not_found(C) ->
     IncorrectID = <<"incorrect_ID">>,
-    #'MachineNotFound'{} = (catch mg_automaton_client:call(automaton_options(C), {id, IncorrectID}, <<"test_id">>)).
+    #'MachineNotFound'{} =
+        (catch mg_automaton_client:call(automaton_options(C), {id, IncorrectID}, <<"test_id">>)).
 
 -spec machine_call_by_id(config()) -> _.
 machine_call_by_id(C) ->
@@ -243,7 +245,8 @@ machine_set_tag(C) ->
 -spec machine_tag_not_found(config()) -> _.
 machine_tag_not_found(C) ->
     IncorrectTag = <<"incorrect_Tag">>,
-    #'MachineNotFound'{} = (catch mg_automaton_client:call(automaton_options(C), {tag, IncorrectTag}, <<"test_id">>)).
+    #'MachineNotFound'{} =
+        (catch mg_automaton_client:call(automaton_options(C), {tag, IncorrectTag}, <<"test_id">>)).
 
 -spec machine_call_by_tag(config()) -> _.
 machine_call_by_tag(C) ->
@@ -284,9 +287,9 @@ event_sink_get_empty_history(C) ->
 -spec event_sink_get_not_empty_history(config()) ->
     _.
 event_sink_get_not_empty_history(C) ->
-    ok = start_automaton(C),
+    ok = start_machine(C, ?ID),
 
-    _ = create_events(3, C),
+    _ = create_events(3, C, ?ID),
 
     [
         #'SinkEvent'{id = 1, source_id = ?ID, source_ns = ?NS, event = #'Event'{}},
@@ -318,7 +321,7 @@ event_sink_lots_events_ordering(C) ->
     [#'SinkEvent'{id = LastEventID}] =
         mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=backward, limit=1}),
     N = 20,
-    _ = create_events(N, C),
+    _ = create_events(N, C, ?ID),
 
     Events = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}),
     EventsIDs = lists:seq(1, N + LastEventID),
@@ -348,15 +351,21 @@ config_with_multiple_event_sinks(_C) ->
 %%
 %% utils
 %%
--spec start_automaton(config()) -> _.
-start_automaton(C) ->
-    mg_automaton_client:start(automaton_options(C), ?ID, ?Tag).
+-spec start_machine(config(), mg:id()) ->
+    _.
+start_machine(C, ID) ->
+    mg_automaton_client:start(automaton_options(C), ID, ID).
 
--spec create_events(integer(), config()) -> _.
-create_events(N, C) ->
+-spec create_event(binary(), config(), mg:id()) ->
+    _.
+create_event(Event, C, ID) ->
+    mg_automaton_client:call(automaton_options(C), {id, ID}, Event).
+
+-spec create_events(integer(), config(), mg:id()) -> _.
+create_events(N, C, ID) ->
     lists:foreach(
             fun(_) ->
-                _ = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"event">>)
+                _ = create_event(<<"event">>, C, ID)
             end,
             lists:seq(1, N)
     ).
