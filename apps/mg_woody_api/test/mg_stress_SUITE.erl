@@ -13,6 +13,7 @@
 -export([stress_test/1]).
 
 -define(NS, <<"NS">>).
+-define(ES_ID, <<"test_event_sink">>).
 
 %%
 %% tests descriptions
@@ -114,7 +115,8 @@ mg_woody_api_config(C) ->
         {storage, ?config(storage, C)},
         {namespaces, #{
             ?NS => #{
-                processor => #{ url => <<"http://localhost:8023/processor">> }
+                processor => #{ url => <<"http://localhost:8023/processor">> },
+                event_sink => ?ES_ID
             }
         }}
     ].
