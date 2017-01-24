@@ -13,7 +13,7 @@
 -type options() :: #{
     url => URL::string(),
     ns  => mg:ns(),
-    retry_strategy => genlib_retry:strategy()
+    retry_strategy => genlib_retry:strategy() | undefined
 }.
 
 -spec start(options(), mg:id(), mg:args()) ->
