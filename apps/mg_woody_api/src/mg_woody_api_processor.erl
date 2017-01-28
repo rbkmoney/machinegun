@@ -1,18 +1,18 @@
 -module(mg_woody_api_processor).
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
-%% mg_processor handler
--behaviour(mg_processor).
+%% mg_events_machine handler
+-behaviour(mg_events_machine).
 -export_type([options/0]).
 -export([process_signal/2, process_call/2]).
 
 %%
-%% mg_processor handler
+%% mg_events_machine handler
 %%
 -type options() :: woody_client:options().
 
--spec process_signal(options(), mg:signal_args()) ->
-    mg:signal_result().
+-spec process_signal(options(), mg_events_machine:signal_args()) ->
+    mg_events_machine:signal_result().
 process_signal(Options, {SignalAndWoodyContext, Machine}) ->
     {Signal, WoodyContext} = signal_and_woody_context(SignalAndWoodyContext),
     SignalResult =
@@ -24,8 +24,8 @@ process_signal(Options, {SignalAndWoodyContext, Machine}) ->
         ),
     mg_woody_api_packer:unpack(signal_result, SignalResult).
 
--spec process_call(options(), mg:call_args()) ->
-    mg:call_result().
+-spec process_call(options(), mg_events_machine:call_args()) ->
+    mg_events_machine:call_result().
 process_call(Options, {{Call, WoodyContext}, Machine}) ->
     CallResult =
         call_processor(
@@ -58,8 +58,8 @@ call_processor(Options, WoodyContext, Function, Args) ->
     end.
 
 %% TODO такой хак пока в таймауте нет контекста
--spec signal_and_woody_context({mg:signal(), woody_context:ctx()} | mg:signal()) ->
-    {mg:signal(), woody_context:ctx()}.
+-spec signal_and_woody_context({mg_events_machine:signal(), woody_context:ctx()} | mg_events_machine:signal()) ->
+    {mg_events_machine:signal(), woody_context:ctx()}.
 signal_and_woody_context(Signal=timeout) ->
     {Signal, woody_context:new()};
 signal_and_woody_context({init, {Arg, WoodyContext}}) ->

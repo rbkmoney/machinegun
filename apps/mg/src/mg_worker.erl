@@ -2,11 +2,14 @@
 -behaviour(gen_server).
 
 %% API
--export_type([options/0]).
+-export_type([options     /0]).
+-export_type([call_context/0]).
 
--export([child_spec/2]).
--export([start_link/3]).
--export([call      /4]).
+-export([child_spec /2]).
+-export([start_link /3]).
+-export([call       /4]).
+-export([brutal_kill/2]).
+-export([reply      /2]).
 
 %% gen_server callbacks
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3, code_change/3, terminate/2]).
@@ -20,8 +23,8 @@
 -callback handle_unload(_State) ->
     ok.
 
--callback handle_call(_Call, _State) ->
-    {_Reply, _State}.
+-callback handle_call(_Call, call_context(), _State) ->
+    {{reply, _Reply} | noreply, _State}.
 
 
 -type options() :: #{
@@ -29,6 +32,7 @@
     hibernate_timeout => pos_integer(),
     unload_timeout    => pos_integer()
 }.
+-type call_context() :: _. % в OTP он не описан :(
 
 -spec child_spec(atom(), options()) ->
     supervisor:child_spec().
@@ -54,6 +58,21 @@ call(NS, ID, Call, MaxQueueLength) ->
         false ->
             {error, {transient, overload}}
     end.
+
+%% for testing
+-spec brutal_kill(_NS, _ID) ->
+    ok.
+brutal_kill(NS, ID) ->
+    true = erlang:exit(mg_utils:gen_where(self_ref({NS, ID})), kill),
+    ok.
+
+%% Internal API
+-spec reply(call_context(), _Reply) ->
+    _.
+reply(CallCtx, Reply) ->
+    _ = gen_server:reply(CallCtx, Reply),
+    ok.
+
 
 %%
 %% gen_server callbacks
@@ -97,10 +116,13 @@ handle_call(Call={call, _}, From, State=#{id:=ID, mod:=Mod, status:={loading, Ar
         Error={error, _} ->
             {stop, normal, Error, State}
     end;
-handle_call({call, Call}, _, State=#{mod:=Mod, status:={working, ModState}}) ->
-    {Reply, NewModState} = Mod:handle_call(Call, ModState),
+handle_call({call, Call}, From, State=#{mod:=Mod, status:={working, ModState}}) ->
+    {ReplyAction, NewModState} = Mod:handle_call(Call, From, ModState),
     NewState = State#{status:={working, NewModState}},
-    {reply, Reply, schedule_unload_timer(NewState), hibernate_timeout(NewState)};
+    case ReplyAction of
+        {reply, Reply} -> {reply, Reply, schedule_unload_timer(NewState), hibernate_timeout(NewState)};
+        noreply        -> {noreply, schedule_unload_timer(NewState), hibernate_timeout(NewState)}
+    end;
 handle_call(Call, From, State) ->
     ok = error_logger:error_msg("unexpected gen_server call received: ~p from ~p", [Call, From]),
     {noreply, schedule_unload_timer(State), hibernate_timeout(State)}.

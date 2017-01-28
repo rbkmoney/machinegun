@@ -10,7 +10,6 @@
 %%%  -
 %%%
 -module(mg_workers_manager).
--behaviour(supervisor).
 
 %% API
 -export_type([options/0]).
@@ -18,10 +17,6 @@
 -export([child_spec/2]).
 -export([start_link/1]).
 -export([call      /3]).
-
-%% Supervisor callbacks
--export([init/1]).
-
 
 %%
 %% API
@@ -47,7 +42,13 @@ child_spec(ChildID, Options) ->
 -spec start_link(options()) ->
     mg_utils:gen_start_ret().
 start_link(Options) ->
-    supervisor:start_link(self_reg_name(Options), ?MODULE, Options).
+    mg_utils_supervisor_wrapper:start_link(
+        self_reg_name(Options),
+        #{strategy => simple_one_for_one},
+        [
+            mg_worker:child_spec(worker, maps:get(worker_options, Options))
+        ]
+    ).
 
 % sync
 -spec call(options(), _ID, _Call) ->
@@ -67,12 +68,12 @@ call(Options, ID, Call, Attempts) ->
     catch
         exit:Reason ->
             case Reason of
-                  noproc         -> start_and_retry_call(Options, ID, Call, Attempts);
-                { noproc    , _} -> start_and_retry_call(Options, ID, Call, Attempts);
-                { normal    , _} -> start_and_retry_call(Options, ID, Call, Attempts);
-                { shutdown  , _} -> start_and_retry_call(Options, ID, Call, Attempts);
-                { timeout   , _} -> {error, Reason};
-                Unknown       -> {error, {unexpected_exit, Unknown}}
+                 noproc         -> start_and_retry_call(Options, ID, Call, Attempts);
+                {noproc    , _} -> start_and_retry_call(Options, ID, Call, Attempts);
+                {normal    , _} -> start_and_retry_call(Options, ID, Call, Attempts);
+                {shutdown  , _} -> start_and_retry_call(Options, ID, Call, Attempts);
+                {timeout   , _} -> {error, Reason};
+                 Unknown        -> {error, {unexpected_exit, Unknown}}
             end
     end.
 
@@ -93,16 +94,6 @@ start_and_retry_call(Options, ID, Call, Attempts) ->
         Error={error, _} ->
             Error
     end.
-
-
-%%
-%% supervisor callbacks
-%%
--spec init(options()) ->
-    {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
-init(Options) ->
-    SupFlags = #{strategy => simple_one_for_one},
-    {ok, {SupFlags, [mg_worker:child_spec(worker, maps:get(worker_options, Options))]}}.
 
 %%
 %% local

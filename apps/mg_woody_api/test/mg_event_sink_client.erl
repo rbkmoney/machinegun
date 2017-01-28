@@ -9,8 +9,8 @@
 %%
 -type options() :: URL::string().
 
--spec get_history(options(), mg_machine_event_sink:id(), mg:history_range()) ->
-    mg:history().
+-spec get_history(options(), mg:id(), mg_events:history_range()) ->
+    mg_events:history().
 get_history(BaseURL, EventSinkID, Range) ->
     call_service(BaseURL, 'GetHistory', [EventSinkID, Range]).
 

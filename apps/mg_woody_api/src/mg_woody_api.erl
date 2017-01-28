@@ -27,7 +27,7 @@
 -type processor_config() :: mg_woody_api_processor:options().
 -type config_ns() :: #{
     processor  => processor_config(),
-    event_sink => mg_machine_event_sink:id()
+    event_sink => mg:id()
 }.
 -type config_nss() :: #{mg:ns() => config_ns()}.
 -type net_opts() :: woody_server_thrift_http_handler:net_opts().
@@ -67,11 +67,11 @@ init([]) ->
     SupFlags = #{strategy => one_for_all},
     {ok, {SupFlags,
         [
-            mg_machine_complex:child_spec(ns_options(NS, ConfigNS, Storage), NS)
+            mg_events_machine:child_spec(ns_options(NS, ConfigNS, Storage), NS)
             || {NS, ConfigNS} <- maps:to_list(ConfigNSs)
         ]
         ++
-        [mg_machine_event_sink:child_spec(event_sink_options(Storage), ESID, ESID) || ESID <- EventSinks]
+        [mg_events_sink:child_spec(event_sink_options(Storage), ESID) || ESID <- EventSinks]
         ++
         [woody_child_spec(Config, woody_api)]
     }}.
@@ -124,25 +124,35 @@ api_automaton_options(Config) ->
     ).
 
 -spec ns_options(mg:ns(), config_ns(), mg_storage:storage()) ->
-    mg_machine:options().
+    mg_events_machine:options().
 ns_options(NS, #{processor:=ProcessorConfig, event_sink:=EventSinkID}, Storage) ->
     #{
-        namespace => NS,
-        storage   => Storage,
-        processor => processor(ProcessorConfig),
-        observer  => {mg_machine_event_sink, {event_sink_options(Storage), NS, EventSinkID}}
+        namespace  => NS,
+        storage    => Storage,
+        processor  => processor(ProcessorConfig),
+        tagging    => tags_options(NS, Storage),
+        event_sink => {EventSinkID, event_sink_options(Storage)}
     };
 ns_options(NS, #{processor:=ProcessorConfig}, Storage) ->
     #{
         namespace => NS,
         storage   => Storage,
-        processor => processor(ProcessorConfig)
+        processor => processor(ProcessorConfig),
+        tagging   => tags_options(NS, Storage)
     }.
 
 -spec processor(processor_config()) ->
     mg_utils:mod_opts().
 processor(ProcessorConfig) ->
     {mg_woody_api_processor, ProcessorConfig#{event_handler => mg_woody_api_event_handler}}.
+
+-spec tags_options(mg:ns(), mg_storage:storage()) ->
+    mg_machine_tags:options().
+tags_options(NS, Storage) ->
+    #{
+        namespace => NS,
+        storage   => Storage
+    }.
 
 -spec api_event_sink_options(config()) ->
     mg_woody_api_event_sink:options().
@@ -153,14 +163,15 @@ api_event_sink_options(Config) ->
     }.
 
 -spec event_sink_options(mg_storage:storage()) ->
-    mg_machine_event_sink:options().
+    mg_events_sink:options().
 event_sink_options(Storage) ->
     #{
-        storage => Storage
+        namespace => <<"_event_sinks">>,
+        storage   => Storage
     }.
 
 -spec collect_event_sinks(config_nss()) ->
-    [mg_machine_event_sink:id()].
+    [mg:id()].
 collect_event_sinks(ConfigNSs) ->
     ordsets:to_list(maps:fold(
         fun
