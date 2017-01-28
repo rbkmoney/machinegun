@@ -32,9 +32,11 @@
 -export([apply_mod_opts   /3]).
 -export([separate_mod_opts/1]).
 
--export([throw_if_error   /1]).
--export([throw_if_error   /2]).
--export([exit_if_undefined/2]).
+-export([throw_if_error    /1]).
+-export([throw_if_error    /2]).
+-export([throw_if_undefined/2]).
+-export([exit_if_undefined /2]).
+
 -export_type([exception   /0]).
 -export([raise            /1]).
 -export([format_exception /1]).
@@ -194,8 +196,15 @@ throw_if_error(error, Exception) ->
 throw_if_error({error, Error}, Exception) ->
     erlang:throw({Exception, Error}).
 
--spec exit_if_undefined (Result, _Reason) ->
+-spec throw_if_undefined(Result, _Reason) ->
     Result | no_return().
+throw_if_undefined(undefined, Reason) ->
+    erlang:throw(Reason);
+throw_if_undefined(Value, _) ->
+    Value.
+
+-spec exit_if_undefined(Result, _Reason) ->
+    Result.
 exit_if_undefined(undefined, Reason) ->
     erlang:exit(Reason);
 exit_if_undefined(Value, _) ->
@@ -211,7 +220,7 @@ raise({Class, Reason, Stacktrace}) ->
 -spec format_exception(exception()) ->
     iodata().
 format_exception({Class, Reason, Stacktrace}) ->
-    io_lib:format("~s:~p~n~p", [Class, Reason, Stacktrace]).
+    io_lib:format("~s:~p ~s", [Class, Reason, genlib_format:format_stacktrace(Stacktrace, [newlines])]).
 
 
 -spec join(D, list(E)) ->
