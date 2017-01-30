@@ -15,17 +15,20 @@ services:
       - riakdb
 
   riakdb:
-    image: dr.rbkmoney.com/basho/riak-kv:ubuntu-2.1.4
+    # image: dr.rbkmoney.com/basho/riak-kv:ubuntu-2.1.4
+    image: basho/riak-kv:ubuntu-2.1.4
     environment:
       - CLUSTER_NAME=riakkv
     labels:
       - "com.basho.riak.cluster.name=riakkv"
     volumes:
+      - ./riak_user.conf:/etc/riak/user.conf:ro
       - schemas:/etc/riak/schemas
     ports:
       - 8098:8098
   member:
-    image: dr.rbkmoney.com/basho/riak-kv:ubuntu-2.1.4
+    # image: dr.rbkmoney.com/basho/riak-kv:ubuntu-2.1.4
+    image: basho/riak-kv:ubuntu-2.1.4
     labels:
       - "com.basho.riak.cluster.name=riakkv"
     links:
@@ -35,6 +38,8 @@ services:
     environment:
       - CLUSTER_NAME=riakkv
       - COORDINATOR_NODE=riakdb
+    volumes:
+      - ./riak_user.conf:/etc/riak/user.conf:ro
 
 volumes:
   schemas:

@@ -1,4 +1,9 @@
 %%%
+%%% Интерфейс работы с хранилищем данных.
+%%% Он с виду выглядит абстрактным и не привязанным к конкретной базе,
+%%% но по факту он копирует интерфейс риака.
+%%% (Хотя положить на него можно и другие базы.)
+%%%
 %%% TODO:
 %%%  - сделать работу с пачками через функтор и контекст
 %%%
@@ -10,12 +15,19 @@
 -export_type([value  /0]).
 -export_type([kv     /0]).
 -export_type([context/0]).
+
+-export_type([index_name  /0]).
+-export_type([index_value /0]).
+-export_type([index_update/0]).
+-export_type([index_query /0]).
+
 -export_type([storage/0]).
 -export_type([options/0]).
 
 -export([child_spec/2]).
--export([put       /4]).
+-export([put       /5]).
 -export([get       /2]).
+-export([search    /3]).
 -export([delete    /3]).
 
 %% Interna API
@@ -31,6 +43,11 @@
 -type kv     () :: {key(), value()}.
 -type context() :: term().
 
+-type index_name  () :: binary().
+-type index_value () :: binary().
+-type index_update() :: {index_name(), index_value()}.
+-type index_query () :: index_value() | {index_value(), index_value()}.
+
 -type storage() :: mg_utils:mod_opts().
 -type options() :: #{
     namespace => mg:ns(),
@@ -42,11 +59,14 @@
 -callback child_spec(_Options, mg:ns(), atom()) ->
     supervisor:child_spec().
 
--callback put(_Options, mg:ns(), key(), context() | undefined, value()) ->
+-callback put(_Options, mg:ns(), key(), context() | undefined, value(), [index_update()]) ->
     context().
 
 -callback get(_Options, mg:ns(), key()) ->
     {context(), value()} | undefined.
+
+-callback search(_Options, mg:ns(), index_name(), index_query()) ->
+    [key()].
 
 -callback delete(_Options, mg:ns(), key(), context()) ->
     ok.
@@ -58,15 +78,20 @@
 child_spec(Options, ChildID) ->
     apply_mod_opts(Options, child_spec, [ChildID]).
 
--spec put(options(), key(), context() | undefined, value()) ->
+-spec put(options(), key(), context() | undefined, value(), [index_update()]) ->
     context().
-put(Options, Key, Context, Value) ->
-    apply_mod_opts(Options, put, [Key, Context, Value]).
+put(Options, Key, Context, Value, Indexes) ->
+    apply_mod_opts(Options, put, [Key, Context, Value, Indexes]).
 
 -spec get(options(), key()) ->
     {context(), value()} | undefined.
 get(Options, Key) ->
     apply_mod_opts(Options, get, [Key]).
+
+-spec search(options(), index_name(), index_query()) ->
+    [key()].
+search(Options, Index, Query) ->
+    apply_mod_opts(Options, search, [Index, Query]).
 
 -spec delete(options(), key(), context()) ->
     ok.
