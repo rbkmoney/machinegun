@@ -16,8 +16,9 @@
 -export([end_per_group   /2]).
 
 %% base group tests
--export([base_test  /1]).
--export([stress_test/1]).
+-export([base_test   /1]).
+-export([indexes_test/1]).
+-export([stress_test /1]).
 
 %%
 %% tests descriptions
@@ -48,6 +49,7 @@ tests() ->
     [
         base_test,
         % incorrect_context_test,
+        indexes_test,
         stress_test
     ].
 
@@ -58,7 +60,8 @@ tests() ->
     config().
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
-    % dbg:tpl({mg_events_sink, '_', '_'}, x),
+    % dbg:tpl({riakc_pb_socket, 'get_index_eq', '_'}, x),
+    % dbg:tpl({riakc_pb_socket, 'get_index_range', '_'}, x),
     Apps = genlib_app:start_application(mg),
     [{apps, Apps} | C].
 
@@ -94,14 +97,56 @@ base_test(ID, Options) ->
     Value1 = #{<<"hello">> => <<"world">>},
     Value2 = [<<"hello">>, 1],
 
-    undefined = mg_storage:get(Options, Key),
-    Ctx1 = mg_storage:put(Options, Key, undefined, Value1),
-    {Ctx1, Value1} = mg_storage:get(Options, Key),
-    Ctx2 = mg_storage:put(Options, Key, Ctx1, Value2),
-    {Ctx2, Value2} = mg_storage:get(Options, Key),
-    ok = mg_storage:delete(Options, Key, Ctx2),
-    undefined = mg_storage:get(Options, Key),
+    undefined      = mg_storage:get   (Options, Key),
+    Ctx1           = mg_storage:put   (Options, Key, undefined, Value1, []),
+    {Ctx1, Value1} = mg_storage:get   (Options, Key),
+    Ctx2           = mg_storage:put   (Options, Key, Ctx1, Value2, []),
+    {Ctx2, Value2} = mg_storage:get   (Options, Key),
+    ok             = mg_storage:delete(Options, Key, Ctx2),
+    undefined      = mg_storage:get   (Options, Key),
     ok.
+
+-spec indexes_test(config()) ->
+    _.
+indexes_test(C) ->
+    Options = storage_options(?config(storage_type, C), <<"base_test_ns">>),
+    _ = start_storage(Options),
+
+    K1   = <<"Key_24">>,
+    K2   = <<"Key_42">>,
+    I1     = <<"index1">>,
+    I2     = <<"index2">>,
+    IV1    = <<"1">>,
+    IV2    = <<"2">>,
+    Value = #{<<"hello">> => <<"world">>},
+
+    % [] = mg_storage:search(Options, I1, {IV1, IV2}),
+    % [] = mg_storage:search(Options, I2, {IV1, IV2}),
+
+    Ctx1 = mg_storage:put(Options, K1, undefined, Value, [{I1, IV1}, {I2, IV2}]),
+
+    [K1] = mg_storage:search(Options, I1, {IV1, IV2}),
+    [K1] = mg_storage:search(Options, I2, {IV1, IV2}),
+
+    Ctx2 = mg_storage:put(Options, K2, undefined, Value, [{I1, IV2}, {I2, IV1}]),
+
+    [K1    ] = mg_storage:search(Options, I1, IV1       ),
+    [K1, K2] = mg_storage:search(Options, I1, {IV1, IV2}),
+    [K1    ] = mg_storage:search(Options, I2, IV2       ),
+    [K2, K1] = mg_storage:search(Options, I2, {IV1, IV2}),
+
+    ok = mg_storage:delete(Options, K1, Ctx1),
+
+    [K2] = mg_storage:search(Options, I1, {IV1, IV2}),
+    [K2] = mg_storage:search(Options, I2, {IV1, IV2}),
+
+    ok = mg_storage:delete(Options, K2, Ctx2),
+
+    [] = mg_storage:search(Options, I1, {IV1, IV2}),
+    [] = mg_storage:search(Options, I2, {IV1, IV2}),
+
+    ok.
+
 
 -spec stress_test(_C) ->
     ok.

@@ -380,7 +380,8 @@ transit_state(NewStorageMachine, State=#{id:=ID, options:=Options, storage_conte
                 storage_options(Options),
                 ID,
                 StorageContext,
-                storage_machine_to_opaque(NewStorageMachine)
+                storage_machine_to_opaque(NewStorageMachine),
+                []
             )
         end,
     RetryStrategy = mg_utils:genlib_retry_new(get_options(storage_retry_policy, Options)),

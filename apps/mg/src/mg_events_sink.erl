@@ -112,7 +112,7 @@ process_machine_(Options, EventSinkID, {call, {add_events, SourceNS, SourceID, E
 store_sink_events(Options, EventSinkID, SinkEvents) ->
     lists:foreach(
         fun({Key, Value}) ->
-            _ = mg_storage:put(events_storage_options(Options), Key, undefined, Value)
+            _ = mg_storage:put(events_storage_options(Options), Key, undefined, Value, [])
         end,
         sink_events_to_kvs(EventSinkID, SinkEvents)
     ).

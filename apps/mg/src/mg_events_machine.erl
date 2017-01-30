@@ -221,7 +221,7 @@ add_tag(Options, Tag, ID) ->
 store_events(Options, MachineID, Events) ->
     lists:foreach(
         fun({Key, Value}) ->
-            _ = mg_storage:put(events_storage_options(Options), Key, undefined, Value)
+            _ = mg_storage:put(events_storage_options(Options), Key, undefined, Value, [])
         end,
         events_to_kvs(MachineID, Events)
     ).

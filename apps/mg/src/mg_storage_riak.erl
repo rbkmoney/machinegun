@@ -2,7 +2,7 @@
 %%% Riak хранилище для machinegun'а.
 %%%
 %%% Важный момент, что единовременно не может существовать 2-х процессов записи в БД по одной машине,
-%%%  это гарантируется самим MG.
+%%%  это гарантируется самим MG (а точнее mg_workers).
 %%%
 %%%  Всё энкодится в msgpack и версионируется в метадате.
 %%%
@@ -30,17 +30,18 @@
 %%%  - классификация и обработка ошибок
 %%%
 -module(mg_storage_riak).
+-include_lib("riakc/include/riakc.hrl").
 
 %% mg_storage callbacks
 -behaviour(mg_storage).
 -export_type([options/0]).
--export([child_spec/3, put/5, get/3, delete/4]).
+-export([child_spec/3, put/6, get/3, search/4, delete/4]).
 
 
 -type options() :: #{
-    host      => inet            :ip_address  (),
-    port      => inet            :port_number (),
-    pool      =>                  pooler_options(),
+    host      => inet:ip_address    (),
+    port      => inet:port_number   (),
+    pool      =>      pooler_options(),
     r_options => _,
     w_options => _,
     d_options => _
@@ -57,7 +58,7 @@
 %% в pooler'е нет типов :(
 -type pooler_time_interval() :: {non_neg_integer(), min | sec | ms}.
 
--type context() :: riakc_obj:vclock().
+-type context() :: riakc_obj:vclock() | undefined.
 
 %%
 %% mg_storage callbacks
@@ -68,33 +69,62 @@ child_spec(Options, Namespace, _ChildID) ->
     % ChildID pooler генерит сам добавляя префикс _pooler_
     pooler:pool_child_spec(maps:to_list(pooler_options(Options, Namespace))).
 
--spec put(options(), mg:ns(), mg_storage:key(), context() | undefined, mg_storage:value()) ->
+-spec put(options(), mg:ns(), mg_storage:key(), context(), mg_storage:value(), [mg_storage:index_update()]) ->
     context().
-put(Options, Namespace, Key, Context, Value) ->
-    do(Options, Namespace, fun(Pid) ->
-        Object = to_riak_obj(Namespace, Key, Context, Value),
-        case riakc_pb_socket:put(Pid, Object, [return_body] ++ get_option(w_options, Options)) of
-            {ok, NewObject} ->
-                riakc_obj:vclock(NewObject);
-            % TODO понять какие проблемы временные, а какие постоянные
-            {error, Reason} ->
-                erlang:throw({transient, {storage_unavailable, Reason}})
+put(Options, Namespace, Key, Context, Value, IndexesUpdates) ->
+    do(Options, Namespace,
+        fun(Pid) ->
+            Object = to_riak_obj(Namespace, Key, Context, Value, IndexesUpdates),
+            NewObject =
+                handle_riak_response(
+                    riakc_pb_socket:put(Pid, Object, [return_body] ++ get_option(w_options, Options))
+                ),
+            riakc_obj:vclock(NewObject)
         end
-    end).
+    ).
 
 -spec get(options(), mg:ns(), mg_storage:key()) ->
     {context(), mg_storage:value()} | undefined.
 get(Options, Namespace, Key) ->
     do(Options, Namespace, fun(Pid) ->
         case riakc_pb_socket:get(Pid, Namespace, Key, get_option(r_options, Options)) of
-            {ok, Object} ->
-                from_riak_obj(Object);
             {error, notfound} ->
                 undefined;
-            {error, Reason} ->
-                erlang:throw({transient, {storage_unavailable, Reason}})
+            Result ->
+                Object = handle_riak_response(Result),
+                from_riak_obj(Object)
         end
     end).
+
+-spec search(options(), mg:ns(), mg_storage:index_name(), mg_storage:index_query()) ->
+    [mg_storage:key()].
+search(Options, Namespace, IndexName, Query) ->
+    do(Options, Namespace,
+        fun(Pid) ->
+
+                Result = handle_riak_response(do_get_index(Pid, Namespace, IndexName, Query)),
+                get_index_response(Query, Result)
+        end
+    ).
+
+-spec do_get_index(pid(), mg:ns(), mg_storage:index_name(), mg_storage:index_query()) ->
+    _.
+do_get_index(Pid, Namespace, IndexName, {From, To}) ->
+    riakc_pb_socket:get_index_range(Pid, Namespace, prepare_index_name(IndexName), From, To, [{return_terms, true}]);
+do_get_index(Pid, Namespace, IndexName, Value) ->
+    riakc_pb_socket:get_index_eq(Pid, Namespace, prepare_index_name(IndexName), Value).
+
+-spec get_index_response(mg_storage:index_query(), #index_results_v1{}) ->
+    [mg_storage:key()].
+get_index_response({_, _}, #index_results_v1{keys = []}) ->
+    % это какой-то пипец, а не код, они там все упоролись что-ли?
+    [];
+get_index_response({_, _}, #index_results_v1{terms = Terms}) ->
+    % получить из риака стабильный порядок следования не получилось,
+    % поэтому пришлось сделать небольшой хак
+    erlang:element(2, lists:unzip(lists:sort(Terms)));
+get_index_response(_, #index_results_v1{keys = Keys}) ->
+    Keys.
 
 -spec delete(options(), mg:ns(), mg_storage:key(), context()) ->
     ok.
@@ -163,9 +193,9 @@ pool_name(Namespace) ->
 -define(schema_version_md_key, <<"schema-version">>   ).
 -define(schema_version_1     , <<"1">>                ).
 
--spec to_riak_obj(mg:ns(), mg_storage:key(), context(), mg_storage:value()) ->
+-spec to_riak_obj(mg:ns(), mg_storage:key(), context(), mg_storage:value(), [mg_storage:index_update()]) ->
     riakc_obj:riakc_obj().
-to_riak_obj(Namespace, Key, Context, Value) ->
+to_riak_obj(Namespace, Key, Context, Value, IndexesUpdates) ->
     Object =
         riakc_obj:set_vclock(
             riakc_obj:new(Namespace, Key, mg_storage:opaque_to_binary(Value)),
@@ -175,7 +205,10 @@ to_riak_obj(Namespace, Key, Context, Value) ->
         riakc_obj:update_metadata(
             Object,
             riakc_obj:set_user_metadata_entry(
-                riakc_obj:get_metadata(Object),
+                riakc_obj:set_secondary_index(
+                    riakc_obj:get_metadata(Object),
+                    prepare_indexes_updates(IndexesUpdates)
+                ),
                 {?schema_version_md_key, ?schema_version_1}
             )
         ),
@@ -190,12 +223,40 @@ from_riak_obj(Object) ->
     ?msgpack_ct       = riakc_obj:get_content_type(Object),
     {riakc_obj:vclock(Object), mg_storage:binary_to_opaque(riakc_obj:get_value(Object))}.
 
+-type riak_index_name  () :: list().
+-type riak_index_update() :: {riak_index_name(), [mg_storage:index_value()]}.
+
+-spec prepare_indexes_updates([mg_storage:index_update()]) ->
+    [riak_index_update()].
+prepare_indexes_updates(IndexesUpdates) ->
+    [prepare_index_update(IndexUpdate) || IndexUpdate <- IndexesUpdates].
+
+-spec prepare_index_update(mg_storage:index_update()) ->
+    riak_index_update().
+prepare_index_update({IndexName, IndexValue}) ->
+    {prepare_index_name(IndexName), [IndexValue]}.
+
+-spec prepare_index_name(mg_storage:index_name()) ->
+    riak_index_name().
+prepare_index_name(IndexName) ->
+    {binary_index, erlang:binary_to_list(IndexName)}.
+
 %%
 
 -spec get_option(atom(), options()) ->
     _.
 get_option(Key, Options) ->
     maps:get(Key, Options, default_option(Key)).
+
+-spec handle_riak_response(ok | {ok, T} | {error, _Reason}) ->
+    T | no_return().
+handle_riak_response(ok) ->
+    ok;
+handle_riak_response({ok, Value}) ->
+    Value;
+handle_riak_response({error, Reason}) ->
+    % TODO понять какие проблемы временные, а какие постоянные
+    erlang:throw({transient, {storage_unavailable, Reason}}).
 
 %%
 %% Про опции посмотреть можно тут
