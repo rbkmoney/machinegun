@@ -53,11 +53,11 @@ start_link(Options) ->
 
 -spec add_events(options(), mg:id(), mg:ns(), mg:id(), [mg_events:event()]) ->
     ok.
-add_events(Options, EventSinkID, SourceNS, SourceID, Events) ->
+add_events(Options, EventSinkID, SourceNS, SourceMachineID, Events) ->
     ok = mg_machine:call_with_lazy_start(
             machine_options(Options),
             EventSinkID,
-            {add_events, SourceNS, SourceID, Events},
+            {add_events, SourceNS, SourceMachineID, Events},
             undefined
         ).
 
@@ -100,22 +100,64 @@ process_machine_(_, _, {init, undefined}, State) ->
     State;
 process_machine_(_, _, {repair, undefined}, State) ->
     State;
-process_machine_(Options, EventSinkID, {call, {add_events, SourceNS, SourceID, Events}}, State) ->
-    {SinkEvents, NewState} = generate_sink_events(SourceNS, SourceID, Events, State),
+process_machine_(Options, EventSinkID, {call, {add_events, SourceNS, SourceMachineID, Events}}, State) ->
+    NewEvents = filter_duplicated(Options, EventSinkID, SourceNS, SourceMachineID, Events, State),
+    {SinkEvents, NewState} = generate_sink_events(SourceNS, SourceMachineID, NewEvents, State),
     ok = store_sink_events(Options, EventSinkID, SinkEvents),
     NewState.
 
 %%
 
+-spec filter_duplicated(options(), mg:id(), mg:ns(), mg:ns(), [mg_events:event()], state()) ->
+    [mg_events:event()].
+filter_duplicated(Options, EventSinkID, SourceNS, SourceMachineID, Events, State) ->
+    lists:filter(
+        fun(Event) ->
+            not is_duplicate(Options, EventSinkID, SourceNS, SourceMachineID, Event, State)
+        end,
+        Events
+    ).
+
+-spec is_duplicate(options(), mg:id(), mg:ns(), mg:ns(), mg_events:event(), state()) ->
+    boolean().
+is_duplicate(Options, EventSinkID, SourceNS, SourceMachineID, #{id := EventID}, #{events_range := EventsRange}) ->
+    Query = {<<"ext_id">>, make_ext_id(EventSinkID, SourceNS, SourceMachineID, EventID)},
+    lists:any(
+        fun(OtherEventFullID) ->
+            % возможно будет больше одного "мусного" эвента
+            % такого, который записался в сторадж эвентов,
+            % но event_range не успел проапдейтиться
+            % и эвенты по факту потеряны, и их можно смело переписывать
+            OtherEventID = mg_events:key_to_event_id(mg_events:remove_machine_id(EventSinkID, OtherEventFullID)),
+            is_intersect(OtherEventID, EventsRange)
+        end,
+        mg_storage:search(events_storage_options(Options), Query)
+    ).
+
+-spec is_intersect(mg_events:id(), mg_events:events_range()) ->
+    boolean().
+is_intersect(EventID, {From, To}) when From =< EventID andalso EventID =< To ->
+    true;
+is_intersect(_, _) ->
+    false.
+
 -spec store_sink_events(options(), mg:id(), [event()]) ->
     ok.
 store_sink_events(Options, EventSinkID, SinkEvents) ->
     lists:foreach(
-        fun({Key, Value}) ->
-            _ = mg_storage:put(events_storage_options(Options), Key, undefined, Value, [])
+        fun(SinkEvent) ->
+            store_event(Options, EventSinkID, SinkEvent)
         end,
-        sink_events_to_kvs(EventSinkID, SinkEvents)
+        SinkEvents
     ).
+
+-spec store_event(options(), mg:id(), event()) ->
+    ok.
+store_event(Options, EventSinkID, SinkEvent) ->
+    ExtID = make_ext_id(EventSinkID, SinkEvent),
+    {Key, Value} = sink_event_to_kv(EventSinkID, SinkEvent),
+    _ = mg_storage:put(events_storage_options(Options), Key, undefined, Value, [{<<"ext_id">>, ExtID}]),
+    ok.
 
 -spec get_events_keys(mg:id(), mg_events:events_range(), mg_events:history_range()) ->
     [mg_storage:key()].
@@ -125,6 +167,22 @@ get_events_keys(EventSinkID, EventsRange, HistoryRange) ->
         ||
         EventID <- mg_events:get_event_ids(EventsRange, HistoryRange)
     ].
+
+-spec make_ext_id(mg:id(), event()) ->
+    binary().
+make_ext_id(EventSinkID, SinkEvent) ->
+    #{body := #{source_ns := SourceNS, source_id := SourceMachineID, event := #{id := EventID}}} = SinkEvent,
+    make_ext_id(EventSinkID, SourceNS, SourceMachineID, EventID).
+
+-spec make_ext_id(mg:id(), mg:ns(), mg:id(), mg_events:id()) ->
+    binary().
+make_ext_id(EventSinkID, SourceNS, SourceMachineID, EventID) ->
+    <<
+        EventSinkID                        /binary, $_,
+        SourceNS                           /binary, $_,
+        SourceMachineID                    /binary, $_,
+        (erlang:integer_to_binary(EventID))/binary
+    >>.
 
 -spec get_state(options(), mg:id()) ->
     state().
@@ -159,17 +217,17 @@ events_storage_options(#{namespace := Namespace, storage := Storage}) ->
 
 -spec generate_sink_events(mg:ns(), mg:id(), [mg_events:event()], state()) ->
     {[event()], state()}.
-generate_sink_events(SourceNS, SourceID, Events, State=#{events_range:=EventsRange}) ->
-    Bodies = [generate_sink_event_body(SourceNS, SourceID, Event) || Event <- Events],
+generate_sink_events(SourceNS, SourceMachineID, Events, State=#{events_range:=EventsRange}) ->
+    Bodies = [generate_sink_event_body(SourceNS, SourceMachineID, Event) || Event <- Events],
     {SinkEvents, NewEventsRange} = mg_events:generate_events_with_range(Bodies, EventsRange),
     {SinkEvents, State#{events_range := NewEventsRange}}.
 
 -spec generate_sink_event_body(mg:ns(), mg:id(), mg_events:event()) ->
     event().
-generate_sink_event_body(SourceNS, SourceID, Event) ->
+generate_sink_event_body(SourceNS, SourceMachineID, Event) ->
     #{
         source_ns => SourceNS,
-        source_id => SourceID,
+        source_id => SourceMachineID,
         event     => Event
     }.
 
@@ -191,22 +249,22 @@ opaque_to_state([1, EventsRange]) ->
 
 -spec sink_event_body_to_opaque(mg_events:event()) ->
     mg_events:body().
-sink_event_body_to_opaque(#{source_ns := SourceNS, source_id := SourceID, event := Event}) ->
-    [1, SourceNS, SourceID, mg_events:event_to_opaque(Event)].
+sink_event_body_to_opaque(#{source_ns := SourceNS, source_id := SourceMachineID, event := Event}) ->
+    [1, SourceNS, SourceMachineID, mg_events:event_to_opaque(Event)].
 
 -spec opaque_to_sink_event_body(mg_events:body()) ->
     mg_events:event().
-opaque_to_sink_event_body([1, SourceNS, SourceID, Event]) ->
+opaque_to_sink_event_body([1, SourceNS, SourceMachineID, Event]) ->
     #{
         source_ns => SourceNS,
-        source_id => SourceID,
+        source_id => SourceMachineID,
         event     => mg_events:opaque_to_event(Event)
     }.
 
--spec sink_events_to_kvs(mg:id(), [event()]) ->
-    [mg_storage:kv()].
-sink_events_to_kvs(EventSinkID, Events) ->
-    mg_events:add_machine_id(EventSinkID, mg_events:events_to_kvs(Events, fun sink_event_body_to_opaque/1)).
+-spec sink_event_to_kv(mg:id(), event()) ->
+    mg_storage:kv().
+sink_event_to_kv(EventSinkID, Event) ->
+    mg_events:add_machine_id(EventSinkID, mg_events:event_to_kv(Event, fun sink_event_body_to_opaque/1)).
 
 -spec kvs_to_sink_events(mg:id(), [mg_storage:kv()]) ->
     [event()].

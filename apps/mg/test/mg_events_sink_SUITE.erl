@@ -33,11 +33,10 @@ groups() ->
     [
         {main, [sequence], [
             add_events,
-            get_history
+            get_history,
             % TODO починить
             % get_unexisted_event,
-            % TODO идемпотентность
-            % idempotent_add_get_events
+            idempotent_add_get_events
         ]}
     ].
 
@@ -84,8 +83,14 @@ get_history(C) ->
             || Event <- ?config(events, C)
         ],
     PreparedEvents = lists:zip(lists:seq(1, erlang:length(?config(events, C))), Events),
+    % _ = ct:pal("~p", [PreparedEvents]),
     PreparedEvents =
-        [{ID, Body} || #{id:=ID, body:=Body} <- mg_events_sink:get_history(event_sink_options(), ?ES_ID, HRange)].
+        [
+            {ID, Body}
+            ||
+            #{id := ID, body := Body} <- mg_events_sink:get_history(event_sink_options(), ?ES_ID, HRange)
+        ],
+    ok.
 
 -spec get_unexisted_event(config()) ->
     _.
