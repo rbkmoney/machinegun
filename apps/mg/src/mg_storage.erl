@@ -16,10 +16,11 @@
 -export_type([kv     /0]).
 -export_type([context/0]).
 
--export_type([index_name  /0]).
--export_type([index_value /0]).
--export_type([index_update/0]).
--export_type([index_query /0]).
+-export_type([index_name       /0]).
+-export_type([index_value      /0]).
+-export_type([index_update     /0]).
+-export_type([index_query_value/0]).
+-export_type([index_query      /0]).
 
 -export_type([storage/0]).
 -export_type([options/0]).
@@ -27,7 +28,7 @@
 -export([child_spec/2]).
 -export([put       /5]).
 -export([get       /2]).
--export([search    /3]).
+-export([search    /2]).
 -export([delete    /3]).
 
 %% Interna API
@@ -43,10 +44,11 @@
 -type kv     () :: {key(), value()}.
 -type context() :: term().
 
--type index_name  () :: binary().
--type index_value () :: binary().
--type index_update() :: {index_name(), index_value()}.
--type index_query () :: index_value() | {index_value(), index_value()}.
+-type index_name       () :: binary().
+-type index_value      () :: binary().
+-type index_update     () :: {index_name(), index_value()}.
+-type index_query_value() :: index_value() | {index_value(), index_value()}.
+-type index_query      () :: {index_name(), index_query_value()}.
 
 -type storage() :: mg_utils:mod_opts().
 -type options() :: #{
@@ -65,7 +67,7 @@
 -callback get(_Options, mg:ns(), key()) ->
     {context(), value()} | undefined.
 
--callback search(_Options, mg:ns(), index_name(), index_query()) ->
+-callback search(_Options, mg:ns(), index_query()) ->
     [key()].
 
 -callback delete(_Options, mg:ns(), key(), context()) ->
@@ -88,10 +90,10 @@ put(Options, Key, Context, Value, Indexes) ->
 get(Options, Key) ->
     apply_mod_opts(Options, get, [Key]).
 
--spec search(options(), index_name(), index_query()) ->
+-spec search(options(), index_query()) ->
     [key()].
-search(Options, Index, Query) ->
-    apply_mod_opts(Options, search, [Index, Query]).
+search(Options, Query) ->
+    apply_mod_opts(Options, search, [Query]).
 
 -spec delete(options(), key(), context()) ->
     ok.

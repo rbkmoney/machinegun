@@ -35,7 +35,7 @@
 %% mg_storage callbacks
 -behaviour(mg_storage).
 -export_type([options/0]).
--export([child_spec/3, put/6, get/3, search/4, delete/4]).
+-export([child_spec/3, put/6, get/3, search/3, delete/4]).
 
 
 -type options() :: #{
@@ -96,34 +96,34 @@ get(Options, Namespace, Key) ->
         end
     end).
 
--spec search(options(), mg:ns(), mg_storage:index_name(), mg_storage:index_query()) ->
+-spec search(options(), mg:ns(), mg_storage:index_query()) ->
     [mg_storage:key()].
-search(Options, Namespace, IndexName, Query) ->
+search(Options, Namespace, Query) ->
     do(Options, Namespace,
         fun(Pid) ->
 
-                Result = handle_riak_response(do_get_index(Pid, Namespace, IndexName, Query)),
+                Result = handle_riak_response(do_get_index(Pid, Namespace, Query)),
                 get_index_response(Query, Result)
         end
     ).
 
--spec do_get_index(pid(), mg:ns(), mg_storage:index_name(), mg_storage:index_query()) ->
+-spec do_get_index(pid(), mg:ns(), mg_storage:index_query()) ->
     _.
-do_get_index(Pid, Namespace, IndexName, {From, To}) ->
+do_get_index(Pid, Namespace, {IndexName, {From, To}}) ->
     riakc_pb_socket:get_index_range(Pid, Namespace, prepare_index_name(IndexName), From, To, [{return_terms, true}]);
-do_get_index(Pid, Namespace, IndexName, Value) ->
+do_get_index(Pid, Namespace, {IndexName, Value}) ->
     riakc_pb_socket:get_index_eq(Pid, Namespace, prepare_index_name(IndexName), Value).
 
--spec get_index_response(mg_storage:index_query(), #index_results_v1{}) ->
+-spec get_index_response(mg_storage:index_query(), get_index_results()) ->
     [mg_storage:key()].
-get_index_response({_, _}, #index_results_v1{keys = []}) ->
+get_index_response({_, {_, _}}, #index_results_v1{keys = []}) ->
     % это какой-то пипец, а не код, они там все упоролись что-ли?
     [];
-get_index_response({_, _}, #index_results_v1{terms = Terms}) ->
+get_index_response({_, {_, _}}, #index_results_v1{terms = Terms}) ->
     % получить из риака стабильный порядок следования не получилось,
     % поэтому пришлось сделать небольшой хак
     erlang:element(2, lists:unzip(lists:sort(Terms)));
-get_index_response(_, #index_results_v1{keys = Keys}) ->
+get_index_response({_, _}, #index_results_v1{keys = Keys}) ->
     Keys.
 
 -spec delete(options(), mg:ns(), mg_storage:key(), context()) ->
@@ -223,8 +223,9 @@ from_riak_obj(Object) ->
     ?msgpack_ct       = riakc_obj:get_content_type(Object),
     {riakc_obj:vclock(Object), mg_storage:binary_to_opaque(riakc_obj:get_value(Object))}.
 
--type riak_index_name  () :: list().
+-type riak_index_name  () :: {binary_index, list()}.
 -type riak_index_update() :: {riak_index_name(), [mg_storage:index_value()]}.
+-type get_index_results() :: #index_results_v1{}.
 
 -spec prepare_indexes_updates([mg_storage:index_update()]) ->
     [riak_index_update()].

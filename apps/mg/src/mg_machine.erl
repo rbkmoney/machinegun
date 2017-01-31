@@ -37,15 +37,18 @@
 %%
 
 %% API
--export_type([options           /0]).
--export_type([thrown_error      /0]).
--export_type([logic_error       /0]).
--export_type([transient_error   /0]).
--export_type([throws            /0]).
--export_type([machine_state     /0]).
--export_type([processor_impact  /0]).
--export_type([processing_context/0]).
--export_type([processor_result  /0]).
+-export_type([options               /0]).
+-export_type([thrown_error          /0]).
+-export_type([logic_error           /0]).
+-export_type([transient_error       /0]).
+-export_type([throws                /0]).
+-export_type([machine_state         /0]).
+-export_type([processor_impact      /0]).
+-export_type([processing_context    /0]).
+-export_type([processor_result      /0]).
+-export_type([processor_reply_action/0]).
+-export_type([processor_flow_action /0]).
+-export_type([search_query          /0]).
 
 -export([child_spec /2]).
 -export([start_link /1]).
@@ -54,11 +57,18 @@
 -export([repair/3]).
 -export([call  /3]).
 -export([get   /2]).
-
+-export([search/2]).
+-export([reply /2]).
 -export([call_with_lazy_start/4]).
 
 %% Internal API
--export([reply/2]).
+-export([handle_timers         /1]).
+-export([handle_timers         /2]).
+-export([handle_timer          /2]).
+-export([reload_killed_machines/1]).
+-export([reload_killed_machines/2]).
+-export([touch                 /2]).
+
 
 %% mg_worker
 -behaviour(mg_worker).
@@ -89,17 +99,26 @@
     state        => processing_state()
 } | undefined.
 -type processor_impact() ::
-      {init  , term()}
-    | {repair, term()}
-    | {call  , term()}
+      {init   , term()}
+    | {repair , term()}
+    | {call   , term()}
+    |  timeout
     |  continuation
 .
 -type processor_reply_action() :: noreply  | {reply, _}.
--type processor_flow_action() :: wait | {continue, processing_state()}. % TODO {wait, DateTime}
+-type processor_flow_action() :: sleep | {wait, genlib_time:ts()} | {continue, processing_state()}.
 -type processor_result() :: {processor_reply_action(), processor_flow_action(), machine_state()}.
 
 -callback process_machine(_Options, mg:id(), processor_impact(), processing_context(), machine_state()) ->
     processor_result().
+
+-type search_query() ::
+       sleeping
+    |  waiting
+    | {waiting, From::genlib_time:ts(), To::genlib_time:ts()}
+    |  processing
+    |  failed
+.
 
 %%
 
@@ -119,8 +138,10 @@ start_link(Options) ->
     mg_utils_supervisor_wrapper:start_link(
         #{strategy => one_for_all},
         [
-            mg_workers_manager:child_spec(manager, manager_options(Options)),
-            mg_storage:child_spec(storage_options(Options), storage)
+            mg_workers_manager:child_spec(manager_options      (Options), manager      ),
+            mg_storage        :child_spec(storage_options      (Options), storage      ),
+            mg_cron           :child_spec(timers_cron_options  (Options), timers_cron  ),
+            mg_cron           :child_spec(overseer_cron_options(Options), overseer_cron)
         ]
     ).
 
@@ -144,6 +165,11 @@ call(Options, ID, Call) ->
 get(Options, ID) ->
     #{state:=State} = mg_utils:throw_if_undefined(element(2, get_storage_machine(Options, ID)), machine_not_found),
     State.
+
+-spec search(options(), search_query()) ->
+    [mg:id()].
+search(Options, Query) ->
+    mg_storage:search(storage_options(Options), storage_search_query(Query)).
 
 %% TODO придумуть имена получше, ревьюверы, есть идеи?
 -spec call_with_lazy_start(options(), mg:id(), term(), term()) ->
@@ -172,6 +198,60 @@ reply(#{call_context := CallContext}, Reply) ->
     ok = mg_worker:reply(CallContext, Reply).
 
 %%
+%% Internal API
+%%
+-spec handle_timers(options()) ->
+    ok.
+handle_timers(Options) ->
+    handle_timers(Options, search(Options, {waiting, 1, genlib_time:now()})).
+
+-spec handle_timers(options(), [mg:id()]) ->
+    ok.
+handle_timers(Options, MachinesIDs) ->
+    lists:foreach(
+        % такая схема потенциально опасная, но надо попробовать как она себя будет вести
+        fun(MachineID) ->
+            erlang:spawn_link(fun() -> handle_timer(Options, MachineID) end)
+        end,
+        MachinesIDs
+    ).
+
+-spec handle_timer(options(), mg:id()) ->
+    ok.
+handle_timer(Options, MachineID) ->
+    % TODO добавить проверку, что это именно тот таймер, который нужно обработать
+    % TODO можно попробовать проинспектировать очередь
+    case mg_workers_manager:call(manager_options(Options), MachineID, timeout) of
+        ok ->
+            ok;
+        {error, Reason} ->
+            ok = log_failed_timer_handling(namespace(Options), MachineID, Reason)
+    end.
+
+
+-spec reload_killed_machines(options()) ->
+    ok.
+reload_killed_machines(Options) ->
+    reload_killed_machines(Options, search(Options, processing)).
+
+-spec reload_killed_machines(options(), [mg:id()]) ->
+    ok.
+reload_killed_machines(Options, MachinesIDs) ->
+    % TODO сделать проверку: может процесс и так жив и всё ок
+    lists:foreach(
+        fun(MachineID) ->
+            erlang:spawn_link(fun() -> touch(Options, MachineID) end)
+        end,
+        MachinesIDs
+    ).
+
+-spec touch(options(), mg:id()) ->
+    ok.
+touch(Options, MachineID) ->
+    _ = mg_workers_manager:call(manager_options(Options), MachineID, touch),
+    ok.
+
+%%
 %% mg_worker callbacks
 %%
 -type state() :: #{
@@ -187,8 +267,8 @@ reply(#{call_context := CallContext}, Reply) ->
 }.
 
 -type machine_status() ::
-      waiting
-    | processing
+      {waiting, genlib_time:ts()}
+    |  processing
     | {error, Reason::mg_storage:opaque()}
 .
 
@@ -211,17 +291,22 @@ handle_load(ID, Options) ->
 handle_call(Call, CallContext, State=#{storage_machine:=StorageMachine}) ->
     PCtx = new_processing_context(CallContext),
     case {Call, StorageMachine} of
-        %% success
-        {{start , Args   }, undefined              } -> {noreply, process_start(Args, PCtx, State)};
-        {{call  , SubCall}, #{status:= waiting    }} -> {noreply, process({call  , SubCall}, PCtx, State)};
-        {{repair, Args   }, #{status:={error  , _}}} -> {noreply, process({repair, Args   }, PCtx, State)};
+        % success
+        {{start , Args   }, undefined               } -> {noreply, process_start(Args, PCtx, State)};
+        {{call  , SubCall}, #{status:= sleeping    }} -> {noreply, process({call   , SubCall}, PCtx, State)};
+        {{call  , SubCall}, #{status:={waiting, _ }}} -> {noreply, process({call   , SubCall}, PCtx, State)};
+        {{repair, Args   }, #{status:={error  , _ }}} -> {noreply, process({repair , Args   }, PCtx, State)};
+        { timeout         , #{status:={waiting, _ }}} -> {noreply, process( timeout          , PCtx, State)};
 
-        %% unsuccess
-        {{start , _      }, #{status:=           _}} -> {{reply, {error, machine_already_exist  }}, State};
-        {{call  , _      }, #{status:={error  , _}}} -> {{reply, {error, machine_failed         }}, State};
-        {{call  , _      }, undefined              } -> {{reply, {error, machine_not_found      }}, State};
-        {{repair, _      }, #{status:= waiting    }} -> {{reply, {error, machine_already_working}}, State};
-        {{repair, _      }, undefined              } -> {{reply, {error, machine_not_found      }}, State}
+        % unsuccess
+        {{start  , _     }, #{status:=           _}} -> {{reply, {error, machine_already_exist  }}, State};
+        {{call   , _     }, #{status:={error  , _}}} -> {{reply, {error, machine_failed         }}, State};
+        {{call   , _     }, undefined              } -> {{reply, {error, machine_not_found      }}, State};
+        {{repair , _     }, #{status:= waiting    }} -> {{reply, {error, machine_already_working}}, State};
+        {{repair , _     }, undefined              } -> {{reply, {error, machine_not_found      }}, State};
+        { timeout         , #{status:=_           }} -> {{reply, ok                              }, State};
+        % ничего не просходит, просто убеждаемся, что машина загружена
+        {touch, _} -> {reply, ok, State}
     end.
 
 -spec handle_unload(state()) ->
@@ -279,9 +364,10 @@ opaque_to_storage_machine([1, Status, State]) ->
 machine_status_to_opaque(Status) ->
     Opaque =
         case Status of
-             waiting       -> 1;
-             processing    -> 2;
-            {error, Reason} -> [3, erlang:term_to_binary(Reason)] % TODO подумать как упаковывать reason
+             sleeping       ->  1;
+            {waiting, TS}   -> [2, TS];
+             processing     ->  3;
+            {error, Reason} -> [4, erlang:term_to_binary(Reason)] % TODO подумать как упаковывать reason
         end,
     [1, Opaque].
 
@@ -289,20 +375,63 @@ machine_status_to_opaque(Status) ->
     machine_status().
 opaque_to_machine_status([1, Opaque]) ->
     case Opaque of
-         1          -> waiting;
-         2          -> processing;
-        [3, Reason] -> {error, erlang:binary_to_term(Reason)}
+         1          ->  sleeping;
+        [2, TS]     -> {waiting, TS};
+         3          ->  processing;
+        [4, Reason] -> {error, erlang:binary_to_term(Reason)}
     end.
+
+
+%%
+%% indexes
+%%
+-spec storage_search_query(search_query()) ->
+    mg_storage:index_query().
+storage_search_query(sleeping) ->
+    {<<"status">>, 1};
+storage_search_query(waiting) ->
+    {<<"status">>, 2};
+storage_search_query({waiting, FromTs, ToTs}) ->
+    {<<"waiting_date">>, {erlang:integer_to_binary(FromTs), erlang:integer_to_binary(ToTs)}};
+storage_search_query(processing) ->
+    {<<"status">>, 3};
+storage_search_query(failed) ->
+    {<<"status">>, 4}.
+
+-spec storage_machine_to_indexes(storage_machine()) ->
+    [mg_storage:index_update()].
+storage_machine_to_indexes(#{status := Status}) ->
+    status_index(Status) ++ waiting_date_index(Status).
+
+-spec status_index(machine_status()) ->
+    [mg_storage:index_update()].
+status_index(Status) ->
+    StatusInt =
+        case Status of
+             sleeping    -> 1;
+            {waiting, _} -> 2;
+             processing  -> 3;
+            {error, _}   -> 4
+        end,
+    [{<<"status">>, erlang:integer_to_binary(StatusInt)}].
+
+-spec waiting_date_index(machine_status()) ->
+    [mg_storage:index_update()].
+waiting_date_index({waiting, Timestamp}) ->
+    % не правильно отсортируется когда timestamp сдвинется на разряд :)
+    [{<<"waiting_date">>, erlang:integer_to_binary(Timestamp)}];
+waiting_date_index(_) ->
+    [].
 
 %%
 %% processing
 %%
 -spec try_finish_processing(state()) ->
     state().
-try_finish_processing(State = #{storage_machine := undefined}) ->
-    State;
 try_finish_processing(State = #{storage_machine := #{status := processing}}) ->
-    process(continuation, undefined, State).
+    process(continuation, undefined, State);
+try_finish_processing(State = #{storage_machine := _}) ->
+    State.
 
 -spec process_start(term(), processing_context(), state()) ->
     state().
@@ -338,8 +467,12 @@ process_unsafe(Impact, ProcessingCtx, State=#{storage_machine := StorageMachine}
             ok = do_reply_action(wrap_reply_action(ok, ReplyAction), ProcessingCtx),
             NewRequestCtx = ProcessingCtx#{state:=NewProcessingSubState},
             process(continuation, NewRequestCtx, NewState);
-        wait ->
-            NewState = transit_state(NewStorageMachine#{status := waiting}, State),
+        sleep ->
+            NewState = transit_state(NewStorageMachine#{status := sleeping}, State),
+            ok = do_reply_action(wrap_reply_action(ok, ReplyAction), ProcessingCtx),
+            NewState;
+        {wait, Timestamp} ->
+            NewState = transit_state(NewStorageMachine#{status := {waiting, Timestamp}}, State),
             ok = do_reply_action(wrap_reply_action(ok, ReplyAction), ProcessingCtx),
             NewState
     end.
@@ -381,7 +514,7 @@ transit_state(NewStorageMachine, State=#{id:=ID, options:=Options, storage_conte
                 ID,
                 StorageContext,
                 storage_machine_to_opaque(NewStorageMachine),
-                []
+                storage_machine_to_indexes(NewStorageMachine)
             )
         end,
     RetryStrategy = mg_utils:genlib_retry_new(get_options(storage_retry_policy, Options)),
@@ -409,6 +542,22 @@ storage_options(Options) ->
     #{
         namespace => get_options(namespace, Options),
         module    => get_options(storage  , Options)
+    }.
+
+-spec timers_cron_options(options()) ->
+    mg_cron:options().
+timers_cron_options(Options) ->
+    #{
+        interval => 1000, % 1 sec
+        job      => {?MODULE, handle_timers, [Options]}
+    }.
+
+-spec overseer_cron_options(options()) ->
+    mg_cron:options().
+overseer_cron_options(Options) ->
+    #{
+        interval => 1000, % 1 sec
+        job      => {?MODULE, reload_killed_machines, [Options]}
     }.
 
 -spec namespace(options()) ->
@@ -463,3 +612,8 @@ log_transient_exception(NS, ID, Exception) ->
     ok.
 log_retry(NS, ID, RetryTimeout) ->
     ok = error_logger:warning_msg("[~s:~s] retrying in ~p msec", [NS, ID, RetryTimeout]).
+
+-spec log_failed_timer_handling(mg:ns(), mg:id(), _Reason) ->
+    ok.
+log_failed_timer_handling(NS, ID, Reason) ->
+    ok = error_logger:warning_msg("[~s:~s] timer handling failed ~p", [NS, ID, Reason]).

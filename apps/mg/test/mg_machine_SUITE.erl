@@ -52,12 +52,14 @@ simple_test(_) ->
     TestKey = <<"test_key">>,
     ID = <<"42">>,
     _  = start_automaton(Options),
-    ok = mg_machine:start(Options, ID, {TestKey, 0}),
-    0  = mg_machine:call (Options, ID, get         ),
-    ok = mg_machine:call (Options, ID, increment   ),
-    1  = mg_machine:call (Options, ID, get         ),
+    ok = mg_machine:start(Options, ID, {TestKey, 0}     ),
+    0  = mg_machine:call (Options, ID, get              ),
+    ok = mg_machine:call (Options, ID, increment        ),
+    1  = mg_machine:call (Options, ID, get              ),
+    ok = mg_machine:call (Options, ID, delayed_increment),
+    ok = timer:sleep(1000),
+    2  = mg_machine:call (Options, ID, get              ),
     ok.
-
 
 %%
 %% processor
@@ -65,11 +67,15 @@ simple_test(_) ->
 -spec process_machine(_Options, mg:id(), mg_machine:processor_impact(), _, mg_machine:machine_state()) ->
     mg_machine:processor_result().
 process_machine(_, _, {init, {TestKey, TestValue}}, _, null) ->
-    {{reply, ok}, wait, [TestKey, TestValue]};
+    {{reply, ok}, sleep, [TestKey, TestValue]};
 process_machine(_, _, {call, get}, _, [TestKey, TestValue]) ->
-    {{reply, TestValue}, wait, [TestKey, TestValue]};
+    {{reply, TestValue}, sleep, [TestKey, TestValue]};
 process_machine(_, _, {call, increment}, _, [TestKey, TestValue]) ->
-    {{reply, ok}, wait, [TestKey, TestValue + 1]}.
+    {{reply, ok}, sleep, [TestKey, TestValue + 1]};
+process_machine(_, _, {call, delayed_increment}, _, State) ->
+    {{reply, ok}, {wait, 1}, State};
+process_machine(_, _, timeout, _, [TestKey, TestValue]) ->
+    {noreply, sleep, [TestKey, TestValue + 1]}.
 
 %%
 %% utils

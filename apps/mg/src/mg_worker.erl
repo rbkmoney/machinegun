@@ -1,5 +1,4 @@
 -module(mg_worker).
--behaviour(gen_server).
 
 %% API
 -export_type([options     /0]).
@@ -12,6 +11,7 @@
 -export([reply      /2]).
 
 %% gen_server callbacks
+-behaviour(gen_server).
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3, code_change/3, terminate/2]).
 
 %%
