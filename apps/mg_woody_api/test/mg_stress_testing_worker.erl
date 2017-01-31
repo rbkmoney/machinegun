@@ -66,7 +66,7 @@ handle_cast(Cast, S) ->
 
 -spec handle_info(term(), term()) ->
     {noreply, term()} | {noreply, term(), integer()}.
-handle_info(timeout, S=#{action_delay:=ActionDelay) ->
+handle_info(timeout, S=#{action_delay:=ActionDelay}) ->
     case is_finished(S, utils_time:universal_time()) of
         true ->
             {stop, normal, S};
@@ -91,4 +91,10 @@ code_change(_, S, _) ->
     ok.
 terminate(_, _) ->
     ok.
+
+%%
+%% Utils
+%%
+is_finished(_S, _Time) ->
+    true.
 
