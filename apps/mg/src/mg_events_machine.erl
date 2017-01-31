@@ -145,6 +145,7 @@ ref2id(Options, {tag, Tag}) ->
 }.
 -type delayed_actions() :: #{
     add_tag           => mg_machine_tags:tag() | undefined,
+    timer             => mg_storage:timestamp() | undefined,
     add_events        => [mg_events:event()],
     new_aux_state     => mg_storage:aux_state(),
     new_events_range  => mg_events:events_range()
@@ -195,12 +196,12 @@ process_machine_(Options, ID, continuation, #{state := Reply}, State = #{delayed
     % надо быть аккуратнее, мест чтобы накосячить тут вагон и маленькая тележка  :-\
     %
     % действия должны обязательно произойти в конце концов (таймаута нет), либо машина должна упасть
-    #{add_tag := Tag, add_events := Events} = DelayedActions,
+    #{add_tag := Tag, timer := Timer, add_events := Events} = DelayedActions,
     ok = add_tag(Options, Tag, ID),
     ok = store_events(Options, ID, Events),
     ok = push_events_to_event_sink(Options, ID, Events),
 
-    {{reply, Reply}, wait, apply_delayed_actions_to_state(DelayedActions, State)}.
+    {{reply, Reply}, timer_to_flow_action(Timer), apply_delayed_actions_to_state(DelayedActions, State)}.
 
 -spec add_tag(options(), undefined | mg_machine_tags:tag(), mg:id()) ->
     ok.
@@ -238,6 +239,13 @@ push_events_to_event_sink(Options, ID, Events) ->
         undefined ->
             ok
     end.
+
+-spec timer_to_flow_action(undefined | genlib_time:ts()) ->
+    mg_machine:processor_flow_action().
+timer_to_flow_action(undefined) ->
+    sleep;
+timer_to_flow_action(Timer) ->
+    {wait, Timer}.
 
 -spec apply_delayed_actions_to_state(delayed_actions(), state()) ->
     state().
@@ -279,13 +287,25 @@ handle_state_change({AuxState, EventsBodies}, EventsRange, DelayedActions) ->
         new_events_range => NewEventsRange
     }.
 
-%% TODO timers
 -spec handle_complex_action(complex_action(), delayed_actions()) ->
     delayed_actions().
 handle_complex_action(ComplexAction, DelayedActions) ->
     DelayedActions#{
-        add_tag => maps:get(tag, ComplexAction, undefined)
+        add_tag => maps:get(tag, ComplexAction, undefined),
+        timer   => get_timer_action(ComplexAction)
     }.
+
+-spec get_timer_action(complex_action()) ->
+    genlib_time:ts() | undefined.
+get_timer_action(ComplexAction) ->
+    case maps:get(timer, ComplexAction, undefined) of
+        undefined ->
+            undefined;
+        {timer, Timer} ->
+            genlib_time:now() + Timer;
+        {deadline, Deadline} ->
+            genlib_time:daytime_to_unixtime(Deadline)
+    end.
 
 %%
 
@@ -386,12 +406,14 @@ delayed_actions_to_opaque(undefined) ->
 delayed_actions_to_opaque(DelayedActions) ->
     #{
         add_tag          := Tag,
+        timer            := Timer,
         add_events       := Events,
         new_aux_state    := AuxState,
         new_events_range := EventsRange
     } = DelayedActions,
     [1,
         maybe_to_opaque(Tag, fun identity/1),
+        maybe_to_opaque(Timer, fun identity/1),
         mg_events:events_to_opaques(Events),
         AuxState,
         mg_events:events_range_to_opaque(EventsRange)
@@ -401,9 +423,10 @@ delayed_actions_to_opaque(DelayedActions) ->
     delayed_actions().
 opaque_to_delayed_actions(null) ->
     undefined;
-opaque_to_delayed_actions([1, Tag, Events, AuxState, EventsRange]) ->
+opaque_to_delayed_actions([1, Tag, Timer, Events, AuxState, EventsRange]) ->
     #{
         add_tag          => maybe_from_opaque(Tag, fun identity/1),
+        timer            => maybe_from_opaque(Timer, fun identity/1),
         add_events       => mg_events:opaques_to_events(Events),
         new_aux_state    => AuxState,
         new_events_range => mg_events:opaque_to_events_range(EventsRange)

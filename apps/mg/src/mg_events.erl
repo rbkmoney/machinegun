@@ -105,8 +105,8 @@ generate_events_with_range(EventsBodies, EventsRange) ->
     {Events, NewLastEventID} = generate_events(EventsBodies, get_last_event_id(EventsRange)),
     {Events, update_events_range(EventsRange, NewLastEventID)}.
 
--spec generate_events([body()], id()) ->
-    {[event()], id()}.
+-spec generate_events([body()], id() | undefined) ->
+    {[event()], id() | undefined}.
 generate_events(EventsBodies, LastID) ->
     lists:mapfoldl(
         fun generate_event/2,
@@ -114,7 +114,7 @@ generate_events(EventsBodies, LastID) ->
         EventsBodies
     ).
 
--spec generate_event(body(), id()) ->
+-spec generate_event(body(), id() | undefined) ->
     {event(), id()}.
 generate_event(EventBody, LastID) ->
     ID = get_next_event_id(LastID),
@@ -140,7 +140,7 @@ get_next_event_id(undefined) ->
 get_next_event_id(N) ->
     N + 1.
 
--spec update_events_range(events_range(), id()) ->
+-spec update_events_range(events_range(), id() | undefined) ->
     events_range().
 update_events_range(undefined, undefined) ->
     undefined;

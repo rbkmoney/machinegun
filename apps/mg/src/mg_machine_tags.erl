@@ -45,17 +45,17 @@ resolve_tag(Options, Tag) ->
 -spec process_machine(_, mg:id(), mg_machine:processor_impact(), _, mg_machine:machine_state()) ->
     mg_machine:processor_result().
 process_machine(_, _, {init, undefined}, _, _) ->
-    {{reply, ok}, wait, state_to_opaque(undefined)};
+    {{reply, ok}, sleep, state_to_opaque(undefined)};
 process_machine(_, _, {repair, undefined}, _, State) ->
-    {{reply, ok}, wait, State};
+    {{reply, ok}, sleep, State};
 process_machine(_, _, {call, {add_tag, ID}}, _, PackedState) ->
     case opaque_to_state(PackedState) of
         undefined ->
-            {{reply, ok}, wait, state_to_opaque(ID)};
+            {{reply, ok}, sleep, state_to_opaque(ID)};
         ID ->
-            {{reply, ok}, wait, PackedState};
+            {{reply, ok}, sleep, PackedState};
         OtherID ->
-            {{reply, {already_exists, OtherID}}, wait, PackedState}
+            {{reply, {already_exists, OtherID}}, sleep, PackedState}
     end.
 
 %%

@@ -7,7 +7,7 @@
 %% mg_storage callbacks
 -behaviour(mg_storage).
 -export_type([options/0]).
--export([child_spec/3, put/6, get/3, search/4, delete/4]).
+-export([child_spec/3, put/6, get/3, search/3, delete/4]).
 
 %% gen_server callbacks
 -behaviour(gen_server).
@@ -53,10 +53,10 @@ get(_Options, Namespace, Key) when is_binary(Namespace) andalso is_binary(Key) -
             {Context, mg_storage:binary_to_opaque(Value)}
     end.
 
--spec search(_Options, mg:ns(), mg_storage:index_name(), mg_storage:index_query()) ->
+-spec search(_Options, mg:ns(), mg_storage:index_query()) ->
     [mg_storage:key()].
-search(_Options, Namespace, Index, Query) ->
-    gen_server:call(self_ref(Namespace), {search, Index, Query}).
+search(_Options, Namespace, Query) ->
+    gen_server:call(self_ref(Namespace), {search, Query}).
 
 -spec delete(_Options, mg:ns(), mg_storage:key(), context()) ->
     ok.
@@ -88,15 +88,15 @@ init({Options, Namespace}) ->
     }.
 
 -spec handle_call(_Call, mg_utils:gen_server_from(), state()) ->
-    mg_utils:gen_server_handle_call_ret(state()).
+    mg_utils:gen_server_handle_call_ret(state()) | no_return().
 handle_call({put, Key, Context, Value, IndexesUpdates}, _From, State) ->
     {Resp, NewState} = do_put(Key, Context, Value, IndexesUpdates, State),
     {reply, Resp, NewState};
 handle_call({get, Key}, _From, State) ->
     Resp = do_get(Key, State),
     {reply, Resp, State};
-handle_call({search, Index, Query}, _From, State) ->
-    Resp = do_search(Index, Query, State),
+handle_call({search, Query}, _From, State) ->
+    Resp = do_search(Query, State),
     {reply, Resp, State};
 handle_call({delete, Key, Context}, _From, State) ->
     NewState = do_delete(Key, Context, State),
@@ -106,19 +106,19 @@ handle_call({delete, Key, Context}, _From, State) ->
 %% поэто если в этот сторадж пришли странные запросы,
 %% то лучше сразу падать
 handle_call(Call, From, State) ->
-    exit({'unexpected call received', Call, From}),
+    _ = exit({'unexpected call received', Call, From}),
     {noreply, State}.
 
 -spec handle_cast(_Cast, state()) ->
-    mg_utils:gen_server_handle_cast_ret(state()).
+    no_return().
 handle_cast(Cast, State) ->
-    exit({'unexpected cast received', Cast}),
+    _ = erlang:exit({'unexpected cast received', Cast}),
     {noreply, State}.
 
 -spec handle_info(_Info, state()) ->
-    mg_utils:gen_server_handle_info_ret(state()).
+    no_return().
 handle_info(Info, State) ->
-    exit({'unexpected info received', Info}),
+    _ = erlang:exit({'unexpected info received', Info}),
     {noreply, State}.
 
 -spec code_change(_, state(), _) ->
@@ -162,10 +162,10 @@ wrap(V) ->
 do_get(Key, #{values := Values}) ->
     maps:get(Key, Values, undefined).
 
--spec do_search(mg_storage:index_name(), mg_storage:index_query(), state()) ->
+-spec do_search(mg_storage:index_query(), state()) ->
     [mg_storage:key()].
-do_search(Index, Query, #{indexes := Indexes}) ->
-    do_search_index(maps:get(Index, Indexes, []), Query).
+do_search({IndexName, QueryValue}, #{indexes := Indexes}) ->
+    do_search_index(maps:get(IndexName, Indexes, []), QueryValue).
 
 -spec do_put(mg_storage:key(), context(), mg_storage:value(), [mg_storage:index_update()], state()) ->
     {context(), state()}.
@@ -204,12 +204,12 @@ next_context(Context) ->
 %%
 %% index
 %%
--spec do_search_index(index(), mg_storage:index_query()) ->
+-spec do_search_index(index(), mg_storage:index_query_value()) ->
     [mg_storage:key()].
-do_search_index(Index, Query) ->
+do_search_index(Index, QueryValue) ->
     lists:foldr(
         fun({IndexValue, Key}, ResultAcc) ->
-            case is_value_satisfies_query(Query, IndexValue) of
+            case is_value_satisfies_query(QueryValue, IndexValue) of
                 true  -> [Key | ResultAcc];
                 false -> ResultAcc
             end
@@ -220,7 +220,7 @@ do_search_index(Index, Query) ->
 
 %% Очень тупое название, но ничего лучше в голову не пришло.
 %% Товарищи ревьюверы, если ли лучше идеи?
--spec is_value_satisfies_query(mg_storage:index_query(), mg_storage:index_value()) ->
+-spec is_value_satisfies_query(mg_storage:index_query_value(), mg_storage:index_value()) ->
     boolean().
 is_value_satisfies_query({From, To}, Value) ->
     From =< Value andalso Value =< To;
