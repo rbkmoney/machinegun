@@ -77,7 +77,7 @@ mg_woody_api_config(_C) ->
         {storage, mg_storage_memory},
         {namespaces, #{
             ?NS => #{
-                processor => #{ url => <<"http://localhost:8024/processor">> },
+                processor => #{ url => <<"http://localhost:8023/processor">> },
                 event_sink => ?ES_ID
             }
         }}
@@ -124,7 +124,7 @@ create(C, ID) ->
 -spec create_event(binary(), config(), mg:id()) ->
     _.
 create_event(Event, C, ID) ->
-    mg_automaton_client:call(automaton_options(C), {id, ID}, Event).
+    Event = mg_automaton_client:call(automaton_options(C), {id, ID}, Event).
 
 -spec start_processor(Address, Port, Path, Functions) -> {ok, pid()} when
     Address   :: mg_test_processor:host_address(),
