@@ -80,13 +80,14 @@
 -type options() :: #{
     namespace              => mg:ns(),
     storage                => mg_storage:module           (),
+    processor              => mg_utils:mod_opts           (),
     storage_retry_policy   => mg_utils:genlib_retry_policy(), % optional
-    processor              => mg_utils:mod_opts           ()
+    processor_retry_policy => mg_utils:genlib_retry_policy()  % optional
 }.
 
--type thrown_error() :: logic_error() | {transient, transient_error()} | timeout.
+-type thrown_error() :: logic_error() | {transient, transient_error()} | {timeout, _Reason}.
 -type logic_error() :: machine_already_exist | machine_not_found | machine_failed | machine_already_working.
--type transient_error() :: overload | storage_unavailable | processor_unavailable.
+-type transient_error() :: overload | {storage_unavailable, _Reason} | {processor_unavailable, _Reason}.
 
 -type throws() :: no_return().
 -type machine_state() :: mg_storage:opaque().
@@ -167,11 +168,10 @@ get(Options, ID) ->
     State.
 
 -spec search(options(), search_query()) ->
-    [mg:id()].
+    [mg:id()] | throws().
 search(Options, Query) ->
     mg_storage:search(storage_options(Options), storage_search_query(Query)).
 
-%% TODO придумуть имена получше, ревьюверы, есть идеи?
 -spec call_with_lazy_start(options(), mg:id(), term(), term()) ->
     _Resp | throws().
 call_with_lazy_start(Options, ID, Call, StartArgs) ->
@@ -276,15 +276,20 @@ touch(Options, MachineID) ->
 -spec handle_load(_ID, options()) ->
     {ok, state()}.
 handle_load(ID, Options) ->
-    {StorageContext, StorageMachine} = get_storage_machine(Options, ID),
-    State =
-        #{
-            id              => ID,
-            options         => Options,
-            storage_machine => StorageMachine,
-            storage_context => StorageContext
-        },
-    {ok, try_finish_processing(State)}.
+    try
+        {StorageContext, StorageMachine} = get_storage_machine(Options, ID),
+        State =
+            #{
+                id              => ID,
+                options         => Options,
+                storage_machine => StorageMachine,
+                storage_context => StorageContext
+            },
+        {ok, try_finish_processing(State)}
+    catch throw:Reason ->
+        ok = log_load_error(namespace(Options), ID, {throw, Reason, erlang:get_stacktrace()}),
+        {error, Reason}
+    end.
 
 -spec handle_call(_Call, mg_worker:call_context(), state()) ->
     {{reply, _Resp} | noreply, state()}.
@@ -444,8 +449,8 @@ process(Impact, ProcessingCtx, State) ->
     try
         process_unsafe(Impact, ProcessingCtx, State)
     catch Class:Reason ->
-            ok = do_reply_action({reply, {error, machine_failed}}, ProcessingCtx),
-            handle_exception({Class, Reason, erlang:get_stacktrace()}, State)
+        ok = do_reply_action({reply, {error, machine_failed}}, ProcessingCtx),
+        handle_exception({Class, Reason, erlang:get_stacktrace()}, State)
     end.
 
 -spec handle_exception(mg_utils:exception(), state()) ->
@@ -479,9 +484,17 @@ process_unsafe(Impact, ProcessingCtx, State=#{storage_machine := StorageMachine}
 
 -spec call_processor(processor_impact(), processing_context(), state()) ->
     processor_result().
-call_processor(Impact, ProcessingCtx, #{options := Options, id := ID, storage_machine := #{state := State}}) ->
-    % TODO retry processor
-    mg_utils:apply_mod_opts(get_options(processor, Options), process_machine, [ID, Impact, ProcessingCtx, State]).
+call_processor(Impact, ProcessingCtx, State) ->
+    #{options := Options, id := ID, storage_machine := #{state := MachineState}} = State,
+    F = fun() ->
+            mg_utils:apply_mod_opts(
+                get_options(processor, Options),
+                process_machine,
+                [ID, Impact, ProcessingCtx, MachineState]
+            )
+        end,
+    RetryStrategy = mg_utils:genlib_retry_new(get_options(processor_retry_policy, Options)),
+    do_with_retry(namespace(Options), ID, F, RetryStrategy).
 
 -spec do_reply_action(processor_reply_action(), undefined | processing_context()) ->
     ok.
@@ -568,9 +581,16 @@ namespace(Options) ->
 -spec get_options(atom(), options()) ->
     _.
 get_options(Subj=storage_retry_policy, Options) ->
-    maps:get(Subj, Options, {exponential, infinity, 2, 10, 60 * 1000});
+    maps:get(Subj, Options, default_retry_policy());
+get_options(Subj=processor_retry_policy, Options) ->
+    maps:get(Subj, Options, default_retry_policy());
 get_options(Subj, Options) ->
     maps:get(Subj, Options).
+
+-spec default_retry_policy() ->
+    _.
+default_retry_policy() ->
+    {exponential, infinity, 2, 10, 60 * 1000}.
 
 %%
 %% retrying
@@ -596,17 +616,20 @@ do_with_retry(NS, ID, Fun, RetryStrategy) ->
 %%
 %% logging
 %%
+-spec log_load_error(mg:ns(), mg:id(), mg_utils:exception()) ->
+    ok.
+log_load_error(NS, ID, Exception) ->
+    ok = error_logger:error_msg("[~s:~s] loading failed ~p", [NS, ID, Exception]).
+
 -spec log_machine_error(mg:ns(), mg:id(), mg_utils:exception()) ->
     ok.
 log_machine_error(NS, ID, Exception) ->
-    % ok = error_logger:error_msg("[~s:~s] machine failed ~s", [NS, ID, mg_utils:format_exception(Exception)]).
-    ok = error_logger:error_msg("[~s:~s] machine failed ~p", [NS, ID, Exception]).
+    ok = error_logger:error_msg("[~s:~s] processing failed ~p", [NS, ID, Exception]).
 
 -spec log_transient_exception(mg:ns(), mg:id(), mg_utils:exception()) ->
     ok.
 log_transient_exception(NS, ID, Exception) ->
-    % ok = error_logger:warning_msg("[~s:~s] transient error ~s", [NS, ID, mg_utils:format_exception(Exception)]).
-    ok = error_logger:warning_msg("[~s:~s] transient error ~p", [NS, ID, Exception]).
+    ok = error_logger:warning_msg("[~s:~s] retryable error ~p", [NS, ID, Exception]).
 
 -spec log_retry(mg:ns(), mg:id(), Timeout::pos_integer()) ->
     ok.

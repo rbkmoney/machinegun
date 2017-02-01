@@ -167,7 +167,14 @@ process_machine(Options, ID, Impact, PCtx, null) ->
     process_machine(Options, ID, Impact, PCtx, PackedState);
 process_machine(Options, ID, Impact, PCtx, PackedState) ->
     {ReplyAction, ProcessingFlowAction, NewState} =
-        process_machine_(Options, ID, Impact, PCtx, opaque_to_state(PackedState)),
+        try
+            process_machine_(Options, ID, Impact, PCtx, opaque_to_state(PackedState))
+        catch
+            throw:{transient, Reason} ->
+                erlang:raise(throw, {transient, Reason}, erlang:get_stacktrace());
+            throw:Reason ->
+                erlang:throw({transient, {processor_unavailable, Reason}})
+        end,
     {ReplyAction, ProcessingFlowAction, state_to_opaque(NewState)}.
 
 %%
@@ -197,17 +204,17 @@ process_machine_(Options, ID, continuation, #{state := Reply}, State = #{delayed
     %
     % действия должны обязательно произойти в конце концов (таймаута нет), либо машина должна упасть
     #{add_tag := Tag, timer := Timer, add_events := Events} = DelayedActions,
-    ok = add_tag(Options, Tag, ID),
-    ok = store_events(Options, ID, Events),
+    ok =                   add_tag(Options, ID, Tag   ),
+    ok =              store_events(Options, ID, Events),
     ok = push_events_to_event_sink(Options, ID, Events),
 
     {{reply, Reply}, timer_to_flow_action(Timer), apply_delayed_actions_to_state(DelayedActions, State)}.
 
 -spec add_tag(options(), undefined | mg_machine_tags:tag(), mg:id()) ->
     ok.
-add_tag(_, undefined, _) ->
+add_tag(_, _, undefined) ->
     ok;
-add_tag(Options, Tag, ID) ->
+add_tag(Options, ID, Tag) ->
     % TODO retry
     case mg_machine_tags:add_tag(tags_machine_options(Options), Tag, ID) of
         ok ->
@@ -450,4 +457,3 @@ maybe_from_opaque(T0, ToT1) ->
     T.
 identity(V) ->
     V.
-
