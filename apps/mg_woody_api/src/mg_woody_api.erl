@@ -45,10 +45,10 @@
 -type config_nss() :: #{ns() => config_ns()}.
 -type net_opts() :: woody_server_thrift_http_handler:net_opts().
 -type config_element() ::
-      {namespaces,      config_nss   ()}
-    | {api_host  , inet:ip_address   ()}
-    | {api_port  , inet:port_number  ()}
-    | {net_opts  ,      net_opts     ()}
+      {namespaces,         config_nss()}
+    | {ip        ,             string()}
+    | {port      ,   inet:port_number()}
+    | {net_opts  ,           net_opts()}
     | {storage   , mg_storage:storage()}
 .
 -type config() :: [config_element()].
@@ -108,12 +108,13 @@ stop(_State) ->
 -spec woody_child_spec(config(), atom()) ->
     supervisor:child_spec().
 woody_child_spec(Config, ChildID) ->
+    {ok, Ip} = inet:parse_address(get_config_element(ip, Config, "::")),
     woody_server:child_spec(
         ChildID,
         #{
-            ip            => get_config_element(host    , Config, {0, 0, 0, 0}),
-            port          => get_config_element(port    , Config, 8022        ),
-            net_opts      => get_config_element(net_opts, Config, #{}         ),
+            ip            => Ip,
+            port          => get_config_element(port    , Config, 8022),
+            net_opts      => get_config_element(net_opts, Config, #{} ),
             event_handler => {mg_woody_api_event_handler, server},
             handlers      => [
                 mg_woody_api_automaton :handler(api_automaton_options (Config)),

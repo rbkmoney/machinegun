@@ -124,7 +124,7 @@ create(C, ID) ->
 -spec create_event(binary(), config(), mg:id()) ->
     _.
 create_event(Event, C, ID) ->
-    mg_automaton_client:call(automaton_options(C), {id, ID}, Event).
+    Event = mg_automaton_client:call(automaton_options(C), {id, ID}, Event).
 
 -spec start_processor(Address, Port, Path, Functions) -> {ok, pid()} when
     Address   :: mg_test_processor:host_address(),
