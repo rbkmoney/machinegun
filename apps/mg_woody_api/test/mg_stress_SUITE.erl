@@ -77,7 +77,7 @@ mg_woody_api_config(_C) ->
         {storage, mg_storage_memory},
         {namespaces, #{
             ?NS => #{
-                processor => #{ url => <<"http://localhost:8023/processor">> },
+                processor => #{ url => <<"http://localhost:8024/processor">> },
                 event_sink => ?ES_ID
             }
         }}
