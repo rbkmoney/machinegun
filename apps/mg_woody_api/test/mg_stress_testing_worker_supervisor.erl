@@ -1,4 +1,4 @@
-%% Супервизор, контроллирующий тестовых воркеров
+%%% Супервизор, контроллирующий тестовых воркеров
 -module(mg_stress_testing_worker_supervisor).
 -behaviour(supervisor).
 
@@ -11,24 +11,29 @@
 %%
 %% API
 %%
--spec start_link(mg_stress_testing:worker_sup()) ->
-    supervisor:startlink_ret().
+-export_type([options/0]).
+-type options() :: #{
+    name   => atom(),
+    module => module(),
+    worker => mg_utils:mod_opts(mg_stress_testing_worker:options())
+}.
+
+-spec start_link(options()) ->
+    mg_utils:gen_start_ret().
 start_link(Options) ->
-    Name = maps:get(worker_sup_name, Options),
+    Name = maps:get(name, Options),
     supervisor:start_link({via, gproc, Name}, ?MODULE, Options).
 
 %%
 %% Supervisor callbacks
 %%
--spec init(mg_stress_testing:worker_sup()) ->
+-spec init(options()) ->
     {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init(Options) ->
-    #{
-        worker_mod  := WorkerMod,
-        worker_opts := WorkerOpts
-    } = maps:get(worker_sup_opts, Options),
+    {WorkerMod, WorkerOpts} = maps:get(worker, Options),
 
     Flags     = #{strategy => simple_one_for_one},
+    erlang:apply(Worker
     ChildSpec = #{
         id => WorkerMod,
         start => {WorkerMod, start_link, WorkerOpts},

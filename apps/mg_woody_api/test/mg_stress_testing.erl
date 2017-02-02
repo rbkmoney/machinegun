@@ -1,4 +1,4 @@
-%% Корневой модуль для проведения стресс тестов
+%%% Корневой модуль для проведения стресс тестов
 -module(mg_stress_testing).
 -behaviour(supervisor).
 
@@ -11,69 +11,27 @@
 %%
 %% API
 %%
--export_type([worker_sup_options/0]).
--type worker_sup_options() :: #{
-    worker_mod  => module(),
-    worker_opts => term()
+-type options() :: #{
+    manager    => mg_utils:mod_opts(mg_stress_testing_worker_manager:options()),
+    worker_sup => mg_stress_testing_worker_supervisor:options()
 }.
 
--export_type([worker_options/0]).
--type worker_sup() :: #{
-    worker_sup_name => term(),               % Supervisor name
-    worker_sup_mod  => module(),             % Supervisor module
-    worker_sup_opts => worker_sup_options()  % Supervisor options (worker options)
-}.
-
--export_type([manager_options/0]).
--type manager_options() :: #{
-    ccu              => integer(), % Concurrent users
+-type options() :: #{
+    worker_mod       => module (),
+    ccu              => integer(),
     session_duration => integer(),
     total_duration   => integer(),
-    cps              => integer(), % Connects per second
-    rps              => integer()  % Requests per second
-}.
-
--export_type([manager/0]).
--type manager() :: #{
-    manager_mod  => module(),
-    manager_opts => manager_options(),
-}.
-
--export_type([options/0]).
--type options() :: #{
-    manager    => manager(),
-    worker_sup => worker_sup()
-}.
+    cps              => integer(),
+    rps              => integer()
 
 -spec start_link(options()) ->
     startlink_ret().
 start_link(Options) ->
-    Flags = #{
-        strategy => one_for_all,
-        intensity => 0,
-        period => 1
-    },
+    ManagerOpts = maps:get(manager, Options),
+    ManagerSpec = mg_stress_testing_worker_manager:child_spec(manager, ManagerOpts),
 
-    Manager     = maps:get(worker_manager, Options),
-    ManagerMod  = maps:get(module, Manager),
-    ManagerOpts = maps:get(opts, Manager),
-    ManagerSpec => #{
-        id => ManagerMod,
-        start => {ManagerMod, start_link, ManagerOpts},
-        restart => temporary,
-        shutdown => 10000,
-        type => worker,
-        modules => [ManagerMod]
-    },
+    WorkerSupOpts = maps:get(worker, Options),
+    WorkerSupSpec = mg_stress_testing_worker_supervisor:child_spec(worker_supervisor, WorkerOpts),
+    
+    mg_utils_supervisor_wrapper:start_link({#{strategy => one_for_all}, [WorkerSupSpec, ManagerSpec]}).
 
-    {WorkerSupMod, WorkerSupOpts} = maps:get(worker_sup, Options),
-    WorkerSupSpec = #{
-        id => WorkerSupMod,
-        start => {WorkerSupMod, start_link, WorkerSupOpts},
-        restart => temporary,
-        shutdown => 10000,
-        type => supervisor,
-        modules => [WorkerSupMod]
-    },
-
-    mg_utils_supervisor_wrapper:start_link({Flags, [WorkerSupSpec, ManagerSpec]}).

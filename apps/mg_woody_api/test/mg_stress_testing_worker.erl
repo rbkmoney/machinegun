@@ -1,8 +1,8 @@
-%% Behaviour воркера, отвечающего за сессию стресс теста.
-%%
-%% start_session - что происходит при старте воркера
-%% do_action - описывает, что воркер должен делать
-%% finish_session - окончание сессии
+%%% Behaviour воркера, отвечающего за сессию стресс теста.
+%%%
+%%% start_session - что происходит при старте воркера
+%%% do_action - описывает, что воркер должен делать
+%%% finish_session - окончание сессии
 
 -module(mg_stress_testing_worker).
 -behaviour(gen_server).
@@ -17,31 +17,47 @@
 %% Callbacks
 %%
 -callback start_session(state()) ->
-    {noreply, term()} | {noreply, term(), term()}.
+    {noreply, state()} | {noreply, state(), term()}.
+
 -callback do_action(atom(), state()) ->
     state().
+
 -callback finish_session(state()) ->
-    {stop, term(), state()}.
+    {stop, state(), term()}.
 
 %%
 %% API
 %%
--spec start_link(mg_stress_testing:worker_options()) ->
-    startlink_ret().
+-export_type([options/0]).
+-type options() :: term().
+
+-spec start_link(options()) ->
+    mg_utils:gen_start_ret().
 start_link(Options) ->
     gen_server:start_link(?MODULE, Options, []).
+
+-spec child_spec(atom(), options()) ->
+    supervisor:child_spec().
+child_spec(ChildId, Options) ->
+    #{
+        id       => ChildId,
+        start    => {?MODULE, start_link, [Options]},
+        restart  => temporary,
+        shutdown => brutal_kill,
+        type     => supervisor
+    }.
 
 %%
 %% gen_server callbacks
 %%
 -type state() :: #{
-    options => term(),
+    options      => term(),
     action_delay => term(),
-    state   => term()
+    state        => term()
 }.
 
--spec init(mg_stress_testing:worker_options()) ->
-    {ok, term()}.
+-spec init(options()) ->
+    {ok, state()}.
 init(Options) ->
     S = #{
         options => Options,
@@ -50,22 +66,22 @@ init(Options) ->
     gen_server:cast(self(), init),
     {ok, S}.
 
--spec handle_call(term(), _, term()) ->
-    {noreply, term()}.
+-spec handle_call(term(), _, state()) ->
+    {noreply, state()}.
 handle_call(Call, _, S) ->
     exit({'unknown call', Call}),
     {noreply, S}.
 
--spec handle_cast(term(), term()) ->
-    {noreply, term()}.
+-spec handle_cast(term(), state()) ->
+    {noreply, state()}.
 handle_cast(init, S) ->
     start_session(S);
 handle_cast(Cast, S) ->
     exit({'unknown cast', Cast}),
     {noreply, S}.
 
--spec handle_info(term(), term()) ->
-    {noreply, term()} | {noreply, term(), integer()}.
+-spec handle_info(term(), state()) ->
+    {noreply, state()} | {noreply, state(), integer()}.
 handle_info(timeout, S=#{action_delay:=ActionDelay}) ->
     case is_finished(S, utils_time:universal_time()) of
         true ->
@@ -82,8 +98,8 @@ handle_info(Info, S=#{action_delay:=ActionDelay, state:=WorkerState})
     S1 = do_action(Info, S),
     {noreply, S1, ActionDelay}.
 
--spec code_change(term(), term(), term()) ->
-    {ok, term()}.
+-spec code_change(term(), state(), term()) ->
+    {ok, state()}.
 code_change(_, S, _) ->
     {ok, S}.
 
@@ -95,6 +111,7 @@ terminate(_, _) ->
 %%
 %% Utils
 %%
+-spec is_finished(state(), term()).
 is_finished(_S, _Time) ->
     true.
 
