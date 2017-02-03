@@ -16,7 +16,7 @@
 %%
 %% Callbacks
 %%
--callback child_spec(options()) ->
+-callback child_spec(atom(), options()) ->
     supervisor:child_spec().
 
 -callback start_session(state()) ->
@@ -26,7 +26,7 @@
     state().
 
 -callback finish_session(state()) ->
-    {stop, state(), term()}.
+    {stop, normal, state()}.
 
 %%
 %% API
@@ -39,24 +39,13 @@
 start_link(Options) ->
     gen_server:start_link(?MODULE, Options, []).
 
--spec child_spec(atom(), options()) ->
-    supervisor:child_spec().
-child_spec(ChildId, Options) ->
-    #{
-        id       => ChildId,
-        start    => {?MODULE, start_link, [Options]},
-        restart  => temporary,
-        shutdown => brutal_kill,
-        type     => supervisor
-    }.
-
 %%
 %% gen_server callbacks
 %%
--type state() :: #{
+-type state(LocalState) :: #{
     options      => term(),
     action_delay => term(),
-    state        => term()
+    local_state  => LocalState
 }.
 
 -spec init(options()) ->
