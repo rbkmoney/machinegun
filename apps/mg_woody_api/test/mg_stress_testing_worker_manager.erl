@@ -1,4 +1,6 @@
+%%%
 %%% Менеджер, управляющий воркерами, и, соответственно, нагрузкой
+%%%
 -module(mg_stress_testing_worker_manager).
 -behaviour(gen_server).
 
@@ -68,6 +70,7 @@ handle_call(Call, _, S) ->
 handle_cast(init, S) ->
     % Готовимся и вычисляем нужные значения для последующего старта воркеров
     % Находим в gproc супервизор воркеров
+    % Заходим в луп старта этих самых воркеров
     {noreply, S}.
 
 -spec handle_info(loop, state()) ->

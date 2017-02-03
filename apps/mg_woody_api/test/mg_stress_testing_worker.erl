@@ -16,6 +16,9 @@
 %%
 %% Callbacks
 %%
+-callback child_spec(options()) ->
+    supervisor:child_spec().
+
 -callback start_session(state()) ->
     {noreply, state()} | {noreply, state(), term()}.
 

@@ -1,4 +1,6 @@
+%%%
 %%% Супервизор, контроллирующий тестовых воркеров
+%%%
 -module(mg_stress_testing_worker_supervisor).
 -behaviour(supervisor).
 
@@ -14,7 +16,6 @@
 -export_type([options/0]).
 -type options() :: #{
     name   => atom(),
-    module => module(),
     worker => mg_utils:mod_opts(mg_stress_testing_worker:options())
 }.
 
@@ -24,6 +25,17 @@ start_link(Options) ->
     Name = maps:get(name, Options),
     supervisor:start_link({via, gproc, Name}, ?MODULE, Options).
 
+-spec child_spec(atom(), options()) ->
+    supervisor:child_spec().
+child_spec(ChildId, Options) ->
+    #{
+        id       => ChildId,
+        start    => {?MODULE, start_link, [Options]},
+        type     => supervisor,
+        restart  => temporary,
+        shutdown => brutal_kill
+    }.
+
 %%
 %% Supervisor callbacks
 %%
@@ -31,15 +43,6 @@ start_link(Options) ->
     {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init(Options) ->
     {WorkerMod, WorkerOpts} = maps:get(worker, Options),
+    WorkerSpec = erlang:apply(WorkerMod, child_spec, [WorkerOpts]),
+    {ok, #{strategy => simple_one_for_one}, [WorkerSpec]}.
 
-    Flags     = #{strategy => simple_one_for_one},
-    erlang:apply(Worker
-    ChildSpec = #{
-        id => WorkerMod,
-        start => {WorkerMod, start_link, WorkerOpts},
-        restart => temporary,
-        shutdown => 10000,
-        type => worker,
-        modules => [WorkerMod]
-    },
-    {ok, Flags, [ChildSpec]}.
