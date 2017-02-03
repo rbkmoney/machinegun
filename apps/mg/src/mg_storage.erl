@@ -44,8 +44,9 @@
 -type kv     () :: {key(), value()}.
 -type context() :: term().
 
--type index_name       () :: binary().
--type index_value      () :: binary().
+%% типизация получилась отвратная, но лучше не вышло :-\
+-type index_name       () :: {binary | integer, binary()}.
+-type index_value      () :: binary() | integer().
 -type index_update     () :: {index_name(), index_value()}.
 -type index_query_value() :: index_value() | {index_value(), index_value()}.
 -type index_query      () :: {index_name(), index_query_value()}.
@@ -68,7 +69,7 @@
     {context(), value()} | undefined.
 
 -callback search(_Options, mg:ns(), index_query()) ->
-    [key()].
+    [{index_value(), key()}] | [key()].
 
 -callback delete(_Options, mg:ns(), key(), context()) ->
     ok.

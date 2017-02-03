@@ -54,7 +54,7 @@ get(_Options, Namespace, Key) when is_binary(Namespace) andalso is_binary(Key) -
     end.
 
 -spec search(_Options, mg:ns(), mg_storage:index_query()) ->
-    [mg_storage:key()].
+    [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
 search(_Options, Namespace, Query) ->
     gen_server:call(self_ref(Namespace), {search, Query}).
 
@@ -163,7 +163,7 @@ do_get(Key, #{values := Values}) ->
     maps:get(Key, Values, undefined).
 
 -spec do_search(mg_storage:index_query(), state()) ->
-    [mg_storage:key()].
+    [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
 do_search({IndexName, QueryValue}, #{indexes := Indexes}) ->
     do_search_index(maps:get(IndexName, Indexes, []), QueryValue).
 
@@ -205,18 +205,25 @@ next_context(Context) ->
 %% index
 %%
 -spec do_search_index(index(), mg_storage:index_query_value()) ->
-    [mg_storage:key()].
+    [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
 do_search_index(Index, QueryValue) ->
     lists:foldr(
         fun({IndexValue, Key}, ResultAcc) ->
             case is_value_satisfies_query(QueryValue, IndexValue) of
-                true  -> [Key | ResultAcc];
+                true  -> [index_search_result(IndexValue, Key, QueryValue) | ResultAcc];
                 false -> ResultAcc
             end
         end,
         [],
         Index
     ).
+
+-spec index_search_result(mg_storage:index_value(), mg_storage:key(), mg_storage:index_query_value()) ->
+    {mg_storage:index_value(), mg_storage:key()} | mg_storage:key().
+index_search_result(IndexValue, Key, {_, _}) ->
+    {IndexValue, Key};
+index_search_result(_, Key, _) ->
+    Key.
 
 %% Очень тупое название, но ничего лучше в голову не пришло.
 %% Товарищи ревьюверы, если ли лучше идеи?
@@ -241,13 +248,16 @@ do_update_indexes(IndexesUpdates, Key, State) ->
 
 -spec do_update_index(mg_storage:index_update(), mg_storage:key(), state()) ->
     state().
-do_update_index({IndexName, IndexValue}, Key, State = #{indexes := Indexes})
-    when is_binary(IndexName)
-    andalso is_binary(IndexValue) ->
-    % andalso is_integer(IndexValue) ->
+do_update_index(IndexUpdate={IndexName, IndexValue}, Key, State = #{indexes := Indexes}) ->
+    ok = check_index_update(IndexUpdate),
     Index    = maps:get(IndexName, Indexes, []),
     NewIndex = lists:sort([{IndexValue, Key} | Index]),
     State#{indexes := maps:put(IndexName, NewIndex, Indexes)}.
+
+-spec check_index_update(mg_storage:index_update()) ->
+    ok | no_return().
+check_index_update({{binary , Name}, Value}) when is_binary(Name) andalso is_binary (Value) -> ok;
+check_index_update({{integer, Name}, Value}) when is_binary(Name) andalso is_integer(Value) -> ok.
 
 -spec do_cleanup_indexes(mg_storage:key(), state()) ->
     state().
