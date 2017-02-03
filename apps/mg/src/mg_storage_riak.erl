@@ -97,11 +97,10 @@ get(Options, Namespace, Key) ->
     end).
 
 -spec search(options(), mg:ns(), mg_storage:index_query()) ->
-    [mg_storage:key()].
+    [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
 search(Options, Namespace, Query) ->
     do(Options, Namespace,
         fun(Pid) ->
-
                 Result = handle_riak_response(do_get_index(Pid, Namespace, Query)),
                 get_index_response(Query, Result)
         end
@@ -115,14 +114,21 @@ do_get_index(Pid, Namespace, {IndexName, Value}) ->
     riakc_pb_socket:get_index_eq(Pid, Namespace, prepare_index_name(IndexName), Value).
 
 -spec get_index_response(mg_storage:index_query(), get_index_results()) ->
-    [mg_storage:key()].
+    [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
 get_index_response({_, {_, _}}, #index_results_v1{keys = []}) ->
     % это какой-то пипец, а не код, они там все упоролись что-ли?
     [];
 get_index_response({_, {_, _}}, #index_results_v1{terms = Terms}) ->
     % получить из риака стабильный порядок следования не получилось,
     % поэтому пришлось сделать небольшой хак
-    erlang:element(2, lists:unzip(lists:sort(Terms)));
+    lists:sort(
+        lists:map(
+            fun({IndexValue, Key}) ->
+                {erlang:binary_to_integer(IndexValue), Key}
+            end,
+            Terms
+        )
+    );
 get_index_response({_, _}, #index_results_v1{keys = Keys}) ->
     Keys.
 
@@ -223,7 +229,7 @@ from_riak_obj(Object) ->
     ?msgpack_ct       = riakc_obj:get_content_type(Object),
     {riakc_obj:vclock(Object), mg_storage:binary_to_opaque(riakc_obj:get_value(Object))}.
 
--type riak_index_name  () :: {binary_index, list()}.
+-type riak_index_name  () :: {integer_index, list()}.
 -type riak_index_update() :: {riak_index_name(), [mg_storage:index_value()]}.
 -type get_index_results() :: #index_results_v1{}.
 
@@ -239,8 +245,10 @@ prepare_index_update({IndexName, IndexValue}) ->
 
 -spec prepare_index_name(mg_storage:index_name()) ->
     riak_index_name().
-prepare_index_name(IndexName) ->
-    {binary_index, erlang:binary_to_list(IndexName)}.
+prepare_index_name({binary, Name}) ->
+    {binary_index, erlang:binary_to_list(Name)};
+prepare_index_name({integer, Name}) ->
+    {integer_index, erlang:binary_to_list(Name)}.
 
 %%
 

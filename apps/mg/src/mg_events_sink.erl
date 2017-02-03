@@ -79,6 +79,7 @@ repair(Options, EventSinkID) ->
 %%
 %% mg_processor handler
 %%
+-define(ext_id_idx, {binary, <<"ext_id">>}).
 -type state() :: #{
     events_range => mg_events:events_range()
 }.
@@ -121,7 +122,7 @@ filter_duplicated(Options, EventSinkID, SourceNS, SourceMachineID, Events, State
 -spec is_duplicate(options(), mg:id(), mg:ns(), mg:ns(), mg_events:event(), state()) ->
     boolean().
 is_duplicate(Options, EventSinkID, SourceNS, SourceMachineID, #{id := EventID}, #{events_range := EventsRange}) ->
-    Query = {<<"ext_id">>, make_ext_id(EventSinkID, SourceNS, SourceMachineID, EventID)},
+    Query = {?ext_id_idx, make_ext_id(EventSinkID, SourceNS, SourceMachineID, EventID)},
     lists:any(
         fun(OtherEventFullID) ->
             % возможно будет больше одного "мусного" эвента
@@ -156,7 +157,7 @@ store_sink_events(Options, EventSinkID, SinkEvents) ->
 store_event(Options, EventSinkID, SinkEvent) ->
     ExtID = make_ext_id(EventSinkID, SinkEvent),
     {Key, Value} = sink_event_to_kv(EventSinkID, SinkEvent),
-    _ = mg_storage:put(events_storage_options(Options), Key, undefined, Value, [{<<"ext_id">>, ExtID}]),
+    _ = mg_storage:put(events_storage_options(Options), Key, undefined, Value, [{?ext_id_idx, ExtID}]),
     ok.
 
 -spec get_events_keys(mg:id(), mg_events:events_range(), mg_events:history_range()) ->

@@ -168,7 +168,7 @@ get(Options, ID) ->
     State.
 
 -spec search(options(), search_query()) ->
-    [mg:id()] | throws().
+    [{_TODO, mg:id()}] | [mg:id()] | throws().
 search(Options, Query) ->
     mg_storage:search(storage_options(Options), storage_search_query(Query)).
 
@@ -205,23 +205,23 @@ reply(#{call_context := CallContext}, Reply) ->
 handle_timers(Options) ->
     handle_timers(Options, search(Options, {waiting, 1, genlib_time:now()})).
 
--spec handle_timers(options(), [mg:id()]) ->
+-spec handle_timers(options(), [{genlib_time:ts(), mg:id()}]) ->
     ok.
-handle_timers(Options, MachinesIDs) ->
+handle_timers(Options, Timers) ->
     lists:foreach(
         % такая схема потенциально опасная, но надо попробовать как она себя будет вести
-        fun(MachineID) ->
-            erlang:spawn_link(fun() -> handle_timer(Options, MachineID) end)
+        fun(Timer) ->
+            erlang:spawn_link(fun() -> handle_timer(Options, Timer) end)
         end,
-        MachinesIDs
+        Timers
     ).
 
--spec handle_timer(options(), mg:id()) ->
+-spec handle_timer(options(), {genlib_time:ts(), mg:id()}) ->
     ok.
-handle_timer(Options, MachineID) ->
+handle_timer(Options, {Timestamp, MachineID}) ->
     % TODO добавить проверку, что это именно тот таймер, который нужно обработать
     % TODO можно попробовать проинспектировать очередь
-    case mg_workers_manager:call(manager_options(Options), MachineID, timeout) of
+    case mg_workers_manager:call(manager_options(Options), MachineID, {timeout, Timestamp}) of
         ok ->
             ok;
         {error, Reason} ->
@@ -301,7 +301,6 @@ handle_call(Call, CallContext, State=#{storage_machine:=StorageMachine}) ->
         {{call  , SubCall}, #{status:= sleeping    }} -> {noreply, process({call   , SubCall}, PCtx, State)};
         {{call  , SubCall}, #{status:={waiting, _ }}} -> {noreply, process({call   , SubCall}, PCtx, State)};
         {{repair, Args   }, #{status:={error  , _ }}} -> {noreply, process({repair , Args   }, PCtx, State)};
-        { timeout         , #{status:={waiting, _ }}} -> {noreply, process( timeout          , PCtx, State)};
 
         % unsuccess
         {{start  , _     }, #{status:=           _}} -> {{reply, {error, machine_already_exist  }}, State};
@@ -309,9 +308,15 @@ handle_call(Call, CallContext, State=#{storage_machine:=StorageMachine}) ->
         {{call   , _     }, undefined              } -> {{reply, {error, machine_not_found      }}, State};
         {{repair , _     }, #{status:= waiting    }} -> {{reply, {error, machine_already_working}}, State};
         {{repair , _     }, undefined              } -> {{reply, {error, machine_not_found      }}, State};
-        { timeout         , #{status:=_           }} -> {{reply, ok                              }, State};
         % ничего не просходит, просто убеждаемся, что машина загружена
-        {touch, _} -> {reply, ok, State}
+        {touch, _} -> {reply, ok, State};
+
+        % timers
+        {{timeout, Ts0}, #{status:={waiting, Ts1}}}
+            when Ts0 =:= Ts1 ->
+            {noreply, process(timeout, PCtx, State)};
+        {{timeout, _}, #{status:=_}} ->
+            {{reply, ok}, State}
     end.
 
 -spec handle_unload(state()) ->
@@ -390,18 +395,21 @@ opaque_to_machine_status([1, Opaque]) ->
 %%
 %% indexes
 %%
+-define(status_idx , {integer, <<"status"      >>}).
+-define(waiting_idx, {integer, <<"waiting_date">>}).
+
 -spec storage_search_query(search_query()) ->
     mg_storage:index_query().
 storage_search_query(sleeping) ->
-    {<<"status">>, 1};
+    {?status_idx, 1};
 storage_search_query(waiting) ->
-    {<<"status">>, 2};
+    {?status_idx, 2};
 storage_search_query({waiting, FromTs, ToTs}) ->
-    {<<"waiting_date">>, {erlang:integer_to_binary(FromTs), erlang:integer_to_binary(ToTs)}};
+    {?waiting_idx, {FromTs, ToTs}};
 storage_search_query(processing) ->
-    {<<"status">>, 3};
+    {?status_idx, 3};
 storage_search_query(failed) ->
-    {<<"status">>, 4}.
+    {?status_idx, 4}.
 
 -spec storage_machine_to_indexes(storage_machine()) ->
     [mg_storage:index_update()].
@@ -418,13 +426,12 @@ status_index(Status) ->
              processing  -> 3;
             {error, _}   -> 4
         end,
-    [{<<"status">>, erlang:integer_to_binary(StatusInt)}].
+    [{?status_idx, StatusInt}].
 
 -spec waiting_date_index(machine_status()) ->
     [mg_storage:index_update()].
 waiting_date_index({waiting, Timestamp}) ->
-    % не правильно отсортируется когда timestamp сдвинется на разряд :)
-    [{<<"waiting_date">>, erlang:integer_to_binary(Timestamp)}];
+    [{?waiting_idx, Timestamp}];
 waiting_date_index(_) ->
     [].
 
