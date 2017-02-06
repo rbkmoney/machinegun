@@ -99,21 +99,23 @@ start_link(Options) ->
         ]
     ).
 
+-define(default_deadline, mg_utils:timeout_to_deadline(5000)).
+
 -spec start(options(), mg:id(), term()) ->
     ok.
 start(Options, ID, Args) ->
     HRange = {undefined, undefined, forward},
-    ok = mg_machine:start(machine_options(Options), ID, {Args, HRange}).
+    ok = mg_machine:start(machine_options(Options), ID, {Args, HRange}, mg_utils:default_deadline()).
 
 -spec repair(options(), ref(), term(), mg_events:history_range()) ->
     ok.
 repair(Options, Ref, Args, HRange) ->
-    ok = mg_machine:repair(machine_options(Options), ref2id(Options, Ref), {Args, HRange}).
+    ok = mg_machine:repair(machine_options(Options), ref2id(Options, Ref), {Args, HRange}, mg_utils:default_deadline()).
 
 -spec call(options(), ref(), term(), mg_events:history_range()) ->
     _Resp.
 call(Options, Ref, Args, HRange) ->
-    mg_machine:call(machine_options(Options), ref2id(Options, Ref), {Args, HRange}).
+    mg_machine:call(machine_options(Options), ref2id(Options, Ref), {Args, HRange}, mg_utils:default_deadline()).
 
 -spec get_machine(options(), ref(), mg_events:history_range()) ->
     machine().
@@ -216,7 +218,7 @@ add_tag(_, _, undefined) ->
     ok;
 add_tag(Options, ID, Tag) ->
     % TODO retry
-    case mg_machine_tags:add_tag(tags_machine_options(Options), Tag, ID) of
+    case mg_machine_tags:add_tag(tags_machine_options(Options), Tag, ID, mg_utils:default_deadline()) of
         ok ->
             ok;
         {already_exists, OtherMachineID} ->
@@ -241,8 +243,14 @@ push_events_to_event_sink(Options, ID, Events) ->
     Namespace = get_option(namespace, Options),
     case maps:get(event_sink, Options, undefined) of
         {EventSinkID, EventSinkOptions} ->
-            % TODO retry
-            ok = mg_events_sink:add_events(EventSinkOptions, EventSinkID, Namespace, ID, Events);
+            ok = mg_events_sink:add_events(
+                    EventSinkOptions,
+                    EventSinkID,
+                    Namespace,
+                    ID,
+                    Events,
+                    mg_utils:default_deadline()
+                );
         undefined ->
             ok
     end.

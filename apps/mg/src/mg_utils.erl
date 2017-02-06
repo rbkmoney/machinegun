@@ -22,6 +22,13 @@
 -export([gen_where        /1]).
 -export([get_msg_queue_len/1]).
 
+%% deadlines
+-export_type([deadline/0]).
+-export([timeout_to_deadline/1]).
+-export([deadline_to_timeout/1]).
+-export([is_deadline_reached/1]).
+-export([default_deadline   /0]).
+
 %% Woody
 -export_type([woody_handlers/0]).
 -export_type([woody_handler /0]).
@@ -146,6 +153,43 @@ get_msg_queue_len(Name) ->
     {message_queue_len, Len} = exit_if_undefined(erlang:process_info(Pid, message_queue_len), noproc),
     Len.
 
+%%
+%% deadlines
+%%
+-type deadline() :: undefined | pos_integer().
+
+-spec timeout_to_deadline(timeout()) ->
+    deadline().
+timeout_to_deadline(infinity) ->
+    undefined;
+timeout_to_deadline(Timeout) ->
+    now_ms() + Timeout.
+
+-spec deadline_to_timeout(deadline()) ->
+    timeout().
+deadline_to_timeout(undefined) ->
+    infinity;
+deadline_to_timeout(Deadline) ->
+    erlang:max(Deadline - now_ms(), 0).
+
+-spec is_deadline_reached(deadline()) ->
+    boolean().
+is_deadline_reached(undefined) ->
+    false;
+is_deadline_reached(Deadline) ->
+    Deadline - now_ms() =< 0.
+
+-spec default_deadline() ->
+    deadline().
+default_deadline() ->
+    timeout_to_deadline(5000).
+
+%%
+
+-spec now_ms() ->
+    pos_integer().
+now_ms() ->
+    erlang:system_time(1000).
 
 %%
 %% Woody

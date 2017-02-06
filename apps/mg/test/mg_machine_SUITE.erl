@@ -52,13 +52,13 @@ simple_test(_) ->
     TestKey = <<"test_key">>,
     ID = <<"42">>,
     _  = start_automaton(Options),
-    ok = mg_machine:start(Options, ID, {TestKey, 0}     ),
-    0  = mg_machine:call (Options, ID, get              ),
-    ok = mg_machine:call (Options, ID, increment        ),
-    1  = mg_machine:call (Options, ID, get              ),
-    ok = mg_machine:call (Options, ID, delayed_increment),
+    ok = mg_machine:start(Options, ID, {TestKey, 0}     , mg_utils:default_deadline()),
+    0  = mg_machine:call (Options, ID, get              , mg_utils:default_deadline()),
+    ok = mg_machine:call (Options, ID, increment        , mg_utils:default_deadline()),
+    1  = mg_machine:call (Options, ID, get              , mg_utils:default_deadline()),
+    ok = mg_machine:call (Options, ID, delayed_increment, mg_utils:default_deadline()),
     ok = timer:sleep(1000),
-    2  = mg_machine:call (Options, ID, get              ),
+    2  = mg_machine:call (Options, ID, get              , mg_utils:default_deadline()),
     ok.
 
 %%

@@ -53,13 +53,13 @@
 -export([child_spec /2]).
 -export([start_link /1]).
 
--export([start /3]).
--export([repair/3]).
--export([call  /3]).
+-export([start /4]).
+-export([repair/4]).
+-export([call  /4]).
 -export([get   /2]).
 -export([search/2]).
 -export([reply /2]).
--export([call_with_lazy_start/4]).
+-export([call_with_lazy_start/5]).
 
 %% Internal API
 -export([handle_timers         /1]).
@@ -146,20 +146,21 @@ start_link(Options) ->
         ]
     ).
 
--spec start(options(), mg:id(), term()) ->
+-spec start(options(), mg:id(), term(), mg_utils:deadline()) ->
     _Resp | throws().
-start(Options, ID, Args) ->
-    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {start, Args})).
+start(Options, ID, Args, Deadline) ->
+    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {start, Args}, Deadline)).
 
--spec repair(options(), mg:id(), term()) ->
+-spec repair(options(), mg:id(), term(), mg_utils:deadline()) ->
     _Resp | throws().
-repair(Options, ID, Args) ->
-    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {repair, Args})).
+repair(Options, ID, Args, Deadline) ->
+    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {repair, Args}, Deadline)).
 
--spec call(options(), mg:id(), term()) ->
+-spec call(options(), mg:id(), term(), mg_utils:deadline()) ->
     _Resp | throws().
-call(Options, ID, Call) ->
-    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {call, Call})).
+call(Options, ID, Call, Deadline) ->
+    % TODO specify timeout
+    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {call, Call}, Deadline)).
 
 -spec get(options(), mg:id()) ->
     machine_state() | throws().
@@ -172,21 +173,21 @@ get(Options, ID) ->
 search(Options, Query) ->
     mg_storage:search(storage_options(Options), storage_search_query(Query)).
 
--spec call_with_lazy_start(options(), mg:id(), term(), term()) ->
+-spec call_with_lazy_start(options(), mg:id(), term(), mg_utils:deadline(), term()) ->
     _Resp | throws().
-call_with_lazy_start(Options, ID, Call, StartArgs) ->
+call_with_lazy_start(Options, ID, Call, Deadline, StartArgs) ->
     try
-        call(Options, ID, Call)
+        call(Options, ID, Call, Deadline)
     catch throw:machine_not_found ->
         try
-            _ = start(Options, ID, StartArgs)
+            _ = start(Options, ID, StartArgs, Deadline)
         catch throw:machine_already_exist ->
             % вдруг кто-то ещё делает аналогичный процесс
             ok
         end,
         % если к этому моменту машина не создалась, значит она уже не создастся
         % и исключение будет оправданным
-        call(Options, ID, Call)
+        call(Options, ID, Call, Deadline)
     end.
 
 -spec reply(processing_context(), _) ->
@@ -219,9 +220,10 @@ handle_timers(Options, Timers) ->
 -spec handle_timer(options(), {genlib_time:ts(), mg:id()}) ->
     ok.
 handle_timer(Options, {Timestamp, MachineID}) ->
-    % TODO добавить проверку, что это именно тот таймер, который нужно обработать
+    % TODO вообще надо бы как-то это тюнить
+    Deadline = mg_utils:timeout_to_deadline(5000),
     % TODO можно попробовать проинспектировать очередь
-    case mg_workers_manager:call(manager_options(Options), MachineID, {timeout, Timestamp}) of
+    case mg_workers_manager:call(manager_options(Options), MachineID, {timeout, Timestamp}, Deadline) of
         ok ->
             ok;
         {error, Reason} ->
@@ -248,7 +250,9 @@ reload_killed_machines(Options, MachinesIDs) ->
 -spec touch(options(), mg:id()) ->
     ok.
 touch(Options, MachineID) ->
-    _ = mg_workers_manager:call(manager_options(Options), MachineID, touch),
+    % TODO вообще надо бы как-то это тюнить
+    Deadline = mg_utils:timeout_to_deadline(5000),
+    _ = mg_workers_manager:call(manager_options(Options), MachineID, touch, Deadline),
     ok.
 
 %%

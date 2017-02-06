@@ -5,9 +5,9 @@
 -export_type([options   /0]).
 -export([child_spec /2]).
 -export([start_link /1]).
--export([add_events /5]).
+-export([add_events /6]).
 -export([get_history/3]).
--export([repair     /2]).
+-export([repair     /3]).
 
 %% mg_machine handler
 -behaviour(mg_machine).
@@ -51,13 +51,14 @@ start_link(Options) ->
     ).
 
 
--spec add_events(options(), mg:id(), mg:ns(), mg:id(), [mg_events:event()]) ->
+-spec add_events(options(), mg:id(), mg:ns(), mg:id(), [mg_events:event()], mg_utils:deadline()) ->
     ok.
-add_events(Options, EventSinkID, SourceNS, SourceMachineID, Events) ->
+add_events(Options, EventSinkID, SourceNS, SourceMachineID, Events, Deadline) ->
     ok = mg_machine:call_with_lazy_start(
             machine_options(Options),
             EventSinkID,
             {add_events, SourceNS, SourceMachineID, Events},
+            Deadline,
             undefined
         ).
 
@@ -71,10 +72,10 @@ get_history(Options, EventSinkID, HistoryRange) ->
         {Key, {_, Value}} <- [{Key, mg_storage:get(events_storage_options(Options), Key)} || Key <- EventsKeys]
     ]).
 
--spec repair(options(), mg:id()) ->
+-spec repair(options(), mg:id(), mg_utils:deadline()) ->
     ok.
-repair(Options, EventSinkID) ->
-    mg_machine:repair(Options, EventSinkID, undefined).
+repair(Options, EventSinkID, Deadline) ->
+    mg_machine:repair(Options, EventSinkID, undefined, Deadline).
 
 %%
 %% mg_processor handler

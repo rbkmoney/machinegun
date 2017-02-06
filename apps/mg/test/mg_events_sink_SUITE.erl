@@ -71,7 +71,8 @@ end_per_suite(C) ->
 -spec add_events(config()) ->
     _.
 add_events(C) ->
-    ok = mg_events_sink:add_events(event_sink_options(), ?ES_ID, ?SOURCE_NS, ?SOURCE_ID, ?config(events, C)).
+    ok = mg_events_sink:add_events(event_sink_options(), ?ES_ID, ?SOURCE_NS, ?SOURCE_ID,
+        ?config(events, C), mg_utils:default_deadline()).
 
 -spec get_history(config()) ->
     _.

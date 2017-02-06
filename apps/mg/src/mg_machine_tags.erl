@@ -4,7 +4,7 @@
 -export_type([options/0]).
 -export_type([tag    /0]).
 -export([child_spec  /2]).
--export([add_tag     /3]).
+-export([add_tag     /4]).
 -export([resolve_tag /2]).
 
 %% mg_machine handler
@@ -23,10 +23,10 @@
 child_spec(Options, ChildID) ->
     mg_machine:child_spec(machine_options(Options), ChildID).
 
--spec add_tag(options(), tag(), mg:id()) ->
+-spec add_tag(options(), tag(), mg:id(), mg_utils:deadline()) ->
     ok | {already_exists, mg:id()} | no_return().
-add_tag(Options, Tag, ID) ->
-    mg_machine:call_with_lazy_start(machine_options(Options), Tag, {add_tag, ID}, undefined).
+add_tag(Options, Tag, ID, Deadline) ->
+    mg_machine:call_with_lazy_start(machine_options(Options), Tag, {add_tag, ID}, Deadline, undefined).
 
 -spec resolve_tag(options(), tag()) ->
     mg:id() | undefined | no_return().
