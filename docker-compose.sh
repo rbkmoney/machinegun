@@ -15,8 +15,7 @@ services:
       - riakdb
 
   riakdb:
-    # image: dr.rbkmoney.com/basho/riak-kv:ubuntu-2.1.4
-    image: basho/riak-kv:ubuntu-2.1.4
+    image: dr.rbkmoney.com/basho/riak-kv:ubuntu-2.1.4-1
     environment:
       - CLUSTER_NAME=riakkv
     labels:
@@ -27,8 +26,7 @@ services:
     ports:
       - 8098:8098
   member:
-    # image: dr.rbkmoney.com/basho/riak-kv:ubuntu-2.1.4
-    image: basho/riak-kv:ubuntu-2.1.4
+    image: dr.rbkmoney.com/basho/riak-kv:ubuntu-2.1.4-1
     labels:
       - "com.basho.riak.cluster.name=riakkv"
     links:
