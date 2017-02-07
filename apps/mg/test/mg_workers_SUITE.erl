@@ -25,7 +25,7 @@
 
 %% mg_worker
 -behaviour(mg_worker).
--export([handle_load/2, handle_call/2, handle_unload/1]).
+-export([handle_load/2, handle_call/3, handle_unload/1]).
 
 %%
 %% tests descriptions
@@ -53,7 +53,8 @@ all() ->
     config().
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
-    % dbg:tpl({mg_machine_event_sink, '_', '_'}, x),
+    % dbg:tpl({mg_workers_manager, '_', '_'}, x),
+    % dbg:tpl({mg_workers, '_', '_'}, x),
     Apps = genlib_app:start_application(mg),
     [{apps, Apps} | C].
 
@@ -133,7 +134,7 @@ stress_test(_C) ->
     ok = timer:sleep(TestTimeout),
 
     ok = mg_utils:stop_wait_all(TestProcesses, shutdown, 1000),
-    ok = wait_machines_unload(UnloadTimeout),
+    ok = wait_machines_unload(UnloadTimeout + 10),
     ok = stop_workers(WorkersPid).
 
 -spec stress_test_start_process(mg_workers_manager:options(), pos_integer()) ->
@@ -191,11 +192,11 @@ handle_load(_, Params) ->
     ok = try_exit(load, Params),
     {ok, Params}.
 
--spec handle_call(_Call, worker_state()) ->
-    {_Resp, worker_state()}.
-handle_call(Call, State) ->
+-spec handle_call(_Call, _From, worker_state()) ->
+    {{reply, _Resp}, worker_state()}.
+handle_call(Call, _From, State) ->
     ok = try_exit(call, State),
-    {Call, State}.
+    {{reply, Call}, State}.
 
 -spec handle_unload(worker_state()) ->
     ok.
@@ -230,12 +231,7 @@ try_unlink(#{}) ->
 -spec start_workers(_Options) ->
     pid().
 start_workers(Options) ->
-    {ok, Pid} =
-        mg_utils_supervisor_wrapper:start_link(
-            #{strategy => one_for_all},
-            [mg_workers_manager:child_spec(workers, Options)]
-        ),
-    Pid.
+    mg_utils:throw_if_error(mg_workers_manager:start_link(Options)).
 
 -spec stop_workers(pid()) ->
     ok.

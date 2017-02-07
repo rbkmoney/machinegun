@@ -21,30 +21,30 @@
 start(#{url := BaseURL, ns := NS, retry_strategy := Strategy}, ID, Args) ->
     call_service(BaseURL, 'Start', [NS, ID, Args], Strategy).
 
--spec repair(options(), mg:ref(), mg:args()) ->
+-spec repair(options(), mg_events_machine:ref(), mg:args()) ->
     ok.
 repair(#{url := BaseURL, ns := NS, retry_strategy := Strategy}, Ref, Args) ->
     call_service(BaseURL, 'Repair', [machine_desc(NS, Ref), Args], Strategy).
 
--spec call(options(), mg:ref(), mg:args()) ->
+-spec call(options(), mg_events_machine:ref(), mg:args()) ->
     mg:call_resp().
 call(#{url := BaseURL, ns := NS, retry_strategy := Strategy}, Ref, Args) ->
     call_service(BaseURL, 'Call', [machine_desc(NS, Ref), Args], Strategy).
 
--spec get_machine(options(), mg:ref(), mg:history_range()) ->
-    mg:machine().
+-spec get_machine(options(), mg_events_machine:ref(), mg_events:history_range()) ->
+    mg_events_machine:machine().
 get_machine(#{url := BaseURL, ns := NS, retry_strategy := Strategy}, Ref, Range) ->
     call_service(BaseURL, 'GetMachine', [machine_desc(NS, Ref, Range)], Strategy).
 
 %%
 %% local
 %%
--spec machine_desc(mg:ns(), mg:ref()) ->
+-spec machine_desc(mg:ns(), mg_events_machine:ref()) ->
     _.
 machine_desc(NS, Ref) ->
     machine_desc(NS, Ref, {undefined, undefined, forward}).
 
--spec machine_desc(mg:ns(), mg:ref(), mg:history_range()) ->
+-spec machine_desc(mg:ns(), mg_events_machine:ref(), mg_events:history_range()) ->
     _.
 machine_desc(NS, Ref, HRange) ->
     mg_woody_api_packer:pack(machine_descriptor, {NS, Ref, HRange}).

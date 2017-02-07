@@ -2,41 +2,9 @@
 %%% Riak хранилище для machinegun'а.
 %%%
 %%% Важный момент, что единовременно не может существовать 2-х процессов записи в БД по одной машине,
-%%%  это гарантируется самим MG.
+%%%  это гарантируется самим MG (а точнее mg_workers).
 %%%
-%%%
-%%% ## Схема хранения
-%%%
-%%% Схема хранения следующая. Есть 3 бакета:
-%%%     - для эвентов <ns>_events({machine_id, event_id}, {created_at  , body             });
-%%%     - для машин <ns>_machines( machine_id           , {events_range, aux_state, status}).
 %%%  Всё энкодится в msgpack и версионируется в метадате.
-%%%  Первичная запись — это машина, если ссылки из машины на эвент нет, то это потерянная запись.
-%%%
-%%%
-%%% ## Процессы
-%%%
-%%% Создание машины:
-%%%  - создать объект
-%%%  - записать в бд
-%%%  - венуть объект
-%%%
-%%% Получение машины:
-%%%  - получить объект
-%%%  - венуть машину
-%%%
-%%% Получение истории:
-%%%  - получить объект
-%%%  - применить фильтр к списку ID эвентов
-%%%  - получить эвенты
-%%%  - венуть эвенты
-%%%
-%%% Обновление машины:
-%%%  - добавить новые эвенты
-%%%  - обновить объект с машиной
-%%%
-%%% Удаление машины:
-%%%  - удаление записи из таблицы машины (остальное станет мусором и удалится gc) (?)
 %%%
 %%%
 %%% Требования:
@@ -59,22 +27,40 @@
 %%%  -
 %%%
 %%% TODO:
-%%%  - нужно сделать процесс очистки потеряных данных (gc) (а нужно ли?)
 %%%  - классификация и обработка ошибок
-%%%  - при отсутствии after эвента венуть исключение
 %%%
 -module(mg_storage_riak).
+-include_lib("riakc/include/riakc.hrl").
 
 %% mg_storage callbacks
 -behaviour(mg_storage).
 -export_type([options/0]).
--export([child_spec/3, get_machine/3, get_history/5, update_machine/5]).
+-export([child_spec/3, put/6, get/3, search/3, delete/4]).
+
+%% internal
+-export([connect_to_riak/2]).
 
 -type options() :: #{
-    host => inet            :ip_address  (),
-    port => inet            :port_number (),
-    pool => mg_storage_utils:pool_options()
+    host      => inet:ip_address    (),
+    port      => inet:port_number   (),
+    pool      =>      pooler_options(),
+    r_options => _,
+    w_options => _,
+    d_options => _
 }.
+-type pooler_options() :: #{
+    name                 => term(),
+    start_mfa            => {atom(), atom(), list()},
+    max_count            => non_neg_integer     (),
+    init_count           => non_neg_integer     (),
+    cull_interval        => pooler_time_interval(),
+    max_age              => pooler_time_interval(),
+    member_start_timeout => pooler_time_interval()
+}.
+%% в pooler'е нет типов :(
+-type pooler_time_interval() :: {non_neg_integer(), min | sec | ms}.
+
+-type context() :: riakc_obj:vclock() | undefined.
 
 %%
 %% mg_storage callbacks
@@ -82,388 +68,246 @@
 -spec child_spec(options(), mg:ns(), atom()) ->
     supervisor:child_spec().
 child_spec(Options, Namespace, _ChildID) ->
-    mg_storage_utils:pool_child_spec(pool_options(Options, Namespace)).
+    % ChildID pooler генерит сам добавляя префикс _pooler_
+    pooler:pool_child_spec(maps:to_list(pooler_options(Options, Namespace))).
 
--spec get_machine(options(), mg:ns(), mg:id()) ->
-    mg_storage:machine() | undefined.
-get_machine(Options, Namespace, ID) ->
-    do(
-        Namespace,
+-spec put(options(), mg:ns(), mg_storage:key(), context(), mg_storage:value(), [mg_storage:index_update()]) ->
+    context().
+put(Options, Namespace, Key, Context, Value, IndexesUpdates) ->
+    do(Options, Namespace,
         fun(Pid) ->
-            try
-                object_to_machine(get_db_object(Pid, Options, Namespace, machine, ID))
-            catch throw:not_found ->
-                undefined
-            end
-        end
-    ).
-
--spec get_history(options(), mg:ns(), mg:id(), mg_storage:machine(), mg:history_range()) ->
-    mg:history().
-get_history(Options, Namespace, ID, Machine, Range) ->
-    do(
-        Namespace,
-        fun(Pid) ->
-            [
-                begin
-                    Event = unpack_from_object(event, get_db_object(Pid, Options, Namespace, event, FullEventID)),
-                    Event#{id=>EventID}
-                end
-                ||
-                FullEventID={_, EventID} <- mg_storage_utils:get_machine_events_ids(ID, Machine, Range)
-            ]
-        end
-    ).
-
--spec update_machine(options(), mg:ns(), mg:id(), mg_storage:machine(), mg_storage:update()) ->
-    mg_storage:machine().
-update_machine(Options, Namespace, ID, Machine=#{db_state:=undefined}, Update) ->
-    update_machine(Options, Namespace, ID, Machine#{db_state:=new_db_object(Namespace, machine, ID)}, Update);
-update_machine(Options, Namespace, ID, Machine, Update) ->
-    do(
-        Namespace,
-        fun(Pid) ->
-            NewMachine =
-                maps:fold(
-                    fun(UpdateAction, UpdateValue, MachineAcc) ->
-                        apply_machine_update(Pid, Options, Namespace, ID, UpdateAction, UpdateValue, MachineAcc)
-                    end,
-                    Machine,
-                    Update
+            Object = to_riak_obj(Namespace, Key, Context, Value, IndexesUpdates),
+            NewObject =
+                handle_riak_response(
+                    riakc_pb_socket:put(Pid, Object, [return_body] ++ get_option(w_options, Options))
                 ),
-            object_to_machine(put_db_object(Pid, machine_to_object(NewMachine), put_options(machine)))
+            riakc_obj:vclock(NewObject)
         end
     ).
 
--spec apply_machine_update(pid(), options(), mg:ns(), mg:id(), atom(), term(), mg_storage:machine()) ->
-    mg_storage:machine().
-apply_machine_update(_Pid, _Options, _Namespace, _ID, status, NewStatus, Machine) ->
-    Machine#{status:=NewStatus};
-apply_machine_update(_Pid, _Options, _Namespace, _ID, aux_state, NewAuxState, Machine) ->
-    Machine#{aux_state:=NewAuxState};
-apply_machine_update(Pid, Options, Namespace, ID, new_events, NewEvents, Machine=#{events_range:=EventsRange}) ->
-    #{id:=NewLastEventID} = lists:last(NewEvents),
-    NewEventsRange =
-        case EventsRange of
-            {FirstEventID, _} ->
-                {FirstEventID, NewLastEventID};
-            undefined ->
-                [#{id:=FirstEventID}|_]=NewEvents,
-                {FirstEventID, NewLastEventID}
-        end,
-    _ = lists:foreach(
-            fun(Event=#{id:=EventID}) ->
-                _ = create_db_object(Pid, Options, Namespace, event, {ID, EventID}, Event)
+-spec get(options(), mg:ns(), mg_storage:key()) ->
+    {context(), mg_storage:value()} | undefined.
+get(Options, Namespace, Key) ->
+    do(Options, Namespace, fun(Pid) ->
+        case riakc_pb_socket:get(Pid, Namespace, Key, get_option(r_options, Options)) of
+            {error, notfound} ->
+                undefined;
+            Result ->
+                Object = handle_riak_response(Result),
+                from_riak_obj(Object)
+        end
+    end).
+
+-spec search(options(), mg:ns(), mg_storage:index_query()) ->
+    [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
+search(Options, Namespace, Query) ->
+    do(Options, Namespace,
+        fun(Pid) ->
+                Result = handle_riak_response(do_get_index(Pid, Namespace, Query)),
+                get_index_response(Query, Result)
+        end
+    ).
+
+-spec do_get_index(pid(), mg:ns(), mg_storage:index_query()) ->
+    _.
+do_get_index(Pid, Namespace, {IndexName, {From, To}}) ->
+    riakc_pb_socket:get_index_range(Pid, Namespace, prepare_index_name(IndexName), From, To, [{return_terms, true}]);
+do_get_index(Pid, Namespace, {IndexName, Value}) ->
+    riakc_pb_socket:get_index_eq(Pid, Namespace, prepare_index_name(IndexName), Value).
+
+-spec get_index_response(mg_storage:index_query(), get_index_results()) ->
+    [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
+get_index_response({_, {_, _}}, #index_results_v1{keys = []}) ->
+    % это какой-то пипец, а не код, они там все упоролись что-ли?
+    [];
+get_index_response({_, {_, _}}, #index_results_v1{terms = Terms}) ->
+    % получить из риака стабильный порядок следования не получилось,
+    % поэтому пришлось сделать небольшой хак
+    lists:sort(
+        lists:map(
+            fun({IndexValue, Key}) ->
+                {erlang:binary_to_integer(IndexValue), Key}
             end,
-            NewEvents
-        ),
-    Machine#{events_range:=NewEventsRange}.
+            Terms
+        )
+    );
+get_index_response({_, _}, #index_results_v1{keys = Keys}) ->
+    Keys.
+
+-spec delete(options(), mg:ns(), mg_storage:key(), context()) ->
+    ok.
+delete(Options, Namespace, Key, Context) ->
+    do(Options, Namespace, fun(Pid) ->
+        case riakc_pb_socket:delete_vclock(Pid, Namespace, Key, Context, get_option(d_options, Options)) of
+            ok ->
+                ok;
+            {error, Reason} ->
+                erlang:throw({transient, {storage_unavailable, Reason}})
+        end
+    end).
 
 %%
-%% db interation
+%% pool
 %%
--type db_object_type() :: machine | event.
--type db_event() :: mg:event().
--type db_machine() :: #{
-    aux_state    => mg:aux_state(),
-    status       => mg_storage:status(),
-    events_range => mg_storage:events_range()
-}.
--type db_object() :: db_machine() | db_event().
--type object() :: riakc_obj:riakc_obj().
+-spec pooler_options(options(), mg:ns()) ->
+    pooler_options().
+pooler_options(Options=#{pool:=PoolOptions}, Namespace) ->
+    PoolOptions#{
+        start_mfa =>
+            {
+                ?MODULE,
+                connect_to_riak,
+                [
+                    get_option(host, Options),
+                    get_option(port, Options)
+                ]
+            },
+        % имя пула может быть только атомом  :-\
+        name => pool_name(Namespace)
+    }.
 
+-spec connect_to_riak(inet:ip_address() | inet:hostname(), inet:port_number()) ->
+    {ok, pid()} | {error, term()}.
+connect_to_riak(Host, Port) ->
+    riakc_pb_socket:start_link(lists_random(get_addrs_by_host(Host)), Port).
 
+-spec lists_random(list(T)) ->
+    T.
+lists_random(List) ->
+    lists:nth(rand:uniform(length(List)), List).
 
--spec new_db_object(mg:ns(), db_object_type(), mg:id()) ->
-    object().
-new_db_object(Namespace, Type, ID) ->
-    riakc_obj:new(get_bucket(Type, Namespace), pack_key(Type, ID)).
+-spec get_addrs_by_host(inet:ip_address() | inet:hostname()) ->
+    [inet:ip_address()].
+get_addrs_by_host(Host) ->
+    case inet_parse:address(Host) of
+        {ok, Addr} ->
+            [Addr];
+        {error, _} ->
+            Mod = inet_db:tcp_module(),
+            Timer = inet:start_timer(5000), % TODO надо прокидывать свыше!
+            R = Mod:getaddrs(Host, false),
+            _ = inet:stop_timer(Timer),
+            case R of
+                {ok, Addrs} ->
+                    Addrs;
+                {error, _} ->
+                    exit({'invalid host address', Host})
+            end
+    end.
 
--spec create_db_object(pid(), options(), mg:ns(), db_object_type(), mg:id(), db_object()) ->
-    object().
-create_db_object(Pid, _Options, Namespace, Type, ID, Data) ->
+-spec do(options(), mg:ns(), fun((pid()) -> R)) ->
+    R.
+do(Options, Namespace, Fun) ->
+    PoolName = pool_name(Namespace),
+    Pid =
+        case pooler:take_member(PoolName, get_option(pool_take_timeout, Options)) of
+            error_no_members ->
+                throw({transient, {storage_unavailable, {'pool is overloaded', PoolName}}});
+            Pid_ ->
+                Pid_
+        end,
+    try
+        R = Fun(Pid),
+        ok = pooler:return_member(PoolName, Pid, ok),
+        R
+    catch Class:Reason ->
+        ok = pooler:return_member(PoolName, Pid, fail),
+        erlang:raise(Class, Reason, erlang:get_stacktrace())
+    end.
+
+-spec pool_name(mg:ns()) ->
+    atom().
+pool_name(Namespace) ->
+    % !!! осторожнее, тут можно нечаянно нагенерить атомов
+    % предполагается, что их конечное и небольшое кол-во
+    erlang:binary_to_atom(Namespace, utf8).
+
+%%
+%% packer
+%%
+%% фи-фи подтекает абстракция вызова mg_storage:opaque_to_binary(Value)
+-define(msgpack_ct           , "application/x-msgpack").
+-define(schema_version_md_key, <<"schema-version">>   ).
+-define(schema_version_1     , <<"1">>                ).
+
+-spec to_riak_obj(mg:ns(), mg_storage:key(), context(), mg_storage:value(), [mg_storage:index_update()]) ->
+    riakc_obj:riakc_obj().
+to_riak_obj(Namespace, Key, Context, Value, IndexesUpdates) ->
     Object =
-        pack_to_object(
-            Type,
-            new_db_object(Namespace, Type, ID),
-            Data
+        riakc_obj:set_vclock(
+            riakc_obj:new(Namespace, Key, mg_storage:opaque_to_binary(Value)),
+            Context
         ),
-    put_db_object(Pid, Object, put_options(Type)).
+    riakc_obj:update_content_type(
+        riakc_obj:update_metadata(
+            Object,
+            riakc_obj:set_user_metadata_entry(
+                riakc_obj:set_secondary_index(
+                    riakc_obj:get_metadata(Object),
+                    prepare_indexes_updates(IndexesUpdates)
+                ),
+                {?schema_version_md_key, ?schema_version_1}
+            )
+        ),
+        ?msgpack_ct
+    ).
 
--spec get_db_object(pid(), options(), mg:ns(), db_object_type(), mg:id()) ->
-    object().
-get_db_object(Pid, _Options, Namespace, Type, ID) ->
-    case riakc_pb_socket:get(Pid, get_bucket(Type, Namespace), pack_key(Type, ID), get_options(Type)) of
-        {ok, Object} ->
-            Object;
-        {error, notfound} ->
-            throw(not_found);
-        % TODO понять какие проблемы временные, а какие постоянные
-        {error, Reason} ->
-            erlang:throw({transient, {storage_unavailable, Reason}})
-    end.
+-spec from_riak_obj(riakc_obj:riakc_obj()) ->
+    {context(), mg_storage:value()}.
+from_riak_obj(Object) ->
+    Metadata          = riakc_obj:get_metadata(Object),
+    ?schema_version_1 = riakc_obj:get_user_metadata_entry(Metadata, ?schema_version_md_key),
+    ?msgpack_ct       = riakc_obj:get_content_type(Object),
+    {riakc_obj:vclock(Object), mg_storage:binary_to_opaque(riakc_obj:get_value(Object))}.
 
--spec put_db_object(pid(), object(), list()) ->
-    object().
-put_db_object(Pid, Object, Options) ->
-    case riakc_pb_socket:put(Pid, Object, [return_body] ++ Options) of
-        {ok, NewObject} ->
-            NewObject;
-        % TODO понять какие проблемы временные, а какие постоянные
-        {error, Reason} ->
-            erlang:throw({transient, {storage_unavailable, Reason}})
-    end.
+-type riak_index_name  () :: {integer_index, list()}.
+-type riak_index_update() :: {riak_index_name(), [mg_storage:index_value()]}.
+-type get_index_results() :: #index_results_v1{}.
 
--spec get_bucket(db_object_type(), mg:ns()) ->
-    binary().
-get_bucket(Type, Namespace) ->
-    stringify({Namespace, Type}).
+-spec prepare_indexes_updates([mg_storage:index_update()]) ->
+    [riak_index_update()].
+prepare_indexes_updates(IndexesUpdates) ->
+    [prepare_index_update(IndexUpdate) || IndexUpdate <- IndexesUpdates].
+
+-spec prepare_index_update(mg_storage:index_update()) ->
+    riak_index_update().
+prepare_index_update({IndexName, IndexValue}) ->
+    {prepare_index_name(IndexName), [IndexValue]}.
+
+-spec prepare_index_name(mg_storage:index_name()) ->
+    riak_index_name().
+prepare_index_name({binary, Name}) ->
+    {binary_index, erlang:binary_to_list(Name)};
+prepare_index_name({integer, Name}) ->
+    {integer_index, erlang:binary_to_list(Name)}.
+
+%%
+
+-spec get_option(atom(), options()) ->
+    _.
+get_option(Key, Options) ->
+    maps:get(Key, Options, default_option(Key)).
+
+-spec handle_riak_response(ok | {ok, T} | {error, _Reason}) ->
+    T | no_return().
+handle_riak_response(ok) ->
+    ok;
+handle_riak_response({ok, Value}) ->
+    Value;
+handle_riak_response({error, Reason}) ->
+    % TODO понять какие проблемы временные, а какие постоянные
+    erlang:throw({transient, {storage_unavailable, Reason}}).
 
 %%
 %% Про опции посмотреть можно тут
 %% https://github.com/basho/riak-erlang-client/blob/develop/src/riakc_pb_socket.erl#L1526
 %% Почитать про NRW и прочую магию можно тут http://basho.com/posts/technical/riaks-config-behaviors-part-2/
 %%
-%% Пока идея в том, чтобы оставить всё максимально консистентно
--spec get_options(_) ->
-    list().
-get_options(_) ->
-    [{r, quorum}, {pr, quorum}].
-
--spec put_options(_) ->
-    list().
-put_options(_) ->
-    [{w, quorum}, {pw, quorum}, {dw, quorum}].
-
-%%
-%% utils
-%%
--spec object_to_machine(object()) ->
-    mg_storage:machine().
-object_to_machine(Object) ->
-    #{
-        status       := Status,
-        aux_state    := AuxState,
-        events_range := EventsRange
-    } = unpack_from_object(machine, Object),
-    #{
-        status       => Status,
-        events_range => EventsRange,
-        aux_state    => AuxState,
-        db_state     => Object
-    }.
-
--spec machine_to_object(mg_storage:machine()) ->
-    object().
-machine_to_object(Machine) ->
-    #{
-        status       := Status,
-        aux_state    := AuxState,
-        events_range := EventsRange,
-        db_state     := Object
-    } = Machine,
-    DBMachine = #{status => Status, aux_state => AuxState, events_range => EventsRange},
-    % TODO можно апдейтить только в том случае, если изменилось
-    pack_to_object(machine, Object, DBMachine).
-
-
--spec do(mg:ns(), fun((pid()) -> Result)) ->
-    Result.
-do(Namespace, Fun) ->
-    mg_storage_utils:pool_do(ns_to_atom(Namespace), Fun).
-
--spec pool_options(options(), mg:ns()) ->
-    mg_storage_utils:pool_options().
-pool_options(Options=#{pool:=PoolOptions}, Namespace) ->
-    PoolOptions#{
-        start_mfa =>
-            {
-                riakc_pb_socket,
-                start_link,
-                [
-                    maps:get(host, Options, "riakdb"),
-                    maps:get(port, Options, 8087    )
-                ]
-            },
-        name => ns_to_atom(Namespace)
-    }.
-
--spec ns_to_atom(mg:ns()) ->
-    atom().
-ns_to_atom(Namespace) ->
-    % !!! осторожнее, тут можно нечаянно нагенерить атомов
-    % предполагается, что их конечное и небольшое кол-во
-    erlang:binary_to_atom(stringify(Namespace), utf8).
-
-%%
-%% packer
-%%
--type type     () :: event | machine.
--type riak_key () :: binary().
--type msg_value() :: _.
--define(msgpack_ct, "application/x-msgpack").
--define(msgpack_options, [
-    {spec           , new        },
-    {allow_atom     , none       },
-    {unpack_str     , as_binary  },
-    {validate_string, false      },
-    {pack_str       , none       },
-    {map_format     , map        }
-]).
--define(schema_version_md_key, <<"schema-version">>).
--define(schema_version_1     , <<"1">>).
-
--spec pack_key(type(), _) ->
-    riak_key().
-pack_key(event, FullEventID) ->
-    stringify(FullEventID);
-pack_key(machine, MachineID) ->
-    MachineID.
-
--spec pack_to_object(type(), object(), db_object()) ->
-    object().
-pack_to_object(Type, Object, Data) ->
-    riakc_obj:update_value(
-        riakc_obj:update_content_type(
-            riakc_obj:update_metadata(
-                Object,
-                riakc_obj:set_user_metadata_entry(
-                    riakc_obj:get_metadata(Object),
-                    {?schema_version_md_key, ?schema_version_1}
-                )
-            ),
-            ?msgpack_ct
-        ),
-        msgpack_pack(Type, Data)
-    ).
-
--spec unpack_from_object(type(), object()) ->
-    db_object().
-unpack_from_object(Type, Object) ->
-    % TODO сделать через версионирование
-    Metadata          = riakc_obj:get_metadata(Object),
-    ?schema_version_1 = riakc_obj:get_user_metadata_entry(Metadata, ?schema_version_md_key),
-    ?msgpack_ct       = riakc_obj:get_content_type(Object),
-    msgpack_unpack(Type, riakc_obj:get_value(Object)).
-
-%%
-
--type stringify_primitive() ::
-      binary()
-    | atom()
-    | integer()
-    | list(stringify_primitive())
-    | tuple()
-.
-
--spec stringify(stringify_primitive()) ->
-    binary().
-stringify(Binary) when is_binary(Binary) ->
-    Binary;
-stringify(Integer) when is_integer(Integer) ->
-    erlang:integer_to_binary(Integer);
-stringify(Atom) when is_atom(Atom) ->
-    erlang:atom_to_binary(Atom, utf8);
-stringify(Tuple) when is_tuple(Tuple) ->
-    stringify(erlang:tuple_to_list(Tuple));
-stringify(List) when is_list(List) ->
-    erlang:iolist_to_binary(mg_utils:join(<<"-">>, [stringify(Element) || Element <- List])).
-
-%% в функции msgpack:pack неверный спек
--dialyzer({nowarn_function, msgpack_pack/2}).
--spec msgpack_pack(Type::atom(), _) ->
-    msg_value().
-msgpack_pack(Type, Value) ->
-    case msgpack:pack(msgpack_pack_(Type, Value), ?msgpack_options) of
-        Data when is_binary(Data) ->
-            Data;
-        {error, Reason} ->
-            erlang:error(msgpack_pack_error, [Type, Value, Reason])
-    end.
-
--spec msgpack_unpack(Type::atom(), msg_value()) ->
+-spec default_option(atom()) ->
     _.
-msgpack_unpack(Type, MsgpackValue) ->
-    case msgpack:unpack(MsgpackValue, ?msgpack_options) of
-        {ok, Data} ->
-            msgpack_unpack_(Type, Data);
-        {error, Reason} ->
-            erlang:error(msgpack_unpack_error, [Type, MsgpackValue, Reason])
-    end.
-
-%% мы хотим, чтобы всё было компактно
--spec msgpack_pack_(Type::atom(), _) ->
-    msg_value().
-msgpack_pack_(_, undefined) ->
-    null;
-msgpack_pack_(term, Term) ->
-    erlang:term_to_binary(Term);
-msgpack_pack_(date, Time) ->
-    msgpack_pack_(integer, Time);
-msgpack_pack_(integer, Integer) when is_integer(Integer) ->
-    Integer;
-msgpack_pack_(event, #{created_at:=CreatedAt, body:=Body}) ->
-    #{
-        <<"ca">> => msgpack_pack_(date, CreatedAt),
-        <<"b" >> => msgpack_pack_(term, Body     )
-    };
-msgpack_pack_(machine_status, working) ->
-    #{
-        <<"n">> => <<"w">>
-    };
-msgpack_pack_(machine_status, {error, Reason}) ->
-    #{
-        <<"n">> => <<"e">>,
-        <<"r">> => msgpack_pack_(term, Reason)
-    };
-msgpack_pack_(event_id, EventID) ->
-    msgpack_pack_(integer, EventID);
-msgpack_pack_(events_range, {FirstEventID, LastEventID}) ->
-    #{
-        <<"f">> => msgpack_pack_(event_id, FirstEventID),
-        <<"l">> => msgpack_pack_(event_id, LastEventID )
-    };
-msgpack_pack_(aux_state, Status) ->
-    msgpack_pack_(term, Status);
-msgpack_pack_(machine, #{status:=Status, events_range:=EventRange, aux_state:=AuxState}) ->
-    #{
-        <<"s" >> => msgpack_pack_(machine_status, Status    ),
-        <<"er">> => msgpack_pack_(events_range  , EventRange),
-        <<"as">> => msgpack_pack_(aux_state     , AuxState  )
-    };
-msgpack_pack_(Type, Value) ->
-    erlang:error(badarg, [Type, Value]).
-
--spec msgpack_unpack_(Type::atom(), msg_value()) ->
-    _.
-msgpack_unpack_(_, null) ->
-    undefined;
-msgpack_unpack_(term, Binary) when is_binary(Binary) ->
-    erlang:binary_to_term(Binary);
-msgpack_unpack_(date, Time) ->
-    msgpack_unpack_(integer, Time);
-msgpack_unpack_(integer, Integer) when is_integer(Integer) ->
-    Integer;
-msgpack_unpack_(event, #{<<"ca">> := CreatedAt, <<"b">> := Body}) ->
-    #{
-        created_at => msgpack_unpack_(date, CreatedAt),
-        body       => msgpack_unpack_(term, Body     )
-    };
-msgpack_unpack_(machine_status, #{<<"n">> := <<"w">>}) ->
-    working;
-msgpack_unpack_(machine_status, #{<<"n">> := <<"e">>, <<"r">> := Reason}) ->
-    {error, msgpack_unpack_(term, Reason)};
-msgpack_unpack_(event_id, EventID) ->
-    msgpack_unpack_(integer, EventID);
-msgpack_unpack_(events_range, #{<<"f">> := FirstEventID, <<"l">> := LastEventID}) ->
-    {msgpack_unpack_(event_id, FirstEventID), msgpack_unpack_(event_id, LastEventID)};
-msgpack_unpack_(aux_state, Status) ->
-    msgpack_unpack_(term, Status);
-msgpack_unpack_(machine, #{<<"s">> := Status, <<"er">> := EventRange, <<"as">> := AuxState}) ->
-    #{
-        status       => msgpack_unpack_(machine_status, Status    ),
-        events_range => msgpack_unpack_(events_range  , EventRange),
-        aux_state    => msgpack_unpack_(aux_state     , AuxState  )
-    };
-msgpack_unpack_(Type, Value) ->
-    erlang:error(badarg, [Type, Value]).
+default_option(host) -> "riakdb";
+default_option(port) -> 8087;
+default_option(pool_take_timeout) -> {5, 'sec'};
+default_option(r_options) -> [{r, quorum}, {pr, quorum}];
+default_option(w_options) -> [{w, quorum}, {pw, quorum}, {dw, quorum}];
+default_option(d_options) -> []. % ?
