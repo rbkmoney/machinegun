@@ -209,7 +209,7 @@ next_context(Context) ->
 do_search_index(Index, QueryValue) ->
     lists:foldr(
         fun({IndexValue, Key}, ResultAcc) ->
-            case is_value_satisfies_query(QueryValue, IndexValue) of
+            case does_value_satisfy_query(QueryValue, IndexValue) of
                 true  -> [index_search_result(IndexValue, Key, QueryValue) | ResultAcc];
                 false -> ResultAcc
             end
@@ -226,12 +226,11 @@ index_search_result(_, Key, _) ->
     Key.
 
 %% Очень тупое название, но ничего лучше в голову не пришло.
-%% Товарищи ревьюверы, если ли лучше идеи?
--spec is_value_satisfies_query(mg_storage:index_query_value(), mg_storage:index_value()) ->
+-spec does_value_satisfy_query(mg_storage:index_query_value(), mg_storage:index_value()) ->
     boolean().
-is_value_satisfies_query({From, To}, Value) ->
+does_value_satisfy_query({From, To}, Value) ->
     From =< Value andalso Value =< To;
-is_value_satisfies_query(Equal, Value) ->
+does_value_satisfy_query(Equal, Value) ->
     Equal =:= Value.
 
 

@@ -110,7 +110,7 @@ process_machine_(Options, EventSinkID, {call, {add_events, SourceNS, SourceMachi
 
 %%
 
--spec filter_duplicated(options(), mg:id(), mg:ns(), mg:ns(), [mg_events:event()], state()) ->
+-spec filter_duplicated(options(), mg:id(), mg:ns(), mg:id(), [mg_events:event()], state()) ->
     [mg_events:event()].
 filter_duplicated(Options, EventSinkID, SourceNS, SourceMachineID, Events, State) ->
     lists:filter(
@@ -120,7 +120,7 @@ filter_duplicated(Options, EventSinkID, SourceNS, SourceMachineID, Events, State
         Events
     ).
 
--spec is_duplicate(options(), mg:id(), mg:ns(), mg:ns(), mg_events:event(), state()) ->
+-spec is_duplicate(options(), mg:id(), mg:ns(), mg:id(), mg_events:event(), state()) ->
     boolean().
 is_duplicate(Options, EventSinkID, SourceNS, SourceMachineID, #{id := EventID}, #{events_range := EventsRange}) ->
     Query = {?ext_id_idx, make_ext_id(EventSinkID, SourceNS, SourceMachineID, EventID)},
