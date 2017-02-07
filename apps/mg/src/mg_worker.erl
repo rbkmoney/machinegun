@@ -125,13 +125,13 @@ handle_call({call, Call}, From, State=#{mod:=Mod, status:={working, ModState}}) 
     end;
 handle_call(Call, From, State) ->
     ok = error_logger:error_msg("unexpected gen_server call received: ~p from ~p", [Call, From]),
-    {noreply, schedule_unload_timer(State), hibernate_timeout(State)}.
+    {noreply, State, hibernate_timeout(State)}.
 
 -spec handle_cast(_Cast, state()) ->
     mg_utils:gen_server_handle_cast_ret(state()).
 handle_cast(Cast, State) ->
     ok = error_logger:error_msg("unexpected gen_server cast received: ~p", [Cast]),
-    {noreply, schedule_unload_timer(State), hibernate_timeout(State)}.
+    {noreply, State, hibernate_timeout(State)}.
 
 -spec handle_info(_Info, state()) ->
     mg_utils:gen_server_handle_info_ret(state()).
@@ -150,7 +150,7 @@ handle_info({timeout, _, unload}, State=#{}) ->
     {noreply, schedule_unload_timer(State), hibernate_timeout(State)};
 handle_info(Info, State) ->
     ok = error_logger:error_msg("unexpected gen_server info ~p", [Info]),
-    {noreply, schedule_unload_timer(State), hibernate_timeout(State)}.
+    {noreply, State, hibernate_timeout(State)}.
 
 -spec code_change(_, state(), _) ->
     mg_utils:gen_server_code_change_ret(state()).

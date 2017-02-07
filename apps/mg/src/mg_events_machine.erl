@@ -52,7 +52,7 @@
 -type machine() :: #{
     ns            => mg:ns(),
     id            => mg:id(),
-    history       => mg_events:history(),
+    history       => [mg_events:event()],
     history_range => mg_events:history_range(),
     aux_state     => aux_state()
 }.

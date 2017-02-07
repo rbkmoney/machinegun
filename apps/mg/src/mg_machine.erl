@@ -302,7 +302,7 @@ handle_call(Call, CallContext, State=#{storage_machine:=StorageMachine}) ->
         {{call  , SubCall}, #{status:={waiting, _ }}} -> {noreply, process({call   , SubCall}, PCtx, State)};
         {{repair, Args   }, #{status:={error  , _ }}} -> {noreply, process({repair , Args   }, PCtx, State)};
 
-        % unsuccess
+        % failure
         {{start  , _     }, #{status:=           _}} -> {{reply, {error, machine_already_exist  }}, State};
         {{call   , _     }, #{status:={error  , _}}} -> {{reply, {error, machine_failed         }}, State};
         {{call   , _     }, undefined              } -> {{reply, {error, machine_not_found      }}, State};
@@ -379,11 +379,11 @@ machine_status_to_opaque(Status) ->
              processing     ->  3;
             {error, Reason} -> [4, erlang:term_to_binary(Reason)] % TODO подумать как упаковывать reason
         end,
-    [1, Opaque].
+    Opaque.
 
 -spec opaque_to_machine_status(mg_storage:opaque()) ->
     machine_status().
-opaque_to_machine_status([1, Opaque]) ->
+opaque_to_machine_status(Opaque) ->
     case Opaque of
          1          ->  sleeping;
         [2, TS]     -> {waiting, TS};
@@ -506,8 +506,6 @@ call_processor(Impact, ProcessingCtx, State) ->
 -spec do_reply_action(processor_reply_action(), undefined | processing_context()) ->
     ok.
 do_reply_action(noreply, _) ->
-    ok;
-do_reply_action(_, undefined) ->
     ok;
 do_reply_action({reply, Reply}, ProcessingCtx) ->
     ok = reply(ProcessingCtx, Reply),
