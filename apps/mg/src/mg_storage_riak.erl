@@ -37,6 +37,8 @@
 -export_type([options/0]).
 -export([child_spec/3, put/6, get/3, search/3, delete/4]).
 
+%% internal
+-export([connect_to_riak/2]).
 
 -type options() :: #{
     host      => inet:ip_address    (),
@@ -153,8 +155,8 @@ pooler_options(Options=#{pool:=PoolOptions}, Namespace) ->
     PoolOptions#{
         start_mfa =>
             {
-                riakc_pb_socket,
-                start_link,
+                ?MODULE,
+                connect_to_riak,
                 [
                     get_option(host, Options),
                     get_option(port, Options)
@@ -163,6 +165,34 @@ pooler_options(Options=#{pool:=PoolOptions}, Namespace) ->
         % имя пула может быть только атомом  :-\
         name => pool_name(Namespace)
     }.
+
+-spec connect_to_riak(inet:ip_address() | inet:hostname(), inet:port_number()) ->
+    {ok, pid()} | {error, term()}.
+connect_to_riak(Host, Port) ->
+    riakc_pb_socket:start_link(lists_random(get_addrs_by_host(Host)), Port).
+
+-spec lists_random(list(T)) ->
+    T.
+lists_random(List) ->
+    lists:nth(rand:uniform(length(List)), List).
+
+-spec get_addrs_by_host(inet:ip_address() | inet:hostname()) ->
+    [inet:ip_address()].
+get_addrs_by_host(Host) ->
+    case inet_parse:address(Host) of
+        {ok, Addr} ->
+            [Addr];
+        {error, _} ->
+            Timer = inet:start_timer(5000), % TODO надо прокидывать свыше!
+            R = erlang:apply(inet_db:tcp_module(), getaddrs, [Host, Timer]),
+            _ = inet:stop_timer(Timer),
+            case R of
+                {ok, Addrs} ->
+                    Addrs;
+                {error, _} ->
+                    exit({'invalid host address', Host})
+            end
+    end.
 
 -spec do(options(), mg:ns(), fun((pid()) -> R)) ->
     R.
