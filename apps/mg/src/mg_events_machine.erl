@@ -181,16 +181,19 @@ process_machine(Options, ID, Impact, PCtx, PackedState) ->
 
 %%
 
--spec process_machine_(options(), mg:id(), mg_machine:processor_impact(), _, state()) ->
+-spec process_machine_(options(), mg:id(), mg_machine:processor_impact() | {timeout, _}, _, state()) ->
     _TODO.
+process_machine_(Options, ID, Subj=timeout, PCtx, State) ->
+    process_machine_(Options, ID, {Subj, {undefined, {undefined, undefined, forward}}}, PCtx, State);
 process_machine_(Options, ID, {Subj, {Args, HRange}}, _, State = #{events_range := EventsRange}) ->
     % обработка стандартных запросов
     Machine = machine(Options, ID, State, HRange),
     {Reply, DelayedActions} =
         case Subj of
-            init   -> process_signal(Options, {init  , Args}, Machine, EventsRange);
-            repair -> process_signal(Options, {repair, Args}, Machine, EventsRange);
-            call   -> process_call  (Options,          Args , Machine, EventsRange)
+            init    -> process_signal(Options, {init  , Args}, Machine, EventsRange);
+            repair  -> process_signal(Options, {repair, Args}, Machine, EventsRange);
+            timeout -> process_signal(Options,  timeout      , Machine, EventsRange);
+            call    -> process_call  (Options,          Args , Machine, EventsRange)
         end,
     {noreply, {continue, Reply}, State#{delayed_actions := DelayedActions}};
 process_machine_(Options, ID, continuation, #{state := Reply}, State = #{delayed_actions := DelayedActions}) ->
@@ -316,8 +319,8 @@ get_timer_action(ComplexAction) ->
     case maps:get(timer, ComplexAction, undefined) of
         undefined ->
             undefined;
-        {timer, Timer} ->
-            genlib_time:now() + Timer;
+        {timeout, Timeout} ->
+            genlib_time:now() + Timeout;
         {deadline, Deadline} ->
             genlib_time:daytime_to_unixtime(Deadline)
     end.
