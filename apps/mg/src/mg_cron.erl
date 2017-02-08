@@ -132,4 +132,4 @@ schedule_timer(#{next_job_date := NextWorkDate}) ->
 -spec now_ms() ->
     timestamp_ms().
 now_ms() ->
-    erlang:system_time(1000000).
+    erlang:system_time(1000).
