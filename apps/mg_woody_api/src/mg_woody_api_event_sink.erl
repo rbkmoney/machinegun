@@ -11,7 +11,7 @@
 %%
 %% API
 %%
--type options() :: {[mg_machine_event_sink:id()], mg_machine_event_sink:options()}.
+-type options() :: {[mg:id()], mg_events_sink:options()}.
 
 -spec handler(options()) ->
     mg_utils:woody_handler().
@@ -29,7 +29,7 @@ handle_function('GetHistory', [EventSinkID, Range], _WoodyContext, {AvaliableEve
         mg_woody_api_utils:handle_safe(
             fun() ->
                 _ = check_event_sink(AvaliableEventSinks, EventSinkID),
-                mg_machine_event_sink:get_history(
+                mg_events_sink:get_history(
                     Options,
                     EventSinkID,
                     mg_woody_api_packer:unpack(history_range, Range)
@@ -38,7 +38,7 @@ handle_function('GetHistory', [EventSinkID, Range], _WoodyContext, {AvaliableEve
         ),
     {ok, mg_woody_api_packer:pack(sink_history, SinkHistory)}.
 
--spec check_event_sink([mg_machine_event_sink:id()], mg_machine_event_sink:id()) ->
+-spec check_event_sink([mg:id()], mg:id()) ->
     ok | no_return().
 check_event_sink(AvaliableEventSinks, EventSinkID) ->
     case lists:member(EventSinkID, AvaliableEventSinks) of

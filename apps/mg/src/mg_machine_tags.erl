@@ -2,58 +2,60 @@
 
 %% API
 -export_type([options/0]).
+-export_type([tag    /0]).
 -export([child_spec  /2]).
--export([add_tag     /3]).
+-export([add_tag     /4]).
 -export([resolve_tag /2]).
 
-%% mg_processor handler
--behaviour(mg_processor).
--export([process_signal/2, process_call/2]).
-
--define(all_history, {undefined, undefined, forward}).
+%% mg_machine handler
+-behaviour(mg_machine).
+-export([process_machine/5]).
 
 
 -type options() :: #{
     namespace => mg:ns(),
     storage   => mg_storage:storage()
 }.
+-type tag() :: binary().
 
 -spec child_spec(options(), atom()) ->
     supervisor:child_spec().
 child_spec(Options, ChildID) ->
     mg_machine:child_spec(machine_options(Options), ChildID).
 
--spec add_tag(options(), mg:tag(), mg:id()) ->
-    ok | {already_exists, mg:id()}.
-add_tag(Options, Tag, MachineID) ->
-    % TODO подумать об ошибках тут
-    mg_machine:call_with_lazy_start(machine_options(Options), Tag, {add_tag, MachineID}, ?all_history, undefined).
+-spec add_tag(options(), tag(), mg:id(), mg_utils:deadline()) ->
+    ok | {already_exists, mg:id()} | no_return().
+add_tag(Options, Tag, ID, Deadline) ->
+    mg_machine:call_with_lazy_start(machine_options(Options), Tag, {add_tag, ID}, Deadline, undefined).
 
--spec resolve_tag(options(), mg:tag()) ->
-    mg:id() | undefined.
+-spec resolve_tag(options(), tag()) ->
+    mg:id() | undefined | no_return().
 resolve_tag(Options, Tag) ->
-    #{history:=History} =
-        mg_machine:get_machine_with_lazy_start(machine_options(Options), Tag, ?all_history, undefined),
-    do_resolve_tag(fold_history(History)).
+    try
+        opaque_to_state(mg_machine:get(machine_options(Options), Tag))
+    catch throw:machine_not_found ->
+        undefined
+    end.
 
 %%
-%% mg_processor handler
+%% mg_machine handler
 %%
--spec process_signal(_, mg:signal_args()) ->
-    mg:signal_result().
-process_signal(_, _) ->
-    {{undefined, []}, #{}}.
+-type state() :: mg:id() | undefined.
 
--spec process_call(_, mg:call_args()) ->
-    mg:call_result().
-process_call(_, {{add_tag, MachineID}, #{id:=SelfID, history:=History}}) ->
-    case do_resolve_tag(fold_history(History)) of
+-spec process_machine(_, mg:id(), mg_machine:processor_impact(), _, mg_machine:machine_state()) ->
+    mg_machine:processor_result().
+process_machine(_, _, {init, undefined}, _, _) ->
+    {{reply, ok}, sleep, state_to_opaque(undefined)};
+process_machine(_, _, {repair, undefined}, _, State) ->
+    {{reply, ok}, sleep, State};
+process_machine(_, _, {call, {add_tag, ID}}, _, PackedState) ->
+    case opaque_to_state(PackedState) of
         undefined ->
-            {ok, {undefined, [generate_add_tag_event(MachineID)]}, #{}};
-        SelfID ->
-            {ok, undefined, [], #{}};
-        OtherMachineID ->
-            {{already_exists, OtherMachineID}, {undefined, []}, #{}}
+            {{reply, ok}, sleep, state_to_opaque(ID)};
+        ID ->
+            {{reply, ok}, sleep, PackedState};
+        OtherID ->
+            {{reply, {already_exists, OtherID}}, sleep, PackedState}
     end.
 
 %%
@@ -69,24 +71,18 @@ machine_options(#{namespace:=Namespace, storage:=Storage}) ->
     }.
 
 %%
-%% functions with state
+%% packer to opaque
 %%
--type state() :: mg:id() | undefined.
--type event() :: {add, mg:id()}.
+-spec state_to_opaque(state()) ->
+    mg:opaque().
+state_to_opaque(undefined) ->
+    [1, null];
+state_to_opaque(ID) ->
+    [1, ID].
 
--spec fold_history(mg:history()) ->
+-spec opaque_to_state(mg:opaque()) ->
     state().
-fold_history([]) ->
+opaque_to_state([1, null]) ->
     undefined;
-fold_history([#{body:={add, MachineID}}]) ->
-    MachineID.
-
--spec do_resolve_tag(state()) ->
-    mg:id() | undefined.
-do_resolve_tag(MachineID) ->
-    MachineID.
-
--spec generate_add_tag_event(mg:id()) ->
-    event().
-generate_add_tag_event(ID) ->
-    {add, ID}.
+opaque_to_state([1, ID]) ->
+    ID.

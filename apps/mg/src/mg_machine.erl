@@ -3,8 +3,7 @@
 %%%
 %%% Имеет идентификатор.
 %%% При падении хендлера переводит машину в error состояние.
-%%%
-%%% Эвенты в машине всегда идут в таком порядке, что слева самые старые.
+%%% Оперирует стейтом и набором атрибутов.
 %%%
 -module(mg_machine).
 
@@ -38,45 +37,91 @@
 %%
 
 %% API
--export_type([options     /0]).
--export_type([thrown_error/0]).
+-export_type([options               /0]).
+-export_type([thrown_error          /0]).
+-export_type([logic_error           /0]).
+-export_type([transient_error       /0]).
+-export_type([throws                /0]).
+-export_type([machine_state         /0]).
+-export_type([processor_impact      /0]).
+-export_type([processing_context    /0]).
+-export_type([processor_result      /0]).
+-export_type([processor_reply_action/0]).
+-export_type([processor_flow_action /0]).
+-export_type([search_query          /0]).
 
 -export([child_spec /2]).
 -export([start_link /1]).
 
--export([start      /3]).
--export([repair     /4]).
--export([call       /4]).
--export([get_machine/3]).
+-export([start /4]).
+-export([repair/4]).
+-export([call  /4]).
+-export([get   /2]).
+-export([search/2]).
+-export([reply /2]).
+-export([call_with_lazy_start/5]).
 
--export([call_with_lazy_start       /5]).
--export([get_machine_with_lazy_start/4]).
--export([do_with_lazy_start         /4]).
+%% Internal API
+-export([handle_timers         /1]).
+-export([handle_timers         /2]).
+-export([handle_timer          /2]).
+-export([reload_killed_machines/1]).
+-export([reload_killed_machines/2]).
+-export([touch                 /2]).
 
-%% supervisor
--behaviour(supervisor).
--export([init      /1]).
 
 %% mg_worker
 -behaviour(mg_worker).
--export([handle_load/2, handle_call/2, handle_unload/1]).
+-export([handle_load/2, handle_call/3, handle_unload/1]).
 
 %%
 %% API
 %%
 -type options() :: #{
     namespace              => mg:ns(),
-    storage                => mg_storage:storage          (),
-    storage_retry_policy   => mg_utils:genlib_retry_policy(),
+    storage                => mg_storage:module           (),
     processor              => mg_utils:mod_opts           (),
-    observer               => mg_utils:mod_opts           ()   % опционально
+    storage_retry_policy   => mg_utils:genlib_retry_policy(), % optional
+    processor_retry_policy => mg_utils:genlib_retry_policy()  % optional
 }.
 
--type thrown_error() :: logic_error() | {transient, transient_error()} | timeout.
--type logic_error() :: machine_already_exist | machine_not_found | machine_failed.
--type transient_error() :: overload | storage_unavailable | processor_unavailable.
+-type thrown_error() :: logic_error() | {transient, transient_error()} | {timeout, _Reason}.
+-type logic_error() :: machine_already_exist | machine_not_found | machine_failed | machine_already_working.
+-type transient_error() :: overload | {storage_unavailable, _Reason} | {processor_unavailable, _Reason}.
 
 -type throws() :: no_return().
+-type machine_state() :: mg_storage:opaque().
+
+%%
+
+-type processing_state() :: term().
+-type processing_context() :: #{
+    call_context => mg_worker:call_context(),
+    state        => processing_state()
+} | undefined.
+-type processor_impact() ::
+      {init   , term()}
+    | {repair , term()}
+    | {call   , term()}
+    |  timeout
+    |  continuation
+.
+-type processor_reply_action() :: noreply  | {reply, _}.
+-type processor_flow_action() :: sleep | {wait, genlib_time:ts()} | {continue, processing_state()}.
+-type processor_result() :: {processor_reply_action(), processor_flow_action(), machine_state()}.
+
+-callback process_machine(_Options, mg:id(), processor_impact(), processing_context(), machine_state()) ->
+    processor_result().
+
+-type search_query() ::
+       sleeping
+    |  waiting
+    | {waiting, From::genlib_time:ts(), To::genlib_time:ts()}
+    |  processing
+    |  failed
+.
+
+%%
 
 -spec child_spec(options(), atom()) ->
     supervisor:child_spec().
@@ -88,119 +133,194 @@ child_spec(Options, ChildID) ->
         type     => supervisor
     }.
 
-
 -spec start_link(options()) ->
     mg_utils:gen_start_ret().
 start_link(Options) ->
-    supervisor:start_link(?MODULE, Options).
+    mg_utils_supervisor_wrapper:start_link(
+        #{strategy => one_for_all},
+        [
+            mg_workers_manager:child_spec(manager_options      (Options), manager      ),
+            mg_storage        :child_spec(storage_options      (Options), storage      ),
+            mg_cron           :child_spec(timers_cron_options  (Options), timers_cron  ),
+            mg_cron           :child_spec(overseer_cron_options(Options), overseer_cron)
+        ]
+    ).
 
--spec start(options(), mg:id(), mg:args()) ->
-    ok | throws().
-start(Options, ID, Args) ->
-    ok = mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {start, Args})).
-
--spec repair(options(), mg:id(), mg:args(), mg:history_range()) ->
-    ok | throws().
-repair(Options, ID, Args, HRange) ->
-    ok = mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {repair, Args, HRange})).
-
--spec call(options(), mg:id(), mg:args(), mg:history_range()) ->
+-spec start(options(), mg:id(), term(), mg_utils:deadline()) ->
     _Resp | throws().
-call(Options, ID, Call, HRange) ->
-    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {call, Call, HRange})).
+start(Options, ID, Args, Deadline) ->
+    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {start, Args}, Deadline)).
 
--spec get_machine(options(), mg:id(), mg:history_range()) ->
-    mg:machine() | throws().
-get_machine(Options, ID, HRange) ->
-    case mg_storage:get_machine(get_options(storage, Options), get_options(namespace, Options), ID) of
-        undefined ->
-            throw(machine_not_found);
-        DBMachine ->
-            machine(Options, ID, DBMachine, HRange)
-    end.
-
-%% TODO придумуть имена получше, ревьюверы, есть идеи?
--spec call_with_lazy_start(options(), mg:id(), mg:args(), mg:history_range(), mg:args()) ->
+-spec repair(options(), mg:id(), term(), mg_utils:deadline()) ->
     _Resp | throws().
-call_with_lazy_start(Options, ID, Call, HRange, StartArgs) ->
-    do_with_lazy_start(Options, ID, StartArgs, fun() -> call(Options, ID, Call, HRange) end).
+repair(Options, ID, Args, Deadline) ->
+    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {repair, Args}, Deadline)).
 
--spec get_machine_with_lazy_start(options(), mg:id(), mg:history_range(), mg:args()) ->
-    mg:machine() | throws().
-get_machine_with_lazy_start(Options, ID, HRange, StartArgs) ->
-    do_with_lazy_start(Options, ID, StartArgs, fun() -> get_machine(Options, ID, HRange) end).
+-spec call(options(), mg:id(), term(), mg_utils:deadline()) ->
+    _Resp | throws().
+call(Options, ID, Call, Deadline) ->
+    % TODO specify timeout
+    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {call, Call}, Deadline)).
 
--spec do_with_lazy_start(options(), mg:id(), mg:args(), fun(() -> R)) ->
-    R.
-do_with_lazy_start(Options, ID, StartArgs, Fun) ->
+-spec get(options(), mg:id()) ->
+    machine_state() | throws().
+get(Options, ID) ->
+    #{state:=State} = mg_utils:throw_if_undefined(element(2, get_storage_machine(Options, ID)), machine_not_found),
+    State.
+
+-spec search(options(), search_query()) ->
+    [{_TODO, mg:id()}] | [mg:id()] | throws().
+search(Options, Query) ->
+    mg_storage:search(storage_options(Options), storage_search_query(Query)).
+
+-spec call_with_lazy_start(options(), mg:id(), term(), mg_utils:deadline(), term()) ->
+    _Resp | throws().
+call_with_lazy_start(Options, ID, Call, Deadline, StartArgs) ->
     try
-        Fun()
+        call(Options, ID, Call, Deadline)
     catch throw:machine_not_found ->
         try
-            ok = start(Options, ID, StartArgs)
+            _ = start(Options, ID, StartArgs, Deadline)
         catch throw:machine_already_exist ->
             % вдруг кто-то ещё делает аналогичный процесс
             ok
         end,
         % если к этому моменту машина не создалась, значит она уже не создастся
         % и исключение будет оправданным
-        Fun()
+        call(Options, ID, Call, Deadline)
     end.
 
+-spec reply(processing_context(), _) ->
+    ok.
+reply(undefined, _) ->
+    % отвечать уже некому
+    ok;
+reply(#{call_context := CallContext}, Reply) ->
+    ok = mg_worker:reply(CallContext, Reply).
+
 %%
-%% supervisor
+%% Internal API
 %%
--spec init(options()) ->
-    mg_utils:supervisor_ret().
-init(Options) ->
-    SupFlags = #{strategy => one_for_all},
-    {ok, {SupFlags, [
-        mg_workers_manager:child_spec(manager, manager_options(Options)),
-        mg_storage:child_spec(get_options(storage, Options), get_options(namespace, Options), storage)
-    ]}}.
+-spec handle_timers(options()) ->
+    ok.
+handle_timers(Options) ->
+    handle_timers(Options, search(Options, {waiting, 1, genlib_time:now()})).
+
+-spec handle_timers(options(), [{genlib_time:ts(), mg:id()}]) ->
+    ok.
+handle_timers(Options, Timers) ->
+    lists:foreach(
+        % такая схема потенциально опасная, но надо попробовать как она себя будет вести
+        fun(Timer) ->
+            erlang:spawn_link(fun() -> handle_timer(Options, Timer) end)
+        end,
+        Timers
+    ).
+
+-spec handle_timer(options(), {genlib_time:ts(), mg:id()}) ->
+    ok.
+handle_timer(Options, {Timestamp, MachineID}) ->
+    % TODO вообще надо бы как-то это тюнить
+    Deadline = mg_utils:timeout_to_deadline(30000),
+    % TODO можно попробовать проинспектировать очередь
+    case mg_workers_manager:call(manager_options(Options), MachineID, {timeout, Timestamp}, Deadline) of
+        ok ->
+            ok;
+        {error, Reason} ->
+            ok = log_failed_timer_handling(namespace(Options), MachineID, Reason)
+    end.
+
+
+-spec reload_killed_machines(options()) ->
+    ok.
+reload_killed_machines(Options) ->
+    reload_killed_machines(Options, search(Options, processing)).
+
+-spec reload_killed_machines(options(), [mg:id()]) ->
+    ok.
+reload_killed_machines(Options, MachinesIDs) ->
+    % TODO сделать проверку: может процесс и так жив и всё ок
+    lists:foreach(
+        fun(MachineID) ->
+            erlang:spawn_link(fun() -> touch(Options, MachineID) end)
+        end,
+        MachinesIDs
+    ).
+
+-spec touch(options(), mg:id()) ->
+    ok.
+touch(Options, MachineID) ->
+    % TODO вообще надо бы как-то это тюнить
+    Deadline = mg_utils:timeout_to_deadline(30000),
+    _ = mg_workers_manager:call(manager_options(Options), MachineID, touch, Deadline),
+    ok.
 
 %%
 %% mg_worker callbacks
 %%
 -type state() :: #{
-    id      => mg:id(),
-    options => options(),
-    machine => mg_storage:machine() | undefined,
-    update  => mg_storage:update()
+    id              => mg:id(),
+    options         => options(),
+    storage_machine => storage_machine() | undefined,
+    storage_context => mg_storage:context() | undefined
 }.
+
+-type storage_machine() :: #{
+    status          => machine_status(),
+    state           => machine_state()
+}.
+
+-type machine_status() ::
+      {waiting, genlib_time:ts()}
+    |  processing
+    | {error, Reason::mg_storage:opaque()}
+.
+
 
 -spec handle_load(_ID, options()) ->
     {ok, state()}.
 handle_load(ID, Options) ->
-    State =
-        #{
-            id      => ID,
-            options => Options,
-            machine => mg_storage:get_machine(get_options(storage, Options), get_options(namespace, Options), ID),
-            update  => #{}
-        },
-    {ok, State}.
-
-
--spec handle_call(_Call, state()) ->
-    {_Resp, state()}.
-handle_call(Call, State) ->
     try
-        {Resp, UpdatedState} = handle_call_(Call, State),
-        {Resp, transit_state(UpdatedState)}
-    catch
-        throw:Reason ->
-            {{error, Reason}, State};
-        Class:Reason ->
-            {
-                {error, machine_failed},
-                % TODO нужно это нормально переписать
-                try
-                    transit_state(handle_exception({Class, Reason, erlang:get_stacktrace()}, State))
-                catch throw:Reason ->
-                    State
-                end
-            }
+        {StorageContext, StorageMachine} = get_storage_machine(Options, ID),
+        State =
+            #{
+                id              => ID,
+                options         => Options,
+                storage_machine => StorageMachine,
+                storage_context => StorageContext
+            },
+        {ok, try_finish_processing(State)}
+    catch throw:Reason ->
+        ok = log_load_error(namespace(Options), ID, {throw, Reason, erlang:get_stacktrace()}),
+        {error, Reason}
+    end.
+
+-spec handle_call(_Call, mg_worker:call_context(), state()) ->
+    {{reply, _Resp} | noreply, state()}.
+handle_call(Call, CallContext, State=#{storage_machine:=StorageMachine}) ->
+    PCtx = new_processing_context(CallContext),
+    case {Call, StorageMachine} of
+        % success
+        {{start , Args   }, undefined               } -> {noreply, process_start(Args, PCtx, State)};
+        {{call  , SubCall}, #{status:= sleeping    }} -> {noreply, process({call   , SubCall}, PCtx, State)};
+        {{call  , SubCall}, #{status:={waiting, _ }}} -> {noreply, process({call   , SubCall}, PCtx, State)};
+        {{repair, Args   }, #{status:={error  , _ }}} -> {noreply, process({repair , Args   }, PCtx, State)};
+
+        % failure
+        {{start  , _     }, #{status:=           _}} -> {{reply, {error, machine_already_exist  }}, State};
+        {{call   , _     }, #{status:={error  , _}}} -> {{reply, {error, machine_failed         }}, State};
+        {{call   , _     }, undefined              } -> {{reply, {error, machine_not_found      }}, State};
+        {{repair , _     }, #{status:= waiting    }} -> {{reply, {error, machine_already_working}}, State};
+        {{repair , _     }, undefined              } -> {{reply, {error, machine_not_found      }}, State};
+        % ничего не просходит, просто убеждаемся, что машина загружена
+        {touch, _} -> {reply, ok, State};
+
+        % timers
+        {{timeout, Ts0}, #{status:={waiting, Ts1}}}
+            when Ts0 =:= Ts1 ->
+            {noreply, process(timeout, PCtx, State)};
+        {{timeout, _}, #{status:=_}} ->
+            {{reply, ok}, State}
     end.
 
 -spec handle_unload(state()) ->
@@ -209,143 +329,225 @@ handle_unload(_) ->
     ok.
 
 %%
+%% processing context
+%%
+-spec new_processing_context(mg_worker:call_context()) ->
+    processing_context().
+new_processing_context(CallContext) ->
+    #{
+        call_context => CallContext,
+        state        => undefined
+    }.
+
+%%
+%% storage machine
+%%
+-spec new_storage_machine() ->
+    storage_machine().
+new_storage_machine() ->
+    #{
+        status => waiting,
+        state  => null
+    }.
+
+-spec get_storage_machine(options(), mg:id()) ->
+    {mg_storage:context(), storage_machine()} | undefined.
+get_storage_machine(Options, ID) ->
+    case mg_storage:get(storage_options(Options), ID) of
+        undefined ->
+            {undefined, undefined};
+        {Context, PackedMachine} ->
+            {Context, opaque_to_storage_machine(PackedMachine)}
+    end.
+
+%%
+%% packer to opaque
+%%
+-spec storage_machine_to_opaque(storage_machine()) ->
+    mg_storage:opaque().
+storage_machine_to_opaque(#{status := Status, state := State }) ->
+    [1, machine_status_to_opaque(Status), State].
+
+-spec opaque_to_storage_machine(mg_storage:opaque()) ->
+    storage_machine().
+opaque_to_storage_machine([1, Status, State]) ->
+    #{status => opaque_to_machine_status(Status), state => State}.
+
+-spec machine_status_to_opaque(machine_status()) ->
+    mg_storage:opaque().
+machine_status_to_opaque(Status) ->
+    Opaque =
+        case Status of
+             sleeping       ->  1;
+            {waiting, TS}   -> [2, TS];
+             processing     ->  3;
+            {error, Reason} -> [4, erlang:term_to_binary(Reason)] % TODO подумать как упаковывать reason
+        end,
+    Opaque.
+
+-spec opaque_to_machine_status(mg_storage:opaque()) ->
+    machine_status().
+opaque_to_machine_status(Opaque) ->
+    case Opaque of
+         1          ->  sleeping;
+        [2, TS]     -> {waiting, TS};
+         3          ->  processing;
+        [4, Reason] -> {error, erlang:binary_to_term(Reason)}
+    end.
+
+
+%%
+%% indexes
+%%
+-define(status_idx , {integer, <<"status"      >>}).
+-define(waiting_idx, {integer, <<"waiting_date">>}).
+
+-spec storage_search_query(search_query()) ->
+    mg_storage:index_query().
+storage_search_query(sleeping) ->
+    {?status_idx, 1};
+storage_search_query(waiting) ->
+    {?status_idx, 2};
+storage_search_query({waiting, FromTs, ToTs}) ->
+    {?waiting_idx, {FromTs, ToTs}};
+storage_search_query(processing) ->
+    {?status_idx, 3};
+storage_search_query(failed) ->
+    {?status_idx, 4}.
+
+-spec storage_machine_to_indexes(storage_machine()) ->
+    [mg_storage:index_update()].
+storage_machine_to_indexes(#{status := Status}) ->
+    status_index(Status) ++ waiting_date_index(Status).
+
+-spec status_index(machine_status()) ->
+    [mg_storage:index_update()].
+status_index(Status) ->
+    StatusInt =
+        case Status of
+             sleeping    -> 1;
+            {waiting, _} -> 2;
+             processing  -> 3;
+            {error, _}   -> 4
+        end,
+    [{?status_idx, StatusInt}].
+
+-spec waiting_date_index(machine_status()) ->
+    [mg_storage:index_update()].
+waiting_date_index({waiting, Timestamp}) ->
+    [{?waiting_idx, Timestamp}];
+waiting_date_index(_) ->
+    [].
+
+%%
+%% processing
+%%
+-spec try_finish_processing(state()) ->
+    state().
+try_finish_processing(State = #{storage_machine := #{status := processing}}) ->
+    process(continuation, undefined, State);
+try_finish_processing(State = #{storage_machine := _}) ->
+    State.
+
+-spec process_start(term(), processing_context(), state()) ->
+    state().
+process_start(Args, ProcessingCtx, State) ->
+    process({init, Args}, ProcessingCtx, State#{storage_machine := new_storage_machine()}).
+
+-spec process(processor_impact(), processing_context(), state()) ->
+    state().
+process(Impact, ProcessingCtx, State) ->
+    try
+        process_unsafe(Impact, ProcessingCtx, State)
+    catch Class:Reason ->
+        ok = do_reply_action({reply, {error, machine_failed}}, ProcessingCtx),
+        handle_exception({Class, Reason, erlang:get_stacktrace()}, State)
+    end.
 
 -spec handle_exception(mg_utils:exception(), state()) ->
     state().
-handle_exception(Exception, State=#{id:=ID}) ->
-    ok = log_machine_error(ID, Exception),
-    Update = #{ status => {error, Exception} },
-    State#{update:=Update}.
+handle_exception(Exception, State=#{options:=Options, id:=ID, storage_machine := StorageMachine}) ->
+    ok = log_machine_error(namespace(Options), ID, Exception),
+    NewStorageMachine = StorageMachine#{ status => {error, Exception} },
+    transit_state(NewStorageMachine, State).
 
--spec transit_state(state()) ->
+-spec process_unsafe(processor_impact(), processing_context(), state()) ->
     state().
-transit_state(State=#{machine:=Machine, update:=Update}) when erlang:map_size(Update) =:= 0; Machine =:= undefined ->
-    State;
-transit_state(State=#{id:=ID, options:=Options, machine:=Machine, update:=Update}) ->
+process_unsafe(Impact, ProcessingCtx, State=#{storage_machine := StorageMachine}) ->
+    {ReplyAction, Action, NewMachineState} =
+        call_processor(Impact, ProcessingCtx, State),
+    NewStorageMachine = StorageMachine#{state := NewMachineState},
+    case Action of
+        {continue, NewProcessingSubState} ->
+            NewState = transit_state(NewStorageMachine#{status := processing}, State),
+            ok = do_reply_action(wrap_reply_action(ok, ReplyAction), ProcessingCtx),
+            NewRequestCtx = ProcessingCtx#{state:=NewProcessingSubState},
+            process(continuation, NewRequestCtx, NewState);
+        sleep ->
+            NewState = transit_state(NewStorageMachine#{status := sleeping}, State),
+            ok = do_reply_action(wrap_reply_action(ok, ReplyAction), ProcessingCtx),
+            NewState;
+        {wait, Timestamp} ->
+            NewState = transit_state(NewStorageMachine#{status := {waiting, Timestamp}}, State),
+            ok = do_reply_action(wrap_reply_action(ok, ReplyAction), ProcessingCtx),
+            NewState
+    end.
+
+-spec call_processor(processor_impact(), processing_context(), state()) ->
+    processor_result().
+call_processor(Impact, ProcessingCtx, State) ->
+    #{options := Options, id := ID, storage_machine := #{state := MachineState}} = State,
     F = fun() ->
-            mg_storage:update_machine(
-                get_options(storage, Options), get_options(namespace, Options), ID, Machine, Update
+            mg_utils:apply_mod_opts(
+                get_options(processor, Options),
+                process_machine,
+                [ID, Impact, ProcessingCtx, MachineState]
+            )
+        end,
+    RetryStrategy = mg_utils:genlib_retry_new(get_options(processor_retry_policy, Options)),
+    do_with_retry(namespace(Options), ID, F, RetryStrategy).
+
+-spec do_reply_action(processor_reply_action(), undefined | processing_context()) ->
+    ok.
+do_reply_action(noreply, _) ->
+    ok;
+do_reply_action({reply, Reply}, ProcessingCtx) ->
+    ok = reply(ProcessingCtx, Reply),
+    ok.
+
+-spec wrap_reply_action(_, processor_reply_action()) ->
+    processor_reply_action().
+wrap_reply_action(_, noreply) ->
+    noreply;
+wrap_reply_action(Wrapper, {reply, R}) ->
+    {reply, {Wrapper, R}}.
+
+
+-spec transit_state(storage_machine(), state()) ->
+    state().
+transit_state(NewStorageMachine, State=#{storage_machine := OldStorageMachine})
+    when NewStorageMachine =:= OldStorageMachine
+->
+    State;
+transit_state(NewStorageMachine, State=#{id:=ID, options:=Options, storage_context := StorageContext}) ->
+    F = fun() ->
+            mg_storage:put(
+                storage_options(Options),
+                ID,
+                StorageContext,
+                storage_machine_to_opaque(NewStorageMachine),
+                storage_machine_to_indexes(NewStorageMachine)
             )
         end,
     RetryStrategy = mg_utils:genlib_retry_new(get_options(storage_retry_policy, Options)),
-    NewMachine    = do_with_retry(ID, F, RetryStrategy),
-    State#{ machine := NewMachine, update := #{} }.
+    NewStorageContext  = do_with_retry(namespace(Options), ID, F, RetryStrategy),
+    State#{
+        storage_machine := NewStorageMachine,
+        storage_context := NewStorageContext
+    }.
 
 %%
 
--spec handle_call_(_Call, state()) ->
-    {_Resp, state()}.
-handle_call_(Call, State=#{machine:=Machine}) ->
-    case {Call, Machine} of
-        {{start , Args           }, undefined              } -> { ok, process_start(Args, State)};
-        {{start , _              }, #{status:=           _}} -> {{error, machine_already_exist}, State};
-        {{call  , SubCall, HRange}, #{status:= working    }} ->  process_call(SubCall, HRange, State);
-        {{call  , _      , _     }, #{status:={error  , _}}} -> {{error, machine_failed       }, State};
-        {{call  , _      , _     }, undefined              } -> {{error, machine_not_found    }, State};
-        {{repair, Args   , HRange}, #{status:={error  , _}}} -> { ok, process_signal({repair, Args}, HRange, State)};
-        {{repair, _      , _     }, #{status:= working    }} -> { ok,                            State};
-        {{repair, _      , _     }, undefined              } -> {{error, machine_not_found    }, State};
-
-        % если машина в статусе _created_, а ей пришел запрос,
-        % то это значит, что-то пошло не так, такого быть не должно
-        {_ , #{status:={created, _}}} -> exit({something_went_wrong, Call, Machine})
-    end.
-
-%%
-
--spec process_start(_Args, state()) ->
-    state().
-process_start(Args, State) ->
-    Machine =
-        #{
-            aux_state    => undefined,
-            status       => working,
-            events_range => undefined,
-            db_state     => undefined
-        },
-    process_signal({init, Args}, {undefined, undefined, forward}, State#{machine:=Machine}).
-
--spec process_call(_Call, mg:history_range(), state()) ->
-    {_Resp, state()}.
-process_call(Call, HRange, State=#{options:=Options, id:=ID, machine:=DBMachine}) ->
-    Machine = machine(Options, ID, DBMachine, HRange),
-    {Response, StateChange, ComplexAction} =
-        mg_processor:process_call(get_options(processor, Options), {Call, Machine}),
-    {{ok, Response}, handle_processor_result(StateChange, ComplexAction, State)}.
-
--spec process_signal(mg:signal(), mg:history_range(), state()) ->
-    state().
-process_signal(Signal, HRange, State=#{options:=Options, id:=ID, machine:=DBMachine}) ->
-    Machine = machine(Options, ID, DBMachine, HRange),
-    {StateChange, ComplexAction} = mg_processor:process_signal(get_options(processor, Options), {Signal, Machine}),
-    handle_processor_result(StateChange, ComplexAction, State).
-
-%%
-
--spec handle_processor_result(mg:state_change(), mg:complex_action(), state()) ->
-    state().
-handle_processor_result({NewAuxState, EventsBodies}, _ComplexAction, State) ->
-    Events = generate_events(EventsBodies, get_last_event_id(State)),
-    ok     = notify_observer(Events, State),
-    State#{update := add_events_to_update(Events, #{aux_state => NewAuxState, status => working})}.
-
--spec add_events_to_update([mg:event()], mg_storage:update()) ->
-    mg_storage:update().
-add_events_to_update([], Update) ->
-    Update;
-add_events_to_update(Events, Update) ->
-    Update#{new_events => Events}.
-
--spec notify_observer([mg:event()], state()) ->
-    ok.
-notify_observer(Events, #{id:=SourceID, options:=Options}) ->
-    case get_options(observer, Options) of
-        undefined ->
-            ok;
-        Observer ->
-            ok = mg_observer:handle_events(Observer, SourceID, Events)
-    end.
-
--spec generate_events([mg:event_body()], mg:event_id()) ->
-    [mg:event()].
-generate_events(EventsBodies, LastID) ->
-    {Events, _} =
-        lists:mapfoldl(
-            fun generate_event/2,
-            LastID,
-            EventsBodies
-        ),
-    Events.
-
--spec generate_event(mg:event_body(), mg:event_id()) ->
-    {mg:event(), mg:event_id()}.
-generate_event(EventBody, LastID) ->
-    ID = get_next_event_id(LastID),
-    Event =
-        #{
-            id         => ID,
-            created_at => erlang:system_time(),
-            body       => EventBody
-        },
-    {Event, ID}.
-
--spec get_last_event_id(state()) ->
-    mg:event_id() | undefined.
-get_last_event_id(#{machine:=#{events_range:=undefined}}) ->
-    undefined;
-get_last_event_id(#{machine:=#{events_range:={_, LastID}}}) ->
-    LastID.
-
--spec get_next_event_id(undefined | mg:event_id()) ->
-    mg:event_id().
-get_next_event_id(undefined) ->
-    1;
-get_next_event_id(N) ->
-    N + 1.
-
-%%
-%% utils
-%%
 -spec manager_options(options()) ->
     mg_workers_manager:options().
 manager_options(Options) ->
@@ -356,59 +558,65 @@ manager_options(Options) ->
         }
     }.
 
--spec machine(options(), mg:id(), mg_storage:machine(), mg:history_range()) ->
-    mg:machine().
-machine(Options=#{namespace:=NS}, ID, #{aux_state:=AuxState}=DBMachine, HRange) ->
+-spec storage_options(options()) ->
+    mg_storage:options().
+storage_options(Options) ->
     #{
-        ns            => NS,
-        id            => ID,
-        history       => get_history_by_id(Options, ID, DBMachine, HRange),
-        history_range => HRange,
-        aux_state     => AuxState
+        namespace => get_options(namespace, Options),
+        module    => get_options(storage  , Options)
     }.
 
--spec get_history_by_id(options(), mg:id(), mg_storage:machine(), mg:history_range()) ->
-    mg:history().
-get_history_by_id(Options, ID, DBMachine, HRange) ->
-    mg_storage:get_history(get_options(storage, Options), get_options(namespace, Options), ID, DBMachine, HRange).
+-spec timers_cron_options(options()) ->
+    mg_cron:options().
+timers_cron_options(Options) ->
+    #{
+        interval => 1000, % 1 sec
+        job      => {?MODULE, handle_timers, [Options]}
+    }.
 
--type option_name() ::
-      namespace
-    | processor
-    | storage
-    | observer
-    | storage_retry_policy
-.
--spec get_options(option_name(), options()) ->
+-spec overseer_cron_options(options()) ->
+    mg_cron:options().
+overseer_cron_options(Options) ->
+    #{
+        interval => 1000, % 1 sec
+        job      => {?MODULE, reload_killed_machines, [Options]}
+    }.
+
+-spec namespace(options()) ->
+    mg:ns().
+namespace(Options) ->
+    get_options(namespace, Options).
+
+-spec get_options(atom(), options()) ->
     _.
-get_options(Subj=observer, Options) ->
-    maps:get(Subj, Options, undefined);
 get_options(Subj=storage_retry_policy, Options) ->
+    maps:get(Subj, Options, default_retry_policy());
+get_options(Subj=processor_retry_policy, Options) ->
     maps:get(Subj, Options, default_retry_policy());
 get_options(Subj, Options) ->
     maps:get(Subj, Options).
 
 -spec default_retry_policy() ->
-    mg_utils:genlib_retry_policy().
+    _.
 default_retry_policy() ->
     {exponential, infinity, 2, 10, 60 * 1000}.
 
 %%
 %% retrying
 %%
--spec do_with_retry(mg:id(), fun(() -> R), genlib_retry:strategy()) ->
+-spec do_with_retry(mg:ns(), mg:id(), fun(() -> R), genlib_retry:strategy()) ->
     R.
-do_with_retry(ID, Fun, RetryStrategy) ->
+do_with_retry(NS, ID, Fun, RetryStrategy) ->
     try
         Fun()
     catch throw:(Reason={transient, _}) ->
         Exception = {throw, Reason, erlang:get_stacktrace()},
-        ok = log_transient_exception(ID, Exception),
+        ok = log_transient_exception(NS, ID, Exception),
         case genlib_retry:next_step(RetryStrategy) of
             {wait, Timeout, NewRetryStrategy} ->
-                ok = log_retry(ID, Timeout),
+                ok = log_retry(NS, ID, Timeout),
                 ok = timer:sleep(Timeout),
-                do_with_retry(ID, Fun, NewRetryStrategy);
+                do_with_retry(NS, ID, Fun, NewRetryStrategy);
             finish ->
                 throw({timeout, {retry_timeout, Reason}})
         end
@@ -417,17 +625,27 @@ do_with_retry(ID, Fun, RetryStrategy) ->
 %%
 %% logging
 %%
--spec log_machine_error(mg:id(), mg_utils:exception()) ->
+-spec log_load_error(mg:ns(), mg:id(), mg_utils:exception()) ->
     ok.
-log_machine_error(ID, Exception) ->
-    ok = error_logger:error_msg("[~p] machine failed ~s", [ID, mg_utils:format_exception(Exception)]).
+log_load_error(NS, ID, Exception) ->
+    ok = error_logger:error_msg("[~s:~s] loading failed ~p", [NS, ID, Exception]).
 
--spec log_transient_exception(mg:id(), mg_utils:exception()) ->
+-spec log_machine_error(mg:ns(), mg:id(), mg_utils:exception()) ->
     ok.
-log_transient_exception(ID, Exception) ->
-    ok = error_logger:warning_msg("[~p] transient error ~s", [ID, mg_utils:format_exception(Exception)]).
+log_machine_error(NS, ID, Exception) ->
+    ok = error_logger:error_msg("[~s:~s] processing failed ~p", [NS, ID, Exception]).
 
--spec log_retry(mg:id(), Timeout::pos_integer()) ->
+-spec log_transient_exception(mg:ns(), mg:id(), mg_utils:exception()) ->
     ok.
-log_retry(ID, RetryTimeout) ->
-    ok = error_logger:warning_msg("[~p] retrying in ~p msec", [ID, RetryTimeout]).
+log_transient_exception(NS, ID, Exception) ->
+    ok = error_logger:warning_msg("[~s:~s] retryable error ~p", [NS, ID, Exception]).
+
+-spec log_retry(mg:ns(), mg:id(), Timeout::pos_integer()) ->
+    ok.
+log_retry(NS, ID, RetryTimeout) ->
+    ok = error_logger:warning_msg("[~s:~s] retrying in ~p msec", [NS, ID, RetryTimeout]).
+
+-spec log_failed_timer_handling(mg:ns(), mg:id(), _Reason) ->
+    ok.
+log_failed_timer_handling(NS, ID, Reason) ->
+    ok = error_logger:warning_msg("[~s:~s] timer handling failed ~p", [NS, ID, Reason]).

@@ -1,14 +1,17 @@
 -module(mg_worker).
--behaviour(gen_server).
 
 %% API
--export_type([options/0]).
+-export_type([options     /0]).
+-export_type([call_context/0]).
 
--export([child_spec/2]).
--export([start_link/3]).
--export([call      /4]).
+-export([child_spec /2]).
+-export([start_link /3]).
+-export([call       /5]).
+-export([brutal_kill/2]).
+-export([reply      /2]).
 
 %% gen_server callbacks
+-behaviour(gen_server).
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3, code_change/3, terminate/2]).
 
 %%
@@ -20,8 +23,8 @@
 -callback handle_unload(_State) ->
     ok.
 
--callback handle_call(_Call, _State) ->
-    {_Reply, _State}.
+-callback handle_call(_Call, call_context(), _State) ->
+    {{reply, _Reply} | noreply, _State}.
 
 
 -type options() :: #{
@@ -29,6 +32,7 @@
     hibernate_timeout => pos_integer(),
     unload_timeout    => pos_integer()
 }.
+-type call_context() :: _. % в OTP он не описан :(
 
 -spec child_spec(atom(), options()) ->
     supervisor:child_spec().
@@ -45,15 +49,30 @@ child_spec(ChildID, Options) ->
 start_link(Options, NS, ID) ->
     gen_server:start_link(self_reg_name({NS, ID}), ?MODULE, {ID, Options}, []).
 
--spec call(_NS, _ID, _Call, pos_integer()) ->
+-spec call(_NS, _ID, _Call, mg_utils:deadline(), pos_integer()) ->
     _Result | {error, _}.
-call(NS, ID, Call, MaxQueueLength) ->
+call(NS, ID, Call, Deadline, MaxQueueLength) ->
     case mg_utils:get_msg_queue_len(self_reg_name({NS, ID})) < MaxQueueLength of
         true ->
-            gen_server:call(self_ref({NS, ID}), {call, Call});
+            gen_server:call(self_ref({NS, ID}), {call, Deadline, Call}, mg_utils:deadline_to_timeout(Deadline));
         false ->
             {error, {transient, overload}}
     end.
+
+%% for testing
+-spec brutal_kill(_NS, _ID) ->
+    ok.
+brutal_kill(NS, ID) ->
+    true = erlang:exit(mg_utils:gen_where(self_ref({NS, ID})), kill),
+    ok.
+
+%% Internal API
+-spec reply(call_context(), _Reply) ->
+    _.
+reply(CallCtx, Reply) ->
+    _ = gen_server:reply(CallCtx, Reply),
+    ok.
+
 
 %%
 %% gen_server callbacks
@@ -90,26 +109,35 @@ init({ID, Options = #{worker := WorkerModOpts}}) ->
 
 % загрузка делается отдельно и лениво, чтобы не блокировать этим супервизор,
 % т.к. у него легко может начать расти очередь
-handle_call(Call={call, _}, From, State=#{id:=ID, mod:=Mod, status:={loading, Args}}) ->
+handle_call(Call={call, _, _}, From, State=#{id:=ID, mod:=Mod, status:={loading, Args}}) ->
     case Mod:handle_load(ID, Args) of
         {ok, ModState} ->
             handle_call(Call, From, State#{status:={working, ModState}});
         Error={error, _} ->
             {stop, normal, Error, State}
     end;
-handle_call({call, Call}, _, State=#{mod:=Mod, status:={working, ModState}}) ->
-    {Reply, NewModState} = Mod:handle_call(Call, ModState),
-    NewState = State#{status:={working, NewModState}},
-    {reply, Reply, schedule_unload_timer(NewState), hibernate_timeout(NewState)};
+handle_call({call, Deadline, Call}, From, State=#{mod:=Mod, status:={working, ModState}}) ->
+    case mg_utils:is_deadline_reached(Deadline) of
+        false ->
+            {ReplyAction, NewModState} = Mod:handle_call(Call, From, ModState),
+            NewState = State#{status:={working, NewModState}},
+            case ReplyAction of
+                {reply, Reply} -> {reply, Reply, schedule_unload_timer(NewState), hibernate_timeout(NewState)};
+                noreply        -> {noreply, schedule_unload_timer(NewState), hibernate_timeout(NewState)}
+            end;
+        true ->
+            ok = error_logger:error_msg("rancid worker call received: ~p from ~p", [Call, From]),
+            {noreply, schedule_unload_timer(State), hibernate_timeout(State)}
+    end;
 handle_call(Call, From, State) ->
     ok = error_logger:error_msg("unexpected gen_server call received: ~p from ~p", [Call, From]),
-    {noreply, schedule_unload_timer(State), hibernate_timeout(State)}.
+    {noreply, State, hibernate_timeout(State)}.
 
 -spec handle_cast(_Cast, state()) ->
     mg_utils:gen_server_handle_cast_ret(state()).
 handle_cast(Cast, State) ->
     ok = error_logger:error_msg("unexpected gen_server cast received: ~p", [Cast]),
-    {noreply, schedule_unload_timer(State), hibernate_timeout(State)}.
+    {noreply, State, hibernate_timeout(State)}.
 
 -spec handle_info(_Info, state()) ->
     mg_utils:gen_server_handle_info_ret(state()).
@@ -128,7 +156,7 @@ handle_info({timeout, _, unload}, State=#{}) ->
     {noreply, schedule_unload_timer(State), hibernate_timeout(State)};
 handle_info(Info, State) ->
     ok = error_logger:error_msg("unexpected gen_server info ~p", [Info]),
-    {noreply, schedule_unload_timer(State), hibernate_timeout(State)}.
+    {noreply, State, hibernate_timeout(State)}.
 
 -spec code_change(_, state(), _) ->
     mg_utils:gen_server_code_change_ret(state()).

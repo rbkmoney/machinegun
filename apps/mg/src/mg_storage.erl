@@ -1,90 +1,143 @@
 %%%
-%%% Базовое поведение для хранилища данных машин.
-%%% Каждая пишушая операция должна быть атомарной, это важно.
-%%% Со своей стороны mg гарантирует, что не будет 2х одновременных пишуших запросов для одной машины.
+%%% Интерфейс работы с хранилищем данных.
+%%% Он с виду выглядит абстрактным и не привязанным к конкретной базе,
+%%% но по факту он копирует интерфейс риака.
+%%% (Хотя положить на него можно и другие базы.)
 %%%
-%%% storage заведует таймерами.
-%%%
-%%% Про работу с ошибками написано в mg_machine.
+%%% TODO:
+%%%  - сделать работу с пачками через функтор и контекст
 %%%
 -module(mg_storage).
 
 %% API
--export_type([status       /0]).
--export_type([events_range /0]).
--export_type([machine      /0]).
--export_type([update       /0]).
--export_type([options      /0]).
--export_type([storage      /0]).
+-export_type([opaque /0]).
+-export_type([key    /0]).
+-export_type([value  /0]).
+-export_type([kv     /0]).
+-export_type([context/0]).
 
--export([child_spec    /3]).
--export([get_machine   /3]).
--export([get_history   /5]).
--export([update_machine/5]).
+-export_type([index_name       /0]).
+-export_type([index_value      /0]).
+-export_type([index_update     /0]).
+-export_type([index_query_value/0]).
+-export_type([index_query      /0]).
+
+-export_type([storage/0]).
+-export_type([options/0]).
+
+-export([child_spec/2]).
+-export([put       /5]).
+-export([get       /2]).
+-export([search    /2]).
+-export([delete    /3]).
+
+%% Interna API
+-export([opaque_to_binary/1]).
+-export([binary_to_opaque/1]).
 
 %%
 %% API
 %%
--type status() ::
-      working
-    | {error  , _Reason}
-.
+-type opaque () :: null | true | false | number() | binary() | [opaque()] | #{opaque() => opaque()}.
+-type key    () :: binary().
+-type value  () :: opaque().
+-type kv     () :: {key(), value()}.
+-type context() :: term().
 
-%% не очень удобно, что получилось 2 формата range'а
-%% надо подумать, как это исправить
--type events_range() :: {First::mg:event_id(), Last::mg:event_id()} | undefined.
+%% типизация получилась отвратная, но лучше не вышло :-\
+-type index_name       () :: {binary | integer, binary()}.
+-type index_value      () :: binary() | integer().
+-type index_update     () :: {index_name(), index_value()}.
+-type index_query_value() :: index_value() | {index_value(), index_value()}.
+-type index_query      () :: {index_name(), index_query_value()}.
 
--type machine() :: #{
-    status       => status(),
-    aux_state    => mg:aux_state(),
-    events_range => events_range(),
-    db_state     => _ | undefined % когда машина создается это поле undefined
+-type storage() :: mg_utils:mod_opts().
+-type options() :: #{
+    namespace => mg:ns(),
+    module    => storage()
 }.
-
-%% все поля опциональны
--type update() :: #{
-    status     => status(),
-    aux_state  => mg:aux_state(),
-    new_events => [mg:event()]
-}.
-
--type options() :: term().
--type storage() :: mg_utils:mod_opts(options()).
 
 %%
 
--callback child_spec(options(), mg:ns(), atom()) ->
+-callback child_spec(_Options, mg:ns(), atom()) ->
     supervisor:child_spec().
 
--callback get_machine(options(), mg:ns(), mg:id()) ->
-    machine() | undefined.
+-callback put(_Options, mg:ns(), key(), context() | undefined, value(), [index_update()]) ->
+    context().
 
--callback get_history(options(), mg:ns(), mg:id(), machine(), mg:history_range()) ->
-    mg:history().
+-callback get(_Options, mg:ns(), key()) ->
+    {context(), value()} | undefined.
 
--callback update_machine(options(), mg:ns(), mg:id(), machine(), update()) ->
-    machine().
+-callback search(_Options, mg:ns(), index_query()) ->
+    [{index_value(), key()}] | [key()].
+
+-callback delete(_Options, mg:ns(), key(), context()) ->
+    ok.
 
 %%
 
--spec child_spec(storage(), mg:ns(), atom()) ->
+-spec child_spec(options(), atom()) ->
     supervisor:child_spec().
-child_spec(Options, Namespace, ChildID) ->
-    mg_utils:apply_mod_opts(Options, child_spec, [Namespace, ChildID]).
+child_spec(Options, ChildID) ->
+    apply_mod_opts(Options, child_spec, [ChildID]).
 
-%% Если машины нет, то возвращает undefined
--spec get_machine(storage(), mg:ns(), mg:id()) ->
-    machine() | undefined.
-get_machine(Options, Namespace, ID) ->
-    mg_utils:apply_mod_opts(Options, get_machine, [Namespace, ID]).
+-spec put(options(), key(), context() | undefined, value(), [index_update()]) ->
+    context().
+put(Options, Key, Context, Value, Indexes) ->
+    apply_mod_opts(Options, put, [Key, Context, Value, Indexes]).
 
-%% Если машины нет, то возвращает пустой список
--spec get_history(storage(), mg:ns(), mg:id(), machine(), mg:history_range()) ->
-    mg:history().
-get_history(Options, Namespace, ID, Machine, Range) ->
-    mg_utils:apply_mod_opts(Options, get_history, [Namespace, ID, Machine, Range]).
+-spec get(options(), key()) ->
+    {context(), value()} | undefined.
+get(Options, Key) ->
+    apply_mod_opts(Options, get, [Key]).
 
--spec update_machine(storage(), mg:ns(), mg:id(), machine(), update()) ->
-    machine().
-update_machine(Options, Namespace, ID, Machine, Update) ->
-    mg_utils:apply_mod_opts(Options, update_machine, [Namespace, ID, Machine, Update]).
+-spec search(options(), index_query()) ->
+    [key()].
+search(Options, Query) ->
+    apply_mod_opts(Options, search, [Query]).
+
+-spec delete(options(), key(), context()) ->
+    ok.
+delete(Options, Key, Context) ->
+    apply_mod_opts(Options, delete, [Key, Context]).
+
+%%
+
+-spec apply_mod_opts(options(), Function::atom(), list()) ->
+    _.
+apply_mod_opts(#{module := Module, namespace := Namespace}, Function, Args) ->
+    mg_utils:apply_mod_opts(Module, Function, [Namespace|Args]).
+
+%%
+%% Internal API
+%%
+-define(msgpack_options, [
+    {spec           , new        },
+    {allow_atom     , none       },
+    {unpack_str     , as_binary  },
+    {validate_string, false      },
+    {pack_str       , none       },
+    {map_format     , map        }
+]).
+
+%% в функции msgpack:pack неверный спек
+-dialyzer({nowarn_function, opaque_to_binary/1}).
+-spec opaque_to_binary(opaque()) ->
+    binary().
+opaque_to_binary(Opaque) ->
+    case msgpack:pack(Opaque, ?msgpack_options) of
+        Data when is_binary(Data) ->
+            Data;
+        {error, Reason} ->
+            erlang:error(msgpack_pack_error, [Opaque, Reason])
+    end.
+
+-spec binary_to_opaque(binary()) ->
+    opaque().
+binary_to_opaque(Binary) ->
+    case msgpack:unpack(Binary, ?msgpack_options) of
+        {ok, Data} ->
+            Data;
+        {error, Reason} ->
+            erlang:error(msgpack_unpack_error, [Binary, Reason])
+    end.

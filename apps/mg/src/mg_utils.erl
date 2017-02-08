@@ -22,6 +22,13 @@
 -export([gen_where        /1]).
 -export([get_msg_queue_len/1]).
 
+%% deadlines
+-export_type([deadline/0]).
+-export([timeout_to_deadline/1]).
+-export([deadline_to_timeout/1]).
+-export([is_deadline_reached/1]).
+-export([default_deadline   /0]).
+
 %% Woody
 -export_type([woody_handlers/0]).
 -export_type([woody_handler /0]).
@@ -32,9 +39,11 @@
 -export([apply_mod_opts   /3]).
 -export([separate_mod_opts/1]).
 
--export([throw_if_error   /1]).
--export([throw_if_error   /2]).
--export([exit_if_undefined/2]).
+-export([throw_if_error    /1]).
+-export([throw_if_error    /2]).
+-export([throw_if_undefined/2]).
+-export([exit_if_undefined /2]).
+
 -export_type([exception   /0]).
 -export([raise            /1]).
 -export([format_exception /1]).
@@ -45,6 +54,8 @@
 -export([genlib_retry_new/1]).
 
 -export([stop_wait_all/3]).
+
+-export([concatenate_namespaces/2]).
 
 %%
 %% API
@@ -142,6 +153,43 @@ get_msg_queue_len(Name) ->
     {message_queue_len, Len} = exit_if_undefined(erlang:process_info(Pid, message_queue_len), noproc),
     Len.
 
+%%
+%% deadlines
+%%
+-type deadline() :: undefined | pos_integer().
+
+-spec timeout_to_deadline(timeout()) ->
+    deadline().
+timeout_to_deadline(infinity) ->
+    undefined;
+timeout_to_deadline(Timeout) ->
+    now_ms() + Timeout.
+
+-spec deadline_to_timeout(deadline()) ->
+    timeout().
+deadline_to_timeout(undefined) ->
+    infinity;
+deadline_to_timeout(Deadline) ->
+    erlang:max(Deadline - now_ms(), 0).
+
+-spec is_deadline_reached(deadline()) ->
+    boolean().
+is_deadline_reached(undefined) ->
+    false;
+is_deadline_reached(Deadline) ->
+    Deadline - now_ms() =< 0.
+
+-spec default_deadline() ->
+    deadline().
+default_deadline() ->
+    timeout_to_deadline(5000).
+
+%%
+
+-spec now_ms() ->
+    pos_integer().
+now_ms() ->
+    erlang:system_time(1000).
 
 %%
 %% Woody
@@ -192,8 +240,15 @@ throw_if_error(error, Exception) ->
 throw_if_error({error, Error}, Exception) ->
     erlang:throw({Exception, Error}).
 
--spec exit_if_undefined (Result, _Reason) ->
+-spec throw_if_undefined(Result, _Reason) ->
     Result | no_return().
+throw_if_undefined(undefined, Reason) ->
+    erlang:throw(Reason);
+throw_if_undefined(Value, _) ->
+    Value.
+
+-spec exit_if_undefined(Result, _Reason) ->
+    Result.
 exit_if_undefined(undefined, Reason) ->
     erlang:exit(Reason);
 exit_if_undefined(Value, _) ->
@@ -209,7 +264,7 @@ raise({Class, Reason, Stacktrace}) ->
 -spec format_exception(exception()) ->
     iodata().
 format_exception({Class, Reason, Stacktrace}) ->
-    io_lib:format("~s:~p~n~p", [Class, Reason, Stacktrace]).
+    io_lib:format("~s:~p ~s", [Class, Reason, genlib_format:format_stacktrace(Stacktrace, [newlines])]).
 
 
 -spec join(D, list(E)) ->
@@ -267,3 +322,8 @@ stop_wait(Pid, Reason, Timeout) ->
         end,
     process_flag(trap_exit, OldTrap),
     R.
+
+-spec concatenate_namespaces(mg:ns(), mg:ns()) ->
+    mg:ns().
+concatenate_namespaces(NamespaceA, NamespaceB) ->
+    <<NamespaceA/binary, "_", NamespaceB/binary>>.

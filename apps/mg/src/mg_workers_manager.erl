@@ -2,26 +2,20 @@
 %%% Запускаемые по требованию именнованные процессы.
 %%% Могут обращаться друг к другу.
 %%% Регистрируются по идентификатору.
-%%% При невозможности загрузить падает с exit:loading, Error}
+%%% При невозможности загрузить падает с exit:{loading, Error}
 %%%
 %%% TODO:
-%%%  - сделать автоматические ретраи со внешней политикой
 %%%  - сделать выгрузку не по таймеру, а по занимаемой памяти и времени последней активности
 %%%  -
 %%%
 -module(mg_workers_manager).
--behaviour(supervisor).
 
 %% API
 -export_type([options/0]).
 
 -export([child_spec/2]).
 -export([start_link/1]).
--export([call      /3]).
-
-%% Supervisor callbacks
--export([init/1]).
-
+-export([call      /4]).
 
 %%
 %% API
@@ -34,9 +28,9 @@
 
 -define(default_message_queue_len_limit, 50).
 
--spec child_spec(atom(), options()) ->
+-spec child_spec(options(), atom()) ->
     supervisor:child_spec().
-child_spec(ChildID, Options) ->
+child_spec(Options, ChildID) ->
     #{
         id       => ChildID,
         start    => {?MODULE, start_link, [Options]},
@@ -47,38 +41,46 @@ child_spec(ChildID, Options) ->
 -spec start_link(options()) ->
     mg_utils:gen_start_ret().
 start_link(Options) ->
-    supervisor:start_link(self_reg_name(Options), ?MODULE, Options).
+    mg_utils_supervisor_wrapper:start_link(
+        self_reg_name(Options),
+        #{strategy => simple_one_for_one},
+        [
+            mg_worker:child_spec(worker, maps:get(worker_options, Options))
+        ]
+    ).
 
 % sync
--spec call(options(), _ID, _Call) ->
+-spec call(options(), _ID, _Call, mg_utils:deadline()) ->
     _Reply | {error, _}.
-call(Options, ID, Call) ->
-    call(Options, ID, Call, 10).
-
--spec call(options(), _ID, _Call, non_neg_integer()) ->
-    _Reply | {error, _}.
-call(_, _, _, 0) ->
-    % такого быть не должно
-    {error, unexpected_behaviour};
-call(Options, ID, Call, Attempts) ->
-    Name = maps:get(name, Options),
-    try
-        mg_worker:call(Name, ID, Call, message_queue_len_limit(Options))
-    catch
-        exit:Reason ->
-            case Reason of
-                  noproc         -> start_and_retry_call(Options, ID, Call, Attempts);
-                { noproc    , _} -> start_and_retry_call(Options, ID, Call, Attempts);
-                { normal    , _} -> start_and_retry_call(Options, ID, Call, Attempts);
-                { shutdown  , _} -> start_and_retry_call(Options, ID, Call, Attempts);
-                { timeout   , _} -> {error, Reason};
-                Unknown       -> {error, {unexpected_exit, Unknown}}
-            end
+call(Options, ID, Call, Deadline) ->
+    case mg_utils:is_deadline_reached(Deadline) of
+        false ->
+            Name = maps:get(name, Options),
+            try
+                mg_worker:call(Name, ID, Call, Deadline, message_queue_len_limit(Options))
+            catch
+                exit:Reason ->
+                    handle_worker_exit(Options, ID, Call, Deadline, Reason)
+            end;
+        true ->
+            {error, {timeout, worker_call_deadline_reached}}
     end.
 
--spec start_and_retry_call(options(), _ID, _Call, non_neg_integer()) ->
+-spec handle_worker_exit(options(), _ID, _Call, mg_utils:deadline(), _Reason) ->
     _Reply | {error, _}.
-start_and_retry_call(Options, ID, Call, Attempts) ->
+handle_worker_exit(Options, ID, Call, Deadline, Reason) ->
+    case Reason of
+         noproc         -> start_and_retry_call(Options, ID, Call, Deadline);
+        {noproc    , _} -> start_and_retry_call(Options, ID, Call, Deadline);
+        {normal    , _} -> start_and_retry_call(Options, ID, Call, Deadline);
+        {shutdown  , _} -> start_and_retry_call(Options, ID, Call, Deadline);
+        {timeout   , _} -> {error, Reason};
+         Unknown        -> {error, {unexpected_exit, Unknown}}
+    end.
+
+-spec start_and_retry_call(options(), _ID, _Call, mg_utils:deadline()) ->
+    _Reply | {error, _}.
+start_and_retry_call(Options, ID, Call, Deadline) ->
     %
     % NOTE возможно тут будут проблемы и это место надо очень хорошо отсмотреть
     %  чтобы потом не ловить неожиданных проблем
@@ -87,22 +89,12 @@ start_and_retry_call(Options, ID, Call, Attempts) ->
     %
     case start_child(Options, ID) of
         {ok, _} ->
-            call(Options, ID, Call, Attempts - 1);
+            call(Options, ID, Call, Deadline);
         {error, {already_started, _}} ->
-            call(Options, ID, Call, Attempts - 1);
+            call(Options, ID, Call, Deadline);
         Error={error, _} ->
             Error
     end.
-
-
-%%
-%% supervisor callbacks
-%%
--spec init(options()) ->
-    {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
-init(Options) ->
-    SupFlags = #{strategy => simple_one_for_one},
-    {ok, {SupFlags, [mg_worker:child_spec(worker, maps:get(worker_options, Options))]}}.
 
 %%
 %% local
