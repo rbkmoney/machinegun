@@ -31,6 +31,7 @@
 
 %% timer group tests
 -export([handle_timer/1]).
+-export([abort_timer /1]).
 
 %% event_sink group tests
 -export([event_sink_get_empty_history    /1]).
@@ -99,7 +100,9 @@ tests_groups() ->
 
         {timers, [sequence], [
             machine_start,
-            handle_timer
+            handle_timer,
+            handle_timer, % был прецендент, что таймер срабатывал только один раз
+            abort_timer
         ]},
 
         {event_sink, [sequence], [
@@ -293,12 +296,28 @@ failed_machine_repair(C) ->
 -spec handle_timer(config()) ->
     _.
 handle_timer(C) ->
-    <<"timer">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"timer">>),
-    #{history := [StartTimerEvent]} =
+    #{history := InitialEvents} =
         mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),
-    ok = timer:sleep(1000),
-    #{history := [StartTimerEvent, _HandleTimerEvent]} =
-        mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}).
+    <<"timer">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"timer">>),
+    #{history := History1} =
+        mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),
+    [StartTimerEvent] = History1 -- InitialEvents,
+    ok = timer:sleep(2000),
+    #{history := History2} =
+        mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),
+    [StartTimerEvent, _] = History2 -- InitialEvents.
+
+-spec abort_timer(config()) ->
+    _.
+abort_timer(C) ->
+    #{history := InitialEvents} =
+        mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),
+    <<"timer">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"timer">>),
+    <<"nop"  >> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"nop"  >>),
+    ok = timer:sleep(2000),
+    #{history := History1} =
+        mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),
+    [_] = History1 -- InitialEvents.
 
 %%
 %% event_sink group test

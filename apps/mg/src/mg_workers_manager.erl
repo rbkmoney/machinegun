@@ -13,9 +13,10 @@
 %% API
 -export_type([options/0]).
 
--export([child_spec/2]).
--export([start_link/1]).
--export([call      /4]).
+-export([child_spec    /2]).
+-export([start_link    /1]).
+-export([call          /4]).
+-export([get_call_queue/2]).
 
 %%
 %% API
@@ -94,6 +95,15 @@ start_and_retry_call(Options, ID, Call, Deadline) ->
             call(Options, ID, Call, Deadline);
         Error={error, _} ->
             Error
+    end.
+
+-spec get_call_queue(options(), _ID) ->
+    [_Call].
+get_call_queue(Options, ID) ->
+    try
+        mg_worker:get_call_queue(maps:get(name, Options), ID)
+    catch exit:noproc ->
+        []
     end.
 
 %%
