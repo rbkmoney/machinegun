@@ -221,7 +221,7 @@ handle_timers(Options, Timers) ->
     ok.
 handle_timer(Options, {Timestamp, MachineID}) ->
     % TODO вообще надо бы как-то это тюнить
-    Deadline = mg_utils:timeout_to_deadline(5000),
+    Deadline = mg_utils:timeout_to_deadline(30000),
     % TODO можно попробовать проинспектировать очередь
     case mg_workers_manager:call(manager_options(Options), MachineID, {timeout, Timestamp}, Deadline) of
         ok ->
@@ -251,7 +251,7 @@ reload_killed_machines(Options, MachinesIDs) ->
     ok.
 touch(Options, MachineID) ->
     % TODO вообще надо бы как-то это тюнить
-    Deadline = mg_utils:timeout_to_deadline(5000),
+    Deadline = mg_utils:timeout_to_deadline(30000),
     _ = mg_workers_manager:call(manager_options(Options), MachineID, touch, Deadline),
     ok.
 
