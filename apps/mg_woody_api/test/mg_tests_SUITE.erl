@@ -29,6 +29,9 @@
 -export([failed_machine_repair_error /1]).
 -export([failed_machine_repair       /1]).
 
+%% timer group tests
+-export([handle_timer/1]).
+
 %% event_sink group tests
 -export([event_sink_get_empty_history    /1]).
 -export([event_sink_get_not_empty_history/1]).
@@ -74,6 +77,7 @@ groups() ->
 tests_groups() ->
     [
         % TODO проверить отмену таймера
+        % TODO проверить отдельно get_history
         {base, [sequence], [
             namespace_not_found,
             machine_start,
@@ -91,6 +95,11 @@ tests_groups() ->
             failed_machine_call,
             failed_machine_repair_error,
             failed_machine_repair
+        ]},
+
+        {timers, [sequence], [
+            machine_start,
+            handle_timer
         ]},
 
         {event_sink, [sequence], [
@@ -139,10 +148,11 @@ init_per_group(TestGroup, C0) ->
     CallFunc =
         fun({Args, _Machine}) ->
             case Args of
-                <<"tag">>   -> {Args, {<<>>, [<<"tag_body">>]}, #{timer => undefined, tag => Args}};
-                <<"event">> -> {Args, {<<>>, [<<"event_body">>]}, #{timer => undefined, tag => undefined}};
-                <<"fail">>  -> erlang:error(fail);
-                _           -> {Args, {<<>>, []}, #{timer => undefined, tag => undefined}}
+                <<"tag">>   -> {Args, {<<>>, [<<"tag_body"  >>]}, #{timer =>  undefined  , tag => Args     }};
+                <<"event">> -> {Args, {<<>>, [<<"event_body">>]}, #{timer =>  undefined  , tag => undefined}};
+                <<"timer">> -> {Args, {<<>>, [<<"timer_body">>]}, #{timer => {timeout, 1}, tag => undefined}};
+                <<"nop"  >> -> {Args, {<<>>, [                ]}, #{timer =>  undefined  , tag => undefined}};
+                <<"fail">>  -> erlang:error(fail)
             end
         end
     ,
@@ -150,6 +160,7 @@ init_per_group(TestGroup, C0) ->
         fun({Args, _Machine}) ->
             case Args of
                 {repair, <<"error">>} -> erlang:error(error);
+                 timeout              -> {{<<>>, [<<"handle_timer_body">>]}, #{timer => undefined, tag => undefined}};
                 _ -> mg_test_processor:default_result(signal)
             end
         end
@@ -232,11 +243,11 @@ machine_already_exists(C) ->
 machine_id_not_found(C) ->
     IncorrectID = <<"incorrect_ID">>,
     #'MachineNotFound'{} =
-        (catch mg_automaton_client:call(automaton_options(C), {id, IncorrectID}, <<"test_id">>)).
+        (catch mg_automaton_client:call(automaton_options(C), {id, IncorrectID}, <<"nop">>)).
 
 -spec machine_call_by_id(config()) -> _.
 machine_call_by_id(C) ->
-    <<"test_id">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"test_id">>).
+    <<"nop">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"nop">>).
 
 -spec machine_set_tag(config()) -> _.
 machine_set_tag(C) ->
@@ -246,11 +257,11 @@ machine_set_tag(C) ->
 machine_tag_not_found(C) ->
     IncorrectTag = <<"incorrect_Tag">>,
     #'MachineNotFound'{} =
-        (catch mg_automaton_client:call(automaton_options(C), {tag, IncorrectTag}, <<"test_id">>)).
+        (catch mg_automaton_client:call(automaton_options(C), {tag, IncorrectTag}, <<"nop">>)).
 
 -spec machine_call_by_tag(config()) -> _.
 machine_call_by_tag(C) ->
-    <<"test_id">> = mg_automaton_client:call(automaton_options(C), ?Ref, <<"test_id">>).
+    <<"nop">> = mg_automaton_client:call(automaton_options(C), ?Ref, <<"nop">>).
 
 %%
 %% repair group tests
@@ -275,6 +286,19 @@ failed_machine_repair_error(C) ->
     _.
 failed_machine_repair(C) ->
     ok = mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"ok">>).
+
+%%
+%% timer
+%%
+-spec handle_timer(config()) ->
+    _.
+handle_timer(C) ->
+    <<"timer">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"timer">>),
+    #{history := [StartTimerEvent]} =
+        mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),
+    ok = timer:sleep(1000),
+    #{history := [StartTimerEvent, _HandleTimerEvent]} =
+        mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}).
 
 %%
 %% event_sink group test
@@ -352,7 +376,7 @@ config_with_multiple_event_sinks(_C) ->
 %% utils
 %%
 -spec start_machine(config(), mg:id()) ->
-    _.
+    ok.
 start_machine(C, ID) ->
     mg_automaton_client:start(automaton_options(C), ID, ID).
 
