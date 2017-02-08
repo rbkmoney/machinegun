@@ -57,7 +57,7 @@ simple_test(_) ->
     ok = mg_machine:call (Options, ID, increment        , mg_utils:default_deadline()),
     1  = mg_machine:call (Options, ID, get              , mg_utils:default_deadline()),
     ok = mg_machine:call (Options, ID, delayed_increment, mg_utils:default_deadline()),
-    ok = timer:sleep(1000),
+    ok = timer:sleep(2000),
     2  = mg_machine:call (Options, ID, get              , mg_utils:default_deadline()),
     ok.
 
