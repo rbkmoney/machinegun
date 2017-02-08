@@ -4,11 +4,12 @@
 -export_type([options     /0]).
 -export_type([call_context/0]).
 
--export([child_spec /2]).
--export([start_link /3]).
--export([call       /5]).
--export([brutal_kill/2]).
--export([reply      /2]).
+-export([child_spec    /2]).
+-export([start_link    /3]).
+-export([call          /5]).
+-export([brutal_kill   /2]).
+-export([reply         /2]).
+-export([get_call_queue/2]).
 
 %% gen_server callbacks
 -behaviour(gen_server).
@@ -73,6 +74,12 @@ reply(CallCtx, Reply) ->
     _ = gen_server:reply(CallCtx, Reply),
     ok.
 
+-spec get_call_queue(_NS, _ID) ->
+    [_Call].
+get_call_queue(NS, ID) ->
+    Pid = mg_utils:exit_if_undefined(mg_utils:gen_where(self_ref({NS, ID})), noproc),
+    {messages, Messages} = erlang:process_info(Pid, messages),
+    [Call || {'$gen_call', _, {call, _, Call}} <- Messages].
 
 %%
 %% gen_server callbacks

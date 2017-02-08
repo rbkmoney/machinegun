@@ -29,7 +29,7 @@ child_spec(Options, ChildID) ->
     #{
         id       => ChildID,
         start    => {?MODULE, start_link, [Options]},
-        restart  => temporary,
+        restart  => permanent,
         shutdown => brutal_kill
     }.
 

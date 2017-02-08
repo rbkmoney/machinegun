@@ -222,14 +222,19 @@ handle_timers(Options, Timers) ->
 handle_timer(Options, {Timestamp, MachineID}) ->
     % TODO вообще надо бы как-то это тюнить
     Deadline = mg_utils:timeout_to_deadline(30000),
-    % TODO можно попробовать проинспектировать очередь
-    case mg_workers_manager:call(manager_options(Options), MachineID, {timeout, Timestamp}, Deadline) of
-        ok ->
-            ok;
-        {error, Reason} ->
-            ok = log_failed_timer_handling(namespace(Options), MachineID, Reason)
+    Call = {timeout, Timestamp},
+    CallQueue = mg_workers_manager:get_call_queue(manager_options(Options), MachineID),
+    case lists:member(Call, CallQueue) of
+        false ->
+            case mg_workers_manager:call(manager_options(Options), MachineID, Call, Deadline) of
+                {ok, ok} ->
+                    ok;
+                {error, Reason} ->
+                    ok = log_failed_timer_handling(namespace(Options), MachineID, Reason)
+            end;
+        true ->
+            ok
     end.
-
 
 -spec reload_killed_machines(options()) ->
     ok.
@@ -313,14 +318,14 @@ handle_call(Call, CallContext, State=#{storage_machine:=StorageMachine}) ->
         {{repair , _     }, #{status:= waiting    }} -> {{reply, {error, machine_already_working}}, State};
         {{repair , _     }, undefined              } -> {{reply, {error, machine_not_found      }}, State};
         % ничего не просходит, просто убеждаемся, что машина загружена
-        {touch, _} -> {reply, ok, State};
+        {touch, _} -> {{reply, {ok, ok}}, State};
 
         % timers
         {{timeout, Ts0}, #{status:={waiting, Ts1}}}
             when Ts0 =:= Ts1 ->
             {noreply, process(timeout, PCtx, State)};
         {{timeout, _}, #{status:=_}} ->
-            {{reply, ok}, State}
+            {{reply, {ok, ok}}, State}
     end.
 
 -spec handle_unload(state()) ->
