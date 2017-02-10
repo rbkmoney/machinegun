@@ -157,16 +157,6 @@ ref2id(Options, {tag, Tag}) ->
 
 -spec process_machine(options(), mg:id(), mg_machine:processor_impact(), _, mg_machine:machine_state()) ->
     mg_machine:processor_result().
-process_machine(Options, ID, Impact, PCtx, null) ->
-    PackedState =
-        state_to_opaque(
-            #{
-                events_range    => undefined,
-                aux_state       => <<>>,
-                delayed_actions => undefined
-            }
-        ),
-    process_machine(Options, ID, Impact, PCtx, PackedState);
 process_machine(Options, ID, Impact, PCtx, PackedState) ->
     {ReplyAction, ProcessingFlowAction, NewState} =
         try
@@ -399,6 +389,13 @@ state_to_opaque(#{events_range := EventsRange, aux_state := AuxState, delayed_ac
 
 -spec opaque_to_state(mg:opaque()) ->
     state().
+%% при создании есть момент (continuation) когда ещё нет стейта
+opaque_to_state(null) ->
+    #{
+        events_range    => undefined,
+        aux_state       => <<>>,
+        delayed_actions => undefined
+    };
 opaque_to_state([1, EventsRange, AuxState, DelayedActions]) ->
     #{
         events_range    => mg_events:opaque_to_events_range(EventsRange),
