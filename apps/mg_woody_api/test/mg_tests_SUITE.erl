@@ -24,6 +24,7 @@
 -export([machine_tag_not_found  /1]).
 
 %% repair group tests
+-export([failed_machine_start        /1]).
 -export([machine_processor_error     /1]).
 -export([failed_machine_call         /1]).
 -export([failed_machine_repair_error /1]).
@@ -91,6 +92,8 @@ tests_groups() ->
         ]},
 
         {repair, [sequence], [
+            failed_machine_start,
+            machine_id_not_found,
             machine_start,
             machine_processor_error,
             failed_machine_call,
@@ -162,6 +165,7 @@ init_per_group(TestGroup, C0) ->
     SignalFunc =
         fun({Args, _Machine}) ->
             case Args of
+                {init  , <<"fail" >>} -> erlang:error(fail);
                 {repair, <<"error">>} -> erlang:error(error);
                  timeout              -> {{<<>>, [<<"handle_timer_body">>]}, #{timer => undefined, tag => undefined}};
                 _ -> mg_test_processor:default_result(signal)
@@ -270,6 +274,11 @@ machine_call_by_tag(C) ->
 %% repair group tests
 %%
 %% падение машины
+-spec failed_machine_start(config()) ->
+    _.
+failed_machine_start(C) ->
+    #'MachineFailed'{} = (catch mg_automaton_client:start(automaton_options(C), ?ID, <<"fail">>)).
+
 -spec machine_processor_error(config()) ->
     _.
 machine_processor_error(C) ->

@@ -466,15 +466,20 @@ process(Impact, ProcessingCtx, State) ->
         process_unsafe(Impact, ProcessingCtx, State)
     catch Class:Reason ->
         ok = do_reply_action({reply, {error, machine_failed}}, ProcessingCtx),
-        handle_exception({Class, Reason, erlang:get_stacktrace()}, State)
+        handle_exception({Class, Reason, erlang:get_stacktrace()}, Impact, State)
     end.
 
--spec handle_exception(mg_utils:exception(), state()) ->
+-spec handle_exception(mg_utils:exception(), processor_impact(), state()) ->
     state().
-handle_exception(Exception, State=#{options:=Options, id:=ID, storage_machine := StorageMachine}) ->
+handle_exception(Exception, Impact, State=#{options:=Options, id:=ID, storage_machine := StorageMachine}) ->
     ok = log_machine_error(namespace(Options), ID, Exception),
-    NewStorageMachine = StorageMachine#{ status => {error, Exception} },
-    transit_state(NewStorageMachine, State).
+    case Impact of
+        {init, _} ->
+            State#{storage_machine := undefined};
+        _ ->
+            NewStorageMachine = StorageMachine#{ status => {error, Exception} },
+            transit_state(NewStorageMachine, State)
+    end.
 
 -spec process_unsafe(processor_impact(), processing_context(), state()) ->
     state().
