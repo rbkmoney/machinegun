@@ -142,10 +142,11 @@ start_link(Options) ->
     mg_utils_supervisor_wrapper:start_link(
         #{strategy => one_for_all},
         [
-            mg_workers_manager:child_spec(manager_options      (Options), manager      ),
-            mg_storage        :child_spec(storage_options      (Options), storage      ),
-            mg_cron           :child_spec(timers_cron_options  (Options), timers_cron  ),
-            mg_cron           :child_spec(overseer_cron_options(Options), overseer_cron)
+            mg_workers_manager:child_spec(manager_options      (Options), manager       ),
+            mg_storage        :child_spec(storage_options      (Options), storage       ),
+            mg_cron           :child_spec(timers_cron_options  (Options), timers_cron   ),
+            mg_cron           :child_spec(overseer_cron_options(Options), overseer_cron ),
+                     processor_child_spec(child_spec_options          (), processor_pool)
         ]
     ).
 
@@ -540,14 +541,28 @@ process_unsafe(Impact, ProcessingCtx, State=#{storage_machine := StorageMachine}
 call_processor(Impact, ProcessingCtx, State) ->
     #{options := Options, id := ID, storage_machine := #{state := MachineState}} = State,
     F = fun() ->
-            mg_utils:apply_mod_opts(
-                get_options(processor, Options),
-                process_machine,
-                [ID, Impact, ProcessingCtx, MachineState]
-            )
+            processor_process_machine(ID, Impact, ProcessingCtx, MachineState, Options)
         end,
     RetryStrategy = mg_utils:genlib_retry_new(get_options(processor_retry_policy, Options)),
     do_with_retry(namespace(Options), ID, F, RetryStrategy).
+
+-spec processor_process_machine(mg:id(), processor_impact(), processing_context(), state(), options()) ->
+    _Result.
+processor_process_machine(ID, Impact, ProcessingCtx, MachineState, Options) ->
+     mg_utils:apply_mod_opts(
+                get_options(processor, Options),
+                process_machine,
+                [ID, Impact, ProcessingCtx, MachineState]
+              ).
+
+-spec processor_child_spec(_ChildSpecOpts, options()) ->
+    supervisor:child_spec().
+processor_child_spec(ChildSpecOpts, Options) ->
+    mg_utils:apply_mod_opts(
+                get_options(processor, Options),
+                pool_child_spec,
+                ChildSpecOpts
+             ).
 
 -spec do_reply_action(processor_reply_action(), undefined | processing_context()) ->
     ok.
@@ -623,6 +638,11 @@ overseer_cron_options(Options) ->
         interval => 1000, % 1 sec
         job      => {?MODULE, reload_killed_machines, [Options]}
     }.
+
+-spec child_spec_options() ->
+    supervisor:child_spec().
+child_spec_options() ->
+    [{max_connections, 100}].
 
 -spec namespace(options()) ->
     mg:ns().

@@ -35,6 +35,8 @@
 %%
 %% API
 %%
+-callback pool_child_spec(_Options, atom()) ->
+    supervisor:child_spec().
 -callback process_signal(_Options, signal_args()) ->
     signal_result().
 -callback process_call(_Options, call_args()) ->
