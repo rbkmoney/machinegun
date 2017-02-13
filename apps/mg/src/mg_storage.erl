@@ -31,7 +31,7 @@
 -export([search    /2]).
 -export([delete    /3]).
 
-%% Interna API
+%% Internal API
 -export([opaque_to_binary/1]).
 -export([binary_to_opaque/1]).
 

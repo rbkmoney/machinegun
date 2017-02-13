@@ -113,6 +113,10 @@
 -type processor_flow_action() :: sleep | {wait, genlib_time:ts()} | {continue, processing_state()}.
 -type processor_result() :: {processor_reply_action(), processor_flow_action(), machine_state()}.
 
+-callback processor_child_spec(_Options, atom()) ->
+    supervisor:child_spec().
+-optional_callbacks([processor_child_spec/2]).
+
 -callback process_machine(_Options, mg:id(), processor_impact(), processing_context(), machine_state()) ->
     processor_result().
 
@@ -142,11 +146,11 @@ start_link(Options) ->
     mg_utils_supervisor_wrapper:start_link(
         #{strategy => one_for_all},
         [
-            mg_workers_manager:child_spec(manager_options      (Options), manager       ),
-            mg_storage        :child_spec(storage_options      (Options), storage       ),
-            mg_cron           :child_spec(timers_cron_options  (Options), timers_cron   ),
-            mg_cron           :child_spec(overseer_cron_options(Options), overseer_cron ),
-                     processor_child_spec(child_spec_options          (), processor_pool)
+            mg_workers_manager:child_spec(manager_options      (Options), manager      ),
+            mg_storage        :child_spec(storage_options      (Options), storage      ),
+            mg_cron           :child_spec(timers_cron_options  (Options), timers_cron  ),
+            mg_cron           :child_spec(overseer_cron_options(Options), overseer_cron),
+            processor_child_spec         (                      Options                )
         ]
     ).
 
@@ -549,20 +553,20 @@ call_processor(Impact, ProcessingCtx, State) ->
 -spec processor_process_machine(mg:id(), processor_impact(), processing_context(), state(), options()) ->
     _Result.
 processor_process_machine(ID, Impact, ProcessingCtx, MachineState, Options) ->
-     mg_utils:apply_mod_opts(
-                get_options(processor, Options),
-                process_machine,
-                [ID, Impact, ProcessingCtx, MachineState]
-              ).
-
--spec processor_child_spec(_ChildSpecOpts, options()) ->
-    supervisor:child_spec().
-processor_child_spec(ChildSpecOpts, Options) ->
     mg_utils:apply_mod_opts(
-                get_options(processor, Options),
-                pool_child_spec,
-                ChildSpecOpts
-             ).
+        get_options(processor, Options),
+        process_machine,
+        [ID, Impact, ProcessingCtx, MachineState]
+    ).
+
+-spec processor_child_spec(options()) ->
+    supervisor:child_spec().
+processor_child_spec(Options) ->
+    mg_utils:apply_mod_opts(
+        get_options(processor, Options),
+        processor_child_spec,
+        Options
+    ).
 
 -spec do_reply_action(processor_reply_action(), undefined | processing_context()) ->
     ok.
@@ -638,11 +642,6 @@ overseer_cron_options(Options) ->
         interval => 1000, % 1 sec
         job      => {?MODULE, reload_killed_machines, [Options]}
     }.
-
--spec child_spec_options() ->
-    supervisor:child_spec().
-child_spec_options() ->
-    [{max_connections, 100}].
 
 -spec namespace(options()) ->
     mg:ns().
