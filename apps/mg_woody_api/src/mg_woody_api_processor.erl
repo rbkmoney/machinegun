@@ -42,6 +42,8 @@ process_call(Options, {{Call, WoodyContext}, Machine}) ->
 -spec call_processor(options(), woody_context:ctx(), atom(), list(_)) ->
     _Result.
 call_processor(Options, WoodyContext, Function, Args) ->
+    % TODO сделать нормально!
+    {ok, TRef} = timer:kill_after(maps:get(recv_timeout, Options, 5000) + 3000),
     try
         {ok, R} =
             woody_client:call(
@@ -55,6 +57,8 @@ call_processor(Options, WoodyContext, Function, Args) ->
             throw({transient, {processor_unavailable, Reason}});
         error:Reason={woody_error, {_, result_unknown, _}} ->
             throw({transient, {processor_unavailable, Reason}})
+    after
+        {ok, cancel} = timer:cancel(TRef)
     end.
 
 %% TODO такой хак пока в таймауте нет контекста
