@@ -32,6 +32,6 @@ map_error(event_sink_not_found ) -> {throw, #'EventSinkNotFound'   {}};
 
 % может Reason не прокидывать дальше?
 map_error({transient, Reason}) -> {woody_error, {resource_unavailable, Reason}};
-map_error({timeout  , Reason}) -> {woody_error, {result_unexpected   , Reason}};
+map_error(Reason={timeout, _}) -> {woody_error, {result_unexpected   , Reason}};
 
 map_error(UnknownError) -> erlang:error(badarg, [UnknownError]).
