@@ -23,8 +23,6 @@ services:
     volumes:
       - ./riak_user.conf:/etc/riak/user.conf:ro
       - schemas:/etc/riak/schemas
-    ports:
-      - 8098:8098
   member:
     image: dr.rbkmoney.com/basho/riak-kv:ubuntu-2.1.4-1
     labels:
