@@ -60,15 +60,22 @@ simple_test(_) ->
     ok = timer:sleep(2000),
     2  = mg_machine:call (Options, ID, get              , mg_utils:default_deadline()),
 
-    % fail-simple_repair
+    % call fail/simple_repair
     machine_failed = (catch mg_machine:call(Options, ID, fail, mg_utils:default_deadline())),
     ok = mg_machine:simple_repair(Options, ID, mg_utils:default_deadline()),
     2  = mg_machine:call(Options, ID, get, mg_utils:default_deadline()),
 
-    % fail-repair
+    % call fail/repair
     machine_failed = (catch mg_machine:call(Options, ID, fail, mg_utils:default_deadline())),
     repaired = mg_machine:repair(Options, ID, repair_arg, mg_utils:default_deadline()),
     2  = mg_machine:call(Options, ID, get, mg_utils:default_deadline()),
+
+    % call fail/repair fail/repair
+    machine_failed = (catch mg_machine:call(Options, ID, fail, mg_utils:default_deadline())),
+    machine_failed = (catch mg_machine:repair(Options, ID, fail, mg_utils:default_deadline())),
+    repaired = mg_machine:repair(Options, ID, repair_arg, mg_utils:default_deadline()),
+    2  = mg_machine:call(Options, ID, get, mg_utils:default_deadline()),
+
     ok.
 
 %%
@@ -76,6 +83,9 @@ simple_test(_) ->
 %%
 -spec process_machine(_Options, mg:id(), mg_machine:processor_impact(), _, mg_machine:machine_state()) ->
     mg_machine:processor_result() | no_return().
+process_machine(_, _, {_, fail}, _, _) ->
+    _ = exit(1),
+    {noreply, sleep, []};
 process_machine(_, _, {init, {TestKey, TestValue}}, _, null) ->
     {{reply, ok}, sleep, [TestKey, TestValue]};
 process_machine(_, _, {call, get}, _, [TestKey, TestValue]) ->
@@ -86,9 +96,6 @@ process_machine(_, _, {call, delayed_increment}, _, State) ->
     {{reply, ok}, {wait, 1}, State};
 process_machine(_, _, timeout, _, [TestKey, TestValue]) ->
     {noreply, sleep, [TestKey, TestValue + 1]};
-process_machine(_, _, {call, fail}, _, [TestKey, TestValue]) ->
-    _ = exit(1),
-    {{reply, ok}, sleep, [TestKey, TestValue + 1]};
 process_machine(_, _, {repair, repair_arg}, _, [TestKey, TestValue]) ->
     {{reply, repaired}, sleep, [TestKey, TestValue]}.
 

@@ -470,9 +470,9 @@ process_start(Args, ProcessingCtx, State) ->
 
 -spec process_simple_repair(state()) ->
     state().
-process_simple_repair(State = #{storage_machine := StorageMachine = #{status := {error, _, LastStatus}}}) ->
+process_simple_repair(State = #{storage_machine := StorageMachine = #{status := {error, _, OldStatus}}}) ->
     transit_state(
-        StorageMachine#{status => LastStatus},
+        StorageMachine#{status => OldStatus},
         State
     ).
 
