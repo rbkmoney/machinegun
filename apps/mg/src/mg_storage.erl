@@ -120,8 +120,6 @@ apply_mod_opts(#{module := Module, namespace := Namespace}, Function, Args) ->
     {map_format     , map        }
 ]).
 
-%% в функции msgpack:pack неверный спек
--dialyzer({nowarn_function, opaque_to_binary/1}).
 -spec opaque_to_binary(opaque()) ->
     binary().
 opaque_to_binary(Opaque) ->

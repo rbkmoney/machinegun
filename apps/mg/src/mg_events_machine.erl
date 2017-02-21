@@ -142,14 +142,14 @@ ref2id(Options, {tag, Tag}) ->
 %%
 -type state() :: #{
     events_range    => mg_events:events_range(),
-    aux_state       => mg_storage:aux_state(),
+    aux_state       => aux_state(),
     delayed_actions => delayed_actions()
 }.
 -type delayed_actions() :: #{
     add_tag           => mg_machine_tags:tag() | undefined,
-    timer             => mg_storage:timestamp() | undefined,
+    timer             => genlib_time:ts() | undefined,
     add_events        => [mg_events:event()],
-    new_aux_state     => mg_storage:aux_state(),
+    new_aux_state     => aux_state(),
     new_events_range  => mg_events:events_range()
 } | undefined.
 

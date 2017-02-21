@@ -225,7 +225,7 @@ generate_sink_events(SourceNS, SourceMachineID, Events, State=#{events_range:=Ev
     {SinkEvents, State#{events_range := NewEventsRange}}.
 
 -spec generate_sink_event_body(mg:ns(), mg:id(), mg_events:event()) ->
-    event().
+    event_body().
 generate_sink_event_body(SourceNS, SourceMachineID, Event) ->
     #{
         source_ns => SourceNS,
@@ -249,13 +249,13 @@ opaque_to_state([1, EventsRange]) ->
         events_range => mg_events:opaque_to_events_range(EventsRange)
     }.
 
--spec sink_event_body_to_opaque(mg_events:event()) ->
+-spec sink_event_body_to_opaque(event_body()) ->
     mg_events:body().
 sink_event_body_to_opaque(#{source_ns := SourceNS, source_id := SourceMachineID, event := Event}) ->
     [1, SourceNS, SourceMachineID, mg_events:event_to_opaque(Event)].
 
 -spec opaque_to_sink_event_body(mg_events:body()) ->
-    mg_events:event().
+    event_body().
 opaque_to_sink_event_body([1, SourceNS, SourceMachineID, Event]) ->
     #{
         source_ns => SourceNS,

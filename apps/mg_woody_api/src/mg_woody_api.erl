@@ -99,6 +99,8 @@ woody_child_spec(Config, ChildID) ->
     woody_server:child_spec(
         ChildID,
         #{
+            protocol      => thrift,
+            transport     => http,
             ip            => Ip,
             port          => get_config_element(port    , Config, 8022),
             net_opts      => get_config_element(net_opts, Config, #{} ),
@@ -187,8 +189,8 @@ collect_event_sinks(ConfigNSs) ->
 %%
 %% config utils
 %%
--spec get_config_element(atom(), config()) ->
-    term() | no_return().
+-spec get_config_element
+    (atom(), config()) -> term() | no_return().
 get_config_element(Element, Config) ->
     case lists:keyfind(Element, 1, Config) of
         false ->
@@ -197,8 +199,8 @@ get_config_element(Element, Config) ->
             Value
     end.
 
--spec get_config_element(atom(), config(), term()) ->
-    term().
+-spec get_config_element
+    (atom(), config(), term()) -> term().
 get_config_element(Element, Config, Default) ->
     case lists:keyfind(Element, 1, Config) of
         false ->
