@@ -64,8 +64,13 @@ call(NS, ID, Call, Deadline, MaxQueueLength) ->
 -spec brutal_kill(_NS, _ID) ->
     ok.
 brutal_kill(NS, ID) ->
-    true = erlang:exit(mg_utils:gen_where(self_ref({NS, ID})), kill),
-    ok.
+    case mg_utils:gen_where(self_ref({NS, ID})) of
+        undefined ->
+            ok;
+        Pid ->
+            true = erlang:exit(Pid, kill),
+            ok
+    end.
 
 %% Internal API
 -spec reply(call_context(), _Reply) ->
