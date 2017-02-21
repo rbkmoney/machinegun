@@ -138,7 +138,7 @@ gen_reg_name2_ref(V={global, _} ) -> V;
 gen_reg_name2_ref(V={via, _, _} ) -> V. % Is this correct?
 
 -spec gen_where(gen_reg_name()) ->
-    pid().
+    pid() | undefined.
 gen_where({global, Name}) ->
     global:whereis_name(Name);
 gen_where({via, Module, Name}) ->

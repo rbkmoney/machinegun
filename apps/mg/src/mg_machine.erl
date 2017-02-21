@@ -69,7 +69,9 @@
 -export([reload_killed_machines/1]).
 -export([reload_killed_machines/2]).
 -export([touch                 /2]).
-
+-export([touch                 /3]).
+-export([all_statuses          /0]).
+-export([manager_options       /1]).
 
 %% mg_worker
 -behaviour(mg_worker).
@@ -263,8 +265,18 @@ reload_killed_machines(Options, MachinesIDs) ->
 touch(Options, MachineID) ->
     % TODO вообще надо бы как-то это тюнить
     Deadline = mg_utils:timeout_to_deadline(30000),
-    _ = mg_workers_manager:call(manager_options(Options), MachineID, touch, Deadline),
+    touch(Options, MachineID, Deadline).
+
+-spec touch(options(), mg:id(), mg_utils:deadline()) ->
     ok.
+touch(Options, MachineID, Deadline) ->
+    _ = mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), MachineID, touch, Deadline)),
+    ok.
+
+-spec all_statuses() ->
+    [atom()].
+all_statuses() ->
+    [sleeping, waiting, processing, failed].
 
 %%
 %% mg_worker callbacks

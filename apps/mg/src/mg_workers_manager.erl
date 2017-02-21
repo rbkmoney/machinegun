@@ -17,6 +17,7 @@
 -export([start_link    /1]).
 -export([call          /4]).
 -export([get_call_queue/2]).
+-export([brutal_kill   /2]).
 
 %%
 %% API
@@ -104,6 +105,15 @@ get_call_queue(Options, ID) ->
         mg_worker:get_call_queue(maps:get(name, Options), ID)
     catch exit:noproc ->
         []
+    end.
+
+-spec brutal_kill(options(), _ID) ->
+    ok.
+brutal_kill(Options, ID) ->
+    try
+        mg_worker:brutal_kill(maps:get(name, Options), ID)
+    catch exit:noproc ->
+        ok
     end.
 
 %%
