@@ -28,6 +28,7 @@
   0},
  {<<"pooler">>,{pkg,<<"pooler">>,<<"1.5.0">>},0},
  {<<"ranch">>,{pkg,<<"ranch">>,<<"1.3.2">>},2},
+ {<<"recon">>,{pkg,<<"recon">>,<<"2.3.2">>},0},
  {<<"rfc3339">>,
   {git,"git://github.com/talentdeficit/rfc3339.git",
        {ref,"9cde386543aef47654312ee3c49e03ec377ebf38"}},
@@ -68,5 +69,6 @@
  {<<"mimerl">>, <<"993F9B0E084083405ED8252B99460C4F0563E41729AB42D9074FD5E52439BE88">>},
  {<<"pooler">>, <<"0FD4BE5D2976E6A2E9A1617623031758C26F200C1FCA89E4A3C542747BEC6371">>},
  {<<"ranch">>, <<"E4965A144DC9FBE70E5C077C65E73C57165416A901BD02EA899CFD95AA890986">>},
+ {<<"recon">>, <<"4444C879BE323B1B133EEC5241CB84BD3821EA194C740D75617E106BE4744318">>},
  {<<"ssl_verify_fun">>, <<"28A4D65B7F59893BC2C7DE786DEC1E1555BD742D336043FE644AE956C3497FBE">>}]}
 ].

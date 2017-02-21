@@ -5,7 +5,7 @@
 -module(mwc).
 
 %% API
--export_type([any_/0]).
+-export_type([scalar/0]).
 
 -export([get_statuses_distrib/1]).
 -export([simple_repair       /2]).
@@ -20,66 +20,65 @@
 %%
 %% API
 %%
--define(all_statuses, [sleeping, waiting, processing, failed]).
--type any_() :: string() | atom() | binary() | number().
+-type scalar() :: string() | atom() | binary() | number().
 
 % получение распределения по статусам
--spec get_statuses_distrib(any_()) ->
+-spec get_statuses_distrib(scalar()) ->
     [{atom(), non_neg_integer()}].
 get_statuses_distrib(Namespace) ->
     [
         {StatusQuery, erlang:length(mg_machine:search(machine_options(Namespace), StatusQuery))}
-        || StatusQuery <- ?all_statuses
+        || StatusQuery <- mg_machine:all_statuses()
     ].
 
 % восстановление машины
--spec simple_repair(any_(), any_()) ->
+-spec simple_repair(scalar(), scalar()) ->
     ok | no_return().
 simple_repair(Namespace, ID) ->
     simple_repair(Namespace, ID, mg_utils:default_deadline()).
 
--spec simple_repair(any_(), any_(), mg_utils:deadline()) ->
+-spec simple_repair(scalar(), scalar(), mg_utils:deadline()) ->
     ok | no_return().
 simple_repair(Namespace, ID, Deadline) ->
     mg_machine:simple_repair(machine_options(Namespace), id(ID), Deadline).
 
 
--spec touch(any_(), any_()) ->
+-spec touch(scalar(), scalar()) ->
     ok | no_return().
 touch(Namespace, ID) ->
     touch(Namespace, ID, mg_utils:default_deadline()).
 
--spec touch(any_(), any_(), mg_utils:deadline()) ->
+-spec touch(scalar(), scalar(), mg_utils:deadline()) ->
     ok | no_return().
 touch(Namespace, ID, Deadline) ->
     ok = mg_machine:touch(machine_options(Namespace), id(ID), Deadline).
 
-% убивание машины
--spec kill(any_(), any_()) ->
+% убийство машины
+-spec kill(scalar(), scalar()) ->
     ok.
 kill(Namespace, ID) ->
     ok = mg_workers_manager:brutal_kill(mg_machine:manager_options(machine_options(Namespace)), id(ID)).
 
 
 % посмотреть стейт машины из процесса и из бд
--spec get_machine(any_(), any_()) ->
+-spec get_machine(scalar(), scalar()) ->
     mg_machine:machine_state().
 get_machine(Namespace, ID) ->
     mg_machine:get(machine_options(Namespace), id(ID)).
 
--spec get_events_machine(any_(), mg_events_machine:ref(), mg_events:history_range()) ->
+-spec get_events_machine(scalar(), mg_events_machine:ref(), mg_events:history_range()) ->
     mg_events_machine:machine().
 get_events_machine(Namespace, Ref, HRange) ->
     mg_events_machine:get_machine(machine_options(Namespace), Ref, HRange).
 
--spec get_db_state(any_(), any_()) ->
+-spec get_db_state(scalar(), scalar()) ->
     mg_storage:value() | undefined.
 get_db_state(Namespace, ID) ->
     mg_storage:get(storage_options(Namespace), id(ID)).
 
 %%
 
--spec machine_options(any_()) ->
+-spec machine_options(scalar()) ->
     mg_machine:options().
 machine_options(Namespace) ->
     #{
@@ -100,12 +99,12 @@ storage_options(Namespace) ->
 storage() ->
     genlib_app:env(mg_woody_api, storage).
 
--spec ns(any_()) ->
+-spec ns(scalar()) ->
     mg:ns().
 ns(Namespace) ->
     genlib:to_binary(Namespace).
 
--spec id(any_()) ->
+-spec id(scalar()) ->
     mg:id().
 id(ID) ->
     genlib:to_binary(ID).
