@@ -53,12 +53,13 @@
 -export([child_spec /2]).
 -export([start_link /1]).
 
--export([start /4]).
--export([repair/4]).
--export([call  /4]).
--export([get   /2]).
--export([search/2]).
--export([reply /2]).
+-export([start               /4]).
+-export([simple_repair       /3]).
+-export([repair              /4]).
+-export([call                /4]).
+-export([get                 /2]).
+-export([search              /2]).
+-export([reply               /2]).
 -export([call_with_lazy_start/5]).
 
 %% Internal API
@@ -150,6 +151,11 @@ start_link(Options) ->
     _Resp | throws().
 start(Options, ID, Args, Deadline) ->
     mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {start, Args}, Deadline)).
+
+-spec simple_repair(options(), mg:id(), mg_utils:deadline()) ->
+    _Resp | throws().
+simple_repair(Options, ID, Deadline) ->
+    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, simple_repair, Deadline)).
 
 -spec repair(options(), mg:id(), term(), mg_utils:deadline()) ->
     _Resp | throws().
@@ -275,13 +281,8 @@ touch(Options, MachineID) ->
     state           => machine_state()
 }.
 
--type machine_status() ::
-       sleeping
-    | {waiting, genlib_time:ts()}
-    |  processing
-    | {error, Reason::term()}
-.
-
+-type machine_regular_status() :: {waiting, genlib_time:ts()} | processing.
+-type machine_status() :: machine_regular_status() | {error, Reason::mg_storage:opaque(), machine_regular_status()}.
 
 -spec handle_load(_ID, options()) ->
     {ok, state()}.
@@ -307,17 +308,21 @@ handle_call(Call, CallContext, State=#{storage_machine:=StorageMachine}) ->
     PCtx = new_processing_context(CallContext),
     case {Call, StorageMachine} of
         % success
-        {{start , Args   }, undefined               } -> {noreply, process_start(Args, PCtx, State)};
-        {{call  , SubCall}, #{status:= sleeping    }} -> {noreply, process({call   , SubCall}, PCtx, State)};
-        {{call  , SubCall}, #{status:={waiting, _ }}} -> {noreply, process({call   , SubCall}, PCtx, State)};
-        {{repair, Args   }, #{status:={error  , _ }}} -> {noreply, process({repair , Args   }, PCtx, State)};
+        {{start , Args   }, undefined                 } -> {noreply, process_start(Args, PCtx, State)};
+        {{call  , SubCall}, #{status:= sleeping      }} -> {noreply, process({call   , SubCall}, PCtx, State)};
+        {{call  , SubCall}, #{status:={waiting, _   }}} -> {noreply, process({call   , SubCall}, PCtx, State)};
+        {{repair, Args   }, #{status:={error  , _, _}}} -> {noreply, process({repair , Args   }, PCtx, State)};
+        { simple_repair   , #{status:={error  , _, _}}} -> {{reply, ok}, process_simple_repair(State)};
 
         % failure
-        {{start  , _     }, #{status:=           _}} -> {{reply, {error, machine_already_exist  }}, State};
-        {{call   , _     }, #{status:={error  , _}}} -> {{reply, {error, machine_failed         }}, State};
-        {{call   , _     }, undefined              } -> {{reply, {error, machine_not_found      }}, State};
-        {{repair , _     }, #{status:= waiting    }} -> {{reply, {error, machine_already_working}}, State};
-        {{repair , _     }, undefined              } -> {{reply, {error, machine_not_found      }}, State};
+        {{start  , _     }, #{status:=             _ }} -> {{reply, {error, machine_already_exist  }}, State};
+        {{call   , _     }, #{status:={error  , _, _}}} -> {{reply, {error, machine_failed         }}, State};
+        {{call   , _     }, undefined                 } -> {{reply, {error, machine_not_found      }}, State};
+        {{repair , _     }, #{status:= waiting       }} -> {{reply, {error, machine_already_working}}, State};
+        {{repair , _     }, undefined                 } -> {{reply, {error, machine_not_found      }}, State};
+        { simple_repair   , #{status:= waiting       }} -> {{reply, {error, machine_already_working}}, State};
+        { simple_repair   , undefined                 } -> {{reply, {error, machine_not_found      }}, State};
+
         % ничего не просходит, просто убеждаемся, что машина загружена
         {touch, _} -> {{reply, {ok, ok}}, State};
 
@@ -384,10 +389,11 @@ opaque_to_storage_machine([1, Status, State]) ->
 machine_status_to_opaque(Status) ->
     Opaque =
         case Status of
-             sleeping       ->  1;
-            {waiting, TS}   -> [2, TS];
-             processing     ->  3;
-            {error, Reason} -> [4, erlang:term_to_binary(Reason)] % TODO подумать как упаковывать reason
+             sleeping                  ->  1;
+            {waiting, TS}              -> [2, TS];
+             processing                ->  3;
+            % TODO подумать как упаковывать reason
+            {error, Reason, OldStatus} -> [4, erlang:term_to_binary(Reason), machine_status_to_opaque(OldStatus)]
         end,
     Opaque.
 
@@ -395,10 +401,12 @@ machine_status_to_opaque(Status) ->
     machine_status().
 opaque_to_machine_status(Opaque) ->
     case Opaque of
-         1          ->  sleeping;
-        [2, TS]     -> {waiting, TS};
-         3          ->  processing;
-        [4, Reason] -> {error, erlang:binary_to_term(Reason)}
+         1                     ->  sleeping;
+        [2, TS               ] -> {waiting, TS};
+         3                     ->  processing;
+        [4, Reason, OldStatus] -> {error, erlang:binary_to_term(Reason), opaque_to_machine_status(OldStatus)};
+        % устаревшее
+        [4, Reason           ] -> {error, erlang:binary_to_term(Reason), sleeping}
     end.
 
 
@@ -431,10 +439,10 @@ storage_machine_to_indexes(#{status := Status}) ->
 status_index(Status) ->
     StatusInt =
         case Status of
-             sleeping    -> 1;
-            {waiting, _} -> 2;
-             processing  -> 3;
-            {error, _}   -> 4
+             sleeping     -> 1;
+            {waiting, _}  -> 2;
+             processing   -> 3;
+            {error, _, _} -> 4
         end,
     [{?status_idx, StatusInt}].
 
@@ -460,6 +468,14 @@ try_finish_processing(State = #{storage_machine := _}) ->
 process_start(Args, ProcessingCtx, State) ->
     process({init, Args}, ProcessingCtx, State#{storage_machine := new_storage_machine()}).
 
+-spec process_simple_repair(state()) ->
+    state().
+process_simple_repair(State = #{storage_machine := StorageMachine = #{status := {error, _, LastStatus}}}) ->
+    transit_state(
+        StorageMachine#{status => LastStatus},
+        State
+    ).
+
 -spec process(processor_impact(), processing_context(), state()) ->
     state().
 process(Impact, ProcessingCtx, State) ->
@@ -474,11 +490,14 @@ process(Impact, ProcessingCtx, State) ->
     state().
 handle_exception(Exception, Impact, State=#{options:=Options, id:=ID, storage_machine := StorageMachine}) ->
     ok = log_machine_error(namespace(Options), ID, Exception),
-    case Impact of
-        {init, _} ->
+    #{status := OldStatus} = StorageMachine,
+    case {Impact, OldStatus} of
+        {{init, _}, _} ->
             State#{storage_machine := undefined};
-        _ ->
-            NewStorageMachine = StorageMachine#{ status => {error, Exception} },
+        {_, {error, _, _}} ->
+            State;
+        {_, _} ->
+            NewStorageMachine = StorageMachine#{ status => {error, Exception, OldStatus} },
             transit_state(NewStorageMachine, State)
     end.
 
