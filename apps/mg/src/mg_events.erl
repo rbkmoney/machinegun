@@ -49,7 +49,7 @@
 -type event() :: event(body()).
 -type event(T) :: #{
     id         => id(),
-    created_at => calendar:datetime(),
+    created_at => genlib_time:ts(),
     body       => T
 }.
 -type direction() :: forward | backward.

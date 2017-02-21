@@ -99,6 +99,8 @@ woody_child_spec(Config, ChildID) ->
     woody_server:child_spec(
         ChildID,
         #{
+            protocol      => thrift,
+            transport     => http,
             ip            => Ip,
             port          => get_config_element(port    , Config, 8022),
             net_opts      => get_config_element(net_opts, Config, #{} ),

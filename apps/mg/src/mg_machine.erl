@@ -79,7 +79,7 @@
 %%
 -type options() :: #{
     namespace              => mg:ns(),
-    storage                => mg_storage:module           (),
+    storage                => mg_storage:storage          (),
     processor              => mg_utils:mod_opts           (),
     storage_retry_policy   => mg_utils:genlib_retry_policy(), % optional
     processor_retry_policy => mg_utils:genlib_retry_policy()  % optional
@@ -276,9 +276,10 @@ touch(Options, MachineID) ->
 }.
 
 -type machine_status() ::
-      {waiting, genlib_time:ts()}
+       sleeping
+    | {waiting, genlib_time:ts()}
     |  processing
-    | {error, Reason::mg_storage:opaque()}
+    | {error, Reason::term()}
 .
 
 
@@ -351,7 +352,7 @@ new_processing_context(CallContext) ->
     storage_machine().
 new_storage_machine() ->
     #{
-        status => waiting,
+        status => sleeping,
         state  => null
     }.
 

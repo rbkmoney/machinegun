@@ -93,7 +93,7 @@ get(Options, Namespace, Key) ->
             {error, notfound} ->
                 undefined;
             Result ->
-                Object = handle_riak_response(Result),
+                Object = handle_riak_response_(Result),
                 from_riak_obj(Object)
         end
     end).
@@ -103,7 +103,7 @@ get(Options, Namespace, Key) ->
 search(Options, Namespace, Query) ->
     do(Options, Namespace,
         fun(Pid) ->
-                Result = handle_riak_response(do_get_index(Pid, Namespace, Query)),
+                Result = handle_riak_response_(do_get_index(Pid, Namespace, Query)),
                 get_index_response(Query, Result)
         end
     ).
@@ -232,11 +232,7 @@ pool_name(Namespace) ->
 -spec to_riak_obj(mg:ns(), mg_storage:key(), context(), mg_storage:value(), [mg_storage:index_update()]) ->
     riakc_obj:riakc_obj().
 to_riak_obj(Namespace, Key, Context, Value, IndexesUpdates) ->
-    Object =
-        riakc_obj:set_vclock(
-            riakc_obj:new(Namespace, Key, mg_storage:opaque_to_binary(Value)),
-            Context
-        ),
+    Object = riakc_obj:set_vclock(new_riak_object(Namespace, Key, Value), Context),
     riakc_obj:update_content_type(
         riakc_obj:update_metadata(
             Object,
@@ -250,6 +246,16 @@ to_riak_obj(Namespace, Key, Context, Value, IndexesUpdates) ->
         ),
         ?msgpack_ct
     ).
+
+-spec new_riak_object(mg:ns(), mg_storage:key(), mg_storage:value()) ->
+    riakc_obj:riakc_obj().
+new_riak_object(Namespace, Key, Value) ->
+    case riakc_obj:new(Namespace, Key, mg_storage:opaque_to_binary(Value)) of
+        {error, Reason} ->
+            exit({storage_unexpected_error, Reason});
+        Obj ->
+            Obj
+    end.
 
 -spec from_riak_obj(riakc_obj:riakc_obj()) ->
     {context(), mg_storage:value()}.
@@ -291,9 +297,14 @@ get_option(Key, Options) ->
     T | no_return().
 handle_riak_response(ok) ->
     ok;
-handle_riak_response({ok, Value}) ->
+handle_riak_response(V) ->
+    handle_riak_response_(V).
+
+-spec handle_riak_response_({ok, T} | {error, _Reason}) ->
+    T | no_return().
+handle_riak_response_({ok, Value}) ->
     Value;
-handle_riak_response({error, Reason}) ->
+handle_riak_response_({error, Reason}) ->
     % TODO понять какие проблемы временные, а какие постоянные
     erlang:throw({transient, {storage_unavailable, Reason}}).
 
