@@ -281,8 +281,8 @@ touch(Options, MachineID) ->
     state           => machine_state()
 }.
 
--type machine_regular_status() :: {waiting, genlib_time:ts()} | processing.
--type machine_status() :: machine_regular_status() | {error, Reason::mg_storage:opaque(), machine_regular_status()}.
+-type machine_regular_status() :: sleeping | {waiting, genlib_time:ts()} | processing.
+-type machine_status() :: machine_regular_status() | {error, _, machine_regular_status()}.
 
 -spec handle_load(_ID, options()) ->
     {ok, state()}.
