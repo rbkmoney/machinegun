@@ -50,7 +50,7 @@
 -type call_result  () :: {term(), state_change(), complex_action()}.
 -type state_change () :: {aux_state(), [mg_events:body()]}.
 -type signal       () :: {init, term()} | timeout | {repair, term()}.
--type aux_state    () :: term().
+-type aux_state    () :: mg:opaque().
 
 -type machine() :: #{
     ns            => mg:ns(),

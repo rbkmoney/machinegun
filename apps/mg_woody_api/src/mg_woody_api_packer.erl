@@ -294,7 +294,7 @@ pack_opaque(Integer) when is_integer(Integer) ->
 pack_opaque(Float) when is_float(Float) ->
     {flt, Float};
 pack_opaque({string, String}) ->
-    {bin, String};
+    {str, unicode:characters_to_binary(String, unicode)};
 pack_opaque(Binary) when is_binary(Binary) ->
     {bin, Binary};
 pack_opaque(Object) when is_map(Object) ->
@@ -302,7 +302,7 @@ pack_opaque(Object) when is_map(Object) ->
 pack_opaque(Array) when is_list(Array) ->
     {arr, lists:map(fun pack_opaque/1, Array)};
 pack_opaque(Arg) ->
-    erlang:error(badarg, Arg).
+    erlang:error(badarg, [Arg]).
 
 -spec unpack_opaque(mg_proto_msgpack_thrift:'Value'()) ->
     mg:opaque().
@@ -314,8 +314,8 @@ unpack_opaque({i, Integer}) ->
     Integer;
 unpack_opaque({flt, Float}) ->
     Float;
-unpack_opaque({str, String}) ->
-    {string, String};
+unpack_opaque({str, BString}) ->
+    {string, unicode:characters_to_list(BString, unicode)};
 unpack_opaque({bin, Binary}) ->
     Binary;
 unpack_opaque({obj, Object}) ->
@@ -323,7 +323,7 @@ unpack_opaque({obj, Object}) ->
 unpack_opaque({arr, Array}) ->
     lists:map(fun unpack_opaque/1, Array);
 unpack_opaque(Arg) ->
-    erlang:error(badarg, Arg).
+    erlang:error(badarg, [Arg]).
 
 
 % rfc3339:parse имеет некорретный спек, поэтому диалайзер всегда ругается

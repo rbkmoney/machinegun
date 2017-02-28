@@ -19,17 +19,17 @@
     retry_strategy => genlib_retry:strategy() | undefined
 }.
 
--spec start(options(), mg:id(), mg:args()) ->
+-spec start(options(), mg:id(), mg_events_machine:args()) ->
     ok.
 start(#{url := BaseURL, ns := NS, retry_strategy := Strategy}, ID, Args) ->
     ok = call_service(BaseURL, 'Start', [pack(ns, NS), pack(id, ID), pack(args, Args)], Strategy).
 
--spec repair(options(), mg_events_machine:ref(), mg:args()) ->
+-spec repair(options(), mg_events_machine:ref(), mg_events_machine:args()) ->
     ok.
 repair(#{url := BaseURL, ns := NS, retry_strategy := Strategy}, Ref, Args) ->
     ok = call_service(BaseURL, 'Repair', [machine_desc(NS, Ref), pack(args, Args)], Strategy).
 
--spec call(options(), mg_events_machine:ref(), mg:args()) ->
+-spec call(options(), mg_events_machine:ref(), mg_events_machine:args()) ->
     mg:call_resp().
 call(#{url := BaseURL, ns := NS, retry_strategy := Strategy}, Ref, Args) ->
     unpack(
