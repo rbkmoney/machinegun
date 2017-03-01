@@ -86,7 +86,7 @@ simple_test(_) ->
     supervisor:child_spec().
 pool_child_spec(_Options, Name) ->
     #{
-        id => Name,
+        id    => Name,
         start => {?MODULE, start, []}
     }.
 

@@ -157,10 +157,10 @@ ref2id(Options, {tag, Tag}) ->
 
 %%
 
--spec processor_child_spec(_Options) ->
+-spec processor_child_spec(options()) ->
     supervisor:child_spec().
 processor_child_spec(Options) ->
-    mg_utils:apply_mod_opts(processor_options(Options), child_spec, [Options]).
+    mg_utils:apply_mod_opts(processor_options(Options), child_spec).
 
 -spec process_machine(options(), mg:id(), mg_machine:processor_impact(), _, mg_machine:machine_state()) ->
     mg_machine:processor_result().
@@ -325,7 +325,7 @@ get_timer_action(ComplexAction) ->
 %%
 
 -spec processor_options(options()) ->
-    _Options.
+    mg_utils:mod_opts().
 processor_options(Options) ->
     maps:get(processor, Options).
 

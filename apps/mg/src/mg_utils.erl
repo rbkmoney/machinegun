@@ -36,6 +36,7 @@
 %% Other
 -export_type([mod_opts/0]).
 -export_type([mod_opts/1]).
+-export([apply_mod_opts   /2]).
 -export([apply_mod_opts   /3]).
 -export([separate_mod_opts/1]).
 
@@ -202,6 +203,11 @@ now_ms() ->
 %%
 -type mod_opts() :: mod_opts(term()).
 -type mod_opts(Options) :: {module(), Options} | module().
+
+-spec apply_mod_opts(mod_opts(), atom()) ->
+    _Result.
+apply_mod_opts(ModOpts, Function) ->
+    apply_mod_opts(ModOpts, Function, []).
 
 -spec apply_mod_opts(mod_opts(), atom(), list(_Arg)) ->
     _Result.

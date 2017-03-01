@@ -11,10 +11,10 @@
 %%
 -type options() :: woody_client:options().
 
--spec child_spec({list(tuple()), atom()}) ->
+-spec child_spec(options()) ->
     supervisor:child_spec().
-child_spec({Options, Name}) ->
-    woody_client:child_spec(Name, Options).
+child_spec(Options) ->
+    woody_client:child_spec(Options).
 
 -spec process_signal(options(), mg_events_machine:signal_args()) ->
     mg_events_machine:signal_result().

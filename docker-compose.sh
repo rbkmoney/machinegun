@@ -9,6 +9,7 @@ services:
     volumes:
       - .:$PWD
       - $HOME/.cache:/home/$UNAME/.cache
+      - $HOME/.ssh:/home/$UNAME/.ssh:ro
     working_dir: $PWD
     command: /sbin/init
     depends_on:

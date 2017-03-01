@@ -177,8 +177,8 @@ init_per_group(TestGroup, C0) ->
     [
         {apps              , Apps                             },
         {automaton_options , #{
-            url => "http://localhost:8022",
-            ns => ?NS,
+            url            => "http://localhost:8022",
+            ns             => ?NS,
             retry_strategy => undefined
         }},
         {event_sink_options, "http://localhost:8022"          },
@@ -194,7 +194,11 @@ mg_woody_api_config(event_sink, C) ->
         {storage, ?config(storage, C)},
         {namespaces, #{
             ?NS => #{
-                processor  => #{ url => <<"http://localhost:8023/processor">>, recv_timeout => 5000 },
+                processor  => #{
+                    url            => <<"http://localhost:8023/processor">>,
+                    recv_timeout   => 5000,
+                    transport_opts => [{pool_name, ns}, {max_connections, 100}]
+                },
                 event_sink => ?ES_ID
             }
         }}
@@ -204,7 +208,10 @@ mg_woody_api_config(_, C) ->
         {storage, ?config(storage, C)},
         {namespaces, #{
             ?NS => #{
-                processor => #{ url => <<"http://localhost:8023/processor">> },
+                processor  => #{
+                    url            => <<"http://localhost:8023/processor">>,
+                    transport_opts => [{pool_name, ns}, {max_connections, 100}]
+                },
                 event_sink => ?ES_ID
             }
         }}
@@ -387,11 +394,11 @@ config_with_multiple_event_sinks(_C) ->
         {storage, mg_storage_memory},
         {namespaces, #{
             <<"1">> => #{
-                processor  => #{ url => <<"http://localhost:8023/processor">> },
+                processor  => #{ url => <<"http://localhost:8023/processor">>, pool => {pool1, [{max_connections, 100}]}},
                 event_sink => <<"SingleES">>
             },
             <<"2">> => #{
-                processor  => #{ url => <<"http://localhost:8023/processor">> },
+                processor  => #{ url => <<"http://localhost:8023/processor">>, pool => {pool2, [{max_connections, 100}]}},
                 event_sink => <<"SingleES">>
             }
         }}
