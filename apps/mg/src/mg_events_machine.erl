@@ -35,12 +35,13 @@
 %%
 %% API
 %%
--callback child_spec(_Options) ->
-    supervisor:child_spec().
+-callback processor_child_spec(_Options) ->
+    supervisor:child_spec() | undefined.
 -callback process_signal(_Options, signal_args()) ->
     signal_result().
 -callback process_call(_Options, call_args()) ->
     call_result().
+-optional_callbacks([processor_child_spec/1]).
 
 %% calls, signals, get_gistory
 -type signal_args  () :: {signal(), machine()}.
@@ -158,9 +159,9 @@ ref2id(Options, {tag, Tag}) ->
 %%
 
 -spec processor_child_spec(options()) ->
-    supervisor:child_spec().
+    supervisor:child_spec() | undefined.
 processor_child_spec(Options) ->
-    mg_utils:apply_mod_opts(processor_options(Options), child_spec).
+    mg_utils:apply_mod_opts_if_defined(processor_options(Options), processor_child_spec, undefined).
 
 -spec process_machine(options(), mg:id(), mg_machine:processor_impact(), _, mg_machine:machine_state()) ->
     mg_machine:processor_result().

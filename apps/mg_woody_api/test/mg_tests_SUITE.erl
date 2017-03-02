@@ -394,11 +394,17 @@ config_with_multiple_event_sinks(_C) ->
         {storage, mg_storage_memory},
         {namespaces, #{
             <<"1">> => #{
-                processor  => #{ url => <<"http://localhost:8023/processor">>, pool => {pool1, [{max_connections, 100}]}},
+                processor  => #{
+                    url            => <<"http://localhost:8023/processor">>,
+                    transport_opts => [{pool_name, pool1}, {max_connections, 100}]
+                },
                 event_sink => <<"SingleES">>
             },
             <<"2">> => #{
-                processor  => #{ url => <<"http://localhost:8023/processor">>, pool => {pool2, [{max_connections, 100}]}},
+                processor  => #{
+                    url            => <<"http://localhost:8023/processor">>,
+                    transport_opts => [{pool_name, pool2}, {max_connections, 100}]
+                },
                 event_sink => <<"SingleES">>
             }
         }}

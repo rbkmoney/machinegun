@@ -114,11 +114,10 @@
 -type processor_result() :: {processor_reply_action(), processor_flow_action(), machine_state()}.
 
 -callback processor_child_spec(_Options) ->
-    supervisor:child_spec().
--optional_callbacks([processor_child_spec/1]).
-
+    supervisor:child_spec() | undefined.
 -callback process_machine(_Options, mg:id(), processor_impact(), processing_context(), machine_state()) ->
     processor_result().
+-optional_callbacks([processor_child_spec/1]).
 
 -type search_query() ::
        sleeping
@@ -145,26 +144,13 @@ child_spec(Options, ChildID) ->
 start_link(Options) ->
     mg_utils_supervisor_wrapper:start_link(
         #{strategy => one_for_all},
-        child_specs(Options)
+        [
+            mg_workers_manager:child_spec(manager_options      (Options), manager      ),
+            mg_storage        :child_spec(storage_options      (Options), storage      ),
+            mg_cron           :child_spec(timers_cron_options  (Options), timers_cron  ),
+            mg_cron           :child_spec(overseer_cron_options(Options), overseer_cron)
+        ] ++ processor_child_spec(Options)
     ).
-
--spec child_specs(options()) ->
-    list(supervisor:child_spec()).
-child_specs(Options) ->
-    ChildSpecs = [
-        mg_workers_manager:child_spec(manager_options      (Options), manager      ),
-        mg_storage        :child_spec(storage_options      (Options), storage      ),
-        mg_cron           :child_spec(timers_cron_options  (Options), timers_cron  ),
-        mg_cron           :child_spec(overseer_cron_options(Options), overseer_cron)
-    ],
-
-    {ProcessorMod, ProcessorOpts} = mg_utils:separate_mod_opts(get_options(processor, Options)),
-    case erlang:function_exported(ProcessorMod, processor_child_spec, 1) of
-        true ->
-            ChildSpecs ++ [processor_child_spec(ProcessorMod, ProcessorOpts)];
-        false ->
-            ChildSpecs
-    end.
 
 -spec start(options(), mg:id(), term(), mg_utils:deadline()) ->
     _Resp | throws().
@@ -571,14 +557,15 @@ processor_process_machine(ID, Impact, ProcessingCtx, MachineState, Options) ->
         [ID, Impact, ProcessingCtx, MachineState]
     ).
 
--spec processor_child_spec(module(), _Opts) ->
-    supervisor:child_spec().
-processor_child_spec(Mod, Opts) ->
-    erlang:apply(
-        Mod,
-        processor_child_spec,
-        [Opts]
-    ).
+-spec processor_child_spec(options()) ->
+    list(supervisor:child_spec()).
+processor_child_spec(Options) ->
+    case mg_utils:apply_mod_opts_if_defined(get_options(processor, Options), processor_child_spec, undefined) of
+        undefined ->
+            [];
+        ChildSpec ->
+            [ChildSpec]
+    end.
 
 -spec do_reply_action(processor_reply_action(), undefined | processing_context()) ->
     ok.

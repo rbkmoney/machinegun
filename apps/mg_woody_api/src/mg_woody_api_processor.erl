@@ -4,16 +4,16 @@
 %% mg_events_machine handler
 -behaviour(mg_events_machine).
 -export_type([options/0]).
--export([child_spec/1, process_signal/2, process_call/2]).
+-export([processor_child_spec/1, process_signal/2, process_call/2]).
 
 %%
 %% mg_events_machine handler
 %%
 -type options() :: woody_client:options().
 
--spec child_spec(options()) ->
+-spec processor_child_spec(options()) ->
     supervisor:child_spec().
-child_spec(Options) ->
+processor_child_spec(Options) ->
     woody_client:child_spec(Options).
 
 -spec process_signal(options(), mg_events_machine:signal_args()) ->
