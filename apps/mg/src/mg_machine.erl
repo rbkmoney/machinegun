@@ -114,7 +114,7 @@
 -type processor_result() :: {processor_reply_action(), processor_flow_action(), machine_state()}.
 
 -callback processor_child_spec(_Options) ->
-    mg_utils_supervisor_wrapper:supervisor_child_spec().
+    mg_utils_supervisor_wrapper:child_spec().
 -callback process_machine(_Options, mg:id(), processor_impact(), processing_context(), machine_state()) ->
     processor_result().
 -optional_callbacks([processor_child_spec/1]).
@@ -559,7 +559,7 @@ processor_process_machine(ID, Impact, ProcessingCtx, MachineState, Options) ->
     ).
 
 -spec processor_child_spec(options()) ->
-    mg_utils_supervisor_wrapper:supervisor_child_spec().
+    mg_utils_supervisor_wrapper:child_spec().
 processor_child_spec(Options) ->
     mg_utils:apply_mod_opts_if_defined(get_options(processor, Options), processor_child_spec, empty_child_spec).
 

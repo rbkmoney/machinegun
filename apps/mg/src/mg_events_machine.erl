@@ -36,7 +36,7 @@
 %% API
 %%
 -callback processor_child_spec(_Options) ->
-    mg_utils_supervisor_wrapper:supervisor_child_spec().
+    mg_utils_supervisor_wrapper:child_spec().
 -callback process_signal(_Options, signal_args()) ->
     signal_result().
 -callback process_call(_Options, call_args()) ->
@@ -159,7 +159,7 @@ ref2id(Options, {tag, Tag}) ->
 %%
 
 -spec processor_child_spec(options()) ->
-    mg_utils_supervisor_wrapper:supervisor_child_spec().
+    mg_utils_supervisor_wrapper:child_spec().
 processor_child_spec(Options) ->
     mg_utils:apply_mod_opts_if_defined(processor_options(Options), processor_child_spec, empty_child_spec).
 
