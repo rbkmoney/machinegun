@@ -114,7 +114,7 @@
 -type processor_result() :: {processor_reply_action(), processor_flow_action(), machine_state()}.
 
 -callback processor_child_spec(_Options) ->
-    supervisor:child_spec() | undefined.
+    mg_utils_supervisor_wrapper:supervisor_child_spec().
 -callback process_machine(_Options, mg:id(), processor_impact(), processing_context(), machine_state()) ->
     processor_result().
 -optional_callbacks([processor_child_spec/1]).
@@ -148,8 +148,9 @@ start_link(Options) ->
             mg_workers_manager:child_spec(manager_options      (Options), manager      ),
             mg_storage        :child_spec(storage_options      (Options), storage      ),
             mg_cron           :child_spec(timers_cron_options  (Options), timers_cron  ),
-            mg_cron           :child_spec(overseer_cron_options(Options), overseer_cron)
-        ] ++ processor_child_spec(Options)
+            mg_cron           :child_spec(overseer_cron_options(Options), overseer_cron),
+            processor_child_spec(Options)
+        ]
     ).
 
 -spec start(options(), mg:id(), term(), mg_utils:deadline()) ->
@@ -558,14 +559,9 @@ processor_process_machine(ID, Impact, ProcessingCtx, MachineState, Options) ->
     ).
 
 -spec processor_child_spec(options()) ->
-    list(supervisor:child_spec()).
+    mg_utils_supervisor_wrapper:supervisor_child_spec().
 processor_child_spec(Options) ->
-    case mg_utils:apply_mod_opts_if_defined(get_options(processor, Options), processor_child_spec, undefined) of
-        undefined ->
-            [];
-        ChildSpec ->
-            [ChildSpec]
-    end.
+    mg_utils:apply_mod_opts_if_defined(get_options(processor, Options), processor_child_spec, empty_child_spec).
 
 -spec do_reply_action(processor_reply_action(), undefined | processing_context()) ->
     ok.
