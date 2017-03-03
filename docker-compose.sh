@@ -9,6 +9,7 @@ services:
     volumes:
       - .:$PWD
       - $HOME/.cache:/home/$UNAME/.cache
+      - $HOME/.ssh:/home/$UNAME/.ssh:ro
     working_dir: $PWD
     command: /sbin/init
     depends_on:
@@ -45,6 +46,6 @@ networks:
     driver: bridge
     driver_opts:
       com.docker.network.enable_ipv6: "true"
-      com.docker.network.bridge.enable_ip_masquerade: "false"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
 
 EOF

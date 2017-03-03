@@ -113,8 +113,11 @@
 -type processor_flow_action() :: sleep | {wait, genlib_time:ts()} | {continue, processing_state()}.
 -type processor_result() :: {processor_reply_action(), processor_flow_action(), machine_state()}.
 
+-callback processor_child_spec(_Options) ->
+    mg_utils_supervisor_wrapper:child_spec().
 -callback process_machine(_Options, mg:id(), processor_impact(), processing_context(), machine_state()) ->
     processor_result().
+-optional_callbacks([processor_child_spec/1]).
 
 -type search_query() ::
        sleeping
@@ -145,7 +148,8 @@ start_link(Options) ->
             mg_workers_manager:child_spec(manager_options      (Options), manager      ),
             mg_storage        :child_spec(storage_options      (Options), storage      ),
             mg_cron           :child_spec(timers_cron_options  (Options), timers_cron  ),
-            mg_cron           :child_spec(overseer_cron_options(Options), overseer_cron)
+            mg_cron           :child_spec(overseer_cron_options(Options), overseer_cron),
+            processor_child_spec(Options)
         ]
     ).
 
@@ -540,14 +544,24 @@ process_unsafe(Impact, ProcessingCtx, State=#{storage_machine := StorageMachine}
 call_processor(Impact, ProcessingCtx, State) ->
     #{options := Options, id := ID, storage_machine := #{state := MachineState}} = State,
     F = fun() ->
-            mg_utils:apply_mod_opts(
-                get_options(processor, Options),
-                process_machine,
-                [ID, Impact, ProcessingCtx, MachineState]
-            )
+            processor_process_machine(ID, Impact, ProcessingCtx, MachineState, Options)
         end,
     RetryStrategy = mg_utils:genlib_retry_new(get_options(processor_retry_policy, Options)),
     do_with_retry(namespace(Options), ID, F, RetryStrategy).
+
+-spec processor_process_machine(mg:id(), processor_impact(), processing_context(), state(), options()) ->
+    _Result.
+processor_process_machine(ID, Impact, ProcessingCtx, MachineState, Options) ->
+    mg_utils:apply_mod_opts(
+        get_options(processor, Options),
+        process_machine,
+        [ID, Impact, ProcessingCtx, MachineState]
+    ).
+
+-spec processor_child_spec(options()) ->
+    mg_utils_supervisor_wrapper:child_spec().
+processor_child_spec(Options) ->
+    mg_utils:apply_mod_opts_if_defined(get_options(processor, Options), processor_child_spec, empty_child_spec).
 
 -spec do_reply_action(processor_reply_action(), undefined | processing_context()) ->
     ok.

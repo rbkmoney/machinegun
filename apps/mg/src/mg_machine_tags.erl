@@ -11,7 +11,6 @@
 -behaviour(mg_machine).
 -export([process_machine/5]).
 
-
 -type options() :: #{
     namespace => mg:ns(),
     storage   => mg_storage:storage()

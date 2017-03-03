@@ -30,7 +30,7 @@
     event_sink => mg:id()
 }.
 -type config_nss() :: #{mg:ns() => config_ns()}.
--type net_opts() :: woody_server_thrift_http_handler:net_opts().
+-type net_opts() :: list(tuple()).
 -type config_element() ::
       {namespaces,         config_nss()}
     | {ip        ,             string()}

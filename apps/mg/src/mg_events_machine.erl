@@ -30,15 +30,18 @@
 
 %% mg_machine handler
 -behaviour(mg_machine).
--export([process_machine/5]).
+-export([processor_child_spec/1, process_machine/5]).
 
 %%
 %% API
 %%
+-callback processor_child_spec(_Options) ->
+    mg_utils_supervisor_wrapper:child_spec().
 -callback process_signal(_Options, signal_args()) ->
     signal_result().
 -callback process_call(_Options, call_args()) ->
     call_result().
+-optional_callbacks([processor_child_spec/1]).
 
 %% calls, signals, get_gistory
 -type signal_args  () :: {signal(), machine()}.
@@ -154,6 +157,11 @@ ref2id(Options, {tag, Tag}) ->
 } | undefined.
 
 %%
+
+-spec processor_child_spec(options()) ->
+    mg_utils_supervisor_wrapper:child_spec().
+processor_child_spec(Options) ->
+    mg_utils:apply_mod_opts_if_defined(processor_options(Options), processor_child_spec, empty_child_spec).
 
 -spec process_machine(options(), mg:id(), mg_machine:processor_impact(), _, mg_machine:machine_state()) ->
     mg_machine:processor_result().
@@ -316,6 +324,11 @@ get_timer_action(ComplexAction) ->
     end.
 
 %%
+
+-spec processor_options(options()) ->
+    mg_utils:mod_opts().
+processor_options(Options) ->
+    maps:get(processor, Options).
 
 -spec machine_options(options()) ->
     mg_machine:options().

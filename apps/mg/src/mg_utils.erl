@@ -36,8 +36,11 @@
 %% Other
 -export_type([mod_opts/0]).
 -export_type([mod_opts/1]).
--export([apply_mod_opts   /3]).
--export([separate_mod_opts/1]).
+-export([apply_mod_opts            /2]).
+-export([apply_mod_opts            /3]).
+-export([apply_mod_opts_if_defined /3]).
+-export([apply_mod_opts_if_defined /4]).
+-export([separate_mod_opts         /1]).
 
 -export([throw_if_error    /1]).
 -export([throw_if_error    /2]).
@@ -203,11 +206,33 @@ now_ms() ->
 -type mod_opts() :: mod_opts(term()).
 -type mod_opts(Options) :: {module(), Options} | module().
 
+-spec apply_mod_opts(mod_opts(), atom()) ->
+    _Result.
+apply_mod_opts(ModOpts, Function) ->
+    apply_mod_opts(ModOpts, Function, []).
+
 -spec apply_mod_opts(mod_opts(), atom(), list(_Arg)) ->
     _Result.
 apply_mod_opts(ModOpts, Function, Args) ->
     {Mod, Arg} = separate_mod_opts(ModOpts),
     erlang:apply(Mod, Function, [Arg | Args]).
+
+-spec apply_mod_opts_if_defined(mod_opts(), atom(), _Default) ->
+    _Result.
+apply_mod_opts_if_defined(ModOpts, Function, Default) ->
+    apply_mod_opts_if_defined(ModOpts, Function, Default, []).
+
+-spec apply_mod_opts_if_defined(mod_opts(), atom(), _Default, list(_Arg)) ->
+    _Result.
+apply_mod_opts_if_defined(ModOpts, Function, Default, Args) ->
+    {Mod, Arg} = separate_mod_opts(ModOpts),
+    FunctionArgs = [Arg | Args],
+    case erlang:function_exported(Mod, Function, length(FunctionArgs)) of
+        true ->
+            erlang:apply(Mod, Function, FunctionArgs);
+        false ->
+            Default
+    end.
 
 -spec separate_mod_opts(mod_opts()) ->
     {module(), _Arg}.

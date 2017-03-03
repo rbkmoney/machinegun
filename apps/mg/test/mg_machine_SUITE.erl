@@ -11,8 +11,9 @@
 
 %% mg_machine
 -behaviour(mg_machine).
--export([process_machine/5]).
+-export([pool_child_spec/2, process_machine/5]).
 
+-export([start/0]).
 %%
 %% tests descriptions
 %%
@@ -81,6 +82,14 @@ simple_test(_) ->
 %%
 %% processor
 %%
+-spec pool_child_spec(_Options, atom()) ->
+    supervisor:child_spec().
+pool_child_spec(_Options, Name) ->
+    #{
+        id    => Name,
+        start => {?MODULE, start, []}
+    }.
+
 -spec process_machine(_Options, mg:id(), mg_machine:processor_impact(), _, mg_machine:machine_state()) ->
     mg_machine:processor_result() | no_return().
 process_machine(_, _, {_, fail}, _, _) ->
@@ -102,6 +111,11 @@ process_machine(_, _, {repair, repair_arg}, _, [TestKey, TestValue]) ->
 %%
 %% utils
 %%
+-spec start()->
+    ignore.
+start() ->
+    ignore.
+
 -spec start_automaton(mg_machine:options()) ->
     pid().
 start_automaton(Options) ->
