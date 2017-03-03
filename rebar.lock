@@ -51,8 +51,8 @@
        {ref,"aca7fca9f1a7161a1324bf5b92f8402c90d0519e"}},
   1},
  {<<"woody">>,
-  {git,"git@github.com:manikdv/woody_erlang.git",
-       {ref,"0bd7a8d5b7157fe7862566d47782edcd0c85d130"}},
+  {git,"git@github.com:rbkmoney/woody_erlang.git",
+       {ref,"7650c1f9f1a0fa0a0083e01f3eaad2ba465dab72"}},
   0}]}.
 [
 {pkg_hash,[

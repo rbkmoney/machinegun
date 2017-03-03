@@ -79,7 +79,7 @@ mg_woody_api_config(_C) ->
             ?NS => #{
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
-                    transport_opts => [{pool_name, ns}, {max_connections, 100}]
+                    transport_opts => [{pool, ns}, {max_connections, 100}]
                 },
                 event_sink => ?ES_ID
             }

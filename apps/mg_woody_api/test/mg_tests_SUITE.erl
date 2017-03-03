@@ -197,7 +197,7 @@ mg_woody_api_config(event_sink, C) ->
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
                     recv_timeout   => 5000,
-                    transport_opts => [{pool_name, ns}, {max_connections, 100}]
+                    transport_opts => [{pool, ns}, {max_connections, 100}]
                 },
                 event_sink => ?ES_ID
             }
@@ -210,7 +210,7 @@ mg_woody_api_config(_, C) ->
             ?NS => #{
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
-                    transport_opts => [{pool_name, ns}, {max_connections, 100}]
+                    transport_opts => [{pool, ns}, {max_connections, 100}]
                 },
                 event_sink => ?ES_ID
             }
@@ -396,14 +396,14 @@ config_with_multiple_event_sinks(_C) ->
             <<"1">> => #{
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
-                    transport_opts => [{pool_name, pool1}, {max_connections, 100}]
+                    transport_opts => [{pool, pool1}, {max_connections, 100}]
                 },
                 event_sink => <<"SingleES">>
             },
             <<"2">> => #{
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
-                    transport_opts => [{pool_name, pool2}, {max_connections, 100}]
+                    transport_opts => [{pool, pool2}, {max_connections, 100}]
                 },
                 event_sink => <<"SingleES">>
             }
