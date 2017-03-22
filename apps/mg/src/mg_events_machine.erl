@@ -57,7 +57,8 @@
     id            => mg:id(),
     history       => [mg_events:event()],
     history_range => mg_events:history_range(),
-    aux_state     => aux_state()
+    aux_state     => aux_state(),
+    timer         => timer()
 }.
 
 %% actions
@@ -67,7 +68,7 @@
 }.
 -type tag_action         () :: mg_machine_tags:tag().
 -type set_timer_action   () :: timer().
--type timer              () :: {timeout, timeout_()} | {deadline, calendar:datetime()}.
+-type timer              () :: {timeout, timeout_()} | {deadline, calendar:datetime()} | cancel.
 -type timeout_           () :: non_neg_integer().
 
 -type ref() :: {id, mg:id()} | {tag, mg_machine_tags:tag()}.
@@ -146,11 +147,12 @@ ref2id(Options, {tag, Tag}) ->
 -type state() :: #{
     events_range    => mg_events:events_range(),
     aux_state       => aux_state(),
-    delayed_actions => delayed_actions()
+    delayed_actions => delayed_actions(),
+    timer           => timer() | undefined
 }.
 -type delayed_actions() :: #{
     add_tag           => mg_machine_tags:tag() | undefined,
-    timer             => genlib_time:ts() | undefined,
+    new_timer         => genlib_time:ts() | undefined | unchanged,
     add_events        => [mg_events:event()],
     new_aux_state     => aux_state(),
     new_events_range  => mg_events:events_range()
@@ -206,7 +208,7 @@ process_machine_(Options, ID, continuation, PCtx, State = #{delayed_actions := D
     % надо быть аккуратнее, мест чтобы накосячить тут вагон и маленькая тележка  :-\
     %
     % действия должны обязательно произойти в конце концов (таймаута нет), либо машина должна упасть
-    #{add_tag := Tag, timer := Timer, add_events := Events} = DelayedActions,
+    #{add_tag := Tag, add_events := Events} = DelayedActions,
     ok =                   add_tag(Options, ID, Tag   ),
     ok =              store_events(Options, ID, Events),
     ok = push_events_to_event_sink(Options, ID, Events),
@@ -218,7 +220,8 @@ process_machine_(Options, ID, continuation, PCtx, State = #{delayed_actions := D
             undefined ->
                 noreply
         end,
-    {ReplyAction, timer_to_flow_action(Timer), apply_delayed_actions_to_state(DelayedActions, State)}.
+    NewState = apply_delayed_actions_to_state(DelayedActions, State),
+    {ReplyAction, state_to_flow_action(NewState), NewState}.
 
 -spec add_tag(options(), undefined | mg_machine_tags:tag(), mg:id()) ->
     ok.
@@ -263,21 +266,31 @@ push_events_to_event_sink(Options, ID, Events) ->
             ok
     end.
 
--spec timer_to_flow_action(undefined | genlib_time:ts()) ->
+-spec state_to_flow_action(state()) ->
     mg_machine:processor_flow_action().
-timer_to_flow_action(undefined) ->
+state_to_flow_action(#{timer := undefined}) ->
     sleep;
-timer_to_flow_action(Timer) ->
+state_to_flow_action(#{timer := Timer}) ->
     {wait, Timer}.
 
 -spec apply_delayed_actions_to_state(delayed_actions(), state()) ->
     state().
-apply_delayed_actions_to_state(#{new_aux_state := NewAuxState, new_events_range := NewEventsRange}, State) ->
-    State#{
-        events_range    := NewEventsRange,
-        aux_state       := NewAuxState,
-        delayed_actions := undefined
-    }.
+apply_delayed_actions_to_state(DA = #{new_aux_state := NewAuxState, new_events_range := NewEventsRange}, State) ->
+    apply_delayed_timer_actions_to_state(
+        DA,
+        State#{
+            events_range    := NewEventsRange,
+            aux_state       := NewAuxState,
+            delayed_actions := undefined
+        }
+    ).
+
+-spec apply_delayed_timer_actions_to_state(delayed_actions(), state()) ->
+    state().
+apply_delayed_timer_actions_to_state(#{new_timer := unchanged}, State) ->
+    State;
+apply_delayed_timer_actions_to_state(#{new_timer := Timer}, State) ->
+    State#{timer := Timer}.
 
 %%
 
@@ -314,8 +327,8 @@ handle_state_change({AuxState, EventsBodies}, EventsRange, DelayedActions) ->
     delayed_actions().
 handle_complex_action(ComplexAction, DelayedActions) ->
     DelayedActions#{
-        add_tag => maps:get(tag, ComplexAction, undefined),
-        timer   => get_timer_action(ComplexAction)
+        add_tag   => maps:get(tag, ComplexAction, undefined),
+        new_timer => get_timer_action(ComplexAction)
     }.
 
 -spec get_timer_action(complex_action()) ->
@@ -323,6 +336,8 @@ handle_complex_action(ComplexAction, DelayedActions) ->
 get_timer_action(ComplexAction) ->
     case maps:get(timer, ComplexAction, undefined) of
         undefined ->
+            unchanged;
+        cancel ->
             undefined;
         {timeout, Timeout} ->
             genlib_time:now() + Timeout;
@@ -368,13 +383,15 @@ get_option(Subj, Options) ->
 
 -spec machine(options(), mg:id(), state(), mg_events:history_range()) ->
     machine().
-machine(Options = #{namespace := Namespace}, ID, #{events_range := EventsRange, aux_state := AuxState}, HRange) ->
+machine(Options = #{namespace := Namespace}, ID, State, HRange) ->
+    #{events_range := EventsRange, aux_state := AuxState, timer := Timer} = State,
     #{
         ns            => Namespace,
         id            => ID,
         history       => get_events(Options, ID, EventsRange, HRange),
         history_range => HRange,
-        aux_state     => AuxState
+        aux_state     => AuxState,
+        timer         => Timer
     }.
 
 -spec get_events(options(), mg:id(), mg_events:events_range(), mg_events:history_range()) ->
@@ -400,11 +417,13 @@ get_events_keys(ID, EventsRange, HistoryRange) ->
 %%
 -spec state_to_opaque(state()) ->
     mg:opaque().
-state_to_opaque(#{events_range := EventsRange, aux_state := AuxState, delayed_actions := DelayedActions}) ->
-    [1,
+state_to_opaque(State) ->
+    #{events_range := EventsRange, aux_state := AuxState, delayed_actions := DelayedActions, timer := Timer} = State,
+    [2,
         mg_events:events_range_to_opaque(EventsRange),
         AuxState,
-        maybe_to_opaque(DelayedActions, fun delayed_actions_to_opaque/1)
+        maybe_to_opaque(DelayedActions, fun delayed_actions_to_opaque/1),
+        maybe_to_opaque(Timer, fun identity/1)
     ].
 
 -spec opaque_to_state(mg:opaque()) ->
@@ -414,13 +433,22 @@ opaque_to_state(null) ->
     #{
         events_range    => undefined,
         aux_state       => <<>>,
-        delayed_actions => undefined
+        delayed_actions => undefined,
+        timer           => undefined
     };
 opaque_to_state([1, EventsRange, AuxState, DelayedActions]) ->
     #{
         events_range    => mg_events:opaque_to_events_range(EventsRange),
         aux_state       => AuxState,
-        delayed_actions => maybe_from_opaque(DelayedActions, fun opaque_to_delayed_actions/1)
+        delayed_actions => maybe_from_opaque(DelayedActions, fun opaque_to_delayed_actions/1),
+        timer           => undefined
+    };
+opaque_to_state([2, EventsRange, AuxState, DelayedActions, Timer]) ->
+    #{
+        events_range    => mg_events:opaque_to_events_range(EventsRange),
+        aux_state       => AuxState,
+        delayed_actions => maybe_from_opaque(DelayedActions, fun opaque_to_delayed_actions/1),
+        timer           => maybe_from_opaque(Timer, fun identity/1)
     }.
 
 
@@ -441,14 +469,14 @@ delayed_actions_to_opaque(undefined) ->
 delayed_actions_to_opaque(DelayedActions) ->
     #{
         add_tag          := Tag,
-        timer            := Timer,
+        new_timer        := Timer,
         add_events       := Events,
         new_aux_state    := AuxState,
         new_events_range := EventsRange
     } = DelayedActions,
     [1,
         maybe_to_opaque(Tag, fun identity/1),
-        maybe_to_opaque(Timer, fun identity/1),
+        delayed_timer_actions_to_opaque(Timer),
         mg_events:events_to_opaques(Events),
         AuxState,
         mg_events:events_range_to_opaque(EventsRange)
@@ -461,11 +489,30 @@ opaque_to_delayed_actions(null) ->
 opaque_to_delayed_actions([1, Tag, Timer, Events, AuxState, EventsRange]) ->
     #{
         add_tag          => maybe_from_opaque(Tag, fun identity/1),
-        timer            => maybe_from_opaque(Timer, fun identity/1),
+        new_timer        => opaque_to_delayed_timer_actions(Timer),
         add_events       => mg_events:opaques_to_events(Events),
         new_aux_state    => AuxState,
         new_events_range => mg_events:opaque_to_events_range(EventsRange)
     }.
+
+-spec delayed_timer_actions_to_opaque(genlib_time:ts() | undefined | unchanged) ->
+    mg_storage:opaque().
+delayed_timer_actions_to_opaque(undefined) ->
+    null;
+delayed_timer_actions_to_opaque(unchanged) ->
+    <<"unchanged">>;
+delayed_timer_actions_to_opaque(Timestamp) ->
+    Timestamp.
+
+-spec opaque_to_delayed_timer_actions(mg_storage:opaque()) ->
+    genlib_time:ts() | undefined | unchanged.
+opaque_to_delayed_timer_actions(null) ->
+    undefined;
+opaque_to_delayed_timer_actions(<<"unchanged">>) ->
+    unchanged;
+opaque_to_delayed_timer_actions(Timestamp) ->
+    Timestamp.
+
 
 -spec maybe_to_opaque(undefined | T0, fun((T0) -> T1)) ->
     T1.
