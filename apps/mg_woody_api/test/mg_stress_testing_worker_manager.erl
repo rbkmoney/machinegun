@@ -5,7 +5,7 @@
 -behaviour(gen_server).
 
 %% API
--export([child_spec/2]).
+-export([child_spec/1]).
 -export([start_link/1]).
 
 %% gen_server callbacks
@@ -26,11 +26,11 @@
 %%
 %% API
 %%
--spec child_spec(atom(), options()) ->
+-spec child_spec(options()) ->
     supervisor:child_spec().
-child_spec(ChildId, Options) ->
+child_spec(Options) ->
     #{
-        id       => ChildId,
+        id       => maps:get(name, Options),
         start    => {?MODULE, start_link, [Options]},
         restart  => temporary,
         shutdown => brutal_kill
@@ -47,7 +47,7 @@ start_link(Options) ->
 %% gen_server callbacks
 %%
 -type state() :: #{
-    workers_sup      => pid    (),
+    worker_sup       => atom   (),
     ccw              => integer(),
     wps              => integer(),
     aps              => integer(),
@@ -58,7 +58,7 @@ start_link(Options) ->
     {ok, state()}.
 init(Options) ->
     S = init_state(Options),
-    gen_server:cast(self(), init),
+    self() ! init,
     {ok, S}.
 
 -spec handle_call(term(), _, state()) ->
@@ -69,11 +69,14 @@ handle_call(Call, _, S) ->
 
 -spec handle_cast(term(), state()) ->
     {noreply, state()}.
-handle_cast(_Cast, S) ->
-    {noreply, schedule_connect_timer(S)}.
+handle_cast(Cast, S) ->
+    exit({'unknown cast', Cast}),
+    {noreply, S}.
 
 -spec handle_info(term(), state()) ->
     {noreply, state()}.
+handle_info(init, S) ->
+    {noreply, schedule_connect_timer(S)};
 handle_info({timeout, TRef, start_client}, S=#{connect_tref:=ConnectTRef})
     when (TRef == ConnectTRef)
     ->
@@ -101,13 +104,14 @@ terminate(_, _) ->
 -spec start_new_client(state()) ->
     state().
 start_new_client(S) ->
-    {ok, _} = supervisor:start_child({via, gproc, {n,l,worker_sup}}, child_opts(S)),
+    {ok, _} = supervisor:start_child({via, gproc, {n, l, worker_sup}}, child_opts(S)),
     S.
 
 -spec child_opts(state()) ->
     child_opts().
-child_opts(S) ->
-    {get_next_name(S), session_duration(S), request_delay(S)}.
+child_opts(S0) ->
+    {Name, S} = get_next_name(S0),
+    [Name, session_duration(S), request_delay(S)].
 
 -spec get_next_name(state()) ->
     {pos_integer(), state()}.
@@ -139,16 +143,16 @@ request_delay(S) ->
     state().
 init_state(Options) ->
     #{
-        max_ccw => maps:get(ccw, Options),
-        ccw => 0,
-        wps => 0,
-        aps => 0,
-        stop_date => 0,
-        connect_tref => undefined,
+        max_ccw          => maps:get(ccw, Options),
+        ccw              => 0,
+        wps              => 0,
+        aps              => 0,
+        stop_date        => 0,
+        connect_tref     => undefined,
         session_duration => maps:get(session_duration, Options),
-        connect_delay => 1000,
-        request_delay => 1000,
-        last_name => 1
+        connect_delay    => 1000,
+        request_delay    => 1000,
+        last_name        => 1
     }.
 
 -spec schedule_connect_timer(state()) ->
@@ -165,4 +169,3 @@ cancel_connect_timer(S = #{connect_tref:=undefined}) ->
 cancel_connect_timer(S = #{connect_tref:=TRef}) ->
     erlang:cancel_timer(TRef),
     S#{connect_tref => undefined}.
-

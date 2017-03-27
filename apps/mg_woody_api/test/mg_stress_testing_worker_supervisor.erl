@@ -10,23 +10,22 @@
 %% Supervisor callbacks
 -export([init/1]).
 
--export([child_spec/2]).
+-export([child_spec/1]).
 
 %%
 %% API
 %%
 -type options() :: #{
-    name   := atom(),
-    worker := mg_utils:mod_opts(mg_stress_testing_worker:options())
+    name := atom()
 }.
 -export_type([options/0]).
 
--spec child_spec(atom(), options()) ->
+-spec child_spec(options()) ->
     supervisor:child_spec().
-child_spec(ChildId, Options) ->
+child_spec(Name) ->
     #{
-        id       => ChildId,
-        start    => {?MODULE, start_link, [Options]},
+        id       => Name,
+        start    => {?MODULE, start_link, [Name]},
         type     => supervisor,
         restart  => temporary,
         shutdown => brutal_kill
@@ -34,16 +33,15 @@ child_spec(ChildId, Options) ->
 
 -spec start_link(options()) ->
     mg_utils:gen_start_ret().
-start_link(Options) ->
-    Name = maps:get(name, Options),
-    supervisor:start_link({via, gproc, {n,l,Name}}, ?MODULE, maps:get(worker, Options)).
+start_link(Name) ->
+    supervisor:start_link({via, gproc, {n, l, Name}}, ?MODULE, []).
 
 %%
 %% Supervisor callbacks
 %%
--spec init(options()) ->
+-spec init(_) ->
     {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
-init({WorkerMod, WorkerOpts}) ->
-    WorkerSpec = erlang:apply(mg_stress_testing_worker, child_spec, [WorkerOpts]),
+init(_) ->
+    WorkerSpec = erlang:apply(mg_stress_testing_worker, child_spec, []),
     {ok, {#{strategy => simple_one_for_one, intensity => 10, period => 100}, [WorkerSpec]}}.
 

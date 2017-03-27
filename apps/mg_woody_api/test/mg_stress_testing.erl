@@ -30,8 +30,8 @@ start_link(_) ->
         session_duration => 10000,
         total_duration   => 10000
     },
-    ManagerSpec   = mg_stress_testing_worker_manager:child_spec(worker_manager, manager_options(Options)),
-    WorkerSupSpec = mg_stress_testing_worker_supervisor:child_spec(worker_sup, worker_supervisor_options(Options)),
+    ManagerSpec   = mg_stress_testing_worker_manager:child_spec(manager_options(Options)),
+    WorkerSupSpec = mg_stress_testing_worker_supervisor:child_spec(worker_sup),
 
     mg_utils_supervisor_wrapper:start_link(#{strategy => one_for_all}, [WorkerSupSpec, ManagerSpec]).
 
@@ -55,6 +55,6 @@ manager_options(Options) ->
 worker_supervisor_options(#{worker_mod := WorkerMod}) ->
     #{
         name   => worker_sup,
-        worker => {WorkerMod, #{}}
+        worker => {WorkerMod, [#{}]}
     }.
 
