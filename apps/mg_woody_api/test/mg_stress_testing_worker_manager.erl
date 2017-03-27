@@ -5,32 +5,28 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1]).
 -export([child_spec/2]).
+-export([start_link/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3, code_change/3, terminate/2]).
 
-%%
-%% API
-%%
+-type child_opts() :: {string(), integer(), integer()}.
+
 -export_type([options/0]).
 -type options() :: #{
     name             => atom   (),
-    ccu              => integer(),
+    ccw              => integer(),
+    wps              => integer(),
+    wps              => integer(),
     session_duration => integer(),
-    total_duration   => integer(),
-    cps              => integer(),
-    rps              => integer()
+    total_duration   => integer()
 }.
 
--spec start_link(options()) ->
-    startlink_ret().
-start_link(Options) ->
-    Name = maps:get(name, Options),
-    gen_server:start_link({via, gproc, Name}, Options, []).
-
--spec child_spec(atom(), options) ->
+%%
+%% API
+%%
+-spec child_spec(atom(), options()) ->
     supervisor:child_spec().
 child_spec(ChildId, Options) ->
     #{
@@ -40,22 +36,28 @@ child_spec(ChildId, Options) ->
         shutdown => brutal_kill
     }.
 
+-spec start_link(options()) ->
+    supervisor:startlink_ret().
+start_link(Options) ->
+    Name = maps:get(name, Options),
+    io:format("~p\n", [Name]),
+    gen_server:start_link({via, gproc, {n,l,Name}}, ?MODULE, Options, []).
+
 %%
 %% gen_server callbacks
 %%
 -type state() :: #{
     workers_sup      => pid    (),
-    ccu              => integer(),
-    rps              => integer(),
-    cps              => integer(),
-    session_duration => integer(),
+    ccw              => integer(),
+    wps              => integer(),
+    aps              => integer(),
     stop_date        => integer()
 }.
 
 -spec init(options()) ->
     {ok, state()}.
-init(_Options) ->
-    S = #{},
+init(Options) ->
+    S = init_state(Options),
     gen_server:cast(self(), init),
     {ok, S}.
 
@@ -67,17 +69,21 @@ handle_call(Call, _, S) ->
 
 -spec handle_cast(term(), state()) ->
     {noreply, state()}.
-handle_cast(init, S) ->
-    % Готовимся и вычисляем нужные значения для последующего старта воркеров
-    % Находим в gproc супервизор воркеров
-    % Заходим в луп старта этих самых воркеров
-    {noreply, S}.
+handle_cast(_Cast, S) ->
+    {noreply, schedule_connect_timer(S)}.
 
--spec handle_info(loop, state()) ->
-    {noreply, state()} | {noreply, state(), integer()}.
-handle_info(loop, S) ->
-    % Стартуем воркеров
-    {noreply, S}.
+-spec handle_info(term(), state()) ->
+    {noreply, state()}.
+handle_info({timeout, TRef, start_client}, S=#{connect_tref:=ConnectTRef})
+    when (TRef == ConnectTRef)
+    ->
+    case current_ccw(S) < max_ccw(S) of
+        true ->
+            S1 = start_new_client(S),
+            {noreply, schedule_connect_timer(S1)};
+        false ->
+            {noreply, schedule_connect_timer(S)}
+    end.
 
 -spec code_change(term(), state(), term()) ->
     {ok, state()}.
@@ -88,4 +94,75 @@ code_change(_, S, _) ->
     ok.
 terminate(_, _) ->
     ok.
+
+%%
+%% Utils
+%%
+-spec start_new_client(state()) ->
+    state().
+start_new_client(S) ->
+    {ok, _} = supervisor:start_child({via, gproc, {n,l,worker_sup}}, child_opts(S)),
+    S.
+
+-spec child_opts(state()) ->
+    child_opts().
+child_opts(S) ->
+    {get_next_name(S), session_duration(S), request_delay(S)}.
+
+-spec get_next_name(state()) ->
+    {pos_integer(), state()}.
+get_next_name(S) ->
+    Name = maps:get(last_name, S) + 1,
+    {Name, S#{last_name => Name}}.
+
+-spec current_ccw(state()) ->
+    integer().
+current_ccw(S) ->
+    maps:get(ccw, S).
+
+-spec max_ccw(state()) ->
+    integer().
+max_ccw(S) ->
+    maps:get(max_ccw, S).
+
+-spec session_duration(state()) ->
+    integer().
+session_duration(S) ->
+    maps:get(session_duration, S).
+
+-spec request_delay(state()) ->
+    integer().
+request_delay(S) ->
+    maps:get(request_delay, S).
+
+-spec init_state(options()) ->
+    state().
+init_state(Options) ->
+    #{
+        max_ccw => maps:get(ccw, Options),
+        ccw => 0,
+        wps => 0,
+        aps => 0,
+        stop_date => 0,
+        connect_tref => undefined,
+        session_duration => maps:get(session_duration, Options),
+        connect_delay => 1000,
+        request_delay => 1000,
+        last_name => 1
+    }.
+
+-spec schedule_connect_timer(state()) ->
+    state().
+schedule_connect_timer(S0) ->
+    S = cancel_connect_timer(S0),
+    TRef = erlang:start_timer(maps:get(connect_delay, S), self(), start_client),
+    S#{connect_tref => TRef}.
+
+-spec cancel_connect_timer(state()) ->
+    state().
+cancel_connect_timer(S = #{connect_tref:=undefined}) ->
+    S;
+cancel_connect_timer(S = #{connect_tref:=TRef}) ->
+    erlang:cancel_timer(TRef),
+    S#{connect_tref => undefined}.
 

@@ -12,3 +12,4 @@ erl_crash.dump
 Dockerfile
 docker-compose.yml
 rebar3.crashdump
+tags

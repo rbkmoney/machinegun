@@ -1,37 +1,17 @@
 %%%
-%%% Имплементация воркера для нагрузочного тестирования
+%%% Worker implementation
 %%%
-
--module   (mg_stress_testing_worker_impl).
+-module(mg_stress_testing_worker_impl).
 -behaviour(mg_stress_testing_worker).
 
 %% Worker callbacks
--export([child_spec/2, start_session/1, do_action/2, finish_session/1]).
+-export([do_action/1]).
 
--type state() :: mg_stress_testing_worker:state(map()). 
+-type state() :: term().
 
--spec child_spec(state()) ->
-    supervisor:child_spec().
-child_spec(ChildId, Options) ->
-    #{
-        id       => ChildId,
-        start    => {?MODULE, start_link, [Options]},
-        restart  => temporary,
-        shutdown => brutal_kill,
-    }.
-
--spec start_session(state()) ->
-    {noreply, state()} | {noreply, state(), term()}.
-start_session(State) ->
-    {noreply, State}.
-
--spec do_action(atom(), state()) ->
+-spec do_action(state()) ->
     state().
-do_action(_, State) ->
-    State.
+do_action(S) ->
+    io:format("~p from ~p", ["hello", self()]),
+    S.
 
--spec finish_session(state()) ->
-    {stop, normal, state()}.
-finish_session(State) ->
-    {stop, normal, State}.
-    
