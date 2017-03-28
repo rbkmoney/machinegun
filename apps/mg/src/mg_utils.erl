@@ -192,7 +192,7 @@ default_deadline() ->
 -spec now_ms() ->
     pos_integer().
 now_ms() ->
-    erlang:system_time(1000).
+    erlang:system_time(milli_seconds).
 
 %%
 %% Woody

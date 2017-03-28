@@ -41,17 +41,17 @@ child_spec(Options) ->
 start_link(Options) ->
     Name = maps:get(name, Options),
     io:format("~p\n", [Name]),
-    gen_server:start_link({via, gproc, {n,l,Name}}, ?MODULE, Options, []).
+    gen_server:start_link(self_ref(Name), ?MODULE, Options, []).
 
 %%
 %% gen_server callbacks
 %%
 -type state() :: #{
-    worker_sup       => atom   (),
-    ccw              => integer(),
-    wps              => integer(),
-    aps              => integer(),
-    stop_date        => integer()
+    worker_sup => atom   (),
+    ccw        => integer(),
+    wps        => integer(),
+    aps        => integer(),
+    stop_date  => integer()
 }.
 
 -spec init(options()) ->
@@ -80,12 +80,20 @@ handle_info(init, S) ->
 handle_info({timeout, TRef, start_client}, S=#{connect_tref:=ConnectTRef})
     when (TRef == ConnectTRef)
     ->
-    case current_ccw(S) < max_ccw(S) of
+    case stop_date(S) < now() of
         true ->
-            S1 = start_new_client(S),
-            {noreply, schedule_connect_timer(S1)};
+            case current_ccw(S) < max_ccw(S) of
+                true ->
+                    S1 = start_new_client(S),
+                    {noreply, schedule_connect_timer(S1)};
+                false ->
+                    {noreply, schedule_connect_timer(S)}
+            end;
         false ->
-            {noreply, schedule_connect_timer(S)}
+            case is_finished(S) of
+                true  -> {stop, normal, S};
+                false -> {noreply, S}
+            end
     end.
 
 -spec code_change(term(), state(), term()) ->
@@ -104,7 +112,7 @@ terminate(_, _) ->
 -spec start_new_client(state()) ->
     state().
 start_new_client(S) ->
-    {ok, _} = supervisor:start_child({via, gproc, {n, l, worker_sup}}, child_opts(S)),
+    {ok, _} = supervisor:start_child(self_ref(worker_sup), child_opts(S)),
     S.
 
 -spec child_opts(state()) ->
@@ -139,6 +147,11 @@ session_duration(S) ->
 request_delay(S) ->
     maps:get(request_delay, S).
 
+-spec stop_date(state()) ->
+    date().
+stop_date(S) ->
+    maps:get(stop_date, S).
+
 -spec init_state(options()) ->
     state().
 init_state(Options) ->
@@ -155,6 +168,11 @@ init_state(Options) ->
         last_name        => 1
     }.
 
+-spec is_finished(state()) ->
+    boolean().
+is_finished(S) ->
+    (current_ccw(S) == 0) and (stop_date() < now()).
+
 -spec schedule_connect_timer(state()) ->
     state().
 schedule_connect_timer(S0) ->
@@ -169,3 +187,8 @@ cancel_connect_timer(S = #{connect_tref:=undefined}) ->
 cancel_connect_timer(S = #{connect_tref:=TRef}) ->
     erlang:cancel_timer(TRef),
     S#{connect_tref => undefined}.
+
+-spec self_ref(atom()) ->
+    mg_utils:gen_reg_name().
+self_ref(Name) ->
+    {via, gproc, {n, l, Name}}.

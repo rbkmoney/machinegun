@@ -11,7 +11,7 @@
 
 -spec do_action(state()) ->
     state().
-do_action(S) ->
+do_action(undefined, ) ->
     io:format("~p from ~p", ["hello", self()]),
-    S.
-
+    first;
+do_action(first) ->
