@@ -16,6 +16,8 @@ pack(_, undefined) ->
     undefined;
 pack(binary, Binary) when is_binary (Binary) ->
     Binary;
+pack(opaque, Opaque) ->
+    pack_opaque(Opaque);
 pack(integer, Integer) when is_integer(Integer) ->
     Integer; % TODO check size
 pack(timestamp, Timestamp) ->
@@ -31,7 +33,7 @@ pack(id , ID) ->
 pack(tag, Tag) ->
     pack(binary, Tag);
 pack(args, Args) ->
-    pack(binary, Args);
+    pack(opaque, Args);
 pack(timeout, Timeout) ->
     pack(integer, Timeout);
 pack(timer, {deadline, Deadline}) ->
@@ -47,11 +49,11 @@ pack(direction, Direction) ->
 
 %% events and history
 pack(aux_state, AuxState) ->
-    pack(binary, AuxState);
+    pack(opaque, AuxState);
 pack(event_id, ID) ->
     pack(integer, ID);
 pack(event_body, Body) ->
-    pack(binary, Body);
+    pack(opaque, Body);
 pack(event, #{id := ID, created_at := CreatedAt, body := Body}) ->
     #'Event'{
         id            = pack(event_id  , ID       ),
@@ -99,7 +101,7 @@ pack(signal, {repair, Args}) ->
         }
     };
 pack(call_response, CallResponse) ->
-    pack(binary, CallResponse);
+    pack(opaque, CallResponse);
 pack(signal_args, {Signal, Machine}) ->
     #'SignalArgs'{
         signal  = pack(signal , Signal ),
@@ -160,6 +162,8 @@ unpack(_, undefined) ->
     undefined;
 unpack(binary, Binary) when is_binary (Binary) ->
     Binary;
+unpack(opaque, Opaque) ->
+    unpack_opaque(Opaque);
 unpack(integer, Integer) when is_integer(Integer) ->
     Integer; % TODO check size
 unpack(timestamp, Timestamp) ->
@@ -175,7 +179,7 @@ unpack(id , ID) ->
 unpack(tag, Tag) ->
     unpack(binary, Tag);
 unpack(args, Args) ->
-    unpack(binary, Args);
+    unpack(opaque, Args);
 unpack(timeout, Timeout) ->
     unpack(integer, Timeout);
 unpack(timer, {deadline, Deadline}) ->
@@ -191,11 +195,11 @@ unpack(direction, Direction) ->
 
 %% events and history
 unpack(aux_state, AuxState) ->
-    unpack(binary, AuxState);
+    unpack(opaque, AuxState);
 unpack(event_id, ID) ->
     unpack(integer, ID);
 unpack(event_body, Body) ->
-    unpack(binary, Body);
+    unpack(opaque, Body);
 unpack(event, #'Event'{id = ID, created_at = CreatedAt, event_payload = Body}) ->
     #{
         id         => unpack(event_id  , ID       ),
@@ -237,7 +241,7 @@ unpack(signal, {init, #'InitSignal'{arg = Args}}) ->
 unpack(signal, {repair, #'RepairSignal'{arg = Args}}) ->
     {repair, unpack(args, Args)};
 unpack(call_response, CallResponse) ->
-    unpack(binary, CallResponse);
+    unpack(opaque, CallResponse);
 unpack(signal_args, #'SignalArgs'{signal = Signal, machine = Machine}) ->
     {unpack(signal , Signal), unpack(machine, Machine)};
 unpack(call_args, #'CallArgs'{arg = Args, machine = Machine}) ->
@@ -278,6 +282,49 @@ unpack(Type, Value) ->
     erlang:error(badarg, [Type, Value]).
 
 %%
+
+-spec pack_opaque(mg:opaque()) ->
+    mg_proto_msgpack_thrift:'Value'().
+pack_opaque(null) ->
+    {nl, #msgpack_Nil{}};
+pack_opaque(Boolean) when is_boolean(Boolean) ->
+    {b, Boolean};
+pack_opaque(Integer) when is_integer(Integer) ->
+    {i, Integer};
+pack_opaque(Float) when is_float(Float) ->
+    {flt, Float};
+pack_opaque({string, String}) ->
+    {str, unicode:characters_to_binary(String, unicode)};
+pack_opaque(Binary) when is_binary(Binary) ->
+    {bin, Binary};
+pack_opaque(Object) when is_map(Object) ->
+    {obj, maps:fold(fun(K, V, Acc) -> maps:put(pack_opaque(K), pack_opaque(V), Acc) end, #{}, Object)};
+pack_opaque(Array) when is_list(Array) ->
+    {arr, lists:map(fun pack_opaque/1, Array)};
+pack_opaque(Arg) ->
+    erlang:error(badarg, [Arg]).
+
+-spec unpack_opaque(mg_proto_msgpack_thrift:'Value'()) ->
+    mg:opaque().
+unpack_opaque({nl, #msgpack_Nil{}}) ->
+    null;
+unpack_opaque({b, Boolean}) ->
+    Boolean;
+unpack_opaque({i, Integer}) ->
+    Integer;
+unpack_opaque({flt, Float}) ->
+    Float;
+unpack_opaque({str, BString}) ->
+    {string, unicode:characters_to_list(BString, unicode)};
+unpack_opaque({bin, Binary}) ->
+    Binary;
+unpack_opaque({obj, Object}) ->
+    maps:fold(fun(K, V, Acc) -> maps:put(unpack_opaque(K), unpack_opaque(V), Acc) end, #{}, Object);
+unpack_opaque({arr, Array}) ->
+    lists:map(fun unpack_opaque/1, Array);
+unpack_opaque(Arg) ->
+    erlang:error(badarg, [Arg]).
+
 
 % rfc3339:parse имеет некорретный спек, поэтому диалайзер всегда ругается
 -dialyzer({nowarn_function, parse_timestamp/1}).

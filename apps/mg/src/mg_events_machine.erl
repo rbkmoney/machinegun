@@ -50,7 +50,7 @@
 -type call_result  () :: {term(), state_change(), complex_action()}.
 -type state_change () :: {aux_state(), [mg_events:body()]}.
 -type signal       () :: {init, term()} | timeout | {repair, term()}.
--type aux_state    () :: binary().
+-type aux_state    () :: mg:opaque().
 
 -type machine() :: #{
     ns            => mg:ns(),
@@ -281,7 +281,7 @@ process_signal(Options, Signal, Machine, EventsRange) ->
         mg_utils:apply_mod_opts(get_option(processor, Options), process_signal, [{Signal, Machine}]),
     {ok, handle_processing_result(StateChange, ComplexAction, EventsRange)}.
 
--spec process_call(options(), mg:opaque(), machine(), mg_events:events_range()) ->
+-spec process_call(options(), term(), machine(), mg_events:events_range()) ->
     {_Resp, delayed_actions()}.
 process_call(Options, Args, Machine, EventsRange) ->
     {Resp, StateChange, ComplexAction} =

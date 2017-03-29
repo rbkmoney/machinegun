@@ -112,12 +112,12 @@ apply_mod_opts(#{module := Module, namespace := Namespace}, Function, Args) ->
 %% Internal API
 %%
 -define(msgpack_options, [
-    {spec           , new        },
-    {allow_atom     , none       },
-    {unpack_str     , as_binary  },
-    {validate_string, false      },
-    {pack_str       , none       },
-    {map_format     , map        }
+    {spec           , new             },
+    {allow_atom     , none            },
+    {unpack_str     , as_tagged_list  },
+    {validate_string, false           },
+    {pack_str       , from_tagged_list},
+    {map_format     , map             }
 ]).
 
 -spec opaque_to_binary(opaque()) ->

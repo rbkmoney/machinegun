@@ -7,6 +7,9 @@
 -export([call       /3]).
 -export([get_machine/3]).
 
+%% уменьшаем писанину
+-import(mg_woody_api_packer, [pack/2, unpack/2]).
+
 %%
 %% API
 %%
@@ -16,28 +19,28 @@
     retry_strategy => genlib_retry:strategy() | undefined
 }.
 
--spec start(options(), mg:id(), mg:args()) ->
+-spec start(options(), mg:id(), mg_events_machine:args()) ->
     ok.
 start(#{url := BaseURL, ns := NS, retry_strategy := Strategy}, ID, Args) ->
-    ok = call_service(BaseURL, 'Start', [NS, ID, Args], Strategy).
+    ok = call_service(BaseURL, 'Start', [pack(ns, NS), pack(id, ID), pack(args, Args)], Strategy).
 
--spec repair(options(), mg_events_machine:ref(), mg:args()) ->
+-spec repair(options(), mg_events_machine:ref(), mg_events_machine:args()) ->
     ok.
 repair(#{url := BaseURL, ns := NS, retry_strategy := Strategy}, Ref, Args) ->
-    ok = call_service(BaseURL, 'Repair', [machine_desc(NS, Ref), Args], Strategy).
+    ok = call_service(BaseURL, 'Repair', [machine_desc(NS, Ref), pack(args, Args)], Strategy).
 
--spec call(options(), mg_events_machine:ref(), mg:args()) ->
+-spec call(options(), mg_events_machine:ref(), mg_events_machine:args()) ->
     mg:call_resp().
 call(#{url := BaseURL, ns := NS, retry_strategy := Strategy}, Ref, Args) ->
-    mg_woody_api_packer:unpack(
+    unpack(
         call_response,
-        call_service(BaseURL, 'Call', [machine_desc(NS, Ref), Args], Strategy)
+        call_service(BaseURL, 'Call', [machine_desc(NS, Ref), pack(args, Args)], Strategy)
     ).
 
 -spec get_machine(options(), mg_events_machine:ref(), mg_events:history_range()) ->
     mg_events_machine:machine().
 get_machine(#{url := BaseURL, ns := NS, retry_strategy := Strategy}, Ref, Range) ->
-    mg_woody_api_packer:unpack(
+    unpack(
         machine,
         call_service(BaseURL, 'GetMachine', [machine_desc(NS, Ref, Range)], Strategy)
     ).
@@ -53,7 +56,7 @@ machine_desc(NS, Ref) ->
 -spec machine_desc(mg:ns(), mg_events_machine:ref(), mg_events:history_range()) ->
     _.
 machine_desc(NS, Ref, HRange) ->
-    mg_woody_api_packer:pack(machine_descriptor, {NS, Ref, HRange}).
+    pack(machine_descriptor, {NS, Ref, HRange}).
 
 -spec call_service(_BaseURL, atom(), [_Arg], genlib_retry:strategy() | undefined) ->
     _.
