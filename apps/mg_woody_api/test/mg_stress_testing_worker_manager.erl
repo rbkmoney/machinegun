@@ -5,7 +5,7 @@
 -behaviour(gen_server).
 
 %% API
--export([child_spec/1]).
+-export([child_spec/2]).
 -export([start_link/1]).
 
 %% gen_server callbacks
@@ -15,7 +15,7 @@
 
 -export_type([options/0]).
 -type options() :: #{
-    name             => atom   (),
+    name             => atom(),
     ccw              => integer(),
     wps              => integer(),
     wps              => integer(),
@@ -26,11 +26,11 @@
 %%
 %% API
 %%
--spec child_spec(options()) ->
+-spec child_spec(atom(), options()) ->
     supervisor:child_spec().
-child_spec(Options) ->
+child_spec(ChildId, Options) ->
     #{
-        id       => maps:get(name, Options),
+        id       => ChildId,
         start    => {?MODULE, start_link, [Options]},
         restart  => temporary,
         shutdown => brutal_kill
@@ -40,7 +40,6 @@ child_spec(Options) ->
     supervisor:startlink_ret().
 start_link(Options) ->
     Name = maps:get(name, Options),
-    io:format("~p\n", [Name]),
     gen_server:start_link(self_ref(Name), ?MODULE, Options, []).
 
 %%
@@ -80,7 +79,7 @@ handle_info(init, S) ->
 handle_info({timeout, TRef, start_client}, S=#{connect_tref:=ConnectTRef})
     when (TRef == ConnectTRef)
     ->
-    case stop_date(S) < now() of
+    case stop_date(S) < mg_utils:now_ms() of
         true ->
             case current_ccw(S) < max_ccw(S) of
                 true ->
@@ -111,15 +110,18 @@ terminate(_, _) ->
 %%
 -spec start_new_client(state()) ->
     state().
-start_new_client(S) ->
-    {ok, _} = supervisor:start_child(self_ref(worker_sup), child_opts(S)),
+start_new_client(S0) ->
+    {Name, S} = get_next_name(S0),
+    {ok, _} = supervisor:start_child(self_ref(worker_sup), [Name, child_opts(S)]),
     S.
 
 -spec child_opts(state()) ->
     child_opts().
-child_opts(S0) ->
-    {Name, S} = get_next_name(S0),
-    [Name, session_duration(S), request_delay(S)].
+child_opts(S) ->
+    #{
+        session_duration => session_duration(S), 
+        action_delay     => action_delay(S)
+    }.
 
 -spec get_next_name(state()) ->
     {pos_integer(), state()}.
@@ -142,13 +144,13 @@ max_ccw(S) ->
 session_duration(S) ->
     maps:get(session_duration, S).
 
--spec request_delay(state()) ->
+-spec action_delay(state()) ->
     integer().
-request_delay(S) ->
-    maps:get(request_delay, S).
+action_delay(S) ->
+    maps:get(action_delay, S).
 
 -spec stop_date(state()) ->
-    date().
+    integer().
 stop_date(S) ->
     maps:get(stop_date, S).
 
@@ -164,14 +166,14 @@ init_state(Options) ->
         connect_tref     => undefined,
         session_duration => maps:get(session_duration, Options),
         connect_delay    => 1000,
-        request_delay    => 1000,
+        action_delay     => 1000,
         last_name        => 1
     }.
 
 -spec is_finished(state()) ->
     boolean().
 is_finished(S) ->
-    (current_ccw(S) == 0) and (stop_date() < now()).
+    (current_ccw(S) == 0) and (stop_date(S) < mg_utils:now_ms()).
 
 -spec schedule_connect_timer(state()) ->
     state().

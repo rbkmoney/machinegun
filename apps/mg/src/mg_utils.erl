@@ -60,6 +60,8 @@
 
 -export([concatenate_namespaces/2]).
 
+-export([now_ms/0]).
+
 %%
 %% API
 %% OTP

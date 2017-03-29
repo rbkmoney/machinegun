@@ -5,13 +5,68 @@
 -behaviour(mg_stress_testing_worker).
 
 %% Worker callbacks
--export([do_action/1]).
+-export([start /1]).
+-export([action/1]).
 
--type state() :: term().
+-type state() :: mg_stress_testing_worker:state().
 
--spec do_action(state()) ->
+-type step() :: first | second.
+
+-type local_state() :: #{
+    step := step()
+}.
+
+-spec start(state()) ->
     state().
-do_action(undefined, ) ->
-    io:format("~p from ~p", ["hello", self()]),
-    first;
-do_action(first) ->
+start(S) ->
+    LocalState = init_local_state(S),
+    update_local_state(LocalState, S).
+
+-spec action(state()) ->
+    state().
+action(S) ->
+    LocalState0 = local_state(S),
+    LocalState  = do_action(LocalState0),
+    update_local_state(LocalState, S).
+
+-spec do_action(local_state()) ->
+    local_state().
+do_action(LS) ->
+    case step(LS) of
+        first -> 
+            print(first),
+            LS;
+        last -> 
+            print(last),
+            LS
+    end.
+
+%%
+%% Utils
+%%
+-spec local_state(state()) ->
+    local_state().
+local_state(S) ->
+    maps:get(local_state, S).
+
+-spec step(local_state()) ->
+    step().
+step(S) ->
+    maps:get(step, S).
+
+-spec init_local_state(state()) ->
+    local_state().
+init_local_state(_S) ->
+    #{
+        step => first
+    }.
+
+-spec update_local_state(local_state(), state()) ->
+    state().
+update_local_state(LocalState, S) ->
+    S#{local_state => LocalState}.
+
+-spec print(atom()) ->
+    ok.
+print(Step) ->
+    io:format("~p from ~p", [Step, self()]).

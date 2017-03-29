@@ -9,7 +9,7 @@
 
 %% API
 -export([start_link/3]).
--export([child_spec/0]).
+-export([child_spec/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3, code_change/3, terminate/2]).
@@ -17,7 +17,10 @@
 %%
 %% Callbacks
 %%
--callback do_action(state()) ->
+-callback start(state()) ->
+    state().
+
+-callback action(state()) ->
     state().
 
 %%
@@ -29,34 +32,45 @@
     session_duration := pos_integer()
 }.
 
--spec child_spec(atom(), options()) ->
+-export_type([state/0]).
+-type state() :: #{
+    local_state   := term(),
+    action_delay  := integer(),
+    finish_time   := integer()
+}.
+
+-export_type([worker/0]).
+-type worker() :: mg_utils:mod_opts().
+
+-spec child_spec(atom(), worker()) ->
     supervisor:child_spec().
-child_spec(ChildId, #{action_delay:=ActionDelay, session_duration:=SessionDuration}) ->
+child_spec(ChildId, Worker) ->
     #{
         id    => ChildId,
-        start => {?MODULE, start_link, [ActionDelay, SessionDuration]}
+        start => {?MODULE, start_link, [Worker]}
     }.
 
--spec start_link(atom(), options()) ->
+-spec start_link(worker(), atom(), options()) ->
     mg_utils:gen_start_ret().
-start_link(Name, ActionDelay, SessionDuration) ->
-    gen_server:start_link(Name, ?MODULE, [], [ActionDelay, SessionDuration]).
+start_link(Worker, _Name, Options) ->
+    gen_server:start_link(?MODULE, {Worker, Options}, []).
 
 %%
 %% gen_server callbacks
 %%
--type state() :: #{
-    action_delay := term(),
-    finish_time  := term()
-}.
-
--spec init(options()) ->
+-spec init({worker(), options()}) ->
     {ok, state()}.
-init(ActionDelay, SessionDuration) ->
+init({Worker, Options}) ->
+    ActionDelay = maps:get(action_delay, Options),
+    SessionDuration = maps:get(session_duration, Options),
+
     S = #{
+        worker       => Worker,
         action_delay => ActionDelay,
-        finish_time  => calculate_finish_time(SessionDuration)
+        finish_time  => calculate_finish_time(SessionDuration),
+        local_state  => undefined
     },
+
     self() ! init,
     {ok, S}.
 
@@ -74,17 +88,14 @@ handle_cast(Cast, S) ->
 
 -spec handle_info(term(), state()) ->
     {noreply, state()} | {noreply, state(), integer()}.
-handle_info(init, S) ->
+handle_info(init, S0) ->
+    S = call_worker(start, S0),
     {noreply, S, 1000};
 handle_info(timeout, S) ->
     case is_finished(S) of
         false ->
-            S1 = mg_utils:apply_mod_opts(
-                mg_stress_testing_worker_impl,
-                do_action,
-                [S]
-            ),
-            {noreply, S1, ActionDelay};
+            S1 = call_worker(action, S),
+            {noreply, S1, action_delay(S1)};
         true ->
             {stop, normal, S}
     end.
@@ -99,13 +110,35 @@ code_change(_, S, _) ->
 terminate(_, _) ->
     ok.
 
+
+%%
+%% Implementation calling
+%%
+-spec call_worker(atom(), state()) ->
+    state().
+call_worker(F, S) ->
+    % io:format("~p", [worker(S)]),
+    {X, _} = worker(S),
+    erlang:apply(X, F, [S]).
+    % mg_utils:apply_mod_opts(worker(S), F, [S]).
+
 %%
 %% Utils
 %%
+-spec worker(state()) ->
+    worker().
+worker(S) ->
+    maps:get(worker, S).
+
 -spec finish_time(state()) ->
-    pos_integer().
+    integer().
 finish_time(S) ->
     maps:get(finish_time, S).
+
+-spec action_delay(state()) ->
+    integer().
+action_delay(S) ->
+    maps:get(action_delay, S).
 
 -spec calculate_finish_time(pos_integer()) ->
     pos_integer().
@@ -114,5 +147,6 @@ calculate_finish_time(SessionDuration) ->
 
 -spec is_finished(state()) ->
     boolean().
-is_finished(S) ->
-    finish_time(S) > mg_utils:now_ms().
+is_finished(_S) ->
+    false.
+    % finish_time(S) > mg_utils:now_ms().
