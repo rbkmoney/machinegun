@@ -45,6 +45,7 @@
 -export_type([machine_state         /0]).
 -export_type([processor_impact      /0]).
 -export_type([processing_context    /0]).
+-export_type([request_context       /0]).
 -export_type([processor_result      /0]).
 -export_type([processor_reply_action/0]).
 -export_type([processor_flow_action /0]).
@@ -53,29 +54,27 @@
 -export([child_spec /2]).
 -export([start_link /1]).
 
--export([start               /4]).
--export([simple_repair       /3]).
--export([repair              /4]).
--export([call                /4]).
+-export([start               /5]).
+-export([simple_repair       /4]).
+-export([repair              /5]).
+-export([call                /5]).
 -export([get                 /2]).
 -export([search              /2]).
 -export([reply               /2]).
--export([call_with_lazy_start/5]).
+-export([call_with_lazy_start/6]).
 
 %% Internal API
 -export([handle_timers         /1]).
 -export([handle_timers         /2]).
--export([handle_timer          /2]).
--export([reload_killed_machines/1]).
--export([reload_killed_machines/2]).
--export([touch                 /2]).
--export([touch                 /3]).
+-export([resume_interrupted    /1]).
+-export([resume_interrupted    /2]).
+-export([resume_interrupted_one/2]).
 -export([all_statuses          /0]).
 -export([manager_options       /1]).
 
 %% mg_worker
 -behaviour(mg_worker).
--export([handle_load/2, handle_call/3, handle_unload/1]).
+-export([handle_load/3, handle_call/4, handle_unload/1]).
 
 %%
 %% API
@@ -98,10 +97,12 @@
 %%
 
 -type processing_state() :: term().
+% контест обработки, сбрасывается при выгрузке машины
 -type processing_context() :: #{
     call_context => mg_worker:call_context(),
     state        => processing_state()
 } | undefined.
+-type request_context() :: mg_storage:opaque().
 -type processor_impact() ::
       {init   , term()}
     | {repair , term()}
@@ -110,13 +111,18 @@
     |  continuation
 .
 -type processor_reply_action() :: noreply  | {reply, _}.
--type processor_flow_action() :: sleep | {wait, genlib_time:ts()} | {continue, processing_state()}.
+-type processor_flow_action() ::
+       sleep
+    | {wait, genlib_time:ts(), request_context(), HandlingTimeout::pos_integer()}
+    | {continue, processing_state()}
+.
 -type processor_result() :: {processor_reply_action(), processor_flow_action(), machine_state()}.
 
 -callback processor_child_spec(_Options) ->
     mg_utils_supervisor_wrapper:child_spec().
--callback process_machine(_Options, mg:id(), processor_impact(), processing_context(), machine_state()) ->
-    processor_result().
+-callback process_machine(_Options, mg:id(), processor_impact(), processing_context(), ReqCtx, machine_state()) ->
+    processor_result()
+when ReqCtx :: request_context().
 -optional_callbacks([processor_child_spec/1]).
 
 -type search_query() ::
@@ -153,53 +159,54 @@ start_link(Options) ->
         ]
     ).
 
--spec start(options(), mg:id(), term(), mg_utils:deadline()) ->
+-spec start(options(), mg:id(), term(), request_context(), mg_utils:deadline()) ->
     _Resp | throws().
-start(Options, ID, Args, Deadline) ->
-    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {start, Args}, Deadline)).
+start(Options, ID, Args, ReqCtx, Deadline) ->
+    mg_utils:throw_if_error(call_(Options, ID, {start, Args}, ReqCtx, Deadline)).
 
--spec simple_repair(options(), mg:id(), mg_utils:deadline()) ->
+-spec simple_repair(options(), mg:id(), request_context(), mg_utils:deadline()) ->
     _Resp | throws().
-simple_repair(Options, ID, Deadline) ->
-    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, simple_repair, Deadline)).
+simple_repair(Options, ID, ReqCtx, Deadline) ->
+    mg_utils:throw_if_error(call_(Options, ID, simple_repair, ReqCtx, Deadline)).
 
--spec repair(options(), mg:id(), term(), mg_utils:deadline()) ->
+-spec repair(options(), mg:id(), term(), request_context(), mg_utils:deadline()) ->
     _Resp | throws().
-repair(Options, ID, Args, Deadline) ->
-    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {repair, Args}, Deadline)).
+repair(Options, ID, Args, ReqCtx, Deadline) ->
+    mg_utils:throw_if_error(call_(Options, ID, {repair, Args}, ReqCtx, Deadline)).
 
--spec call(options(), mg:id(), term(), mg_utils:deadline()) ->
+-spec call(options(), mg:id(), term(), request_context(), mg_utils:deadline()) ->
     _Resp | throws().
-call(Options, ID, Call, Deadline) ->
-    % TODO specify timeout
-    mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, {call, Call}, Deadline)).
+call(Options, ID, Call, ReqCtx, Deadline) ->
+    mg_utils:throw_if_error(call_(Options, ID, {call, Call}, ReqCtx, Deadline)).
 
 -spec get(options(), mg:id()) ->
     machine_state() | throws().
 get(Options, ID) ->
-    #{state:=State} = mg_utils:throw_if_undefined(element(2, get_storage_machine(Options, ID)), machine_not_found),
+    #{state:=State} =
+        mg_utils:throw_if_undefined(element(2, get_storage_machine(Options, ID)), machine_not_found),
     State.
 
 -spec search(options(), search_query()) ->
     [{_TODO, mg:id()}] | [mg:id()] | throws().
 search(Options, Query) ->
+    % TODO deadline
     mg_storage:search(storage_options(Options), storage_search_query(Query)).
 
--spec call_with_lazy_start(options(), mg:id(), term(), mg_utils:deadline(), term()) ->
+-spec call_with_lazy_start(options(), mg:id(), term(), request_context(), mg_utils:deadline(), term()) ->
     _Resp | throws().
-call_with_lazy_start(Options, ID, Call, Deadline, StartArgs) ->
+call_with_lazy_start(Options, ID, Call, ReqCtx, Deadline, StartArgs) ->
     try
-        call(Options, ID, Call, Deadline)
+        call(Options, ID, Call, ReqCtx, Deadline)
     catch throw:machine_not_found ->
         try
-            _ = start(Options, ID, StartArgs, Deadline)
+            _ = start(Options, ID, StartArgs, ReqCtx, Deadline)
         catch throw:machine_already_exist ->
             % вдруг кто-то ещё делает аналогичный процесс
             ok
         end,
         % если к этому моменту машина не создалась, значит она уже не создастся
         % и исключение будет оправданным
-        call(Options, ID, Call, Deadline)
+        call(Options, ID, Call, ReqCtx, Deadline)
     end.
 
 -spec reply(processing_context(), _) ->
@@ -216,6 +223,7 @@ reply(#{call_context := CallContext}, Reply) ->
 -spec handle_timers(options()) ->
     ok.
 handle_timers(Options) ->
+    % TODO можно будет убрать возврат тела индекса
     handle_timers(Options, search(Options, {waiting, 1, genlib_time:now()})).
 
 -spec handle_timers(options(), [{genlib_time:ts(), mg:id()}]) ->
@@ -223,64 +231,83 @@ handle_timers(Options) ->
 handle_timers(Options, Timers) ->
     lists:foreach(
         % такая схема потенциально опасная, но надо попробовать как она себя будет вести
-        fun(Timer) ->
-            erlang:spawn_link(fun() -> handle_timer(Options, Timer) end)
+        fun({_, ID}) ->
+            erlang:spawn_link(fun() -> handle_timer(Options, ID) end)
         end,
         Timers
     ).
 
--spec handle_timer(options(), {genlib_time:ts(), mg:id()}) ->
+-spec handle_timer(options(), mg:id()) ->
     ok.
-handle_timer(Options, {Timestamp, MachineID}) ->
-    % TODO вообще надо бы как-то это тюнить
-    Deadline = mg_utils:timeout_to_deadline(30000),
+handle_timer(Options, ID) ->
+    {_, StorageMachine} = get_storage_machine(Options, ID),
+    case StorageMachine of
+        #{status := {waiting, Timestamp, ReqCtx, Timeout}} ->
+            handle_timer(Options, ID, Timestamp, ReqCtx, mg_utils:timeout_to_deadline(Timeout));
+        #{status := _} ->
+            ok;
+        undefined ->
+            % такого не должно быть!
+            throw(machine_not_found)
+    end.
+
+-spec handle_timer(options(), mg:id(), genlib_time:ts(), request_context(), mg_utils:deadline()) ->
+    ok.
+handle_timer(Options, ID, Timestamp, ReqCtx, Deadline) ->
     Call = {timeout, Timestamp},
-    CallQueue = mg_workers_manager:get_call_queue(manager_options(Options), MachineID),
+    CallQueue = mg_workers_manager:get_call_queue(manager_options(Options), ID),
     case lists:member(Call, CallQueue) of
         false ->
-            case mg_workers_manager:call(manager_options(Options), MachineID, Call, Deadline) of
+            case call_(Options, ID, Call, ReqCtx, Deadline) of
                 {ok, ok} ->
                     ok;
                 {error, Reason} ->
-                    ok = log_failed_timer_handling(namespace(Options), MachineID, Reason)
+                    ok = log_failed_timer_handling(namespace(Options), ID, ReqCtx, Reason)
             end;
         true ->
             ok
     end.
 
--spec reload_killed_machines(options()) ->
+-spec resume_interrupted(options()) ->
     ok.
-reload_killed_machines(Options) ->
-    reload_killed_machines(Options, search(Options, processing)).
+resume_interrupted(Options) ->
+    resume_interrupted(Options, search(Options, processing)).
 
--spec reload_killed_machines(options(), [mg:id()]) ->
+-spec resume_interrupted(options(), [mg:id()]) ->
     ok.
-reload_killed_machines(Options, MachinesIDs) ->
+resume_interrupted(Options, MachinesIDs) ->
     lists:foreach(
-        fun(MachineID) ->
-            erlang:spawn_link(fun() -> touch(Options, MachineID) end)
+        fun(ID) ->
+            erlang:spawn_link(fun() -> resume_interrupted_one(Options, ID) end)
         end,
         MachinesIDs
     ).
 
--spec touch(options(), mg:id()) ->
+-spec resume_interrupted_one(options(), mg:id()) ->
     ok.
-touch(Options, MachineID) ->
-    % TODO вообще надо бы как-то это тюнить
+resume_interrupted_one(Options, ID) ->
     Deadline = mg_utils:timeout_to_deadline(30000),
-    touch(Options, MachineID, Deadline).
+    {_, StorageMachine} = get_storage_machine(Options, ID),
+    case StorageMachine of
+        #{status := {processing, ReqCtx}} ->
+            resume_interrupted_one(Options, ID, ReqCtx, Deadline);
+        #{status := _} ->
+            ok;
+        undefined ->
+            % такого не должно быть!
+            throw(machine_not_found)
+    end.
 
--spec touch(options(), mg:id(), mg_utils:deadline()) ->
+-spec resume_interrupted_one(options(), mg:id(), request_context(), mg_utils:deadline()) ->
     ok.
-touch(Options, MachineID, Deadline) ->
-    % TODO переназвать функцию
-    case mg_workers_manager:is_alive(manager_options(Options), MachineID) of
+resume_interrupted_one(Options, ID, ReqCtx, Deadline) ->
+    case mg_workers_manager:is_alive(manager_options(Options), ID) of
         false ->
-            case mg_workers_manager:call(manager_options(Options), MachineID, touch, Deadline) of
+            case call_(Options, ID, resume_interrupted_one, ReqCtx, Deadline) of
                 {ok, ok} ->
                     ok;
                 {error, Reason} ->
-                    ok = log_failed_touch(namespace(Options), MachineID, Reason)
+                    ok = log_failed_touch(namespace(Options), ID, Reason)
             end;
         true ->
             ok
@@ -290,6 +317,11 @@ touch(Options, MachineID, Deadline) ->
     [atom()].
 all_statuses() ->
     [sleeping, waiting, processing, failed].
+
+-spec call_(options(), mg:id(), _, request_context(), mg_utils:deadline()) ->
+    ok | {ok, _} | {error, _}.
+call_(Options, ID, Call, ReqCtx, Deadline) ->
+    mg_workers_manager:call(manager_options(Options), ID, Call, ReqCtx, Deadline).
 
 %%
 %% mg_worker callbacks
@@ -302,16 +334,20 @@ all_statuses() ->
 }.
 
 -type storage_machine() :: #{
-    status          => machine_status(),
-    state           => machine_state()
+    status => machine_status(),
+    state  => machine_state()
 }.
 
--type machine_regular_status() :: sleeping | {waiting, genlib_time:ts()} | processing.
+-type machine_regular_status() ::
+       sleeping
+    | {waiting, genlib_time:ts(), request_context(), HandlingTimeout::pos_integer()}
+    | {processing, request_context()}
+.
 -type machine_status() :: machine_regular_status() | {error, _, machine_regular_status()}.
 
--spec handle_load(_ID, options()) ->
+-spec handle_load(_ID, options(), request_context()) ->
     {ok, state()}.
-handle_load(ID, Options) ->
+handle_load(ID, Options, ReqCtx) ->
     try
         {StorageContext, StorageMachine} = get_storage_machine(Options, ID),
         State =
@@ -323,44 +359,46 @@ handle_load(ID, Options) ->
             },
         {ok, State}
     catch throw:Reason ->
-        ok = log_load_error(namespace(Options), ID, {throw, Reason, erlang:get_stacktrace()}),
+        ok = log_load_error(namespace(Options), ID, ReqCtx, {throw, Reason, erlang:get_stacktrace()}),
         {error, Reason}
     end.
 
--spec handle_call(_Call, mg_worker:call_context(), state()) ->
+-spec handle_call(_Call, mg_worker:call_context(), request_context(), state()) ->
     {{reply, _Resp} | noreply, state()}.
-handle_call(Call, CallContext, State=#{storage_machine:=StorageMachine}) ->
+handle_call(Call, CallContext, ReqCtx, S=#{storage_machine:=StorageMachine}) ->
     PCtx = new_processing_context(CallContext),
     case {Call, StorageMachine} of
         % сюда мы не должны попадать если машина не падала во время обработки запроса
         % (когда мы переходили в стейт processing)
-        {_, #{status := processing}} -> handle_call(Call, CallContext, process(continuation, undefined, State));
+        {_, #{status := processing}} -> handle_call(Call, CallContext, process(continuation, undefined, ReqCtx, State));
 
         % success
-        {{start , Args   }, undefined                 } -> {noreply, process_start(Args, PCtx, State)};
-        {{call  , SubCall}, #{status:= sleeping      }} -> {noreply, process({call   , SubCall}, PCtx, State)};
-        {{call  , SubCall}, #{status:={waiting, _   }}} -> {noreply, process({call   , SubCall}, PCtx, State)};
-        {{repair, Args   }, #{status:={error  , _, _}}} -> {noreply, process({repair , Args   }, PCtx, State)};
-        { simple_repair   , #{status:={error  , _, _}}} -> {{reply, ok}, process_simple_repair(State)};
+        {{start , Args   }, undefined                    } -> {noreply, process_start(Args, PCtx, ReqCtx, S)};
+        {{call  , SubCall}, #{status:= sleeping         }} -> {noreply, process({call   , SubCall}, PCtx, ReqCtx, S)};
+        {{call  , SubCall}, #{status:={waiting, _, _, _}}} -> {noreply, process({call   , SubCall}, PCtx, ReqCtx, S)};
+        {{repair, Args   }, #{status:={error  , _, _   }}} -> {noreply, process({repair , Args   }, PCtx, ReqCtx, S)};
+        { simple_repair   , #{status:={error  , _, _   }}} -> {{reply, ok}, process_simple_repair(ReqCtx, S)};
 
         % failure
-        {{start  , _     }, #{status:=             _ }} -> {{reply, {error, machine_already_exist  }}, State};
-        {{call   , _     }, #{status:={error  , _, _}}} -> {{reply, {error, machine_failed         }}, State};
-        {{call   , _     }, undefined                 } -> {{reply, {error, machine_not_found      }}, State};
-        {{repair , _     }, #{status:= waiting       }} -> {{reply, {error, machine_already_working}}, State};
-        {{repair , _     }, undefined                 } -> {{reply, {error, machine_not_found      }}, State};
-        { simple_repair   , #{status:= waiting       }} -> {{reply, {error, machine_already_working}}, State};
-        { simple_repair   , undefined                 } -> {{reply, {error, machine_not_found      }}, State};
+        {{start  , _     }, #{status:=             _    }} -> {{reply, {error, machine_already_exist  }}, S};
+        {{call   , _     }, #{status:={error  , _, _   }}} -> {{reply, {error, machine_failed         }}, S};
+        {{call   , _     }, undefined                    } -> {{reply, {error, machine_not_found      }}, S};
+        {{repair , _     }, #{status:={waiting, _, _, _}}} -> {{reply, {error, machine_already_working}}, S};
+        {{repair , _     }, #{status:=sleeping          }} -> {{reply, {error, machine_already_working}}, S};
+        {{repair , _     }, undefined                    } -> {{reply, {error, machine_not_found      }}, S};
+        { simple_repair   , #{status:={waiting, _, _, _}}} -> {{reply, {error, machine_already_working}}, S};
+        { simple_repair   , #{status:= sleeping         }} -> {{reply, {error, machine_already_working}}, S};
+        { simple_repair   , undefined                    } -> {{reply, {error, machine_not_found      }}, S};
 
         % ничего не просходит, просто убеждаемся, что машина загружена
-        {touch, _} -> {{reply, {ok, ok}}, State};
+        {resume_interrupted_one, _} -> {{reply, {ok, ok}}, S};
 
         % timers
-        {{timeout, Ts0}, #{status:={waiting, Ts1}}}
+        {{timeout, Ts0}, #{status:={waiting, Ts1, _, _}}}
             when Ts0 =:= Ts1 ->
-            {noreply, process(timeout, PCtx, State)};
+            {noreply, process(timeout, PCtx, ReqCtx, S)};
         {{timeout, _}, #{status:=_}} ->
-            {{reply, {ok, ok}}, State}
+            {{reply, {ok, ok}}, S}
     end.
 
 -spec handle_unload(state()) ->
@@ -418,11 +456,11 @@ opaque_to_storage_machine([1, Status, State]) ->
 machine_status_to_opaque(Status) ->
     Opaque =
         case Status of
-             sleeping                  ->  1;
-            {waiting, TS}              -> [2, TS];
-             processing                ->  3;
+             sleeping                    ->  1;
+            {waiting, TS, ReqCtx, HdlTo} -> [2, TS, ReqCtx, HdlTo];
+            {processing, ReqCtx}         -> [3, ReqCtx];
             % TODO подумать как упаковывать reason
-            {error, Reason, OldStatus} -> [4, erlang:term_to_binary(Reason), machine_status_to_opaque(OldStatus)]
+            {error, Reason, OldStatus}   -> [4, erlang:term_to_binary(Reason), machine_status_to_opaque(OldStatus)]
         end,
     Opaque.
 
@@ -431,8 +469,10 @@ machine_status_to_opaque(Status) ->
 opaque_to_machine_status(Opaque) ->
     case Opaque of
          1                     ->  sleeping;
-        [2, TS               ] -> {waiting, TS};
-         3                     ->  processing;
+        [2, TS               ] -> {waiting, TS, null, 30000}; % совместимость со старой версией
+        [2, TS, ReqCtx, HdlTo] -> {waiting, TS, ReqCtx, HdlTo};
+         3                     -> {processing, null}; % совместимость со старой версией
+        [3, ReqCtx           ] -> {processing, ReqCtx};
         [4, Reason, OldStatus] -> {error, erlang:binary_to_term(Reason), opaque_to_machine_status(OldStatus)};
         % устаревшее
         [4, Reason           ] -> {error, erlang:binary_to_term(Reason), sleeping}
@@ -468,16 +508,16 @@ storage_machine_to_indexes(#{status := Status}) ->
 status_index(Status) ->
     StatusInt =
         case Status of
-             sleeping     -> 1;
-            {waiting, _}  -> 2;
-             processing   -> 3;
-            {error, _, _} -> 4
+             sleeping             -> 1;
+            {waiting   , _, _, _} -> 2;
+            {processing, _      } -> 3;
+            {error     , _, _   } -> 4
         end,
     [{?status_idx, StatusInt}].
 
 -spec waiting_date_index(machine_status()) ->
     [mg_storage:index_update()].
-waiting_date_index({waiting, Timestamp}) ->
+waiting_date_index({waiting, Timestamp, _, _}) ->
     [{?waiting_idx, Timestamp}];
 waiting_date_index(_) ->
     [].
@@ -485,33 +525,34 @@ waiting_date_index(_) ->
 %%
 %% processing
 %%
--spec process_start(term(), processing_context(), state()) ->
+-spec process_start(term(), processing_context(), request_context(), state()) ->
     state().
-process_start(Args, ProcessingCtx, State) ->
-    process({init, Args}, ProcessingCtx, State#{storage_machine := new_storage_machine()}).
+process_start(Args, ProcessingCtx, ReqCtx, State) ->
+    process({init, Args}, ProcessingCtx, ReqCtx, State#{storage_machine := new_storage_machine()}).
 
--spec process_simple_repair(state()) ->
+-spec process_simple_repair(request_context(), state()) ->
     state().
-process_simple_repair(State = #{storage_machine := StorageMachine = #{status := {error, _, OldStatus}}}) ->
+process_simple_repair(ReqCtx, State = #{storage_machine := StorageMachine = #{status := {error, _, OldStatus}}}) ->
     transit_state(
+        ReqCtx,
         StorageMachine#{status => OldStatus},
         State
     ).
 
--spec process(processor_impact(), processing_context(), state()) ->
+-spec process(processor_impact(), processing_context(), request_context(), state()) ->
     state().
-process(Impact, ProcessingCtx, State) ->
+process(Impact, ProcessingCtx, ReqCtx, State) ->
     try
-        process_unsafe(Impact, ProcessingCtx, State)
+        process_unsafe(Impact, ProcessingCtx, ReqCtx, State)
     catch Class:Reason ->
         ok = do_reply_action({reply, {error, machine_failed}}, ProcessingCtx),
-        handle_exception({Class, Reason, erlang:get_stacktrace()}, Impact, State)
+        handle_exception({Class, Reason, erlang:get_stacktrace()}, Impact, ReqCtx, State)
     end.
 
--spec handle_exception(mg_utils:exception(), processor_impact(), state()) ->
+-spec handle_exception(mg_utils:exception(), processor_impact(), request_context(), state()) ->
     state().
-handle_exception(Exception, Impact, State=#{options:=Options, id:=ID, storage_machine := StorageMachine}) ->
-    ok = log_machine_error(namespace(Options), ID, Exception),
+handle_exception(Exception, Impact, ReqCtx, State=#{options:=Options, id:=ID, storage_machine := StorageMachine}) ->
+    ok = log_machine_error(namespace(Options), ID, ReqCtx, Exception),
     #{status := OldStatus} = StorageMachine,
     case {Impact, OldStatus} of
         {{init, _}, _} ->
@@ -520,48 +561,50 @@ handle_exception(Exception, Impact, State=#{options:=Options, id:=ID, storage_ma
             State;
         {_, _} ->
             NewStorageMachine = StorageMachine#{ status => {error, Exception, OldStatus} },
-            transit_state(NewStorageMachine, State)
+            transit_state(ReqCtx, NewStorageMachine, State)
     end.
 
--spec process_unsafe(processor_impact(), processing_context(), state()) ->
+-spec process_unsafe(processor_impact(), processing_context(), request_context(), state()) ->
     state().
-process_unsafe(Impact, ProcessingCtx, State=#{storage_machine := StorageMachine}) ->
+process_unsafe(Impact, ProcessingCtx, ReqCtx, State=#{storage_machine := StorageMachine}) ->
     {ReplyAction, Action, NewMachineState} =
-        call_processor(Impact, ProcessingCtx, State),
+        call_processor(Impact, ProcessingCtx, ReqCtx, State),
     NewStorageMachine = StorageMachine#{state := NewMachineState},
     case Action of
         {continue, NewProcessingSubState} ->
-            NewState = transit_state(NewStorageMachine#{status := processing}, State),
+            NewState = transit_state(ReqCtx, NewStorageMachine#{status := {processing, ReqCtx}}, State),
             ok = do_reply_action(wrap_reply_action(ok, ReplyAction), ProcessingCtx),
             NewRequestCtx = ProcessingCtx#{state:=NewProcessingSubState},
-            process(continuation, NewRequestCtx, NewState);
+            process(continuation, NewRequestCtx, ReqCtx, NewState);
         sleep ->
-            NewState = transit_state(NewStorageMachine#{status := sleeping}, State),
+            NewState = transit_state(ReqCtx, NewStorageMachine#{status := sleeping}, State),
             ok = do_reply_action(wrap_reply_action(ok, ReplyAction), ProcessingCtx),
             NewState;
-        {wait, Timestamp} ->
-            NewState = transit_state(NewStorageMachine#{status := {waiting, Timestamp}}, State),
+        {wait, Timestamp, HdlReqCtx, HdlTo} ->
+            NewStatus = {waiting, Timestamp, HdlReqCtx, HdlTo},
+            NewState = transit_state(ReqCtx, NewStorageMachine#{status := NewStatus}, State),
             ok = do_reply_action(wrap_reply_action(ok, ReplyAction), ProcessingCtx),
             NewState
     end.
 
--spec call_processor(processor_impact(), processing_context(), state()) ->
+-spec call_processor(processor_impact(), processing_context(), request_context(), state()) ->
     processor_result().
-call_processor(Impact, ProcessingCtx, State) ->
+call_processor(Impact, ProcessingCtx, ReqCtx, State) ->
     #{options := Options, id := ID, storage_machine := #{state := MachineState}} = State,
     F = fun() ->
-            processor_process_machine(ID, Impact, ProcessingCtx, MachineState, Options)
+            processor_process_machine(ID, Impact, ProcessingCtx, ReqCtx, MachineState, Options)
         end,
     RetryStrategy = mg_utils:genlib_retry_new(get_options(processor_retry_policy, Options)),
-    do_with_retry(namespace(Options), ID, F, RetryStrategy).
+    do_with_retry(namespace(Options), ID, F, RetryStrategy, ReqCtx).
 
--spec processor_process_machine(mg:id(), processor_impact(), processing_context(), state(), options()) ->
-    _Result.
-processor_process_machine(ID, Impact, ProcessingCtx, MachineState, Options) ->
+-spec processor_process_machine(mg:id(), processor_impact(), processing_context(), ReqCtx, state(), options()) ->
+    _Result
+when ReqCtx :: request_context().
+processor_process_machine(ID, Impact, ProcessingCtx, ReqCtx, MachineState, Options) ->
     mg_utils:apply_mod_opts(
         get_options(processor, Options),
         process_machine,
-        [ID, Impact, ProcessingCtx, MachineState]
+        [ID, Impact, ProcessingCtx, ReqCtx, MachineState]
     ).
 
 -spec processor_child_spec(options()) ->
@@ -585,13 +628,13 @@ wrap_reply_action(Wrapper, {reply, R}) ->
     {reply, {Wrapper, R}}.
 
 
--spec transit_state(storage_machine(), state()) ->
+-spec transit_state(request_context(), storage_machine(), state()) ->
     state().
-transit_state(NewStorageMachine, State=#{storage_machine := OldStorageMachine})
+transit_state(_ReqCtx, NewStorageMachine, State=#{storage_machine := OldStorageMachine})
     when NewStorageMachine =:= OldStorageMachine
 ->
     State;
-transit_state(NewStorageMachine, State=#{id:=ID, options:=Options, storage_context := StorageContext}) ->
+transit_state(ReqCtx, NewStorageMachine, State=#{id:=ID, options:=Options, storage_context := StorageContext}) ->
     F = fun() ->
             mg_storage:put(
                 storage_options(Options),
@@ -602,7 +645,7 @@ transit_state(NewStorageMachine, State=#{id:=ID, options:=Options, storage_conte
             )
         end,
     RetryStrategy = mg_utils:genlib_retry_new(get_options(storage_retry_policy, Options)),
-    NewStorageContext  = do_with_retry(namespace(Options), ID, F, RetryStrategy),
+    NewStorageContext  = do_with_retry(namespace(Options), ID, F, RetryStrategy, ReqCtx),
     State#{
         storage_machine := NewStorageMachine,
         storage_context := NewStorageContext
@@ -641,7 +684,7 @@ timers_cron_options(Options) ->
 overseer_cron_options(Options) ->
     #{
         interval => 1000, % 1 sec
-        job      => {?MODULE, reload_killed_machines, [Options]}
+        job      => {?MODULE, resume_interrupted, [Options]}
     }.
 
 -spec namespace(options()) ->
@@ -666,19 +709,19 @@ default_retry_policy() ->
 %%
 %% retrying
 %%
--spec do_with_retry(mg:ns(), mg:id(), fun(() -> R), genlib_retry:strategy()) ->
+-spec do_with_retry(mg:ns(), mg:id(), fun(() -> R), genlib_retry:strategy(), request_context()) ->
     R.
-do_with_retry(NS, ID, Fun, RetryStrategy) ->
+do_with_retry(NS, ID, Fun, RetryStrategy, ReqCtx) ->
     try
         Fun()
     catch throw:(Reason={transient, _}) ->
         Exception = {throw, Reason, erlang:get_stacktrace()},
-        ok = log_transient_exception(NS, ID, Exception),
+        ok = log_transient_exception(NS, ID, ReqCtx, Exception),
         case genlib_retry:next_step(RetryStrategy) of
             {wait, Timeout, NewRetryStrategy} ->
-                ok = log_retry(NS, ID, Timeout),
+                ok = log_retry(NS, ID, ReqCtx, Timeout),
                 ok = timer:sleep(Timeout),
-                do_with_retry(NS, ID, Fun, NewRetryStrategy);
+                do_with_retry(NS, ID, Fun, NewRetryStrategy, ReqCtx);
             finish ->
                 throw({timeout, {retry_timeout, Reason}})
         end
@@ -687,29 +730,29 @@ do_with_retry(NS, ID, Fun, RetryStrategy) ->
 %%
 %% logging
 %%
--spec log_load_error(mg:ns(), mg:id(), mg_utils:exception()) ->
+-spec log_load_error(mg:ns(), mg:id(), _, mg_utils:exception()) ->
     ok.
-log_load_error(NS, ID, Exception) ->
+log_load_error(NS, ID, _ReqCtx, Exception) ->
     ok = error_logger:error_msg("[~s:~s] loading failed ~p", [NS, ID, Exception]).
 
--spec log_machine_error(mg:ns(), mg:id(), mg_utils:exception()) ->
+-spec log_machine_error(mg:ns(), mg:id(), _, mg_utils:exception()) ->
     ok.
-log_machine_error(NS, ID, Exception) ->
+log_machine_error(NS, ID, _ReqCtx, Exception) ->
     ok = error_logger:error_msg("[~s:~s] processing failed ~p", [NS, ID, Exception]).
 
--spec log_transient_exception(mg:ns(), mg:id(), mg_utils:exception()) ->
+-spec log_transient_exception(mg:ns(), mg:id(), _, mg_utils:exception()) ->
     ok.
-log_transient_exception(NS, ID, Exception) ->
+log_transient_exception(NS, ID, _ReqCtx, Exception) ->
     ok = error_logger:warning_msg("[~s:~s] retryable error ~p", [NS, ID, Exception]).
 
--spec log_retry(mg:ns(), mg:id(), Timeout::pos_integer()) ->
+-spec log_retry(mg:ns(), mg:id(), _, Timeout::pos_integer()) ->
     ok.
-log_retry(NS, ID, RetryTimeout) ->
+log_retry(NS, ID, _ReqCtx, RetryTimeout) ->
     ok = error_logger:warning_msg("[~s:~s] retrying in ~p msec", [NS, ID, RetryTimeout]).
 
--spec log_failed_timer_handling(mg:ns(), mg:id(), _Reason) ->
+-spec log_failed_timer_handling(mg:ns(), mg:id(), _, _Reason) ->
     ok.
-log_failed_timer_handling(NS, ID, Reason) ->
+log_failed_timer_handling(NS, ID, _ReqCtx, Reason) ->
     ok = error_logger:warning_msg("[~s:~s] timer handling failed ~p", [NS, ID, Reason]).
 
 -spec log_failed_touch(mg:ns(), mg:id(), _Reason) ->

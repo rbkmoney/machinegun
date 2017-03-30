@@ -103,9 +103,9 @@ tests_groups() ->
 
         {timers, [sequence], [
             machine_start,
-            handle_timer,
-            handle_timer, % был прецендент, что таймер срабатывал только один раз
-            abort_timer
+            handle_timer
+            % handle_timer % был прецендент, что таймер срабатывал только один раз
+            % abort_timer
         ]},
 
         {event_sink, [sequence], [

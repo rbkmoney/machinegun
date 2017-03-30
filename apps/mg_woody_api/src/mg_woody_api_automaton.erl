@@ -24,8 +24,6 @@ handler(Options) ->
 %%
 %% woody handler
 %%
-
-
 -spec handle_function(woody:func(), woody:args(), woody_context:ctx(), options()) ->
     {ok, _Result} | no_return().
 
@@ -35,7 +33,8 @@ handle_function('Start', [NS, ID, Args], WoodyContext, Options) ->
                 mg_events_machine:start(
                     get_ns_options(NS, Options),
                     unpack(id, ID),
-                    {unpack(args, Args), WoodyContext}
+                    unpack(args, Args),
+                    mg_woody_api_utils:woody_context_to_opaque(WoodyContext)
                 )
             end
         ),
@@ -48,8 +47,9 @@ handle_function('Repair', [MachineDesc, Args], WoodyContext, Options) ->
                 mg_events_machine:repair(
                     get_ns_options(NS, Options),
                     Ref,
-                    {unpack(args, Args), WoodyContext},
-                    Range
+                    unpack(args, Args),
+                    Range,
+                    mg_woody_api_utils:woody_context_to_opaque(WoodyContext)
                 )
             end
         ),
@@ -64,8 +64,9 @@ handle_function('Call', [MachineDesc, Args], WoodyContext, Options) ->
                 mg_events_machine:call(
                     get_ns_options(NS, Options),
                     Ref,
-                    {unpack(args, Args), WoodyContext},
-                    Range
+                    unpack(args, Args),
+                    Range,
+                    mg_woody_api_utils:woody_context_to_opaque(WoodyContext)
                 )
             end
         ),
@@ -76,7 +77,11 @@ handle_function('GetMachine', [MachineDesc], _WoodyContext, Options) ->
     History =
         mg_woody_api_utils:handle_safe(
             fun() ->
-                mg_events_machine:get_machine(get_ns_options(NS, Options), Ref, Range)
+                mg_events_machine:get_machine(
+                    get_ns_options(NS, Options),
+                    Ref,
+                    Range
+                )
             end
         ),
     {ok, pack(machine, History)}.

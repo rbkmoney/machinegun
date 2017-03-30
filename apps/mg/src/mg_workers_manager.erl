@@ -15,7 +15,7 @@
 
 -export([child_spec    /2]).
 -export([start_link    /1]).
--export([call          /4]).
+-export([call          /5]).
 -export([get_call_queue/2]).
 -export([brutal_kill   /2]).
 -export([is_alive      /2]).
@@ -53,48 +53,48 @@ start_link(Options) ->
     ).
 
 % sync
--spec call(options(), _ID, _Call, mg_utils:deadline()) ->
+-spec call(options(), _ID, _Call, _ReqCtx, mg_utils:deadline()) ->
     _Reply | {error, _}.
-call(Options, ID, Call, Deadline) ->
+call(Options, ID, Call, ReqCtx, Deadline) ->
     case mg_utils:is_deadline_reached(Deadline) of
         false ->
             Name = maps:get(name, Options),
             try
-                mg_worker:call(Name, ID, Call, Deadline, message_queue_len_limit(Options))
+                mg_worker:call(Name, ID, Call, ReqCtx, Deadline, message_queue_len_limit(Options))
             catch
                 exit:Reason ->
-                    handle_worker_exit(Options, ID, Call, Deadline, Reason)
+                    handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason)
             end;
         true ->
             {error, {timeout, worker_call_deadline_reached}}
     end.
 
--spec handle_worker_exit(options(), _ID, _Call, mg_utils:deadline(), _Reason) ->
+-spec handle_worker_exit(options(), _ID, _Call, _ReqCtx, mg_utils:deadline(), _Reason) ->
     _Reply | {error, _}.
-handle_worker_exit(Options, ID, Call, Deadline, Reason) ->
+handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason) ->
     case Reason of
-         noproc         -> start_and_retry_call(Options, ID, Call, Deadline);
-        {noproc    , _} -> start_and_retry_call(Options, ID, Call, Deadline);
-        {normal    , _} -> start_and_retry_call(Options, ID, Call, Deadline);
-        {shutdown  , _} -> start_and_retry_call(Options, ID, Call, Deadline);
+         noproc         -> start_and_retry_call(Options, ID, Call, ReqCtx, Deadline);
+        {noproc    , _} -> start_and_retry_call(Options, ID, Call, ReqCtx, Deadline);
+        {normal    , _} -> start_and_retry_call(Options, ID, Call, ReqCtx, Deadline);
+        {shutdown  , _} -> start_and_retry_call(Options, ID, Call, ReqCtx, Deadline);
         {timeout   , _} -> {error, Reason};
          Unknown        -> {error, {unexpected_exit, Unknown}}
     end.
 
--spec start_and_retry_call(options(), _ID, _Call, mg_utils:deadline()) ->
+-spec start_and_retry_call(options(), _ID, _Call, _ReqCtx, mg_utils:deadline()) ->
     _Reply | {error, _}.
-start_and_retry_call(Options, ID, Call, Deadline) ->
+start_and_retry_call(Options, ID, Call, ReqCtx, Deadline) ->
     %
     % NOTE возможно тут будут проблемы и это место надо очень хорошо отсмотреть
     %  чтобы потом не ловить неожиданных проблем
     %
     % идея в том, что если нет процесса, то мы его запускаем
     %
-    case start_child(Options, ID) of
+    case start_child(Options, ID, ReqCtx) of
         {ok, _} ->
-            call(Options, ID, Call, Deadline);
+            call(Options, ID, Call, ReqCtx, Deadline);
         {error, {already_started, _}} ->
-            call(Options, ID, Call, Deadline);
+            call(Options, ID, Call, ReqCtx, Deadline);
         Error={error, _} ->
             Error
     end.
@@ -126,13 +126,13 @@ is_alive(Options, ID) ->
 %%
 %% local
 %%
--spec start_child(options(), _ID) ->
+-spec start_child(options(), _ID, _ReqCtx) ->
     {ok, pid()} | {error, term()}.
-start_child(Options, ID) ->
+start_child(Options, ID, ReqCtx) ->
     case mg_utils:get_msg_queue_len(self_reg_name(Options)) < message_queue_len_limit(Options) of
         true ->
             try
-                supervisor:start_child(self_ref(Options), [maps:get(name, Options), ID])
+                supervisor:start_child(self_ref(Options), [maps:get(name, Options), ID, ReqCtx])
             catch
                 exit:{timeout, Reason} ->
                     {error, {timeout, Reason}}

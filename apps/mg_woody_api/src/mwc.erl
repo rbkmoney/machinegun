@@ -7,15 +7,14 @@
 %% API
 -export_type([scalar/0]).
 
--export([get_statuses_distrib/1]).
--export([simple_repair       /2]).
--export([simple_repair       /3]).
--export([touch               /2]).
--export([touch               /3]).
--export([kill                /2]).
--export([get_machine         /2]).
--export([get_events_machine  /3]).
--export([get_db_state        /2]).
+-export([get_statuses_distrib  /1]).
+-export([simple_repair         /2]).
+-export([simple_repair         /3]).
+-export([resume_interrupted_one/2]).
+-export([kill                  /2]).
+-export([get_machine           /2]).
+-export([get_events_machine    /3]).
+-export([get_db_state          /2]).
 
 %%
 %% API
@@ -40,18 +39,13 @@ simple_repair(Namespace, ID) ->
 -spec simple_repair(scalar(), scalar(), mg_utils:deadline()) ->
     ok | no_return().
 simple_repair(Namespace, ID, Deadline) ->
-    mg_machine:simple_repair(machine_options(Namespace), id(ID), Deadline).
+    mg_machine:simple_repair(machine_options(Namespace), id(ID), new_req_ctx(), Deadline).
 
 
--spec touch(scalar(), scalar()) ->
+-spec resume_interrupted_one(scalar(), scalar()) ->
     ok | no_return().
-touch(Namespace, ID) ->
-    touch(Namespace, ID, mg_utils:default_deadline()).
-
--spec touch(scalar(), scalar(), mg_utils:deadline()) ->
-    ok | no_return().
-touch(Namespace, ID, Deadline) ->
-    ok = mg_machine:touch(machine_options(Namespace), id(ID), Deadline).
+resume_interrupted_one(Namespace, ID) ->
+    ok = mg_machine:resume_interrupted_one(machine_options(Namespace), id(ID)).
 
 % убийство машины
 -spec kill(scalar(), scalar()) ->
@@ -75,6 +69,15 @@ get_events_machine(Namespace, Ref, HRange) ->
     mg_storage:value() | undefined.
 get_db_state(Namespace, ID) ->
     mg_storage:get(storage_options(Namespace), id(ID)).
+
+%%
+
+-spec new_req_ctx() ->
+    mg_machine:request_context().
+new_req_ctx() ->
+    null.
+    % TODO
+    % woody_context:new().
 
 %%
 

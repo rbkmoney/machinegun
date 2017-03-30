@@ -5,13 +5,13 @@
 -export_type([options   /0]).
 -export([child_spec /2]).
 -export([start_link /1]).
--export([add_events /6]).
+-export([add_events /7]).
 -export([get_history/3]).
--export([repair     /3]).
+-export([repair     /4]).
 
 %% mg_machine handler
 -behaviour(mg_machine).
--export([process_machine/5]).
+-export([process_machine/6]).
 
 %%
 %% API
@@ -51,13 +51,17 @@ start_link(Options) ->
     ).
 
 
--spec add_events(options(), mg:id(), mg:ns(), mg:id(), [mg_events:event()], mg_utils:deadline()) ->
-    ok.
-add_events(Options, EventSinkID, SourceNS, SourceMachineID, Events, Deadline) ->
+-spec add_events(options(), mg:id(), mg:ns(), mg:id(), [mg_events:event()], ReqCtx, mg_utils:deadline()) ->
+    ok
+when
+    ReqCtx:: mg_machine:request_context()
+.
+add_events(Options, EventSinkID, SourceNS, SourceMachineID, Events, ReqCtx, Deadline) ->
     ok = mg_machine:call_with_lazy_start(
             machine_options(Options),
             EventSinkID,
             {add_events, SourceNS, SourceMachineID, Events},
+            ReqCtx,
             Deadline,
             undefined
         ).
@@ -72,10 +76,10 @@ get_history(Options, EventSinkID, HistoryRange) ->
         {Key, {_, Value}} <- [{Key, mg_storage:get(events_storage_options(Options), Key)} || Key <- EventsKeys]
     ]).
 
--spec repair(options(), mg:id(), mg_utils:deadline()) ->
+-spec repair(options(), mg:id(), mg_machine:request_context(), mg_utils:deadline()) ->
     ok.
-repair(Options, EventSinkID, Deadline) ->
-    mg_machine:repair(Options, EventSinkID, undefined, Deadline).
+repair(Options, EventSinkID, ReqCtx, Deadline) ->
+    mg_machine:repair(Options, EventSinkID, undefined, ReqCtx, Deadline).
 
 %%
 %% mg_processor handler
@@ -85,9 +89,9 @@ repair(Options, EventSinkID, Deadline) ->
     events_range => mg_events:events_range()
 }.
 
--spec process_machine(_, mg:id(), mg_machine:processor_impact(), _, mg_machine:machine_state()) ->
+-spec process_machine(_, mg:id(), mg_machine:processor_impact(), _, _, mg_machine:machine_state()) ->
     mg_machine:processor_result().
-process_machine(Options, EventSinkID, Impact, _, PackedState) ->
+process_machine(Options, EventSinkID, Impact, _, _, PackedState) ->
     State =
         case {Impact, PackedState} of
             {{init, _}, null} -> new_state();
@@ -238,11 +242,11 @@ generate_sink_event_body(SourceNS, SourceMachineID, Event) ->
 %% packer to opaque
 %%
 -spec state_to_opaque(state()) ->
-    mg:opaque().
+    mg_storage:opaque().
 state_to_opaque(#{events_range := EventsRange}) ->
     [1, mg_events:events_range_to_opaque(EventsRange)].
 
--spec opaque_to_state(mg:opaque()) ->
+-spec opaque_to_state(mg_storage:opaque()) ->
     state().
 opaque_to_state([1, EventsRange]) ->
     #{

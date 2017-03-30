@@ -45,7 +45,7 @@
 %% API
 %%
 -type id   () :: pos_integer().
--type body () :: mg:opaque().
+-type body () :: mg_storage:opaque().
 -type event() :: event(body()).
 -type event(T) :: #{
     id         => id(),
@@ -156,13 +156,13 @@ update_events_range({FirstEventID, _}, NewLastEventID) ->
 %% events range
 % TODO version
 -spec events_range_to_opaque(events_range()) ->
-    mg:opaque().
+    mg_storage:opaque().
 events_range_to_opaque(undefined) ->
     null;
 events_range_to_opaque({First, Last}) ->
     [First, Last].
 
--spec opaque_to_events_range(mg:opaque()) ->
+-spec opaque_to_events_range(mg_storage:opaque()) ->
     events_range().
 opaque_to_events_range(null) ->
     undefined;
@@ -200,7 +200,7 @@ events_to_kvs(Events) ->
 kvs_to_events(Kvs) ->
     [mg_events:kv_to_event(Attr) || Attr <- Kvs].
 
--spec event_to_kv(event(T), fun((T) -> mg:opaque())) ->
+-spec event_to_kv(event(T), fun((T) -> mg_storage:opaque())) ->
     mg_storage:kv().
 event_to_kv(#{id := EventID, created_at := Date, body := Body}, BodyToOpaque) ->
     {
@@ -208,7 +208,7 @@ event_to_kv(#{id := EventID, created_at := Date, body := Body}, BodyToOpaque) ->
         [1, Date, BodyToOpaque(Body)]
     }.
 
--spec kv_to_event(mg_storage:kv(), fun((mg:opaque()) -> T)) ->
+-spec kv_to_event(mg_storage:kv(), fun((mg_storage:opaque()) -> T)) ->
     event(T).
 kv_to_event({EventID, [1, Date, OpaqueBody]}, OpaqueToBody) ->
     #{
@@ -217,32 +217,32 @@ kv_to_event({EventID, [1, Date, OpaqueBody]}, OpaqueToBody) ->
         body       => OpaqueToBody(OpaqueBody)
     }.
 
--spec events_to_kvs([event(T)], fun((T) -> mg:opaque())) ->
+-spec events_to_kvs([event(T)], fun((T) -> mg_storage:opaque())) ->
     [mg_storage:kv()].
 events_to_kvs(Events, BodyToOpaque) ->
     [mg_events:event_to_kv(Event, BodyToOpaque) || Event <- Events].
 
--spec kvs_to_events([mg_storage:kv()], fun((mg:opaque()) -> T)) ->
+-spec kvs_to_events([mg_storage:kv()], fun((mg_storage:opaque()) -> T)) ->
     [event(T)].
 kvs_to_events(Kvs, OpaqueToBody) ->
     [mg_events:kv_to_event(Attr, OpaqueToBody) || Attr <- Kvs].
 
 -spec event_to_opaque(event()) ->
-    mg:opaque().
+    mg_storage:opaque().
 event_to_opaque(Event) ->
     event_to_opaque(Event, fun body_to_opaque/1).
 
--spec opaque_to_event(mg:opaque()) ->
+-spec opaque_to_event(mg_storage:opaque()) ->
     event().
 opaque_to_event(Event) ->
     opaque_to_event(Event, fun opaque_to_body/1).
 
--spec event_to_opaque(event(T), fun((T) -> mg:opaque())) ->
-    mg:opaque().
+-spec event_to_opaque(event(T), fun((T) -> mg_storage:opaque())) ->
+    mg_storage:opaque().
 event_to_opaque(#{id := EventID, created_at := Date, body := Body}, BodyPacker) ->
     [1, EventID, Date, BodyPacker(Body)].
 
--spec opaque_to_event(mg:opaque(), fun((mg:opaque()) -> T)) ->
+-spec opaque_to_event(mg_storage:opaque(), fun((mg_storage:opaque()) -> T)) ->
     event(T).
 opaque_to_event([1, EventID, Date, Body], BodyUnpacker) ->
     #{
@@ -262,11 +262,11 @@ opaques_to_events(Opaques) ->
     [opaque_to_event(Opaque) || Opaque <- Opaques].
 
 -spec body_to_opaque(body()) ->
-    mg:opaque().
+    mg_storage:opaque().
 body_to_opaque(Body) ->
     Body.
 
--spec opaque_to_body(mg:opaque()) ->
+-spec opaque_to_body(mg_storage:opaque()) ->
     body().
 opaque_to_body(Body) ->
     Body.
