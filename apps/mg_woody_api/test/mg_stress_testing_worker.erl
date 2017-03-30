@@ -28,8 +28,8 @@
 %%
 -export_type([options/0]).
 -type options() :: #{
-    action_delay     := pos_integer(),
-    session_duration := pos_integer()
+    action_delay     := integer(),
+    session_duration := integer()
 }.
 
 -export_type([state/0]).
@@ -47,7 +47,8 @@
 child_spec(ChildId, Worker) ->
     #{
         id    => ChildId,
-        start => {?MODULE, start_link, [Worker]}
+        start => {?MODULE, start_link, [Worker]},
+        restart => temporary
     }.
 
 -spec start_link(worker(), atom(), options()) ->
@@ -117,10 +118,8 @@ terminate(_, _) ->
 -spec call_worker(atom(), state()) ->
     state().
 call_worker(F, S) ->
-    % io:format("~p", [worker(S)]),
-    {X, _} = worker(S),
-    erlang:apply(X, F, [S]).
-    % mg_utils:apply_mod_opts(worker(S), F, [S]).
+    {M, _} = worker(S),
+    erlang:apply(M, F, [S]).
 
 %%
 %% Utils
@@ -147,6 +146,6 @@ calculate_finish_time(SessionDuration) ->
 
 -spec is_finished(state()) ->
     boolean().
-is_finished(_S) ->
-    false.
-    % finish_time(S) > mg_utils:now_ms().
+is_finished(S) ->
+    finish_time(S) < mg_utils:now_ms().
+

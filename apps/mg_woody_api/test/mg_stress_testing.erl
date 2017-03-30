@@ -21,15 +21,7 @@
 
 -spec start_link(options()) ->
     supervisor:startlink_ret().
-start_link(_) ->
-    Options = #{
-        worker_mod       => mg_stress_testing_worker_impl,
-        ccw              => 1,
-        aps              => 1,
-        wps              => 1,
-        session_duration => 10000,
-        total_duration   => 10000
-    },
+start_link(Options) ->
     ManagerSpec   = mg_stress_testing_worker_manager:child_spec(worker_manager, manager_options(Options)),
     WorkerSupSpec = mg_stress_testing_worker_supervisor:child_spec(worker_sup, supervisor_options(Options)),
 

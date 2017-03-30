@@ -35,10 +35,10 @@ do_action(LS) ->
     case step(LS) of
         first -> 
             print(first),
-            LS;
+            LS#{step => last};
         last -> 
             print(last),
-            LS
+            LS#{step => first}
     end.
 
 %%
@@ -69,4 +69,5 @@ update_local_state(LocalState, S) ->
 -spec print(atom()) ->
     ok.
 print(Step) ->
-    io:format("~p from ~p", [Step, self()]).
+    io:format("~p from ~p\n", [Step, self()]).
+
