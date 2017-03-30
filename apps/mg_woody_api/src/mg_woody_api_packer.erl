@@ -1,5 +1,6 @@
 -module(mg_woody_api_packer).
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
+-include_lib("mg_proto/include/mg_proto_msgpack_thrift.hrl").
 
 %% API
 -export([pack  /2]).
@@ -283,7 +284,7 @@ unpack(Type, Value) ->
 
 %%
 
--spec pack_opaque(mg:opaque()) ->
+-spec pack_opaque(mg_storage:opaque()) ->
     mg_proto_msgpack_thrift:'Value'().
 pack_opaque(null) ->
     {nl, #msgpack_Nil{}};
@@ -305,7 +306,7 @@ pack_opaque(Arg) ->
     erlang:error(badarg, [Arg]).
 
 -spec unpack_opaque(mg_proto_msgpack_thrift:'Value'()) ->
-    mg:opaque().
+    mg_storage:opaque().
 unpack_opaque({nl, #msgpack_Nil{}}) ->
     null;
 unpack_opaque({b, Boolean}) ->

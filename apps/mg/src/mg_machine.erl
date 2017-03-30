@@ -45,7 +45,6 @@
 -export_type([machine_state         /0]).
 -export_type([processor_impact      /0]).
 -export_type([processing_context    /0]).
--export_type([request_context       /0]).
 -export_type([processor_result      /0]).
 -export_type([processor_reply_action/0]).
 -export_type([processor_flow_action /0]).
@@ -84,7 +83,8 @@
     storage                => mg_storage:storage          (),
     processor              => mg_utils:mod_opts           (),
     storage_retry_policy   => mg_utils:genlib_retry_policy(), % optional
-    processor_retry_policy => mg_utils:genlib_retry_policy()  % optional
+    processor_retry_policy => mg_utils:genlib_retry_policy(), % optional
+    logger                 => mg_machine_logger:handler   ()
 }.
 
 -type thrown_error() :: logic_error() | {transient, transient_error()} | {timeout, _Reason}.
@@ -102,7 +102,6 @@
     call_context => mg_worker:call_context(),
     state        => processing_state()
 } | undefined.
--type request_context() :: mg_storage:opaque().
 -type processor_impact() ::
       {init   , term()}
     | {repair , term()}
@@ -113,7 +112,7 @@
 -type processor_reply_action() :: noreply  | {reply, _}.
 -type processor_flow_action() ::
        sleep
-    | {wait, genlib_time:ts(), request_context(), HandlingTimeout::pos_integer()}
+    | {wait, genlib_time:ts(), mg:request_context(), HandlingTimeout::pos_integer()}
     | {continue, processing_state()}
 .
 -type processor_result() :: {processor_reply_action(), processor_flow_action(), machine_state()}.
@@ -122,7 +121,7 @@
     mg_utils_supervisor_wrapper:child_spec().
 -callback process_machine(_Options, mg:id(), processor_impact(), processing_context(), ReqCtx, machine_state()) ->
     processor_result()
-when ReqCtx :: request_context().
+when ReqCtx :: mg:request_context().
 -optional_callbacks([processor_child_spec/1]).
 
 -type search_query() ::
@@ -159,22 +158,22 @@ start_link(Options) ->
         ]
     ).
 
--spec start(options(), mg:id(), term(), request_context(), mg_utils:deadline()) ->
+-spec start(options(), mg:id(), term(), mg:request_context(), mg_utils:deadline()) ->
     _Resp | throws().
 start(Options, ID, Args, ReqCtx, Deadline) ->
     mg_utils:throw_if_error(call_(Options, ID, {start, Args}, ReqCtx, Deadline)).
 
--spec simple_repair(options(), mg:id(), request_context(), mg_utils:deadline()) ->
+-spec simple_repair(options(), mg:id(), mg:request_context(), mg_utils:deadline()) ->
     _Resp | throws().
 simple_repair(Options, ID, ReqCtx, Deadline) ->
     mg_utils:throw_if_error(call_(Options, ID, simple_repair, ReqCtx, Deadline)).
 
--spec repair(options(), mg:id(), term(), request_context(), mg_utils:deadline()) ->
+-spec repair(options(), mg:id(), term(), mg:request_context(), mg_utils:deadline()) ->
     _Resp | throws().
 repair(Options, ID, Args, ReqCtx, Deadline) ->
     mg_utils:throw_if_error(call_(Options, ID, {repair, Args}, ReqCtx, Deadline)).
 
--spec call(options(), mg:id(), term(), request_context(), mg_utils:deadline()) ->
+-spec call(options(), mg:id(), term(), mg:request_context(), mg_utils:deadline()) ->
     _Resp | throws().
 call(Options, ID, Call, ReqCtx, Deadline) ->
     mg_utils:throw_if_error(call_(Options, ID, {call, Call}, ReqCtx, Deadline)).
@@ -192,7 +191,7 @@ search(Options, Query) ->
     % TODO deadline
     mg_storage:search(storage_options(Options), storage_search_query(Query)).
 
--spec call_with_lazy_start(options(), mg:id(), term(), request_context(), mg_utils:deadline(), term()) ->
+-spec call_with_lazy_start(options(), mg:id(), term(), mg:request_context(), mg_utils:deadline(), term()) ->
     _Resp | throws().
 call_with_lazy_start(Options, ID, Call, ReqCtx, Deadline, StartArgs) ->
     try
@@ -251,7 +250,7 @@ handle_timer(Options, ID) ->
             throw(machine_not_found)
     end.
 
--spec handle_timer(options(), mg:id(), genlib_time:ts(), request_context(), mg_utils:deadline()) ->
+-spec handle_timer(options(), mg:id(), genlib_time:ts(), mg:request_context(), mg_utils:deadline()) ->
     ok.
 handle_timer(Options, ID, Timestamp, ReqCtx, Deadline) ->
     Call = {timeout, Timestamp},
@@ -262,7 +261,7 @@ handle_timer(Options, ID, Timestamp, ReqCtx, Deadline) ->
                 {ok, ok} ->
                     ok;
                 {error, Reason} ->
-                    ok = log_failed_timer_handling(namespace(Options), ID, ReqCtx, Reason)
+                    ok = emit_log_event(Options, ID, ReqCtx, {timer_handling_failed, Reason})
             end;
         true ->
             ok
@@ -298,7 +297,7 @@ resume_interrupted_one(Options, ID) ->
             throw(machine_not_found)
     end.
 
--spec resume_interrupted_one(options(), mg:id(), request_context(), mg_utils:deadline()) ->
+-spec resume_interrupted_one(options(), mg:id(), mg:request_context(), mg_utils:deadline()) ->
     ok.
 resume_interrupted_one(Options, ID, ReqCtx, Deadline) ->
     case mg_workers_manager:is_alive(manager_options(Options), ID) of
@@ -307,7 +306,7 @@ resume_interrupted_one(Options, ID, ReqCtx, Deadline) ->
                 {ok, ok} ->
                     ok;
                 {error, Reason} ->
-                    ok = log_failed_touch(namespace(Options), ID, Reason)
+                    ok = emit_log_event(Options, ID, ReqCtx, {resuming_interrupted_failed, Reason})
             end;
         true ->
             ok
@@ -318,7 +317,7 @@ resume_interrupted_one(Options, ID, ReqCtx, Deadline) ->
 all_statuses() ->
     [sleeping, waiting, processing, failed].
 
--spec call_(options(), mg:id(), _, request_context(), mg_utils:deadline()) ->
+-spec call_(options(), mg:id(), _, mg:request_context(), mg_utils:deadline()) ->
     ok | {ok, _} | {error, _}.
 call_(Options, ID, Call, ReqCtx, Deadline) ->
     mg_workers_manager:call(manager_options(Options), ID, Call, ReqCtx, Deadline).
@@ -340,12 +339,12 @@ call_(Options, ID, Call, ReqCtx, Deadline) ->
 
 -type machine_regular_status() ::
        sleeping
-    | {waiting, genlib_time:ts(), request_context(), HandlingTimeout::pos_integer()}
-    | {processing, request_context()}
+    | {waiting, genlib_time:ts(), mg:request_context(), HandlingTimeout::pos_integer()}
+    | {processing, mg:request_context()}
 .
 -type machine_status() :: machine_regular_status() | {error, _, machine_regular_status()}.
 
--spec handle_load(_ID, options(), request_context()) ->
+-spec handle_load(_ID, options(), mg:request_context()) ->
     {ok, state()}.
 handle_load(ID, Options, ReqCtx) ->
     try
@@ -359,11 +358,12 @@ handle_load(ID, Options, ReqCtx) ->
             },
         {ok, State}
     catch throw:Reason ->
-        ok = log_load_error(namespace(Options), ID, ReqCtx, {throw, Reason, erlang:get_stacktrace()}),
+        Exception = {throw, Reason, erlang:get_stacktrace()},
+        ok = emit_log_event(Options, ID, ReqCtx, {loading_failed, Exception}),
         {error, Reason}
     end.
 
--spec handle_call(_Call, mg_worker:call_context(), request_context(), state()) ->
+-spec handle_call(_Call, mg_worker:call_context(), mg:request_context(), state()) ->
     {{reply, _Resp} | noreply, state()}.
 handle_call(Call, CallContext, ReqCtx, S=#{storage_machine:=StorageMachine}) ->
     PCtx = new_processing_context(CallContext),
@@ -525,12 +525,23 @@ waiting_date_index(_) ->
 %%
 %% processing
 %%
+<<<<<<< bebe3f700216f2e67541cd398915b8e2c67d7437
 -spec process_start(term(), processing_context(), request_context(), state()) ->
+=======
+-spec try_finish_processing(mg:request_context(), state()) ->
+    state().
+try_finish_processing(ReqCtx, State = #{storage_machine := #{status := {processing, _}}}) ->
+    process(continuation, undefined, ReqCtx, State);
+try_finish_processing(_, State = #{storage_machine := _}) ->
+    State.
+
+-spec process_start(term(), processing_context(), mg:request_context(), state()) ->
+>>>>>>> MG-84: replace error_logger with events emiting
     state().
 process_start(Args, ProcessingCtx, ReqCtx, State) ->
     process({init, Args}, ProcessingCtx, ReqCtx, State#{storage_machine := new_storage_machine()}).
 
--spec process_simple_repair(request_context(), state()) ->
+-spec process_simple_repair(mg:request_context(), state()) ->
     state().
 process_simple_repair(ReqCtx, State = #{storage_machine := StorageMachine = #{status := {error, _, OldStatus}}}) ->
     transit_state(
@@ -539,7 +550,7 @@ process_simple_repair(ReqCtx, State = #{storage_machine := StorageMachine = #{st
         State
     ).
 
--spec process(processor_impact(), processing_context(), request_context(), state()) ->
+-spec process(processor_impact(), processing_context(), mg:request_context(), state()) ->
     state().
 process(Impact, ProcessingCtx, ReqCtx, State) ->
     try
@@ -549,10 +560,10 @@ process(Impact, ProcessingCtx, ReqCtx, State) ->
         handle_exception({Class, Reason, erlang:get_stacktrace()}, Impact, ReqCtx, State)
     end.
 
--spec handle_exception(mg_utils:exception(), processor_impact(), request_context(), state()) ->
+-spec handle_exception(mg_utils:exception(), processor_impact(), mg:request_context(), state()) ->
     state().
 handle_exception(Exception, Impact, ReqCtx, State=#{options:=Options, id:=ID, storage_machine := StorageMachine}) ->
-    ok = log_machine_error(namespace(Options), ID, ReqCtx, Exception),
+    ok = emit_log_event(Options, ID, ReqCtx, {machine_failed, Exception}),
     #{status := OldStatus} = StorageMachine,
     case {Impact, OldStatus} of
         {{init, _}, _} ->
@@ -564,7 +575,7 @@ handle_exception(Exception, Impact, ReqCtx, State=#{options:=Options, id:=ID, st
             transit_state(ReqCtx, NewStorageMachine, State)
     end.
 
--spec process_unsafe(processor_impact(), processing_context(), request_context(), state()) ->
+-spec process_unsafe(processor_impact(), processing_context(), mg:request_context(), state()) ->
     state().
 process_unsafe(Impact, ProcessingCtx, ReqCtx, State=#{storage_machine := StorageMachine}) ->
     {ReplyAction, Action, NewMachineState} =
@@ -587,7 +598,7 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, State=#{storage_machine := Storage
             NewState
     end.
 
--spec call_processor(processor_impact(), processing_context(), request_context(), state()) ->
+-spec call_processor(processor_impact(), processing_context(), mg:request_context(), state()) ->
     processor_result().
 call_processor(Impact, ProcessingCtx, ReqCtx, State) ->
     #{options := Options, id := ID, storage_machine := #{state := MachineState}} = State,
@@ -595,11 +606,11 @@ call_processor(Impact, ProcessingCtx, ReqCtx, State) ->
             processor_process_machine(ID, Impact, ProcessingCtx, ReqCtx, MachineState, Options)
         end,
     RetryStrategy = mg_utils:genlib_retry_new(get_options(processor_retry_policy, Options)),
-    do_with_retry(namespace(Options), ID, F, RetryStrategy, ReqCtx).
+    do_with_retry(Options, ID, F, RetryStrategy, ReqCtx).
 
 -spec processor_process_machine(mg:id(), processor_impact(), processing_context(), ReqCtx, state(), options()) ->
     _Result
-when ReqCtx :: request_context().
+when ReqCtx :: mg:request_context().
 processor_process_machine(ID, Impact, ProcessingCtx, ReqCtx, MachineState, Options) ->
     mg_utils:apply_mod_opts(
         get_options(processor, Options),
@@ -628,7 +639,7 @@ wrap_reply_action(Wrapper, {reply, R}) ->
     {reply, {Wrapper, R}}.
 
 
--spec transit_state(request_context(), storage_machine(), state()) ->
+-spec transit_state(mg:request_context(), storage_machine(), state()) ->
     state().
 transit_state(_ReqCtx, NewStorageMachine, State=#{storage_machine := OldStorageMachine})
     when NewStorageMachine =:= OldStorageMachine
@@ -645,7 +656,7 @@ transit_state(ReqCtx, NewStorageMachine, State=#{id:=ID, options:=Options, stora
             )
         end,
     RetryStrategy = mg_utils:genlib_retry_new(get_options(storage_retry_policy, Options)),
-    NewStorageContext  = do_with_retry(namespace(Options), ID, F, RetryStrategy, ReqCtx),
+    NewStorageContext  = do_with_retry(Options, ID, F, RetryStrategy, ReqCtx),
     State#{
         storage_machine := NewStorageMachine,
         storage_context := NewStorageContext
@@ -687,11 +698,6 @@ overseer_cron_options(Options) ->
         job      => {?MODULE, resume_interrupted, [Options]}
     }.
 
--spec namespace(options()) ->
-    mg:ns().
-namespace(Options) ->
-    get_options(namespace, Options).
-
 -spec get_options(atom(), options()) ->
     _.
 get_options(Subj=storage_retry_policy, Options) ->
@@ -709,19 +715,18 @@ default_retry_policy() ->
 %%
 %% retrying
 %%
--spec do_with_retry(mg:ns(), mg:id(), fun(() -> R), genlib_retry:strategy(), request_context()) ->
+-spec do_with_retry(options(), mg:id(), fun(() -> R), genlib_retry:strategy(), mg:request_context()) ->
     R.
-do_with_retry(NS, ID, Fun, RetryStrategy, ReqCtx) ->
+do_with_retry(Options, ID, Fun, RetryStrategy, ReqCtx) ->
     try
         Fun()
     catch throw:(Reason={transient, _}) ->
-        Exception = {throw, Reason, erlang:get_stacktrace()},
-        ok = log_transient_exception(NS, ID, ReqCtx, Exception),
+        ok = emit_log_event(Options, ID, ReqCtx, {transient_error, {throw, Reason, erlang:get_stacktrace()}}),
         case genlib_retry:next_step(RetryStrategy) of
             {wait, Timeout, NewRetryStrategy} ->
-                ok = log_retry(NS, ID, ReqCtx, Timeout),
+                ok = emit_log_event(Options, ID, ReqCtx, {retrying, Timeout}),
                 ok = timer:sleep(Timeout),
-                do_with_retry(NS, ID, Fun, NewRetryStrategy, ReqCtx);
+                do_with_retry(Options, ID, Fun, NewRetryStrategy, ReqCtx);
             finish ->
                 throw({timeout, {retry_timeout, Reason}})
         end
@@ -730,28 +735,9 @@ do_with_retry(NS, ID, Fun, RetryStrategy, ReqCtx) ->
 %%
 %% logging
 %%
--spec log_load_error(mg:ns(), mg:id(), _, mg_utils:exception()) ->
+-spec emit_log_event(options(), mg:id(), mg:request_context(), mg_machine_logger:sub_event()) ->
     ok.
-log_load_error(NS, ID, _ReqCtx, Exception) ->
-    ok = error_logger:error_msg("[~s:~s] loading failed ~p", [NS, ID, Exception]).
-
--spec log_machine_error(mg:ns(), mg:id(), _, mg_utils:exception()) ->
-    ok.
-log_machine_error(NS, ID, _ReqCtx, Exception) ->
-    ok = error_logger:error_msg("[~s:~s] processing failed ~p", [NS, ID, Exception]).
-
--spec log_transient_exception(mg:ns(), mg:id(), _, mg_utils:exception()) ->
-    ok.
-log_transient_exception(NS, ID, _ReqCtx, Exception) ->
-    ok = error_logger:warning_msg("[~s:~s] retryable error ~p", [NS, ID, Exception]).
-
--spec log_retry(mg:ns(), mg:id(), _, Timeout::pos_integer()) ->
-    ok.
-log_retry(NS, ID, _ReqCtx, RetryTimeout) ->
-    ok = error_logger:warning_msg("[~s:~s] retrying in ~p msec", [NS, ID, RetryTimeout]).
-
--spec log_failed_timer_handling(mg:ns(), mg:id(), _, _Reason) ->
-    ok.
+<<<<<<< bebe3f700216f2e67541cd398915b8e2c67d7437
 log_failed_timer_handling(NS, ID, _ReqCtx, Reason) ->
     ok = error_logger:warning_msg("[~s:~s] timer handling failed ~p", [NS, ID, Reason]).
 
@@ -759,3 +745,7 @@ log_failed_timer_handling(NS, ID, _ReqCtx, Reason) ->
     ok.
 log_failed_touch(NS, ID, Reason) ->
     ok = error_logger:warning_msg("[~s:~s] touch failed ~p", [NS, ID, Reason]).
+=======
+emit_log_event(#{namespace := NS, logger := Handler}, ID, ReqCtx, Event) ->
+    ok = mg_machine_logger:handle_event(Handler, {NS, ID, ReqCtx, Event}).
+>>>>>>> MG-84: replace error_logger with events emiting

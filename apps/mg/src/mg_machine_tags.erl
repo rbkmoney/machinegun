@@ -13,7 +13,8 @@
 
 -type options() :: #{
     namespace => mg:ns(),
-    storage   => mg_storage:storage()
+    storage   => mg_storage:storage(),
+    logger    => mg_machine_logger:handler()
 }.
 -type tag() :: binary().
 
@@ -22,7 +23,7 @@
 child_spec(Options, ChildID) ->
     mg_machine:child_spec(machine_options(Options), ChildID).
 
--spec add_tag(options(), tag(), mg:id(), mg_machine:request_context(), mg_utils:deadline()) ->
+-spec add_tag(options(), tag(), mg:id(), mg:request_context(), mg_utils:deadline()) ->
     ok | {already_exists, mg:id()} | no_return().
 add_tag(Options, Tag, ID, ReqCtx, Deadline) ->
     mg_machine:call_with_lazy_start(machine_options(Options), Tag, {add_tag, ID}, ReqCtx, Deadline, undefined).
@@ -62,11 +63,12 @@ process_machine(_, _, {call, {add_tag, ID}}, _, _, PackedState) ->
 %%
 -spec machine_options(options()) ->
     mg_machine:options().
-machine_options(#{namespace:=Namespace, storage:=Storage}) ->
+machine_options(#{namespace:=Namespace, storage:=Storage, logger := Logger}) ->
     #{
         namespace => Namespace,
         processor => ?MODULE,
-        storage   => Storage
+        storage   => Storage,
+        logger    => Logger
     }.
 
 %%

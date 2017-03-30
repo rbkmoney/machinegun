@@ -51,8 +51,8 @@
 -type call_result    () :: {term(), state_change(), complex_action()}.
 -type state_change   () :: {aux_state(), [mg_events:body()]}.
 -type signal         () :: {init, term()} | timeout | {repair, term()}.
--type aux_state      () :: mg:opaque().
--type request_context() ::mg_machine:request_context().
+-type aux_state      () :: mg_storage:opaque().
+-type request_context() :: mg:request_context().
 
 -type machine() :: #{
     ns            => mg:ns(),
@@ -81,6 +81,7 @@
     storage    => mg_storage:storage(),
     processor  => mg_utils:mod_opts(),
     tagging    => mg_machine_tags:options(),
+    logger     => mg_machine_logger:handler(),
     event_sink => {mg:id(), mg_events_sink:options()} % optional
 }.
 
@@ -381,11 +382,12 @@ processor_options(Options) ->
 
 -spec machine_options(options()) ->
     mg_machine:options().
-machine_options(Options = #{namespace := Namespace, storage := Storage}) ->
+machine_options(Options = #{namespace := Namespace, storage := Storage, logger := Logger}) ->
     #{
         namespace => mg_utils:concatenate_namespaces(Namespace, <<"machines">>),
         processor => {?MODULE, Options},
-        storage   => Storage
+        storage   => Storage,
+        logger    => Logger
     }.
 
 -spec events_storage_options(options()) ->

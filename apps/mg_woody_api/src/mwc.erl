@@ -73,7 +73,7 @@ get_db_state(Namespace, ID) ->
 %%
 
 -spec new_req_ctx() ->
-    mg_machine:request_context().
+    mg:request_context().
 new_req_ctx() ->
     null.
     % TODO
@@ -86,7 +86,8 @@ new_req_ctx() ->
 machine_options(Namespace) ->
     #{
         namespace => ns(Namespace),
-        storage   => storage()
+        storage   => storage(),
+        logger    => mg_woody_api_logger
     }.
 
 -spec storage_options(mg:ns()) ->

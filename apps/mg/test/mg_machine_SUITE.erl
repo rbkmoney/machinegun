@@ -129,5 +129,6 @@ automaton_options() ->
     #{
         namespace => <<"test">>,
         processor => ?MODULE,
-        storage   => mg_storage_memory
+        storage   => mg_storage_memory,
+        logger    => undefined
     }.

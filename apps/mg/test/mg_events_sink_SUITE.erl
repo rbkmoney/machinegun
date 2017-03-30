@@ -122,5 +122,6 @@ start_event_sink(Options) ->
 event_sink_options() ->
     #{
         namespace => ?ES_ID,
-        storage   => mg_storage_memory
+        storage   => mg_storage_memory,
+        logger    => undefined
     }.

@@ -24,7 +24,8 @@
 -type event() :: mg_events:event(event_body()).
 -type options() :: #{
     namespace => mg:ns(),
-    storage   => mg_storage:storage()
+    storage   => mg_storage:storage(),
+    logger    => mg_machine_logger:handler()
 }.
 
 
@@ -54,7 +55,7 @@ start_link(Options) ->
 -spec add_events(options(), mg:id(), mg:ns(), mg:id(), [mg_events:event()], ReqCtx, mg_utils:deadline()) ->
     ok
 when
-    ReqCtx:: mg_machine:request_context()
+    ReqCtx:: mg:request_context()
 .
 add_events(Options, EventSinkID, SourceNS, SourceMachineID, Events, ReqCtx, Deadline) ->
     ok = mg_machine:call_with_lazy_start(
@@ -76,7 +77,7 @@ get_history(Options, EventSinkID, HistoryRange) ->
         {Key, {_, Value}} <- [{Key, mg_storage:get(events_storage_options(Options), Key)} || Key <- EventsKeys]
     ]).
 
--spec repair(options(), mg:id(), mg_machine:request_context(), mg_utils:deadline()) ->
+-spec repair(options(), mg:id(), mg:request_context(), mg_utils:deadline()) ->
     ok.
 repair(Options, EventSinkID, ReqCtx, Deadline) ->
     mg_machine:repair(Options, EventSinkID, undefined, ReqCtx, Deadline).
@@ -206,11 +207,12 @@ new_state() ->
 
 -spec machine_options(options()) ->
     mg_machine:options().
-machine_options(Options=#{namespace := Namespace, storage := Storage}) ->
+machine_options(Options = #{namespace := Namespace, storage := Storage, logger := Logger}) ->
     #{
         namespace => mg_utils:concatenate_namespaces(Namespace, <<"machines">>),
         processor => {?MODULE, Options},
-        storage   => Storage
+        storage   => Storage,
+        logger    => Logger
     }.
 
 -spec events_storage_options(options()) ->
