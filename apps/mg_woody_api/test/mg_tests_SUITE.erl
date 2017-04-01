@@ -156,8 +156,9 @@ init_per_group(TestGroup, C0) ->
             case Args of
                 <<"tag">>   -> {Args, {<<>>, [<<"tag_body"  >>]}, #{timer =>  undefined  , tag => Args     }};
                 <<"event">> -> {Args, {<<>>, [<<"event_body">>]}, #{timer =>  undefined  , tag => undefined}};
-                <<"timer">> -> {Args, {<<>>, [<<"timer_body">>]}, #{timer => {timeout, 1}, tag => undefined}};
                 <<"nop"  >> -> {Args, {<<>>, [                ]}, #{timer =>  undefined  , tag => undefined}};
+                <<"set_timer"  >> -> {Args, {<<>>, [<<"timer_body">>]}, #{timer => {set_timer, {timeout, 1}}, tag => undefined}};
+                <<"unset_timer">> -> {Args, {<<>>, [<<"timer_body">>]}, #{timer => unset_timer              , tag => undefined}};
                 <<"fail">>  -> erlang:error(fail)
             end
         end
@@ -314,7 +315,7 @@ failed_machine_repair(C) ->
 handle_timer(C) ->
     #{history := InitialEvents} =
         mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),
-    <<"timer">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"timer">>),
+    <<"set_timer">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"set_timer">>),
     #{history := History1} =
         mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),
     [StartTimerEvent] = History1 -- InitialEvents,
@@ -328,8 +329,8 @@ handle_timer(C) ->
 abort_timer(C) ->
     #{history := InitialEvents} =
         mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),
-    <<"timer">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"timer">>),
-    <<"nop"  >> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"nop"  >>),
+    <<"set_timer"  >> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"set_timer"  >>),
+    <<"unset_timer">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"unset_timer">>),
     ok = timer:sleep(2000),
     #{history := History1} =
         mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),

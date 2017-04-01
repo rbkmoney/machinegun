@@ -17,7 +17,7 @@ BASE_IMAGE_NAME := service_erlang
 BASE_IMAGE_TAG := 13454a94990acb72f753623ec13599a9f6f4f852
 
 # Build image tag to be used
-BUILD_IMAGE_TAG := 4321d332af2f8fd63c7978f613fca51cb21fc250
+BUILD_IMAGE_TAG := 55e987e74e9457191a5b4a7c5dc9e3838ae82d2b
 
 CALL_ANYWHERE := all submodules rebar-update compile xref lint dialyze start devrel release clean distclean
 

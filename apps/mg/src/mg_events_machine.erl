@@ -12,7 +12,7 @@
 -export_type([ref             /0]).
 -export_type([machine         /0]).
 -export_type([tag_action      /0]).
--export_type([set_timer_action/0]).
+-export_type([timer_action    /0]).
 -export_type([complex_action  /0]).
 -export_type([state_change    /0]).
 -export_type([signal          /0]).
@@ -64,16 +64,17 @@
 }.
 
 -type int_timer() :: {genlib_time:ts(), request_context(), pos_integer()}.
+% -type int_timer() :: {genlib_time:ts(), request_context(), pos_integer(), mg_events:history_range()}. % TODO
 
 %% actions
 -type complex_action  () :: #{
-    timer => set_timer_action() | undefined,
-    tag   => tag_action      () | undefined
+    timer => timer_action() | undefined,
+    tag   => tag_action  () | undefined
 }.
--type tag_action         () :: mg_machine_tags:tag().
--type set_timer_action   () :: timer().
--type timer              () :: {timeout, timeout_()} | {deadline, calendar:datetime()} | cancel.
--type timeout_           () :: non_neg_integer().
+-type tag_action  () :: mg_machine_tags:tag().
+-type timer_action() :: {set_timer, timer()} | unset_timer.
+-type timer       () :: {timeout, timeout_()} | {deadline, calendar:datetime()} | cancel.
+-type timeout_    () :: non_neg_integer().
 
 -type ref() :: {id, mg:id()} | {tag, mg_machine_tags:tag()}.
 -type options() :: #{
@@ -208,8 +209,9 @@ process_machine(Options, ID, Impact, PCtx, ReqCtx, PackedState) ->
 -spec process_machine_(options(), mg:id(), mg_machine:processor_impact() | {timeout, _}, _, ReqCtx, state()) ->
     _TODO
 when ReqCtx :: request_context().
-process_machine_(Options, ID, Subj=timeout, PCtx, ReqCtx, State) ->
-    process_machine_(Options, ID, {Subj, {undefined, {undefined, undefined, forward}}}, PCtx, ReqCtx, State);
+process_machine_(Options, ID, Subj=timeout, PCtx, ReqCtx, State=#{timer := {_, _, _}}) ->
+    NewState = State#{timer := undefined},
+    process_machine_(Options, ID, {Subj, {undefined, {undefined, undefined, forward}}}, PCtx, ReqCtx, NewState);
 process_machine_(Options, ID, {Subj, {Args, HRange}}, _, ReqCtx, State = #{events_range := EventsRange}) ->
     % обработка стандартных запросов
     Machine = machine(Options, ID, State, HRange),
@@ -365,12 +367,17 @@ get_timer_action(ComplexAction, ReqCtx) ->
     case maps:get(timer, ComplexAction, undefined) of
         undefined ->
             unchanged;
-        cancel ->
+        unset_timer ->
             undefined;
-        {timeout, Timeout} ->
-            {genlib_time:now() + Timeout, ReqCtx, HandlingTimeout};
-        {deadline, Deadline} ->
-            {genlib_time:daytime_to_unixtime(Deadline), ReqCtx, HandlingTimeout}
+        {set_timer, Timer} ->
+            TimerDateTime =
+                case Timer of
+                    {timeout, Timeout} ->
+                        genlib_time:now() + Timeout;
+                    {deadline, Deadline} ->
+                        genlib_time:daytime_to_unixtime(Deadline)
+                end,
+            {TimerDateTime, ReqCtx, HandlingTimeout}
     end.
 
 %%
