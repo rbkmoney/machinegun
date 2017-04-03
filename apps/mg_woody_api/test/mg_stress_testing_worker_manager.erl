@@ -111,8 +111,8 @@ terminate(_, _) ->
 -spec start_new_client(state()) ->
     state().
 start_new_client(S0) ->
-    {Name, S} = get_next_name(S0),
-    {ok, _} = supervisor:start_child(self_reg_name(worker_sup), [Name, child_opts(S)]),
+    {Id, S} = get_next_id(S0),
+    {ok, _} = supervisor:start_child(self_reg_name(worker_sup), [Id, child_opts(S)]),
     increment_ccw(S).
 
 -spec child_opts(state()) ->
@@ -128,11 +128,11 @@ child_opts(S) ->
 increment_ccw(S) ->
     S#{ccw => current_ccw(S) + 1}.
 
--spec get_next_name(state()) ->
+-spec get_next_id(state()) ->
     {integer(), state()}.
-get_next_name(S) ->
-    Name = maps:get(last_name, S) + 1,
-    {Name, S#{last_name => Name}}.
+get_next_id(S) ->
+    Name = maps:get(last_id, S) + 1,
+    {Name, S#{last_id => Name}}.
 
 -spec current_ccw(state()) ->
     integer().
@@ -170,7 +170,7 @@ init_state(Options) ->
         session_duration => maps:get(session_duration, Options),
         connect_delay    => calculate_delay(maps:get(wps, Options)), 
         action_delay     => calculate_delay(maps:get(aps, Options)),
-        last_name        => 1
+        last_id          => 1
     }.
 
 -spec calculate_delay(integer()) ->
