@@ -11,10 +11,10 @@
 %%
 -export_type([options/0]).
 -type options() :: #{
-    worker_mod       := module (),
-    ccw              := integer(),
-    aps              := integer(),
-    wps              := integer(),
+    worker_mod       := module (), % Worker implementation module
+    ccw              := integer(), % Concurrent workers
+    aps              := integer(), % Actions per second
+    wps              := integer(), % Workers per second
     session_duration := integer(),
     total_duration   := integer()
 }.

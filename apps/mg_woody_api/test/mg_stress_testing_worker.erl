@@ -32,11 +32,10 @@
     session_duration := integer()
 }.
 
--export_type([state/0]).
 -type state() :: #{
-    local_state   := term(),
-    action_delay  := integer(),
-    finish_time   := integer()
+    local_state  := term(),
+    action_delay := integer(),
+    finish_time  := integer()
 }.
 
 -export_type([worker/0]).
@@ -46,8 +45,8 @@
     supervisor:child_spec().
 child_spec(ChildId, Worker) ->
     #{
-        id    => ChildId,
-        start => {?MODULE, start_link, [Worker]},
+        id      => ChildId,
+        start   => {?MODULE, start_link, [Worker]},
         restart => temporary
     }.
 
@@ -62,7 +61,7 @@ start_link(Worker, _Name, Options) ->
 -spec init({worker(), options()}) ->
     {ok, state()}.
 init({Worker, Options}) ->
-    ActionDelay = maps:get(action_delay, Options),
+    ActionDelay     = maps:get(action_delay, Options),
     SessionDuration = maps:get(session_duration, Options),
 
     S = #{
@@ -88,7 +87,7 @@ handle_cast(Cast, S) ->
     {noreply, S}.
 
 -spec handle_info(term(), state()) ->
-    {noreply, state()} | {noreply, state(), integer()}.
+    {stop, normal, state()} | {noreply, state(), integer()}.
 handle_info(init, S0) ->
     S = call_worker(start, S0),
     {noreply, S, 1000};
@@ -117,9 +116,9 @@ terminate(_, _) ->
 %%
 -spec call_worker(atom(), state()) ->
     state().
-call_worker(F, S) ->
-    {M, _} = worker(S),
-    erlang:apply(M, F, [S]).
+call_worker(Fun, S) ->
+    {Mod, _} = worker(S),
+    Mod:Fun(S).
 
 %%
 %% Utils
@@ -139,7 +138,7 @@ finish_time(S) ->
 action_delay(S) ->
     maps:get(action_delay, S).
 
--spec calculate_finish_time(pos_integer()) ->
+-spec calculate_finish_time(integer()) ->
     pos_integer().
 calculate_finish_time(SessionDuration) ->
     SessionDuration + mg_utils:now_ms().

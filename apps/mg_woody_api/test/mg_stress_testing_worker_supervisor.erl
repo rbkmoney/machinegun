@@ -27,8 +27,8 @@ child_spec(ChildId, Options) ->
         id       => ChildId,
         start    => {?MODULE, start_link, [Options]},
         type     => supervisor,
-        restart  => temporary,
-        shutdown => brutal_kill
+        restart  => permanent,
+        shutdown => 5000
     }.
 
 -spec start_link(options()) ->

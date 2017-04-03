@@ -15,12 +15,12 @@
 
 -export_type([options/0]).
 -type options() :: #{
-    name             => atom(),
-    ccw              => integer(),
-    wps              => integer(),
-    wps              => integer(),
-    session_duration => integer(),
-    total_duration   => integer()
+    name             := atom(),
+    ccw              := integer(),
+    wps              := integer(),
+    wps              := integer(),
+    session_duration := integer(),
+    total_duration   := integer()
 }.
 
 %%
@@ -32,25 +32,25 @@ child_spec(ChildId, Options) ->
     #{
         id       => ChildId,
         start    => {?MODULE, start_link, [Options]},
-        restart  => temporary,
-        shutdown => brutal_kill
+        restart  => permanent,
+        shutdown => 5000
     }.
 
 -spec start_link(options()) ->
     supervisor:startlink_ret().
 start_link(Options) ->
     Name = maps:get(name, Options),
-    gen_server:start_link(self_ref(Name), ?MODULE, Options, []).
+    gen_server:start_link(self_reg_name(Name), ?MODULE, Options, []).
 
 %%
 %% gen_server callbacks
 %%
 -type state() :: #{
-    worker_sup => atom   (),
-    ccw        => integer(),
-    wps        => integer(),
-    aps        => integer(),
-    stop_date  => integer()
+    worker_sup := atom   (),
+    ccw        := integer(),
+    wps        := integer(),
+    aps        := integer(),
+    stop_date  := integer()
 }.
 
 -spec init(options()) ->
@@ -79,7 +79,7 @@ handle_info(init, S) ->
 handle_info({timeout, TRef, start_client}, S=#{connect_tref:=ConnectTRef})
     when (TRef == ConnectTRef)
     ->
-    case stop_date(S) < mg_utils:now_ms() of
+    case now_ms() < stop_date(S) of
         true ->
             case current_ccw(S) < max_ccw(S) of
                 true ->
@@ -112,7 +112,7 @@ terminate(_, _) ->
     state().
 start_new_client(S0) ->
     {Name, S} = get_next_name(S0),
-    {ok, _} = supervisor:start_child(self_ref(worker_sup), [Name, child_opts(S)]),
+    {ok, _} = supervisor:start_child(self_reg_name(worker_sup), [Name, child_opts(S)]),
     increment_ccw(S).
 
 -spec child_opts(state()) ->
@@ -129,7 +129,7 @@ increment_ccw(S) ->
     S#{ccw => current_ccw(S) + 1}.
 
 -spec get_next_name(state()) ->
-    {pos_integer(), state()}.
+    {integer(), state()}.
 get_next_name(S) ->
     Name = maps:get(last_name, S) + 1,
     {Name, S#{last_name => Name}}.
@@ -165,7 +165,7 @@ init_state(Options) ->
     #{
         max_ccw          => maps:get(ccw, Options),
         ccw              => 0,
-        stop_date        => 0,
+        stop_date        => calculate_stop_date(maps:get(total_duration, Options)),
         connect_tref     => undefined,
         session_duration => maps:get(session_duration, Options),
         connect_delay    => calculate_delay(maps:get(wps, Options)), 
@@ -177,6 +177,16 @@ init_state(Options) ->
     integer().
 calculate_delay(T) ->
     1000 div T.
+
+-spec calculate_stop_date(integer()) ->
+    integer().
+calculate_stop_date(T) ->
+    now_ms() + T.
+
+-spec now_ms() ->
+    integer().
+now_ms() ->
+    mg_utils:now_ms().
 
 -spec is_finished(state()) ->
     boolean().
@@ -198,7 +208,8 @@ cancel_connect_timer(S = #{connect_tref:=TRef}) ->
     erlang:cancel_timer(TRef),
     S#{connect_tref => undefined}.
 
--spec self_ref(atom()) ->
+-spec self_reg_name(atom()) ->
     mg_utils:gen_reg_name().
-self_ref(Name) ->
+self_reg_name(Name) ->
     {via, gproc, {n, l, Name}}.
+
