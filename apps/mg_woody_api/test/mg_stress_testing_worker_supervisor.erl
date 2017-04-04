@@ -17,7 +17,7 @@
 -export_type([options/0]).
 -type options() :: #{
     name   := atom(),
-    worker := mg_utils:mod_opts()
+    worker := module()
 }.
 
 -spec child_spec(atom(), options()) ->

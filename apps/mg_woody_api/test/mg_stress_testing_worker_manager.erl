@@ -16,11 +16,11 @@
 -export_type([options/0]).
 -type options() :: #{
     name             := atom(),
-    ccw              := integer(),
-    wps              := integer(),
-    wps              := integer(),
-    session_duration := integer(),
-    total_duration   := integer()
+    ccw              := pos_integer(),
+    aps              := pos_integer(),
+    wps              := pos_integer(),
+    session_duration := mg_stress_testing:time_ms(),
+    total_duration   := mg_stress_testing:time_ms()
 }.
 
 %%
@@ -46,11 +46,14 @@ start_link(Options) ->
 %% gen_server callbacks
 %%
 -type state() :: #{
-    worker_sup := atom   (),
-    ccw        := integer(),
-    wps        := integer(),
-    aps        := integer(),
-    stop_date  := integer()
+    max_ccw          := integer(),
+    ccw              := integer(),
+    stop_date        := mg_stress_testing:time_ms(),
+    connect_tref     := reference() | undefined,
+    session_duration := mg_stress_testing:time_ms(),
+    connect_delay    := mg_stress_testing:delay_ms(),
+    action_delay     := mg_stress_testing:delay_ms(),
+    last_id          := pos_integer()
 }.
 
 -spec init(options()) ->
@@ -79,7 +82,7 @@ handle_info(init, S) ->
 handle_info({timeout, TRef, start_client}, S=#{connect_tref:=ConnectTRef})
     when (TRef == ConnectTRef)
     ->
-    case now_ms() < stop_date(S) of
+    case mg_utils:now_ms() < stop_date(S) of
         true ->
             case current_ccw(S) < max_ccw(S) of
                 true ->
@@ -174,19 +177,14 @@ init_state(Options) ->
     }.
 
 -spec calculate_delay(integer()) ->
-    integer().
+    mg_utils:delay_ms().
 calculate_delay(T) ->
     1000 div T.
 
 -spec calculate_stop_date(integer()) ->
-    integer().
+    mg_utils:time_ms().
 calculate_stop_date(T) ->
-    now_ms() + T.
-
--spec now_ms() ->
-    integer().
-now_ms() ->
-    mg_utils:now_ms().
+    mg_utils:now_ms() + T.
 
 -spec is_finished(state()) ->
     boolean().

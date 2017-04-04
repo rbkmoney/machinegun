@@ -9,14 +9,23 @@
 %%
 %% API
 %%
+-export_type([worker_id/0]).
+-type worker_id() :: pos_integer().
+
+-export_type([time_ms/0]).
+-type time_ms() :: pos_integer().
+
+-export_type([time_delay/0]).
+-type time_delay() :: pos_integer().
+
 -export_type([options/0]).
 -type options() :: #{
     worker_mod       := module (), % Worker implementation module
     ccw              := integer(), % Concurrent workers
     aps              := integer(), % Actions per second
     wps              := integer(), % Workers per second
-    session_duration := integer(),
-    total_duration   := integer()
+    session_duration := time_ms(),
+    total_duration   := time_ms()
 }.
 
 -spec start_link(options()) ->
@@ -47,6 +56,6 @@ manager_options(Options) ->
 supervisor_options(Options) ->
     #{
         name   => worker_sup,
-        worker => {maps:get(worker_mod, Options), []}
+        worker => maps:get(worker_mod, Options)
     }.
 

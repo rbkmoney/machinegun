@@ -28,18 +28,18 @@
 %%
 -export_type([options/0]).
 -type options() :: #{
-    action_delay     := integer(),
-    session_duration := integer()
+    action_delay     := mg_stress_testing:delay_ms(),
+    session_duration := mg_stress_testing:time_ms()
 }.
 
 -type state() :: #{
     local_state  := term(),
-    action_delay := integer(),
-    finish_time  := integer()
+    action_delay := mg_stress_testing:delay_ms(),
+    finish_time  := mg_stress_testing:time_ms()
 }.
 
 -export_type([worker/0]).
--type worker() :: mg_utils:mod_opts().
+-type worker() :: module().
 
 -spec child_spec(atom(), worker()) ->
     supervisor:child_spec().
@@ -88,13 +88,15 @@ handle_cast(Cast, S) ->
 
 -spec handle_info(term(), state()) ->
     {stop, normal, state()} | {noreply, state(), integer()}.
-handle_info(init, S0) ->
-    S = call_worker(start, S0),
+handle_info(init, S0) -> 
+    Mod = worker(S0),
+    S = Mod:start(S0),
     {noreply, S, 1000};
 handle_info(timeout, S) ->
     case is_finished(S) of
         false ->
-            S1 = call_worker(action, S),
+            Mod = worker(S),
+            S1 = Mod:action(S),
             {noreply, S1, action_delay(S1)};
         true ->
             {stop, normal, S}
@@ -110,16 +112,6 @@ code_change(_, S, _) ->
 terminate(_, _) ->
     ok.
 
-
-%%
-%% Implementation calling
-%%
--spec call_worker(atom(), state()) ->
-    state().
-call_worker(Fun, S) ->
-    {Mod, _} = worker(S),
-    Mod:Fun(S).
-
 %%
 %% Utils
 %%
@@ -129,17 +121,17 @@ worker(S) ->
     maps:get(worker, S).
 
 -spec finish_time(state()) ->
-    integer().
+    mg_stress_testing:time_ms().
 finish_time(S) ->
     maps:get(finish_time, S).
 
 -spec action_delay(state()) ->
-    integer().
+    mg_stress_testing:delay_ms().
 action_delay(S) ->
     maps:get(action_delay, S).
 
 -spec calculate_finish_time(integer()) ->
-    pos_integer().
+    mg_stress_testing:time_ms().
 calculate_finish_time(SessionDuration) ->
     SessionDuration + mg_utils:now_ms().
 
