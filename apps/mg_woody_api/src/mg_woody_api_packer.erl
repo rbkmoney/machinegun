@@ -64,16 +64,16 @@ pack(event, #{id := ID, created_at := CreatedAt, body := Body}) ->
 pack(history, History) ->
     pack({list, event}, History);
 pack(machine, Machine) ->
-    #{ns:=NS, id:=ID, history_range:=HistoryRange, history:=History, aux_state:=AuxState, timer:=Timer} = Machine,
+    #{ns:=NS, id:=ID, history_range:=HRange, history:=History, aux_state:=AuxState, timer:=Timer} = Machine,
     #'Machine'{
-        ns            = pack(ns           , NS          ),
-        id            = pack(id           , ID          ),
-        history       = pack(history      , History     ),
-        history_range = pack(history_range, HistoryRange),
-        aux_state     = pack(aux_state    , AuxState    ),
-        timer         = pack(int_timer    , Timer       )
+        ns            = pack(ns           , NS      ),
+        id            = pack(id           , ID      ),
+        history       = pack(history      , History ),
+        history_range = pack(history_range, HRange  ),
+        aux_state     = pack(aux_state    , AuxState),
+        timer         = pack(int_timer    , Timer   )
     };
-pack(int_timer, {Timestamp, _, _}) ->
+pack(int_timer, {Timestamp, _, _, _}) ->
     % TODO сделать нормально
     pack(timestamp, Timestamp);
 
@@ -85,8 +85,14 @@ pack(complex_action, #{timer := TimerAction, tag := TagAction}) ->
         timer = pack(timer_action, TimerAction),
         tag   = pack(tag_action  , TagAction  )
     };
-pack(timer_action, {set_timer, Timer}) ->
-    {set_timer, #'SetTimerAction'{timer = pack(timer, Timer)}};
+pack(timer_action, {set_timer, Timer, HRange, HandlingTimeout}) ->
+    {set_timer,
+        #'SetTimerAction'{
+            timer   = pack(timer        , Timer          ),
+            range   = pack(history_range, HRange         ),
+            timeout = pack(integer      , HandlingTimeout)
+        }
+    };
 pack(timer_action, unset_timer) ->
     {unset_timer, #'UnsetTimerAction'{}};
 pack(tag_action, Tag) ->
@@ -219,18 +225,18 @@ unpack(event, #'Event'{id = ID, created_at = CreatedAt, event_payload = Body}) -
 unpack(history, History) ->
     unpack({list, event}, History);
 unpack(machine, Machine=#'Machine'{}) ->
-    #'Machine'{ns=NS, id=ID, history_range=HistoryRange, history=History, aux_state=AuxState, timer=Timer} = Machine,
+    #'Machine'{ns=NS, id=ID, history_range=HRange, history=History, aux_state=AuxState, timer=Timer} = Machine,
     #{
         ns            => unpack(ns           , NS          ),
         id            => unpack(id           , ID          ),
-        history_range => unpack(history_range, HistoryRange),
+        history_range => unpack(history_range, HRange),
         history       => unpack(history      , History     ),
         aux_state     => unpack(aux_state    , AuxState    ),
         timer         => unpack(int_timer    , Timer       )
     };
 unpack(int_timer, Timestamp) ->
     % TODO сделать нормально
-    {unpack(timestamp, Timestamp), undefined, undefined};
+    {unpack(timestamp, Timestamp), undefined, undefined, undefined};
 
 %% actions
 unpack(complex_action, #'ComplexAction'{timer = TimerAction, tag = TagAction}) ->
@@ -238,8 +244,12 @@ unpack(complex_action, #'ComplexAction'{timer = TimerAction, tag = TagAction}) -
         timer => unpack(timer_action, TimerAction),
         tag   => unpack(tag_action  , TagAction  )
     };
-unpack(timer_action, {set_timer, #'SetTimerAction'{timer = Timer}}) ->
-    {set_timer, unpack(timer, Timer)};
+unpack(timer_action, {set_timer, #'SetTimerAction'{timer = Timer, range = HRange, timeout = HandlingTimeout}}) ->
+    {set_timer,
+        unpack(timer        , Timer          ),
+        unpack(history_range, HRange         ),
+        unpack(integer      , HandlingTimeout)
+    };
 unpack(timer_action, {unset_timer, #'UnsetTimerAction'{}}) ->
     unset_timer;
 unpack(tag_action, #'TagAction'{tag = Tag}) ->

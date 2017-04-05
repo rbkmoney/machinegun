@@ -38,6 +38,11 @@
 -export([opaques_to_events     /1]).
 -export([body_to_opaque        /1]).
 -export([opaque_to_body        /1]).
+-export([history_range_to_opaque/1]).
+-export([opaque_to_history_range/1]).
+-export([maybe_to_opaque        /2]).
+-export([maybe_from_opaque      /2]).
+-export([identity               /1]).
 -export([add_machine_id        /2]).
 -export([remove_machine_id     /2]).
 
@@ -270,6 +275,54 @@ body_to_opaque(Body) ->
     body().
 opaque_to_body(Body) ->
     Body.
+
+-spec history_range_to_opaque(history_range()) ->
+    mg_storage:opaque().
+history_range_to_opaque({After, Limit, Direction}) ->
+    [1,
+        maybe_to_opaque(After, fun identity/1),
+        maybe_to_opaque(Limit, fun identity/1),
+        direction_to_opaque(Direction)
+    ].
+
+-spec opaque_to_history_range(mg_storage:opaque()) ->
+    history_range().
+opaque_to_history_range([1, After, Limit, Direction]) ->
+    {
+        maybe_from_opaque(After, fun identity/1),
+        maybe_from_opaque(Limit, fun identity/1),
+        opaque_to_direction(Direction)
+    }.
+
+-spec direction_to_opaque(direction()) ->
+    mg_storage:opaque().
+direction_to_opaque(forward ) -> 1;
+direction_to_opaque(backward) -> 2.
+
+-spec opaque_to_direction(mg_storage:opaque()) ->
+    direction().
+opaque_to_direction(1) -> forward ;
+opaque_to_direction(2) -> backward.
+
+-spec maybe_to_opaque(undefined | T0, fun((T0) -> T1)) ->
+    T1.
+maybe_to_opaque(undefined, _) ->
+    null;
+maybe_to_opaque(T0, ToT1) ->
+    ToT1(T0).
+
+-spec maybe_from_opaque(null | T0, fun((T0) -> T1)) ->
+    T1.
+maybe_from_opaque(null, _) ->
+    undefined;
+maybe_from_opaque(T0, ToT1) ->
+    ToT1(T0).
+
+-spec identity(T) ->
+    T.
+identity(V) ->
+    V.
+
 
 -spec add_machine_id
     (mg:id(), T) -> T when T :: mg_storage:kv();

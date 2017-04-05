@@ -151,14 +151,16 @@ init_per_group(TestGroup, C0) ->
         genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(TestGroup, C))
     ,
 
+    SetTimer = {set_timer, {timeout, 1}, {undefined, undefined, forward}, 30},
+
     CallFunc =
         fun({Args, _Machine}) ->
             case Args of
                 <<"tag">>   -> {Args, {<<>>, [<<"tag_body"  >>]}, #{timer =>  undefined  , tag => Args     }};
                 <<"event">> -> {Args, {<<>>, [<<"event_body">>]}, #{timer =>  undefined  , tag => undefined}};
                 <<"nop"  >> -> {Args, {<<>>, [                ]}, #{timer =>  undefined  , tag => undefined}};
-                <<"set_timer"  >> -> {Args, {<<>>, [<<"timer_body">>]}, #{timer => {set_timer, {timeout, 1}}, tag => undefined}};
-                <<"unset_timer">> -> {Args, {<<>>, [<<"timer_body">>]}, #{timer => unset_timer              , tag => undefined}};
+                <<"set_timer"  >> -> {Args, {<<>>, [<<"timer_body">>]}, #{timer => SetTimer   , tag => undefined}};
+                <<"unset_timer">> -> {Args, {<<>>, [<<"timer_body">>]}, #{timer => unset_timer, tag => undefined}};
                 <<"fail">>  -> erlang:error(fail)
             end
         end

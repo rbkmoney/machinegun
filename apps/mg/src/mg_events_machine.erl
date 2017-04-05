@@ -63,8 +63,7 @@
     timer         => int_timer()
 }.
 
--type int_timer() :: {genlib_time:ts(), request_context(), pos_integer()}.
-% -type int_timer() :: {genlib_time:ts(), request_context(), pos_integer(), mg_events:history_range()}. % TODO
+-type int_timer() :: {genlib_time:ts(), request_context(), pos_integer(), mg_events:history_range()}.
 
 %% actions
 -type complex_action  () :: #{
@@ -72,8 +71,11 @@
     tag   => tag_action  () | undefined
 }.
 -type tag_action  () :: mg_machine_tags:tag().
--type timer_action() :: {set_timer, timer()} | unset_timer.
--type timer       () :: {timeout, timeout_()} | {deadline, calendar:datetime()} | cancel.
+-type timer_action() ::
+      {set_timer, timer(), mg_events:history_range() | undefined, Timeout::pos_integer() | undefined}
+    |  unset_timer
+.
+-type timer       () :: {timeout, timeout_()} | {deadline, calendar:datetime()}.
 -type timeout_    () :: non_neg_integer().
 
 -type ref() :: {id, mg:id()} | {tag, mg_machine_tags:tag()}.
@@ -209,9 +211,9 @@ process_machine(Options, ID, Impact, PCtx, ReqCtx, PackedState) ->
 -spec process_machine_(options(), mg:id(), mg_machine:processor_impact() | {timeout, _}, _, ReqCtx, state()) ->
     _TODO
 when ReqCtx :: request_context().
-process_machine_(Options, ID, Subj=timeout, PCtx, ReqCtx, State=#{timer := {_, _, _}}) ->
+process_machine_(Options, ID, Subj=timeout, PCtx, ReqCtx, State=#{timer := {_, _, _, HRange}}) ->
     NewState = State#{timer := undefined},
-    process_machine_(Options, ID, {Subj, {undefined, {undefined, undefined, forward}}}, PCtx, ReqCtx, NewState);
+    process_machine_(Options, ID, {Subj, {undefined, HRange}}, PCtx, ReqCtx, NewState);
 process_machine_(Options, ID, {Subj, {Args, HRange}}, _, ReqCtx, State = #{events_range := EventsRange}) ->
     % обработка стандартных запросов
     Machine = machine(Options, ID, State, HRange),
@@ -255,7 +257,6 @@ process_machine_(Options, ID, continuation, PCtx, ReqCtx, State = #{delayed_acti
 add_tag(_, _, _, undefined) ->
     ok;
 add_tag(Options, ID, ReqCtx, Tag) ->
-    % TODO retry
     case mg_machine_tags:add_tag(tags_machine_options(Options), Tag, ID, ReqCtx, mg_utils:default_deadline()) of
         ok ->
             ok;
@@ -298,7 +299,7 @@ push_events_to_event_sink(Options, ID, ReqCtx, Events) ->
     mg_machine:processor_flow_action().
 state_to_flow_action(#{timer := undefined}) ->
     sleep;
-state_to_flow_action(#{timer := {Timestamp, ReqCtx, HandlingTimeout}}) ->
+state_to_flow_action(#{timer := {Timestamp, ReqCtx, HandlingTimeout, _}}) ->
     {wait, Timestamp, ReqCtx, HandlingTimeout}.
 
 -spec apply_delayed_actions_to_state(delayed_actions(), state()) ->
@@ -356,29 +357,28 @@ handle_state_change({AuxState, EventsBodies}, EventsRange, DelayedActions) ->
 handle_complex_action(ComplexAction, DelayedActions, ReqCtx) ->
     DelayedActions#{
         add_tag   => maps:get(tag, ComplexAction, undefined),
-        new_timer => get_timer_action(ComplexAction, ReqCtx)
+        new_timer => get_timer_action(maps:get(timer, ComplexAction, undefined), ReqCtx)
     }.
 
--spec get_timer_action(complex_action(), request_context()) ->
-    genlib_time:ts() | undefined.
-get_timer_action(ComplexAction, ReqCtx) ->
-    % TODO получать handling timeout свыше!
-    HandlingTimeout = 30000,
-    case maps:get(timer, ComplexAction, undefined) of
-        undefined ->
-            unchanged;
-        unset_timer ->
-            undefined;
-        {set_timer, Timer} ->
-            TimerDateTime =
-                case Timer of
-                    {timeout, Timeout} ->
-                        genlib_time:now() + Timeout;
-                    {deadline, Deadline} ->
-                        genlib_time:daytime_to_unixtime(Deadline)
-                end,
-            {TimerDateTime, ReqCtx, HandlingTimeout}
-    end.
+-spec get_timer_action(undefined | timer_action(), request_context()) ->
+    int_timer() | undefined | unchanged.
+get_timer_action(undefined, _) ->
+    unchanged;
+get_timer_action(unset_timer, _) ->
+    undefined;
+get_timer_action({set_timer, Timer, undefined, HandlingTimeout}, ReqCtx) ->
+    get_timer_action({set_timer, Timer, {undefined, undefined, forward}, HandlingTimeout}, ReqCtx);
+get_timer_action({set_timer, Timer, HRange, undefined}, ReqCtx) ->
+    get_timer_action({set_timer, Timer, HRange, 30}, ReqCtx);
+get_timer_action({set_timer, Timer, HRange, HandlingTimeout}, ReqCtx) ->
+    TimerDateTime =
+        case Timer of
+            {timeout, Timeout} ->
+                genlib_time:now() + Timeout;
+            {deadline, Deadline} ->
+                genlib_time:daytime_to_unixtime(Deadline)
+        end,
+    {TimerDateTime, ReqCtx, HandlingTimeout * 1000, HRange}.
 
 %%
 
@@ -441,11 +441,11 @@ get_events(Options, ID, EventsRange, HRange) ->
 
 -spec get_events_keys(mg:id(), mg_events:events_range(), mg_events:history_range()) ->
     [mg_storage:key()].
-get_events_keys(ID, EventsRange, HistoryRange) ->
+get_events_keys(ID, EventsRange, HRange) ->
     [
         mg_events:add_machine_id(ID, mg_events:event_id_to_key(EventID))
         ||
-        EventID <- mg_events:get_event_ids(EventsRange, HistoryRange)
+        EventID <- mg_events:get_event_ids(EventsRange, HRange)
     ].
 
 %%
@@ -458,8 +458,8 @@ state_to_opaque(State) ->
     [2,
         mg_events:events_range_to_opaque(EventsRange),
         AuxState,
-        maybe_to_opaque(DelayedActions, fun delayed_actions_to_opaque/1),
-        maybe_to_opaque(Timer, fun int_timer_to_opaque/1)
+        mg_events:maybe_to_opaque(DelayedActions, fun delayed_actions_to_opaque/1),
+        mg_events:maybe_to_opaque(Timer, fun int_timer_to_opaque/1)
     ].
 
 -spec opaque_to_state(mg_storage:opaque()) ->
@@ -476,15 +476,15 @@ opaque_to_state([1, EventsRange, AuxState, DelayedActions]) ->
     #{
         events_range    => mg_events:opaque_to_events_range(EventsRange),
         aux_state       => AuxState,
-        delayed_actions => maybe_from_opaque(DelayedActions, fun opaque_to_delayed_actions/1),
+        delayed_actions => mg_events:maybe_from_opaque(DelayedActions, fun opaque_to_delayed_actions/1),
         timer           => undefined
     };
 opaque_to_state([2, EventsRange, AuxState, DelayedActions, Timer]) ->
     #{
         events_range    => mg_events:opaque_to_events_range(EventsRange),
         aux_state       => AuxState,
-        delayed_actions => maybe_from_opaque(DelayedActions, fun opaque_to_delayed_actions/1),
-        timer           => maybe_from_opaque(Timer, fun opaque_to_int_timer/1)
+        delayed_actions => mg_events:maybe_from_opaque(DelayedActions, fun opaque_to_delayed_actions/1),
+        timer           => mg_events:maybe_from_opaque(Timer, fun opaque_to_int_timer/1)
     }.
 
 
@@ -511,7 +511,7 @@ delayed_actions_to_opaque(DelayedActions) ->
         new_events_range := EventsRange
     } = DelayedActions,
     [1,
-        maybe_to_opaque(Tag, fun identity/1),
+        mg_events:maybe_to_opaque(Tag, fun mg_events:identity/1),
         delayed_timer_actions_to_opaque(Timer),
         mg_events:events_to_opaques(Events),
         AuxState,
@@ -524,7 +524,7 @@ opaque_to_delayed_actions(null) ->
     undefined;
 opaque_to_delayed_actions([1, Tag, Timer, Events, AuxState, EventsRange]) ->
     #{
-        add_tag          => maybe_from_opaque(Tag, fun identity/1),
+        add_tag          => mg_events:maybe_from_opaque(Tag, fun mg_events:identity/1),
         new_timer        => opaque_to_delayed_timer_actions(Timer),
         add_events       => mg_events:opaques_to_events(Events),
         new_aux_state    => AuxState,
@@ -551,29 +551,10 @@ opaque_to_delayed_timer_actions(Timer) ->
 
 -spec int_timer_to_opaque(int_timer()) ->
     mg_storage:opaque().
-int_timer_to_opaque({Timestamp, ReqCtx, HandlingTimeout}) ->
-    [1, Timestamp, ReqCtx, HandlingTimeout].
+int_timer_to_opaque({Timestamp, ReqCtx, HandlingTimeout, HRange}) ->
+    [1, Timestamp, ReqCtx, HandlingTimeout, mg_events:history_range_to_opaque(HRange)].
 
 -spec opaque_to_int_timer(mg_storage:opaque()) ->
     int_timer().
-opaque_to_int_timer([1, Timestamp, ReqCtx, HandlingTimeout]) ->
-    {Timestamp, ReqCtx, HandlingTimeout}.
-
--spec maybe_to_opaque(undefined | T0, fun((T0) -> T1)) ->
-    T1.
-maybe_to_opaque(undefined, _) ->
-    null;
-maybe_to_opaque(T0, ToT1) ->
-    ToT1(T0).
-
--spec maybe_from_opaque(null | T0, fun((T0) -> T1)) ->
-    T1.
-maybe_from_opaque(null, _) ->
-    undefined;
-maybe_from_opaque(T0, ToT1) ->
-    ToT1(T0).
-
--spec identity(T) ->
-    T.
-identity(V) ->
-    V.
+opaque_to_int_timer([1, Timestamp, ReqCtx, HandlingTimeout, HRange]) ->
+    {Timestamp, ReqCtx, HandlingTimeout, mg_events:opaque_to_history_range(HRange)}.
