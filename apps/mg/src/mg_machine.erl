@@ -114,6 +114,7 @@
        sleep
     | {wait, genlib_time:ts(), mg:request_context(), HandlingTimeout::pos_integer()}
     | {continue, processing_state()}
+    |  remove
 .
 -type processor_result() :: {processor_reply_action(), processor_flow_action(), machine_state()}.
 
@@ -375,26 +376,26 @@ handle_call(Call, CallContext, ReqCtx, S=#{storage_machine:=StorageMachine}) ->
         {_, #{status := processing}} ->
             handle_call(Call, CallContext, ReqCtx, process(continuation, undefined, ReqCtx, S));
 
-        % success
-        {{start , Args   }, undefined                    } -> {noreply, process_start(Args, PCtx, ReqCtx, S)};
-        {{call  , SubCall}, #{status:= sleeping         }} -> {noreply, process({call   , SubCall}, PCtx, ReqCtx, S)};
-        {{call  , SubCall}, #{status:={waiting, _, _, _}}} -> {noreply, process({call   , SubCall}, PCtx, ReqCtx, S)};
-        {{repair, Args   }, #{status:={error  , _, _   }}} -> {noreply, process({repair , Args   }, PCtx, ReqCtx, S)};
-        { simple_repair   , #{status:={error  , _, _   }}} -> {{reply, ok}, process_simple_repair(ReqCtx, S)};
-
-        % failure
-        {{start  , _     }, #{status:=             _    }} -> {{reply, {error, machine_already_exist  }}, S};
-        {{call   , _     }, #{status:={error  , _, _   }}} -> {{reply, {error, machine_failed         }}, S};
-        {{call   , _     }, undefined                    } -> {{reply, {error, machine_not_found      }}, S};
-        {{repair , _     }, #{status:={waiting, _, _, _}}} -> {{reply, {error, machine_already_working}}, S};
-        {{repair , _     }, #{status:=sleeping          }} -> {{reply, {error, machine_already_working}}, S};
-        {{repair , _     }, undefined                    } -> {{reply, {error, machine_not_found      }}, S};
-        { simple_repair   , #{status:={waiting, _, _, _}}} -> {{reply, {error, machine_already_working}}, S};
-        { simple_repair   , #{status:= sleeping         }} -> {{reply, {error, machine_already_working}}, S};
-        { simple_repair   , undefined                    } -> {{reply, {error, machine_not_found      }}, S};
-
         % ничего не просходит, просто убеждаемся, что машина загружена
         {resume_interrupted_one, _} -> {{reply, {ok, ok}}, S};
+
+        % start
+        {{start, Args}, undefined   } -> {noreply, process_start(Args, PCtx, ReqCtx, S)};
+        { _           , undefined   } -> {{reply, {error, machine_not_found}}, S};
+        {{start, _   }, #{status:=_}} -> {{reply, {error, machine_already_exist}}, S};
+
+        % call
+        {{call  , SubCall}, #{status:= sleeping         }} -> {noreply, process({call, SubCall}, PCtx, ReqCtx, S)};
+        {{call  , SubCall}, #{status:={waiting, _, _, _}}} -> {noreply, process({call, SubCall}, PCtx, ReqCtx, S)};
+        {{call   , _     }, #{status:={error  , _, _   }}} -> {{reply, {error, machine_failed}}, S};
+
+        % repair
+        {{repair, Args}, #{status:={error  , _, _}}} -> {noreply, process({repair, Args}, PCtx, ReqCtx, S)};
+        {{repair , _  }, #{status:=_              }} -> {{reply, {error, machine_already_working}}, S};
+
+        % simple_repair
+        {simple_repair, #{status:={error  , _, _}}} -> {{reply, ok}, process_simple_repair(ReqCtx, S)};
+        {simple_repair, #{status:=_              }} -> {{reply, {error, machine_already_working}}, S};
 
         % timers
         {{timeout, Ts0}, #{status:={waiting, Ts1, _, _}}}
@@ -573,20 +574,22 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, State=#{storage_machine := Storage
     {ReplyAction, Action, NewMachineState} =
         call_processor(Impact, ProcessingCtx, ReqCtx, State),
     NewStorageMachine = StorageMachine#{state := NewMachineState},
+    NewState =
+        case Action of
+            {continue, _} ->
+                transit_state(ReqCtx, NewStorageMachine#{status := {processing, ReqCtx}}, State);
+            sleep ->
+                transit_state(ReqCtx, NewStorageMachine#{status := sleeping}, State);
+            {wait, Timestamp, HdlReqCtx, HdlTo} ->
+                transit_state(ReqCtx, NewStorageMachine#{status := {waiting, Timestamp, HdlReqCtx, HdlTo}}, State);
+            remove ->
+                remove_from_storage(ReqCtx, State)
+        end,
+    ok = do_reply_action(wrap_reply_action(ok, ReplyAction), ProcessingCtx),
     case Action of
         {continue, NewProcessingSubState} ->
-            NewState = transit_state(ReqCtx, NewStorageMachine#{status := {processing, ReqCtx}}, State),
-            ok = do_reply_action(wrap_reply_action(ok, ReplyAction), ProcessingCtx),
-            NewRequestCtx = ProcessingCtx#{state:=NewProcessingSubState},
-            process(continuation, NewRequestCtx, ReqCtx, NewState);
-        sleep ->
-            NewState = transit_state(ReqCtx, NewStorageMachine#{status := sleeping}, State),
-            ok = do_reply_action(wrap_reply_action(ok, ReplyAction), ProcessingCtx),
-            NewState;
-        {wait, Timestamp, HdlReqCtx, HdlTo} ->
-            NewStatus = {waiting, Timestamp, HdlReqCtx, HdlTo},
-            NewState = transit_state(ReqCtx, NewStorageMachine#{status := NewStatus}, State),
-            ok = do_reply_action(wrap_reply_action(ok, ReplyAction), ProcessingCtx),
+            process(continuation, ProcessingCtx#{state:=NewProcessingSubState}, ReqCtx, NewState);
+        _ ->
             NewState
     end.
 
@@ -653,6 +656,20 @@ transit_state(ReqCtx, NewStorageMachine, State=#{id:=ID, options:=Options, stora
         storage_machine := NewStorageMachine,
         storage_context := NewStorageContext
     }.
+
+-spec remove_from_storage(mg:request_context(), state()) ->
+    state().
+remove_from_storage(ReqCtx, State = #{id := ID, options := Options, storage_context := StorageContext}) ->
+    F = fun() ->
+            mg_storage:delete(
+                storage_options(Options),
+                ID,
+                StorageContext
+            )
+        end,
+    RetryStrategy = mg_utils:genlib_retry_new(get_options(storage_retry_policy, Options)),
+    ok = do_with_retry(Options, ID, F, RetryStrategy, ReqCtx),
+    State#{storage_machine := undefined, storage_context := undefined}.
 
 %%
 

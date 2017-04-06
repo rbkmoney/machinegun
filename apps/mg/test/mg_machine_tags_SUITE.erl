@@ -13,6 +13,9 @@
 -export([double_tag    /1]).
 -export([resolve       /1]).
 
+%% logger
+-export([handle_machine_logging_event/2]).
+
 %%
 %% tests descriptions
 %%
@@ -106,5 +109,10 @@ automaton_options() ->
     #{
         namespace => <<"test_tags">>,
         storage   => mg_storage_memory,
-        logger    => undefined
+        logger    => ?MODULE
     }.
+
+-spec handle_machine_logging_event(_, mg_machine_logger:event()) ->
+    ok.
+handle_machine_logging_event(_, {NS, ID, ReqCtx, SubEvent}) ->
+    ct:pal("[~s:~s:~s] ~p", [NS, ID, ReqCtx, SubEvent]).

@@ -13,6 +13,9 @@
 -export([get_unexisted_event      /1]).
 -export([idempotent_add_get_events/1]).
 
+%% logger
+-export([handle_machine_logging_event/2]).
+
 %%
 %% tests descriptions
 %%
@@ -123,5 +126,10 @@ event_sink_options() ->
     #{
         namespace => ?ES_ID,
         storage   => mg_storage_memory,
-        logger    => undefined
+        logger    => ?MODULE
     }.
+
+-spec handle_machine_logging_event(_, mg_machine_logger:event()) ->
+    ok.
+handle_machine_logging_event(_, {NS, ID, ReqCtx, SubEvent}) ->
+    ct:pal("[~s:~s:~s] ~p", [NS, ID, ReqCtx, SubEvent]).
