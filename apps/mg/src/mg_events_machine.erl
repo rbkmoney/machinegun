@@ -28,6 +28,7 @@
 -export([repair     /5]).
 -export([call       /5]).
 -export([get_machine/3]).
+-export([remove     /3]).
 
 %% mg_machine handler
 -behaviour(mg_machine).
@@ -156,6 +157,11 @@ get_machine(Options, Ref, HRange) ->
     State = opaque_to_state(mg_machine:get(machine_options(Options), ID)),
     machine(Options, ID, State, HRange).
 
+-spec remove(options(), mg:id(), request_context()) ->
+    ok.
+remove(Options, ID, ReqCtx) ->
+    mg_machine:call(machine_options(Options), ID, remove, ReqCtx, mg_utils:default_deadline()).
+
 %%
 
 -spec ref2id(options(), ref()) ->
@@ -209,12 +215,15 @@ process_machine(Options, ID, Impact, PCtx, ReqCtx, PackedState) ->
 
 %%
 
--spec process_machine_(options(), mg:id(), mg_machine:processor_impact() | {timeout, _}, _, ReqCtx, state()) ->
+-spec process_machine_(options(), mg:id(), mg_machine:processor_impact() | {'timeout', _}, _, ReqCtx, state()) ->
     _TODO
 when ReqCtx :: request_context().
 process_machine_(Options, ID, Subj=timeout, PCtx, ReqCtx, State=#{timer := {_, _, _, HRange}}) ->
     NewState = State#{timer := undefined},
     process_machine_(Options, ID, {Subj, {undefined, HRange}}, PCtx, ReqCtx, NewState);
+process_machine_(_, _, {call, remove}, _, _, State) ->
+    % TODO удалить эвенты (?)
+    {{reply, ok}, remove, State};
 process_machine_(Options, ID, {Subj, {Args, HRange}}, _, ReqCtx, State = #{events_range := EventsRange}) ->
     % обработка стандартных запросов
     Machine = machine(Options, ID, State, HRange),

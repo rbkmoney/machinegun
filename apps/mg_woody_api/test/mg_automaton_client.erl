@@ -4,6 +4,7 @@
 -export_type([options/0]).
 -export([start      /3]).
 -export([repair     /3]).
+-export([remove     /2]).
 -export([call       /3]).
 -export([get_machine/3]).
 
@@ -28,6 +29,11 @@ start(#{url := BaseURL, ns := NS, retry_strategy := Strategy}, ID, Args) ->
     ok.
 repair(#{url := BaseURL, ns := NS, retry_strategy := Strategy}, Ref, Args) ->
     ok = call_service(BaseURL, 'Repair', [machine_desc(NS, Ref), pack(args, Args)], Strategy).
+
+-spec remove(options(), mg:id()) ->
+    ok.
+remove(#{url := BaseURL, ns := NS, retry_strategy := Strategy}, ID) ->
+    ok = call_service(BaseURL, 'Remove', [pack(ns, NS), pack(id, ID)], Strategy).
 
 -spec call(options(), mg_events_machine:ref(), mg_events_machine:args()) ->
     mg:call_resp().
