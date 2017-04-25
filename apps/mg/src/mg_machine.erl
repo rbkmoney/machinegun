@@ -148,7 +148,7 @@ start_link(Options) ->
             mg_workers_manager:child_spec(manager_options      (Options), manager      ),
             mg_storage        :child_spec(storage_options      (Options), storage      ),
             mg_cron           :child_spec(timers_cron_options  (Options), timers_cron  ),
-            mg_cron           :child_spec(overseer_cron_options(Options), overseer_cron),
+            % mg_cron           :child_spec(overseer_cron_options(Options), overseer_cron),
             processor_child_spec(Options)
         ]
     ).
