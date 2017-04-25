@@ -630,13 +630,13 @@ timers_cron_options(Options) ->
         job      => {?MODULE, handle_timers, [Options]}
     }.
 
--spec overseer_cron_options(options()) ->
-    mg_cron:options().
-overseer_cron_options(Options) ->
-    #{
-        interval => 1000, % 1 sec
-        job      => {?MODULE, reload_killed_machines, [Options]}
-    }.
+% -spec overseer_cron_options(options()) ->
+%     mg_cron:options().
+% overseer_cron_options(Options) ->
+%     #{
+%         interval => 1000, % 1 sec
+%         job      => {?MODULE, reload_killed_machines, [Options]}
+%     }.
 
 -spec namespace(options()) ->
     mg:ns().
