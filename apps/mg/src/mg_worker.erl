@@ -102,8 +102,8 @@ get_call_queue(NS, ID) ->
 -spec init(_) ->
     mg_utils:gen_server_init_ret(state()).
 init({ID, Options = #{worker := WorkerModOpts}}) ->
-    HibernateTimeout = maps:get(hibernate_timeout, Options,      5 * 1000),
-    UnloadTimeout    = maps:get(unload_timeout   , Options, 5 * 60 * 1000),
+    HibernateTimeout = maps:get(hibernate_timeout, Options,  5 * 1000),
+    UnloadTimeout    = maps:get(unload_timeout   , Options, 60 * 1000),
     {Mod, Args} = mg_utils:separate_mod_opts(WorkerModOpts),
     State =
         #{
