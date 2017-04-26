@@ -148,7 +148,7 @@ start_link(Options) ->
             mg_workers_manager:child_spec(manager_options      (Options), manager      ),
             mg_storage        :child_spec(storage_options      (Options), storage      ),
             mg_cron           :child_spec(timers_cron_options  (Options), timers_cron  ),
-            % mg_cron           :child_spec(overseer_cron_options(Options), overseer_cron),
+            mg_cron           :child_spec(overseer_cron_options(Options), overseer_cron),
             processor_child_spec(Options)
         ]
     ).
@@ -256,10 +256,11 @@ reload_killed_machines(Options) ->
 -spec reload_killed_machines(options(), [mg:id()]) ->
     ok.
 reload_killed_machines(Options, MachinesIDs) ->
-    % TODO сделать проверку: может процесс и так жив и всё ок
     lists:foreach(
         fun(MachineID) ->
-            erlang:spawn_link(fun() -> touch(Options, MachineID) end)
+            % тут нет спауна целенаправленно, чтобы не провоцировать всплески потребления ресурсов
+            % мы можем себе позволить долго поднимать машины
+            touch(Options, MachineID)
         end,
         MachinesIDs
     ).
@@ -274,8 +275,18 @@ touch(Options, MachineID) ->
 -spec touch(options(), mg:id(), mg_utils:deadline()) ->
     ok.
 touch(Options, MachineID, Deadline) ->
-    _ = mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), MachineID, touch, Deadline)),
-    ok.
+    % TODO переназвать функцию
+    case mg_workers_manager:is_alive(manager_options(Options), MachineID) of
+        false ->
+            case mg_workers_manager:call(manager_options(Options), MachineID, touch, Deadline) of
+                {ok, ok} ->
+                    ok;
+                {error, Reason} ->
+                    ok = log_failed_touch(namespace(Options), MachineID, Reason)
+            end;
+        true ->
+            ok
+    end.
 
 -spec all_statuses() ->
     [atom()].
@@ -630,13 +641,13 @@ timers_cron_options(Options) ->
         job      => {?MODULE, handle_timers, [Options]}
     }.
 
-% -spec overseer_cron_options(options()) ->
-%     mg_cron:options().
-% overseer_cron_options(Options) ->
-%     #{
-%         interval => 1000, % 1 sec
-%         job      => {?MODULE, reload_killed_machines, [Options]}
-%     }.
+-spec overseer_cron_options(options()) ->
+    mg_cron:options().
+overseer_cron_options(Options) ->
+    #{
+        interval => 1000, % 1 sec
+        job      => {?MODULE, reload_killed_machines, [Options]}
+    }.
 
 -spec namespace(options()) ->
     mg:ns().
@@ -705,3 +716,8 @@ log_retry(NS, ID, RetryTimeout) ->
     ok.
 log_failed_timer_handling(NS, ID, Reason) ->
     ok = error_logger:warning_msg("[~s:~s] timer handling failed ~p", [NS, ID, Reason]).
+
+-spec log_failed_touch(mg:ns(), mg:id(), _Reason) ->
+    ok.
+log_failed_touch(NS, ID, Reason) ->
+    ok = error_logger:warning_msg("[~s:~s] touch failed ~p", [NS, ID, Reason]).

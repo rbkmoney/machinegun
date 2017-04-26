@@ -18,6 +18,7 @@
 -export([call          /4]).
 -export([get_call_queue/2]).
 -export([brutal_kill   /2]).
+-export([is_alive      /2]).
 
 %%
 %% API
@@ -115,6 +116,12 @@ brutal_kill(Options, ID) ->
     catch exit:noproc ->
         ok
     end.
+
+-spec is_alive(options(), _ID) ->
+    boolean().
+is_alive(Options, ID) ->
+    mg_worker:is_alive(maps:get(name, Options), ID).
+
 
 %%
 %% local
