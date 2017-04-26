@@ -194,7 +194,7 @@ process_machine_(Options, ID, {Subj, {Args, HRange}}, _, State = #{events_range 
             call    -> process_call  (Options,          Args , Machine, EventsRange)
         end,
     {noreply, {continue, Reply}, State#{delayed_actions := DelayedActions}};
-process_machine_(Options, ID, continuation, #{state := Reply}, State = #{delayed_actions := DelayedActions}) ->
+process_machine_(Options, ID, continuation, PCtx, State = #{delayed_actions := DelayedActions}) ->
     % отложенные действия (эвент синк, тэг)
     %
     % надо понимать, что:
@@ -211,7 +211,14 @@ process_machine_(Options, ID, continuation, #{state := Reply}, State = #{delayed
     ok =              store_events(Options, ID, Events),
     ok = push_events_to_event_sink(Options, ID, Events),
 
-    {{reply, Reply}, timer_to_flow_action(Timer), apply_delayed_actions_to_state(DelayedActions, State)}.
+    ReplyAction =
+        case PCtx of
+            #{state := Reply} ->
+                {reply, Reply};
+            undefined ->
+                noreply
+        end,
+    {ReplyAction, timer_to_flow_action(Timer), apply_delayed_actions_to_state(DelayedActions, State)}.
 
 -spec add_tag(options(), undefined | mg_machine_tags:tag(), mg:id()) ->
     ok.

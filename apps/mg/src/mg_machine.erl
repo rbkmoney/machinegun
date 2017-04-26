@@ -496,9 +496,11 @@ process_start(Args, ProcessingCtx, State) ->
 -spec process_simple_repair(state()) ->
     state().
 process_simple_repair(State = #{storage_machine := StorageMachine = #{status := {error, _, OldStatus}}}) ->
-    transit_state(
-        StorageMachine#{status => OldStatus},
-        State
+    try_finish_processing(
+        transit_state(
+            StorageMachine#{status => OldStatus},
+            State
+        )
     ).
 
 -spec process(processor_impact(), processing_context(), state()) ->
