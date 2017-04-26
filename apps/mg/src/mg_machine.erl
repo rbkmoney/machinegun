@@ -260,7 +260,7 @@ reload_killed_machines(Options, MachinesIDs) ->
         fun(MachineID) ->
             % тут нет спауна целенаправленно, чтобы не провоцировать всплески потребления ресурсов
             % мы можем себе позволить долго поднимать машины
-            touch(Options, MachineID)
+            erlang:spawn_link(fun() -> touch(Options, MachineID) end)
         end,
         MachinesIDs
     ).
