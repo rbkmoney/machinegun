@@ -258,8 +258,6 @@ reload_killed_machines(Options) ->
 reload_killed_machines(Options, MachinesIDs) ->
     lists:foreach(
         fun(MachineID) ->
-            % тут нет спауна целенаправленно, чтобы не провоцировать всплески потребления ресурсов
-            % мы можем себе позволить долго поднимать машины
             erlang:spawn_link(fun() -> touch(Options, MachineID) end)
         end,
         MachinesIDs
