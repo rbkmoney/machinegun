@@ -90,7 +90,8 @@ get_call_queue(NS, ID) ->
 -spec is_alive(_NS, _ID) ->
     boolean().
 is_alive(NS, ID) ->
-    mg_utils:gen_where(self_ref({NS, ID})) =/= undefined.
+    Pid = mg_utils:gen_where(self_ref({NS, ID})),
+    Pid =/= undefined andalso erlang:is_process_alive(Pid).
 
 %%
 %% gen_server callbacks
