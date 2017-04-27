@@ -321,7 +321,7 @@ handle_load(ID, Options) ->
                 storage_machine => StorageMachine,
                 storage_context => StorageContext
             },
-        {ok, try_finish_processing(State)}
+        {ok, State}
     catch throw:Reason ->
         ok = log_load_error(namespace(Options), ID, {throw, Reason, erlang:get_stacktrace()}),
         {error, Reason}
@@ -332,6 +332,10 @@ handle_load(ID, Options) ->
 handle_call(Call, CallContext, State=#{storage_machine:=StorageMachine}) ->
     PCtx = new_processing_context(CallContext),
     case {Call, StorageMachine} of
+        % сюда мы не должны попадать если машина не падала во время обработки запроса
+        % (когда мы переходили в стейт processing)
+        {_, #{status := processing}} -> handle_call(Call, CallContext, process(continuation, undefined, State));
+
         % success
         {{start , Args   }, undefined                 } -> {noreply, process_start(Args, PCtx, State)};
         {{call  , SubCall}, #{status:= sleeping      }} -> {noreply, process({call   , SubCall}, PCtx, State)};
@@ -481,13 +485,6 @@ waiting_date_index(_) ->
 %%
 %% processing
 %%
--spec try_finish_processing(state()) ->
-    state().
-try_finish_processing(State = #{storage_machine := #{status := processing}}) ->
-    process(continuation, undefined, State);
-try_finish_processing(State = #{storage_machine := _}) ->
-    State.
-
 -spec process_start(term(), processing_context(), state()) ->
     state().
 process_start(Args, ProcessingCtx, State) ->
