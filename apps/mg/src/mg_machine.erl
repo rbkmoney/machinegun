@@ -370,7 +370,8 @@ handle_call(Call, CallContext, ReqCtx, S=#{storage_machine:=StorageMachine}) ->
     case {Call, StorageMachine} of
         % сюда мы не должны попадать если машина не падала во время обработки запроса
         % (когда мы переходили в стейт processing)
-        {_, #{status := processing}} -> handle_call(Call, CallContext, process(continuation, undefined, ReqCtx, State));
+        {_, #{status := processing}} ->
+            handle_call(Call, CallContext, ReqCtx, process(continuation, undefined, ReqCtx, S));
 
         % success
         {{start , Args   }, undefined                    } -> {noreply, process_start(Args, PCtx, ReqCtx, S)};
@@ -525,18 +526,7 @@ waiting_date_index(_) ->
 %%
 %% processing
 %%
-<<<<<<< bebe3f700216f2e67541cd398915b8e2c67d7437
--spec process_start(term(), processing_context(), request_context(), state()) ->
-=======
--spec try_finish_processing(mg:request_context(), state()) ->
-    state().
-try_finish_processing(ReqCtx, State = #{storage_machine := #{status := {processing, _}}}) ->
-    process(continuation, undefined, ReqCtx, State);
-try_finish_processing(_, State = #{storage_machine := _}) ->
-    State.
-
 -spec process_start(term(), processing_context(), mg:request_context(), state()) ->
->>>>>>> MG-84: replace error_logger with events emiting
     state().
 process_start(Args, ProcessingCtx, ReqCtx, State) ->
     process({init, Args}, ProcessingCtx, ReqCtx, State#{storage_machine := new_storage_machine()}).
@@ -737,15 +727,5 @@ do_with_retry(Options, ID, Fun, RetryStrategy, ReqCtx) ->
 %%
 -spec emit_log_event(options(), mg:id(), mg:request_context(), mg_machine_logger:sub_event()) ->
     ok.
-<<<<<<< bebe3f700216f2e67541cd398915b8e2c67d7437
-log_failed_timer_handling(NS, ID, _ReqCtx, Reason) ->
-    ok = error_logger:warning_msg("[~s:~s] timer handling failed ~p", [NS, ID, Reason]).
-
--spec log_failed_touch(mg:ns(), mg:id(), _Reason) ->
-    ok.
-log_failed_touch(NS, ID, Reason) ->
-    ok = error_logger:warning_msg("[~s:~s] touch failed ~p", [NS, ID, Reason]).
-=======
 emit_log_event(#{namespace := NS, logger := Handler}, ID, ReqCtx, Event) ->
     ok = mg_machine_logger:handle_event(Handler, {NS, ID, ReqCtx, Event}).
->>>>>>> MG-84: replace error_logger with events emiting
