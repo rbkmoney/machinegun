@@ -218,6 +218,10 @@ process_machine(Options, ID, Impact, PCtx, ReqCtx, PackedState) ->
 -spec process_machine_(options(), mg:id(), mg_machine:processor_impact() | {'timeout', _}, _, ReqCtx, state()) ->
     _TODO
 when ReqCtx :: request_context().
+%% слой совместимости с машинами у которых не проставлен timer
+%% нужно будет убрать
+process_machine_(Options, ID, Subj=timeout, PCtx, ReqCtx, State=#{timer := undefined}) ->
+    process_machine_(Options, ID, {Subj, {undefined, {undefined, undefined, forward}}}, PCtx, ReqCtx, State);
 process_machine_(Options, ID, Subj=timeout, PCtx, ReqCtx, State=#{timer := {_, _, _, HRange}}) ->
     NewState = State#{timer := undefined},
     process_machine_(Options, ID, {Subj, {undefined, HRange}}, PCtx, ReqCtx, NewState);
