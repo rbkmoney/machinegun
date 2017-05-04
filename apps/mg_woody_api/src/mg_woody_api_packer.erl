@@ -22,7 +22,9 @@ pack(opaque, Opaque) ->
 pack(integer, Integer) when is_integer(Integer) ->
     Integer; % TODO check size
 pack(timestamp, Timestamp) ->
-    format_timestamp(Timestamp);
+    pack(datetime, genlib_time:unixtime_to_daytime(Timestamp));
+pack(datetime, Datetime) ->
+    format_datetime(Datetime);
 pack({list, T}, Values) ->
     [pack(T, Value) || Value <- Values];
 
@@ -38,7 +40,7 @@ pack(args, Args) ->
 pack(timeout, Timeout) ->
     pack(integer, Timeout);
 pack(timer, {deadline, Deadline}) ->
-    {deadline, pack(timestamp, Deadline)};
+    {deadline, pack(datetime, Deadline)};
 pack(timer, {timeout, Timeout}) ->
     {timeout, pack(timeout, Timeout)};
 pack(ref, {id , ID}) ->
@@ -58,7 +60,7 @@ pack(event_body, Body) ->
 pack(event, #{id := ID, created_at := CreatedAt, body := Body}) ->
     #'Event'{
         id            = pack(event_id  , ID       ),
-        created_at    = pack(timestamp , CreatedAt),
+        created_at    = pack(datetime  , CreatedAt),
         event_payload = pack(event_body, Body     )
     };
 pack(history, History) ->
@@ -71,7 +73,7 @@ pack(machine, Machine) ->
         history       = pack(history      , History ),
         history_range = pack(history_range, HRange  ),
         aux_state     = pack(aux_state    , AuxState),
-        timer         = pack(int_timer    , Timer   )
+        timer         = pack(int_timer     , Timer   )
     };
 pack(int_timer, {Timestamp, _, _, _}) ->
     % TODO сделать нормально
@@ -183,7 +185,9 @@ unpack(opaque, Opaque) ->
 unpack(integer, Integer) when is_integer(Integer) ->
     Integer; % TODO check size
 unpack(timestamp, Timestamp) ->
-    parse_timestamp(Timestamp);
+    genlib_time:daytime_to_unixtime(unpack(datetime, Timestamp));
+unpack(datetime, Datetime) ->
+    parse_datetime(Datetime);
 unpack({list, T}, Values) ->
     [unpack(T, Value) || Value <- Values];
 
@@ -199,7 +203,7 @@ unpack(args, Args) ->
 unpack(timeout, Timeout) ->
     unpack(integer, Timeout);
 unpack(timer, {deadline, Deadline}) ->
-    {deadline, unpack(timestamp, Deadline)};
+    {deadline, unpack(datetime, Deadline)};
 unpack(timer, {timeout, Timeout}) ->
     {timeout, unpack(timeout, Timeout)};
 unpack(ref, {id , ID}) ->
@@ -219,7 +223,7 @@ unpack(event_body, Body) ->
 unpack(event, #'Event'{id = ID, created_at = CreatedAt, event_payload = Body}) ->
     #{
         id         => unpack(event_id  , ID       ),
-        created_at => unpack(timestamp , CreatedAt),
+        created_at => unpack(datetime  , CreatedAt),
         body       => unpack(event_body, Body     )
     };
 unpack(history, History) ->
@@ -229,7 +233,7 @@ unpack(machine, Machine=#'Machine'{}) ->
     #{
         ns            => unpack(ns           , NS          ),
         id            => unpack(id           , ID          ),
-        history_range => unpack(history_range, HRange),
+        history_range => unpack(history_range, HRange      ),
         history       => unpack(history      , History     ),
         aux_state     => unpack(aux_state    , AuxState    ),
         timer         => unpack(int_timer    , Timer       )
@@ -354,15 +358,15 @@ unpack_opaque(Arg) ->
 
 
 % rfc3339:parse имеет некорретный спек, поэтому диалайзер всегда ругается
--dialyzer({nowarn_function, parse_timestamp/1}).
--spec parse_timestamp(binary()) ->
+-dialyzer({nowarn_function, parse_datetime/1}).
+-spec parse_datetime(binary()) ->
     calendar:datetime().
-parse_timestamp(Timestamp) ->
-    {ok, {Date, Time, _, undefined}} = rfc3339:parse(Timestamp),
+parse_datetime(Datetime) ->
+    {ok, {Date, Time, _, undefined}} = rfc3339:parse(Datetime),
     {Date, Time}.
 
--spec format_timestamp(calendar:datetime()) ->
+-spec format_datetime(calendar:datetime()) ->
     binary().
-format_timestamp(Timestamp) ->
-    {ok, TimestampBin} = rfc3339:format(Timestamp),
-    TimestampBin.
+format_datetime(Datetime) ->
+    {ok, DatetimeBin} = rfc3339:format(Datetime),
+    DatetimeBin.

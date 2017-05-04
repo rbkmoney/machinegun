@@ -63,6 +63,7 @@
     timer         => int_timer()
 }.
 
+%% TODO сделать более симпатично
 -type int_timer() :: {genlib_time:ts(), request_context(), pos_integer(), mg_events:history_range()}.
 
 %% actions
