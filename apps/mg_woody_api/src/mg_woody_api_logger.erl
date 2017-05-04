@@ -41,6 +41,9 @@ handle_machine_logging_event(_, {NS, ID, ReqCtx, SubEvent}) ->
 
 -spec add_woody_context(mg:request_context(), log_msg()) ->
     log_msg().
+add_woody_context(null, Msg) ->
+    % в старых данных конекста ещё нет
+    Msg;
 add_woody_context(ReqCtx, {Level, Msg, Meta}) ->
     #{rpc_id := RPCID} = mg_woody_api_utils:opaque_to_woody_context(ReqCtx),
     {Level, Msg, woody_rpc_id_to_meta(RPCID) ++ Meta}.

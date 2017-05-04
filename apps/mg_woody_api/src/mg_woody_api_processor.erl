@@ -40,7 +40,6 @@ process_call(Options, ReqCtx, {Call, Machine}) ->
         ),
     mg_woody_api_packer:unpack(call_result, CallResult).
 
-% для совместимости со старыми машинами, где нет контекста
 -spec call_processor(options(), mg_events_machine:request_context(), atom(), list(_)) ->
     _Result.
 call_processor(Options, ReqCtx, Function, Args) ->

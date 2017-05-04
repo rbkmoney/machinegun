@@ -32,15 +32,21 @@ get_statuses_distrib(Namespace) ->
 
 % восстановление машины
 -spec simple_repair(scalar(), scalar()) ->
-    ok | no_return().
+    woody_context:ctx() | no_return().
 simple_repair(Namespace, ID) ->
     simple_repair(Namespace, ID, mg_utils:default_deadline()).
 
 -spec simple_repair(scalar(), scalar(), mg_utils:deadline()) ->
-    ok | no_return().
+    woody_context:ctx() | no_return().
 simple_repair(Namespace, ID, Deadline) ->
-    mg_machine:simple_repair(machine_options(Namespace), id(ID), new_req_ctx(), Deadline).
-
+    WoodyCtx = woody_context:new(),
+    ok = mg_machine:simple_repair(
+            machine_options(Namespace),
+            id(ID),
+            mg_woody_api_utils:woody_context_to_opaque(WoodyCtx),
+            Deadline
+        ),
+    WoodyCtx.
 
 -spec resume_interrupted_one(scalar(), scalar()) ->
     ok | no_return().
@@ -69,15 +75,6 @@ get_events_machine(Namespace, Ref, HRange) ->
     mg_storage:value() | undefined.
 get_db_state(Namespace, ID) ->
     mg_storage:get(storage_options(Namespace), id(ID)).
-
-%%
-
--spec new_req_ctx() ->
-    mg:request_context().
-new_req_ctx() ->
-    null.
-    % TODO
-    % woody_context:new().
 
 %%
 
