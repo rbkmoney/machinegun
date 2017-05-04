@@ -1,5 +1,6 @@
 -module(mg_woody_api_packer).
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
+-include_lib("mg_proto/include/mg_proto_msgpack_thrift.hrl").
 
 %% API
 -export([pack  /2]).
@@ -21,7 +22,9 @@ pack(opaque, Opaque) ->
 pack(integer, Integer) when is_integer(Integer) ->
     Integer; % TODO check size
 pack(timestamp, Timestamp) ->
-    format_timestamp(Timestamp);
+    pack(datetime, genlib_time:unixtime_to_daytime(Timestamp));
+pack(datetime, Datetime) ->
+    format_datetime(Datetime);
 pack({list, T}, Values) ->
     [pack(T, Value) || Value <- Values];
 
@@ -37,7 +40,7 @@ pack(args, Args) ->
 pack(timeout, Timeout) ->
     pack(integer, Timeout);
 pack(timer, {deadline, Deadline}) ->
-    {deadline, pack(timestamp, Deadline)};
+    {deadline, pack(datetime, Deadline)};
 pack(timer, {timeout, Timeout}) ->
     {timeout, pack(timeout, Timeout)};
 pack(ref, {id , ID}) ->
@@ -57,28 +60,43 @@ pack(event_body, Body) ->
 pack(event, #{id := ID, created_at := CreatedAt, body := Body}) ->
     #'Event'{
         id            = pack(event_id  , ID       ),
-        created_at    = pack(timestamp , CreatedAt),
+        created_at    = pack(datetime  , CreatedAt),
         event_payload = pack(event_body, Body     )
     };
 pack(history, History) ->
     pack({list, event}, History);
-pack(machine, #{ns:=NS, id:=ID, history_range:=HistoryRange, history:=History, aux_state:=AuxState}) ->
+pack(machine, Machine) ->
+    #{ns:=NS, id:=ID, history_range:=HRange, history:=History, aux_state:=AuxState, timer:=Timer} = Machine,
     #'Machine'{
-        ns            = pack(ns           , NS          ),
-        id            = pack(id           , ID          ),
-        history       = pack(history      , History     ),
-        history_range = pack(history_range, HistoryRange),
-        aux_state     = pack(aux_state    , AuxState    )
+        ns            = pack(ns           , NS      ),
+        id            = pack(id           , ID      ),
+        history       = pack(history      , History ),
+        history_range = pack(history_range, HRange  ),
+        aux_state     = pack(aux_state    , AuxState),
+        timer         = pack(int_timer     , Timer   )
     };
+pack(int_timer, {Timestamp, _, _, _}) ->
+    % TODO сделать нормально
+    pack(timestamp, Timestamp);
+
 
 %% actions
-pack(complex_action, #{timer := SetTimerAction, tag := TagAction}) ->
+pack(complex_action, #{timer := TimerAction, tag := TagAction}) ->
     #'ComplexAction'{
-        set_timer = pack(set_timer_action, SetTimerAction),
-        tag       = pack(tag_action      , TagAction     )
+        set_timer = undefined,
+        timer = pack(timer_action, TimerAction),
+        tag   = pack(tag_action  , TagAction  )
     };
-pack(set_timer_action, Timer) ->
-    #'SetTimerAction'{timer = pack(timer, Timer)};
+pack(timer_action, {set_timer, Timer, HRange, HandlingTimeout}) ->
+    {set_timer,
+        #'SetTimerAction'{
+            timer   = pack(timer        , Timer          ),
+            range   = pack(history_range, HRange         ),
+            timeout = pack(integer      , HandlingTimeout)
+        }
+    };
+pack(timer_action, unset_timer) ->
+    {unset_timer, #'UnsetTimerAction'{}};
 pack(tag_action, Tag) ->
     #'TagAction'{tag = pack(tag, Tag)};
 
@@ -167,7 +185,9 @@ unpack(opaque, Opaque) ->
 unpack(integer, Integer) when is_integer(Integer) ->
     Integer; % TODO check size
 unpack(timestamp, Timestamp) ->
-    parse_timestamp(Timestamp);
+    genlib_time:daytime_to_unixtime(unpack(datetime, Timestamp));
+unpack(datetime, Datetime) ->
+    parse_datetime(Datetime);
 unpack({list, T}, Values) ->
     [unpack(T, Value) || Value <- Values];
 
@@ -183,7 +203,7 @@ unpack(args, Args) ->
 unpack(timeout, Timeout) ->
     unpack(integer, Timeout);
 unpack(timer, {deadline, Deadline}) ->
-    {deadline, unpack(timestamp, Deadline)};
+    {deadline, unpack(datetime, Deadline)};
 unpack(timer, {timeout, Timeout}) ->
     {timeout, unpack(timeout, Timeout)};
 unpack(ref, {id , ID}) ->
@@ -203,28 +223,39 @@ unpack(event_body, Body) ->
 unpack(event, #'Event'{id = ID, created_at = CreatedAt, event_payload = Body}) ->
     #{
         id         => unpack(event_id  , ID       ),
-        created_at => unpack(timestamp , CreatedAt),
+        created_at => unpack(datetime  , CreatedAt),
         body       => unpack(event_body, Body     )
     };
 unpack(history, History) ->
     unpack({list, event}, History);
-unpack(machine, #'Machine'{ns=NS, id=ID, history_range=HistoryRange, history=History, aux_state=AuxState}) ->
+unpack(machine, Machine=#'Machine'{}) ->
+    #'Machine'{ns=NS, id=ID, history_range=HRange, history=History, aux_state=AuxState, timer=Timer} = Machine,
     #{
         ns            => unpack(ns           , NS          ),
         id            => unpack(id           , ID          ),
-        history_range => unpack(history_range, HistoryRange),
+        history_range => unpack(history_range, HRange      ),
         history       => unpack(history      , History     ),
-        aux_state     => unpack(aux_state    , AuxState    )
+        aux_state     => unpack(aux_state    , AuxState    ),
+        timer         => unpack(int_timer    , Timer       )
     };
+unpack(int_timer, Timestamp) ->
+    % TODO сделать нормально
+    {unpack(timestamp, Timestamp), undefined, undefined, undefined};
 
 %% actions
-unpack(complex_action, #'ComplexAction'{set_timer = SetTimerAction, tag = TagAction}) ->
+unpack(complex_action, #'ComplexAction'{timer = TimerAction, tag = TagAction}) ->
     #{
-        timer => unpack(set_timer_action, SetTimerAction),
-        tag   => unpack(tag_action      , TagAction     )
+        timer => unpack(timer_action, TimerAction),
+        tag   => unpack(tag_action  , TagAction  )
     };
-unpack(set_timer_action, #'SetTimerAction'{timer = Timer}) ->
-    unpack(timer, Timer);
+unpack(timer_action, {set_timer, #'SetTimerAction'{timer = Timer, range = HRange, timeout = HandlingTimeout}}) ->
+    {set_timer,
+        unpack(timer        , Timer          ),
+        unpack(history_range, HRange         ),
+        unpack(integer      , HandlingTimeout)
+    };
+unpack(timer_action, {unset_timer, #'UnsetTimerAction'{}}) ->
+    unset_timer;
 unpack(tag_action, #'TagAction'{tag = Tag}) ->
     unpack(tag, Tag);
 
@@ -283,7 +314,7 @@ unpack(Type, Value) ->
 
 %%
 
--spec pack_opaque(mg:opaque()) ->
+-spec pack_opaque(mg_storage:opaque()) ->
     mg_proto_msgpack_thrift:'Value'().
 pack_opaque(null) ->
     {nl, #msgpack_Nil{}};
@@ -305,7 +336,7 @@ pack_opaque(Arg) ->
     erlang:error(badarg, [Arg]).
 
 -spec unpack_opaque(mg_proto_msgpack_thrift:'Value'()) ->
-    mg:opaque().
+    mg_storage:opaque().
 unpack_opaque({nl, #msgpack_Nil{}}) ->
     null;
 unpack_opaque({b, Boolean}) ->
@@ -327,15 +358,15 @@ unpack_opaque(Arg) ->
 
 
 % rfc3339:parse имеет некорретный спек, поэтому диалайзер всегда ругается
--dialyzer({nowarn_function, parse_timestamp/1}).
--spec parse_timestamp(binary()) ->
+-dialyzer({nowarn_function, parse_datetime/1}).
+-spec parse_datetime(binary()) ->
     calendar:datetime().
-parse_timestamp(Timestamp) ->
-    {ok, {Date, Time, _, undefined}} = rfc3339:parse(Timestamp),
+parse_datetime(Datetime) ->
+    {ok, {Date, Time, _, undefined}} = rfc3339:parse(Datetime),
     {Date, Time}.
 
--spec format_timestamp(calendar:datetime()) ->
+-spec format_datetime(calendar:datetime()) ->
     binary().
-format_timestamp(Timestamp) ->
-    {ok, TimestampBin} = rfc3339:format(Timestamp),
-    TimestampBin.
+format_datetime(Datetime) ->
+    {ok, DatetimeBin} = rfc3339:format(Datetime),
+    DatetimeBin.

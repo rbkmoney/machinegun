@@ -11,7 +11,7 @@
 
 %% mg_machine
 -behaviour(mg_machine).
--export([pool_child_spec/2, process_machine/5]).
+-export([pool_child_spec/2, process_machine/6]).
 
 -export([start/0]).
 %%
@@ -34,7 +34,7 @@ all() ->
     config().
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
-    % dbg:tpl({mg_workers_manager, '_', '_'}, x),
+    % dbg:tpl({mg_machine, '_', '_'}, x),
     Apps = genlib_app:start_application(mg),
     [{apps, Apps} | C].
 
@@ -46,6 +46,8 @@ end_per_suite(C) ->
 %%
 %% tests
 %%
+-define(req_ctx, <<"req_ctx">>).
+
 -spec simple_test(config()) ->
     _.
 simple_test(_) ->
@@ -53,29 +55,29 @@ simple_test(_) ->
     TestKey = <<"test_key">>,
     ID = <<"42">>,
     _  = start_automaton(Options),
-    ok = mg_machine:start(Options, ID, {TestKey, 0}     , mg_utils:default_deadline()),
-    0  = mg_machine:call (Options, ID, get              , mg_utils:default_deadline()),
-    ok = mg_machine:call (Options, ID, increment        , mg_utils:default_deadline()),
-    1  = mg_machine:call (Options, ID, get              , mg_utils:default_deadline()),
-    ok = mg_machine:call (Options, ID, delayed_increment, mg_utils:default_deadline()),
+    ok = mg_machine:start(Options, ID, {TestKey, 0}     , ?req_ctx, mg_utils:default_deadline()),
+    0  = mg_machine:call (Options, ID, get              , ?req_ctx, mg_utils:default_deadline()),
+    ok = mg_machine:call (Options, ID, increment        , ?req_ctx, mg_utils:default_deadline()),
+    1  = mg_machine:call (Options, ID, get              , ?req_ctx, mg_utils:default_deadline()),
+    ok = mg_machine:call (Options, ID, delayed_increment, ?req_ctx, mg_utils:default_deadline()),
     ok = timer:sleep(2000),
-    2  = mg_machine:call (Options, ID, get              , mg_utils:default_deadline()),
+    2  = mg_machine:call (Options, ID, get              , ?req_ctx, mg_utils:default_deadline()),
 
     % call fail/simple_repair
-    machine_failed = (catch mg_machine:call(Options, ID, fail, mg_utils:default_deadline())),
-    ok = mg_machine:simple_repair(Options, ID, mg_utils:default_deadline()),
-    2  = mg_machine:call(Options, ID, get, mg_utils:default_deadline()),
+    machine_failed = (catch mg_machine:call         (Options, ID, fail, ?req_ctx, mg_utils:default_deadline())),
+    ok             =        mg_machine:simple_repair(Options, ID,       ?req_ctx, mg_utils:default_deadline()),
+    2              =        mg_machine:call         (Options, ID, get , ?req_ctx, mg_utils:default_deadline()),
 
     % call fail/repair
-    machine_failed = (catch mg_machine:call(Options, ID, fail, mg_utils:default_deadline())),
-    repaired = mg_machine:repair(Options, ID, repair_arg, mg_utils:default_deadline()),
-    2  = mg_machine:call(Options, ID, get, mg_utils:default_deadline()),
+    machine_failed = (catch mg_machine:call  (Options, ID, fail      , ?req_ctx, mg_utils:default_deadline())),
+    repaired       =        mg_machine:repair(Options, ID, repair_arg, ?req_ctx, mg_utils:default_deadline()),
+    2              =        mg_machine:call  (Options, ID, get       , ?req_ctx, mg_utils:default_deadline()),
 
     % call fail/repair fail/repair
-    machine_failed = (catch mg_machine:call(Options, ID, fail, mg_utils:default_deadline())),
-    machine_failed = (catch mg_machine:repair(Options, ID, fail, mg_utils:default_deadline())),
-    repaired = mg_machine:repair(Options, ID, repair_arg, mg_utils:default_deadline()),
-    2  = mg_machine:call(Options, ID, get, mg_utils:default_deadline()),
+    machine_failed = (catch mg_machine:call  (Options, ID, fail      , ?req_ctx, mg_utils:default_deadline())),
+    machine_failed = (catch mg_machine:repair(Options, ID, fail      , ?req_ctx, mg_utils:default_deadline())),
+    repaired       =        mg_machine:repair(Options, ID, repair_arg, ?req_ctx, mg_utils:default_deadline()),
+    2              =        mg_machine:call  (Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
 
     ok.
 
@@ -90,22 +92,22 @@ pool_child_spec(_Options, Name) ->
         start => {?MODULE, start, []}
     }.
 
--spec process_machine(_Options, mg:id(), mg_machine:processor_impact(), _, mg_machine:machine_state()) ->
+-spec process_machine(_Options, mg:id(), mg_machine:processor_impact(), _, _, mg_machine:machine_state()) ->
     mg_machine:processor_result() | no_return().
-process_machine(_, _, {_, fail}, _, _) ->
+process_machine(_, _, {_, fail}, _, ?req_ctx, _) ->
     _ = exit(1),
     {noreply, sleep, []};
-process_machine(_, _, {init, {TestKey, TestValue}}, _, null) ->
+process_machine(_, _, {init, {TestKey, TestValue}}, _, ?req_ctx, null) ->
     {{reply, ok}, sleep, [TestKey, TestValue]};
-process_machine(_, _, {call, get}, _, [TestKey, TestValue]) ->
+process_machine(_, _, {call, get}, _, ?req_ctx, [TestKey, TestValue]) ->
     {{reply, TestValue}, sleep, [TestKey, TestValue]};
-process_machine(_, _, {call, increment}, _, [TestKey, TestValue]) ->
+process_machine(_, _, {call, increment}, _, ?req_ctx, [TestKey, TestValue]) ->
     {{reply, ok}, sleep, [TestKey, TestValue + 1]};
-process_machine(_, _, {call, delayed_increment}, _, State) ->
-    {{reply, ok}, {wait, 1}, State};
-process_machine(_, _, timeout, _, [TestKey, TestValue]) ->
+process_machine(_, _, {call, delayed_increment}, _, ?req_ctx, State) ->
+    {{reply, ok}, {wait, genlib_time:now() + 1, ?req_ctx, 5000}, State};
+process_machine(_, _, timeout, _, ?req_ctx, [TestKey, TestValue]) ->
     {noreply, sleep, [TestKey, TestValue + 1]};
-process_machine(_, _, {repair, repair_arg}, _, [TestKey, TestValue]) ->
+process_machine(_, _, {repair, repair_arg}, _, ?req_ctx, [TestKey, TestValue]) ->
     {{reply, repaired}, sleep, [TestKey, TestValue]}.
 
 %%
@@ -127,5 +129,6 @@ automaton_options() ->
     #{
         namespace => <<"test">>,
         processor => ?MODULE,
-        storage   => mg_storage_memory
+        storage   => mg_storage_memory,
+        logger    => undefined
     }.

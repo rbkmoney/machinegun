@@ -5,8 +5,8 @@
 -export_type([call_context/0]).
 
 -export([child_spec    /2]).
--export([start_link    /3]).
--export([call          /5]).
+-export([start_link    /4]).
+-export([call          /6]).
 -export([brutal_kill   /2]).
 -export([reply         /2]).
 -export([get_call_queue/2]).
@@ -19,13 +19,13 @@
 %%
 %% API
 %%
--callback handle_load(_ID, _Args) ->
+-callback handle_load(_ID, _Args, _ReqCtx) ->
     {ok, _State} | {error, _Error}.
 
 -callback handle_unload(_State) ->
     ok.
 
--callback handle_call(_Call, call_context(), _State) ->
+-callback handle_call(_Call, call_context(), _ReqCtx, _State) ->
     {{reply, _Reply} | noreply, _State}.
 
 
@@ -34,7 +34,7 @@
     hibernate_timeout => pos_integer(),
     unload_timeout    => pos_integer()
 }.
--type call_context() :: _. % в OTP он не описан :(
+-type call_context() :: _. % в OTP он не описан, а нужно бы :(
 
 -spec child_spec(atom(), options()) ->
     supervisor:child_spec().
@@ -46,17 +46,21 @@ child_spec(ChildID, Options) ->
         shutdown => brutal_kill
     }.
 
--spec start_link(options(), _NS, _ID) ->
+-spec start_link(options(), _NS, _ID, _ReqCtx) ->
     mg_utils:gen_start_ret().
-start_link(Options, NS, ID) ->
-    gen_server:start_link(self_reg_name({NS, ID}), ?MODULE, {ID, Options}, []).
+start_link(Options, NS, ID, ReqCtx) ->
+    gen_server:start_link(self_reg_name({NS, ID}), ?MODULE, {ID, Options, ReqCtx}, []).
 
--spec call(_NS, _ID, _Call, mg_utils:deadline(), pos_integer()) ->
+-spec call(_NS, _ID, _Call, _ReqCtx, mg_utils:deadline(), pos_integer()) ->
     _Result | {error, _}.
-call(NS, ID, Call, Deadline, MaxQueueLength) ->
+call(NS, ID, Call, ReqCtx, Deadline, MaxQueueLength) ->
     case mg_utils:get_msg_queue_len(self_reg_name({NS, ID})) < MaxQueueLength of
         true ->
-            gen_server:call(self_ref({NS, ID}), {call, Deadline, Call}, mg_utils:deadline_to_timeout(Deadline));
+            gen_server:call(
+                self_ref({NS, ID}),
+                {call, Deadline, Call, ReqCtx},
+                mg_utils:deadline_to_timeout(Deadline)
+            );
         false ->
             {error, {transient, overload}}
     end.
@@ -100,7 +104,7 @@ is_alive(NS, ID) ->
     #{
         id                => _ID,
         mod               => module(),
-        status            => {loading, _Args} | {working, _State},
+        status            => {loading, _Args, _ReqCtx} | {working, _State},
         unload_tref       => reference() | undefined,
         hibernate_timeout => timeout(),
         unload_timeout    => timeout()
@@ -108,7 +112,7 @@ is_alive(NS, ID) ->
 
 -spec init(_) ->
     mg_utils:gen_server_init_ret(state()).
-init({ID, Options = #{worker := WorkerModOpts}}) ->
+init({ID, Options = #{worker := WorkerModOpts}, ReqCtx}) ->
     HibernateTimeout = maps:get(hibernate_timeout, Options,  5 * 1000),
     UnloadTimeout    = maps:get(unload_timeout   , Options, 60 * 1000),
     {Mod, Args} = mg_utils:separate_mod_opts(WorkerModOpts),
@@ -116,7 +120,7 @@ init({ID, Options = #{worker := WorkerModOpts}}) ->
         #{
             id                => ID,
             mod               => Mod,
-            status            => {loading, Args},
+            status            => {loading, Args, ReqCtx},
             unload_tref       => undefined,
             hibernate_timeout => HibernateTimeout,
             unload_timeout    => UnloadTimeout
@@ -128,17 +132,17 @@ init({ID, Options = #{worker := WorkerModOpts}}) ->
 
 % загрузка делается отдельно и лениво, чтобы не блокировать этим супервизор,
 % т.к. у него легко может начать расти очередь
-handle_call(Call={call, _, _}, From, State=#{id:=ID, mod:=Mod, status:={loading, Args}}) ->
-    case Mod:handle_load(ID, Args) of
+handle_call(Call={call, _, _, _}, From, State=#{id:=ID, mod:=Mod, status:={loading, Args, ReqCtx}}) ->
+    case Mod:handle_load(ID, Args, ReqCtx) of
         {ok, ModState} ->
             handle_call(Call, From, State#{status:={working, ModState}});
         Error={error, _} ->
             {stop, normal, Error, State}
     end;
-handle_call({call, Deadline, Call}, From, State=#{mod:=Mod, status:={working, ModState}}) ->
+handle_call({call, Deadline, Call, ReqCtx}, From, State=#{mod:=Mod, status:={working, ModState}}) ->
     case mg_utils:is_deadline_reached(Deadline) of
         false ->
-            {ReplyAction, NewModState} = Mod:handle_call(Call, From, ModState),
+            {ReplyAction, NewModState} = Mod:handle_call(Call, From, ReqCtx, ModState),
             NewState = State#{status:={working, NewModState}},
             case ReplyAction of
                 {reply, Reply} -> {reply, Reply, schedule_unload_timer(NewState), hibernate_timeout(NewState)};

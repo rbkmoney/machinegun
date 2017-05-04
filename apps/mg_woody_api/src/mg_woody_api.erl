@@ -92,6 +92,8 @@ stop(_State) ->
 %%
 %% local
 %%
+-define(logger, mg_woody_api_logger).
+
 -spec woody_child_spec(config(), atom()) ->
     supervisor:child_spec().
 woody_child_spec(Config, ChildID) ->
@@ -133,6 +135,7 @@ ns_options(NS, #{processor:=ProcessorConfig, event_sink:=EventSinkID}, Storage) 
         storage    => Storage,
         processor  => processor(ProcessorConfig),
         tagging    => tags_options(NS, Storage),
+        logger     => ?logger,
         event_sink => {EventSinkID, event_sink_options(Storage)}
     };
 ns_options(NS, #{processor:=ProcessorConfig}, Storage) ->
@@ -140,7 +143,8 @@ ns_options(NS, #{processor:=ProcessorConfig}, Storage) ->
         namespace => NS,
         storage   => Storage,
         processor => processor(ProcessorConfig),
-        tagging   => tags_options(NS, Storage)
+        tagging   => tags_options(NS, Storage),
+        logger    => ?logger
     }.
 
 -spec processor(processor_config()) ->
@@ -153,7 +157,8 @@ processor(ProcessorConfig) ->
 tags_options(NS, Storage) ->
     #{
         namespace => NS,
-        storage   => Storage
+        storage   => Storage,
+        logger    => ?logger
     }.
 
 -spec api_event_sink_options(config()) ->
@@ -169,7 +174,8 @@ api_event_sink_options(Config) ->
 event_sink_options(Storage) ->
     #{
         namespace => <<"_event_sinks">>,
-        storage   => Storage
+        storage   => Storage,
+        logger    => ?logger
     }.
 
 -spec collect_event_sinks(config_nss()) ->
