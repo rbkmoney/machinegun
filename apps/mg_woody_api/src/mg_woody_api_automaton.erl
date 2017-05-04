@@ -84,7 +84,19 @@ handle_function('GetMachine', [MachineDesc], _WoodyContext, Options) ->
                 )
             end
         ),
-    {ok, pack(machine, History)}.
+    {ok, pack(machine, History)};
+
+handle_function('Remove', [NS, ID], WoodyContext, Options) ->
+    ok = mg_woody_api_utils:handle_safe(
+            fun() ->
+                mg_events_machine:remove(
+                    get_ns_options(NS, Options),
+                    unpack(id, ID),
+                    mg_woody_api_utils:woody_context_to_opaque(WoodyContext)
+                )
+            end
+        ),
+    {ok, ok}.
 
 %%
 %% local

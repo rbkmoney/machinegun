@@ -22,6 +22,7 @@
 -export([machine_set_tag        /1]).
 -export([machine_call_by_tag    /1]).
 -export([machine_tag_not_found  /1]).
+-export([machine_remove         /1]).
 
 %% repair group tests
 -export([failed_machine_start        /1]).
@@ -82,13 +83,16 @@ tests_groups() ->
         % TODO проверить отдельно get_history
         {base, [sequence], [
             namespace_not_found,
+            machine_id_not_found,
             machine_start,
             machine_already_exists,
             machine_id_not_found,
             machine_call_by_id,
             machine_set_tag,
             machine_tag_not_found,
-            machine_call_by_tag
+            machine_call_by_tag,
+            machine_remove,
+            machine_id_not_found
         ]},
 
         {repair, [sequence], [
@@ -279,6 +283,10 @@ machine_tag_not_found(C) ->
 -spec machine_call_by_tag(config()) -> _.
 machine_call_by_tag(C) ->
     <<"nop">> = mg_automaton_client:call(automaton_options(C), ?Ref, <<"nop">>).
+
+-spec machine_remove(config()) -> _.
+machine_remove(C) ->
+    ok = mg_automaton_client:remove(automaton_options(C), ?ID).
 
 %%
 %% repair group tests
