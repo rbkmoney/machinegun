@@ -219,6 +219,14 @@ reply(#{call_context := CallContext}, Reply) ->
 %%
 %% Internal API
 %%
+-define(SAFE(Desc, Expr),
+    try
+        Expr
+    catch Class:Reason ->
+        Exception = {Class, Reason, erlang:get_stacktrace()},
+        ok = error_logger:error_msg("error in ~s handler:~n~p", [Desc, Exception])
+    end
+).
 -spec handle_timers(options()) ->
     ok.
 handle_timers(Options) ->
@@ -231,7 +239,7 @@ handle_timers(Options, Timers) ->
     lists:foreach(
         % такая схема потенциально опасная, но надо попробовать как она себя будет вести
         fun({_, ID}) ->
-            erlang:spawn_link(fun() -> handle_timer(Options, ID) end)
+            erlang:spawn_link(fun() -> ?SAFE(handle_timers, handle_timer(Options, ID)) end)
         end,
         Timers
     ).
@@ -244,10 +252,7 @@ handle_timer(Options, ID) ->
         #{status := {waiting, Timestamp, ReqCtx, Timeout}} ->
             handle_timer(Options, ID, Timestamp, ReqCtx, mg_utils:timeout_to_deadline(Timeout));
         #{status := _} ->
-            ok;
-        undefined ->
-            % такого не должно быть!
-            throw(machine_not_found)
+            ok
     end.
 
 -spec handle_timer(options(), mg:id(), genlib_time:ts(), mg:request_context(), mg_utils:deadline()) ->
@@ -277,7 +282,7 @@ resume_interrupted(Options) ->
 resume_interrupted(Options, MachinesIDs) ->
     lists:foreach(
         fun(ID) ->
-            erlang:spawn_link(fun() -> resume_interrupted_one(Options, ID) end)
+            erlang:spawn_link(fun() -> ?SAFE(resume_interrupted, resume_interrupted_one(Options, ID)) end)
         end,
         MachinesIDs
     ).
@@ -285,31 +290,28 @@ resume_interrupted(Options, MachinesIDs) ->
 -spec resume_interrupted_one(options(), mg:id()) ->
     ok.
 resume_interrupted_one(Options, ID) ->
-    Deadline = mg_utils:timeout_to_deadline(30000),
-    {_, StorageMachine} = get_storage_machine(Options, ID),
-    case StorageMachine of
-        #{status := {processing, ReqCtx}} ->
-            resume_interrupted_one(Options, ID, ReqCtx, Deadline);
-        #{status := _} ->
-            ok;
-        undefined ->
-            % такого не должно быть!
-            throw(machine_not_found)
+    case mg_workers_manager:is_alive(manager_options(Options), ID) of
+        false ->
+            Deadline = mg_utils:timeout_to_deadline(30000),
+            {_, StorageMachine} = get_storage_machine(Options, ID),
+            case StorageMachine of
+                #{status := {processing, ReqCtx}} ->
+                    resume_interrupted_one(Options, ID, ReqCtx, Deadline);
+                #{status := _} ->
+                    ok
+            end;
+        true ->
+            ok
     end.
 
 -spec resume_interrupted_one(options(), mg:id(), mg:request_context(), mg_utils:deadline()) ->
     ok.
 resume_interrupted_one(Options, ID, ReqCtx, Deadline) ->
-    case mg_workers_manager:is_alive(manager_options(Options), ID) of
-        false ->
-            case call_(Options, ID, resume_interrupted_one, ReqCtx, Deadline) of
-                {ok, ok} ->
-                    ok;
-                {error, Reason} ->
-                    ok = emit_log_event(Options, ID, ReqCtx, {resuming_interrupted_failed, Reason})
-            end;
-        true ->
-            ok
+    case call_(Options, ID, resume_interrupted_one, ReqCtx, Deadline) of
+        {ok, ok} ->
+            ok;
+        {error, Reason} ->
+            ok = emit_log_event(Options, ID, ReqCtx, {resuming_interrupted_failed, Reason})
     end.
 
 -spec all_statuses() ->
