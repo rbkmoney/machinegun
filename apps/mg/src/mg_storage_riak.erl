@@ -116,10 +116,10 @@ search(Options, Namespace, Query) ->
 -spec do_get_index(pid(), mg:ns(), mg_storage:index_query(), options()) ->
     _.
 do_get_index(Pid, Namespace, {IndexName, {From, To}}, Options) ->
-    SearchOptions = [{return_terms, true}, {timeout, get_option(request_timeout, Options)}],
+    SearchOptions = [{return_terms, true}, {timeout, get_option(request_timeout, Options)}, {pagination_sort, true}],
     riakc_pb_socket:get_index_range(Pid, Namespace, prepare_index_name(IndexName), From, To, SearchOptions);
 do_get_index(Pid, Namespace, {IndexName, Value}, Options) ->
-    SearchOptions = [{timeout, get_option(request_timeout, Options)}],
+    SearchOptions = [{timeout, get_option(request_timeout, Options)}, {pagination_sort, true}],
     riakc_pb_socket:get_index_eq(Pid, Namespace, prepare_index_name(IndexName), Value, SearchOptions).
 
 -spec get_index_response(mg_storage:index_query(), get_index_results()) ->
@@ -128,15 +128,11 @@ get_index_response({_, {_, _}}, #index_results_v1{keys = []}) ->
     % это какой-то пипец, а не код, они там все упоролись что-ли?
     [];
 get_index_response({_, {_, _}}, #index_results_v1{terms = Terms}) ->
-    % получить из риака стабильный порядок следования не получилось,
-    % поэтому пришлось сделать небольшой хак
-    lists:sort(
-        lists:map(
-            fun({IndexValue, Key}) ->
-                {erlang:binary_to_integer(IndexValue), Key}
-            end,
-            Terms
-        )
+    lists:map(
+        fun({IndexValue, Key}) ->
+            {erlang:binary_to_integer(IndexValue), Key}
+        end,
+        Terms
     );
 get_index_response({_, _}, #index_results_v1{keys = Keys}) ->
     Keys.
