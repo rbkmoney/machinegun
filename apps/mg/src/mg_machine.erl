@@ -57,6 +57,8 @@
 -export([simple_repair       /4]).
 -export([repair              /5]).
 -export([call                /5]).
+-export([fail                /4]).
+-export([fail                /5]).
 -export([get                 /2]).
 -export([search              /2]).
 -export([reply               /2]).
@@ -178,6 +180,16 @@ repair(Options, ID, Args, ReqCtx, Deadline) ->
     _Resp | throws().
 call(Options, ID, Call, ReqCtx, Deadline) ->
     mg_utils:throw_if_error(call_(Options, ID, {call, Call}, ReqCtx, Deadline)).
+
+-spec fail(options(), mg:id(), mg:request_context(), mg_utils:deadline()) ->
+    ok.
+fail(Options, ID, ReqCtx, Deadline) ->
+    fail(Options, ID, {error, explicit_fail, []}, ReqCtx, Deadline).
+
+-spec fail(options(), mg:id(), mg_utils:exception(), mg:request_context(), mg_utils:deadline()) ->
+    ok.
+fail(Options, ID, Exception, ReqCtx, Deadline) ->
+    mg_utils:throw_if_error(call_(Options, ID, {fail, Exception}, ReqCtx, Deadline)).
 
 -spec get(options(), mg:id()) ->
     machine_state() | throws().
@@ -370,7 +382,17 @@ handle_load(ID, Options, ReqCtx) ->
     {{reply, _Resp} | noreply, state()}.
 handle_call(Call, CallContext, ReqCtx, S=#{storage_machine:=StorageMachine}) ->
     PCtx = new_processing_context(CallContext),
+
+    % довольно сложное место, тут определяется приоритет реакции на внешние раздражители, нужно быть аккуратнее
     case {Call, StorageMachine} of
+        % start
+        {{start, Args}, undefined   } -> {noreply, process_start(Args, PCtx, ReqCtx, S)};
+        { _           , undefined   } -> {{reply, {error, machine_not_found    }}, S};
+        {{start, _   }, #{status:=_}} -> {{reply, {error, machine_already_exist}}, S};
+
+        % fail
+        {{fail, Exception}, _} -> {{reply, ok}, handle_exception(Exception, undefined, ReqCtx, S)};
+
         % сюда мы не должны попадать если машина не падала во время обработки запроса
         % (когда мы переходили в стейт processing)
         {_, #{status := processing}} ->
@@ -379,19 +401,14 @@ handle_call(Call, CallContext, ReqCtx, S=#{storage_machine:=StorageMachine}) ->
         % ничего не просходит, просто убеждаемся, что машина загружена
         {resume_interrupted_one, _} -> {{reply, {ok, ok}}, S};
 
-        % start
-        {{start, Args}, undefined   } -> {noreply, process_start(Args, PCtx, ReqCtx, S)};
-        { _           , undefined   } -> {{reply, {error, machine_not_found}}, S};
-        {{start, _   }, #{status:=_}} -> {{reply, {error, machine_already_exist}}, S};
-
         % call
         {{call  , SubCall}, #{status:= sleeping         }} -> {noreply, process({call, SubCall}, PCtx, ReqCtx, S)};
         {{call  , SubCall}, #{status:={waiting, _, _, _}}} -> {noreply, process({call, SubCall}, PCtx, ReqCtx, S)};
-        {{call   , _     }, #{status:={error  , _, _   }}} -> {{reply, {error, machine_failed}}, S};
+        {{call  , _      }, #{status:={error  , _, _   }}} -> {{reply, {error, machine_failed}}, S};
 
         % repair
         {{repair, Args}, #{status:={error  , _, _}}} -> {noreply, process({repair, Args}, PCtx, ReqCtx, S)};
-        {{repair , _  }, #{status:=_              }} -> {{reply, {error, machine_already_working}}, S};
+        {{repair, _   }, #{status:=_              }} -> {{reply, {error, machine_already_working}}, S};
 
         % simple_repair
         {simple_repair, #{status:={error  , _, _}}} -> {{reply, ok}, process_simple_repair(ReqCtx, S)};
@@ -553,9 +570,10 @@ process(Impact, ProcessingCtx, ReqCtx, State) ->
         handle_exception({Class, Reason, erlang:get_stacktrace()}, Impact, ReqCtx, State)
     end.
 
--spec handle_exception(mg_utils:exception(), processor_impact(), mg:request_context(), state()) ->
+-spec handle_exception(mg_utils:exception(), processor_impact() | undefined, mg:request_context(), state()) ->
     state().
-handle_exception(Exception, Impact, ReqCtx, State=#{options:=Options, id:=ID, storage_machine := StorageMachine}) ->
+handle_exception(Exception, Impact, ReqCtx, State) ->
+    #{options := Options, id := ID, storage_machine := StorageMachine} = State,
     ok = emit_log_event(Options, ID, ReqCtx, {machine_failed, Exception}),
     #{status := OldStatus} = StorageMachine,
     case {Impact, OldStatus} of
@@ -564,7 +582,7 @@ handle_exception(Exception, Impact, ReqCtx, State=#{options:=Options, id:=ID, st
         {_, {error, _, _}} ->
             State;
         {_, _} ->
-            NewStorageMachine = StorageMachine#{ status => {error, Exception, OldStatus} },
+            NewStorageMachine = StorageMachine#{status => {error, Exception, OldStatus}},
             transit_state(ReqCtx, NewStorageMachine, State)
     end.
 
