@@ -89,7 +89,7 @@ reply(CallCtx, Reply) ->
 get_call_queue(NS, ID) ->
     Pid = mg_utils:exit_if_undefined(mg_utils:gen_where(self_ref({NS, ID})), noproc),
     {messages, Messages} = erlang:process_info(Pid, messages),
-    [Call || {'$gen_call', _, {call, _, Call}} <- Messages].
+    [Call || {'$gen_call', _, {call, _, Call, _}} <- Messages].
 
 -spec is_alive(_NS, _ID) ->
     boolean().
