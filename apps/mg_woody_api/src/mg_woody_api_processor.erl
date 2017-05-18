@@ -14,7 +14,7 @@
 -spec processor_child_spec(options()) ->
     supervisor:child_spec().
 processor_child_spec(Options) ->
-    woody_client:connection_pool_spec(Options).
+    woody_client:child_spec(Options).
 
 -spec process_signal(options(), mg_events_machine:request_context(), mg_events_machine:signal_args()) ->
     mg_events_machine:signal_result().

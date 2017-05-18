@@ -105,7 +105,7 @@ woody_child_spec(Config, ChildID) ->
             transport     => http,
             ip            => Ip,
             port          => get_config_element(port    , Config, 8022),
-            net_opts      => get_config_element(net_opts, Config, #{} ),
+            net_opts      => get_config_element(net_opts, Config, []  ),
             event_handler => {mg_woody_api_event_handler, server},
             handlers      => [
                 mg_woody_api_automaton :handler(api_automaton_options (Config)),
