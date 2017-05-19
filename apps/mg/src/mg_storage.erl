@@ -10,16 +10,18 @@
 -module(mg_storage).
 
 %% API
--export_type([opaque /0]).
--export_type([key    /0]).
--export_type([value  /0]).
--export_type([kv     /0]).
--export_type([context/0]).
+-export_type([opaque      /0]).
+-export_type([key         /0]).
+-export_type([value       /0]).
+-export_type([kv          /0]).
+-export_type([context     /0]).
+-export_type([search_limit/0]).
 
 -export_type([index_name       /0]).
 -export_type([index_value      /0]).
 -export_type([index_update     /0]).
 -export_type([index_query_value/0]).
+-export_type([index_limit      /0]).
 -export_type([index_query      /0]).
 
 -export_type([storage/0]).
@@ -38,18 +40,22 @@
 %%
 %% API
 %%
--type opaque () :: null | true | false | number() | binary() | [opaque()] | #{opaque() => opaque()}.
--type key    () :: binary().
--type value  () :: opaque().
--type kv     () :: {key(), value()}.
--type context() :: term().
+-type opaque      () :: null | true | false | number() | binary() | [opaque()] | #{opaque() => opaque()}.
+-type key         () :: binary().
+-type value       () :: opaque().
+-type kv          () :: {key(), value()}.
+-type context     () :: term().
+-type continuation() :: term().
+-type search_limit() :: non_neg_integer() | inf.
 
 %% типизация получилась отвратная, но лучше не вышло :-\
 -type index_name       () :: {binary | integer, binary()}.
 -type index_value      () :: binary() | integer().
 -type index_update     () :: {index_name(), index_value()}.
 -type index_query_value() :: index_value() | {index_value(), index_value()}.
--type index_query      () :: {index_name(), index_query_value()}.
+-type index_limit      () :: search_limit().
+-type index_query      () :: {index_name(), index_query_value()}
+                           | {index_name(), index_query_value(), index_limit(), continuation()}.
 
 -type storage() :: mg_utils:mod_opts().
 -type options() :: #{
@@ -69,7 +75,7 @@
     {context(), value()} | undefined.
 
 -callback search(_Options, mg:ns(), index_query()) ->
-    [{index_value(), key()}] | [key()].
+    {[{index_value(), key()}], continuation()} | {[key()], continuation()}.
 
 -callback delete(_Options, mg:ns(), key(), context()) ->
     ok.
@@ -92,7 +98,7 @@ get(Options, Key) ->
     apply_mod_opts(Options, get, [Key]).
 
 -spec search(options(), index_query()) ->
-    [key()].
+    {[key()], continuation()}.
 search(Options, Query) ->
     apply_mod_opts(Options, search, [Query]).
 

@@ -65,6 +65,17 @@
 
 -type context() :: riakc_obj:vclock() | undefined.
 
+-type index_opt() :: {timeout, timeout()} |
+                     {call_timeout, timeout()} |
+                     {stream, boolean()} |
+                     {continuation, binary()} |
+                     {pagination_sort, boolean()} |
+                     {max_results, non_neg_integer() | all}.
+-type index_opts() :: [index_opt()].
+
+-type search_result_with_cont() ::
+    {[{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()], continuation()}.
+
 %%
 %% mg_storage callbacks
 %%
@@ -104,38 +115,83 @@ get(Options, Namespace, Key) ->
     end).
 
 -spec search(options(), mg:ns(), mg_storage:index_query()) ->
-    [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
+    search_result_with_cont().
 search(Options, Namespace, Query) ->
+    LiftedQuery = lift_query(Query),
     do(Options, Namespace,
         fun(Pid) ->
-                Result = handle_riak_response_(do_get_index(Pid, Namespace, Query, Options)),
-                get_index_response(Query, Result)
+            Result = handle_riak_response_(do_get_index(Pid, Namespace, LiftedQuery, Options)),
+            get_index_response(Query, Result)
         end
     ).
 
 -spec do_get_index(pid(), mg:ns(), mg_storage:index_query(), options()) ->
     _.
 do_get_index(Pid, Namespace, {IndexName, {From, To}}, Options) ->
-    SearchOptions = [{return_terms, true}, {timeout, get_option(request_timeout, Options)}, {pagination_sort, true}],
+    SearchOptions = index_opts([{return_terms, true}, {timeout, get_option(request_timeout, Options)}]),
     riakc_pb_socket:get_index_range(Pid, Namespace, prepare_index_name(IndexName), From, To, SearchOptions);
 do_get_index(Pid, Namespace, {IndexName, Value}, Options) ->
-    SearchOptions = [{timeout, get_option(request_timeout, Options)}, {pagination_sort, true}],
+    SearchOptions = index_opts([{timeout, get_option(request_timeout, Options)}]),
     riakc_pb_socket:get_index_eq(Pid, Namespace, prepare_index_name(IndexName), Value, SearchOptions).
 
 -spec get_index_response(mg_storage:index_query(), get_index_results()) ->
-    [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
-get_index_response({_, {_, _}}, #index_results_v1{keys = []}) ->
+    search_result_with_cont().
+get_index_response({_, Val, _, _}, #index_results_v1{keys = [], continuation = Cont}) when is_tuple(Val) ->
     % это какой-то пипец, а не код, они там все упоролись что-ли?
-    [];
-get_index_response({_, {_, _}}, #index_results_v1{terms = Terms}) ->
-    lists:map(
+    {[], Cont};
+get_index_response({_, Val, _, _}, #index_results_v1{terms = Terms, continuation = Cont}) when is_tuple(Val) ->
+    Res = lists:map(
         fun({IndexValue, Key}) ->
             {erlang:binary_to_integer(IndexValue), Key}
         end,
         Terms
-    );
-get_index_response({_, _}, #index_results_v1{keys = Keys}) ->
-    Keys.
+    ),
+    {Res, Cont};
+get_index_response({_, _, _, _}, #index_results_v1{keys = Keys, continuation = Cont}) ->
+    {Keys, Cont}.
+
+-spec lift_query(mg_storage:index_query()) ->
+    mg_storage:index_query().
+lift_query({Name, Val}) ->
+    {Name, Val, inf, undefined};
+lift_query({Name, Val, Limit, Continuation}) ->
+    {Name, Val, Limit, Continuation}.
+
+-spec index_opts(mg_storage:index_limit(), continuation()) ->
+    index_opts().
+index_opts(IndexLimit, Continuation) ->
+    index_opts([], IndexLimit, Continuation).
+
+-spec index_opts(index_opts(), mg_storage:index_limit(), continuation()) ->
+    index_opts().
+index_opts(Opts, IndexLimit, Continuation) ->
+    lists:append([
+        common_index_opts(),
+        max_result_opts(IndexLimit),
+        continuation_opts(Continuation),
+        Opts
+    ]).
+
+-spec continuation_opts(continuation()) ->
+    index_opts().
+continuation_opts(Continuation) ->
+    case Continuation of
+        undefined -> [];
+        _         -> [{continuation, Continuation}]
+    end.
+
+-spec max_result_opts(mg_storage:index_limit()) ->
+    index_opts().
+max_result_opts(IndexLimit) ->
+    case IndexLimit of
+        inf -> [];
+        _   -> [{max_results, IndexLimit}]
+    end.
+
+-spec common_index_opts() ->
+    index_opts().
+common_index_opts() ->
+    [{pagination_sort, true}].
 
 -spec delete(options(), mg:ns(), mg_storage:key(), context()) ->
     ok.

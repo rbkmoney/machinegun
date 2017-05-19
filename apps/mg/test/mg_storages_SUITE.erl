@@ -16,9 +16,10 @@
 -export([end_per_group   /2]).
 
 %% base group tests
--export([base_test   /1]).
--export([indexes_test/1]).
--export([stress_test /1]).
+-export([base_test               /1]).
+-export([indexes_test            /1]).
+-export([indexes_test_with_limits/1]).
+-export([stress_test             /1]).
 
 %%
 %% tests descriptions
@@ -50,6 +51,7 @@ tests() ->
         base_test,
         % incorrect_context_test,
         indexes_test,
+        indexes_test_with_limits,
         stress_test
     ].
 
@@ -112,41 +114,73 @@ indexes_test(C) ->
     Options = storage_options(?config(storage_type, C), <<"base_test_ns">>),
     _ = start_storage(Options),
 
-    K1   = <<"Key_24">>,
-    K2   = <<"Key_42">>,
-    I1     = {integer, <<"index1">>},
-    I2     = {integer, <<"index2">>},
-    IV1    = 1,
-    IV2    = 2,
+    K1  = <<"Key_24">>,
+    I1  = {integer, <<"index1">>},
+    IV1 = 1,
+
+    K2  = <<"Key_42">>,
+    I2  = {integer, <<"index2">>},
+    IV2 = 2,
+
     Value = #{<<"hello">> => <<"world">>},
 
-    [] = mg_storage:search(Options, {I1, IV1}),
-    [] = mg_storage:search(Options, {I1, {IV1, IV2}}),
-    [] = mg_storage:search(Options, {I2, {IV1, IV2}}),
+    {[], _} = mg_storage:search(Options, {I1, IV1}),
+    {[], _} = mg_storage:search(Options, {I1, {IV1, IV2}}),
+    {[], _} = mg_storage:search(Options, {I2, {IV1, IV2}}),
 
     Ctx1 = mg_storage:put(Options, K1, undefined, Value, [{I1, IV1}, {I2, IV2}]),
 
-    [K1       ] = mg_storage:search(Options, {I1, IV1       }),
-    [{IV1, K1}] = mg_storage:search(Options, {I1, {IV1, IV2}}),
-    [K1       ] = mg_storage:search(Options, {I2, IV2       }),
-    [{IV2, K1}] = mg_storage:search(Options, {I2, {IV1, IV2}}),
+    {[K1       ], _} = mg_storage:search(Options, {I1, IV1       }),
+    {[{IV1, K1}], _} = mg_storage:search(Options, {I1, {IV1, IV2}}),
+    {[K1       ], _} = mg_storage:search(Options, {I2, IV2       }),
+    {[{IV2, K1}], _} = mg_storage:search(Options, {I2, {IV1, IV2}}),
 
     Ctx2 = mg_storage:put(Options, K2, undefined, Value, [{I1, IV2}, {I2, IV1}]),
 
-    [K1                  ] = mg_storage:search(Options, {I1, IV1       }),
-    [{IV1, K1}, {IV2, K2}] = mg_storage:search(Options, {I1, {IV1, IV2}}),
-    [K1                  ] = mg_storage:search(Options, {I2, IV2       }),
-    [{IV1, K2}, {IV2, K1}] = mg_storage:search(Options, {I2, {IV1, IV2}}),
+    {[K1                  ], _} = mg_storage:search(Options, {I1, IV1       }),
+    {[{IV1, K1}, {IV2, K2}], _} = mg_storage:search(Options, {I1, {IV1, IV2}}),
+    {[K1                  ], _} = mg_storage:search(Options, {I2, IV2       }),
+    {[{IV1, K2}, {IV2, K1}], _} = mg_storage:search(Options, {I2, {IV1, IV2}}),
 
     ok = mg_storage:delete(Options, K1, Ctx1),
 
-    [{IV2, K2}] = mg_storage:search(Options, {I1, {IV1, IV2}}),
-    [{IV1, K2}] = mg_storage:search(Options, {I2, {IV1, IV2}}),
+    {[{IV2, K2}], _} = mg_storage:search(Options, {I1, {IV1, IV2}}),
+    {[{IV1, K2}], _} = mg_storage:search(Options, {I2, {IV1, IV2}}),
 
     ok = mg_storage:delete(Options, K2, Ctx2),
 
-    [] = mg_storage:search(Options, {I1, {IV1, IV2}}),
-    [] = mg_storage:search(Options, {I2, {IV1, IV2}}),
+    {[], _} = mg_storage:search(Options, {I1, {IV1, IV2}}),
+    {[], _} = mg_storage:search(Options, {I2, {IV1, IV2}}),
+
+    ok.
+
+-spec indexes_test_with_limits(config()) ->
+    _.
+indexes_test_with_limits(C) ->
+    Options = storage_options(?config(storage_type, C), <<"base_test_ns">>),
+    _ = start_storage(Options),
+
+    K1  = <<"Key_24">>,
+    I1  = {integer, <<"index1">>},
+    IV1 = 1,
+
+    K2  = <<"Key_42">>,
+    I2  = {integer, <<"index2">>},
+    IV2 = 2,
+
+    Value = #{<<"hello">> => <<"world">>},
+
+    Ctx1 = mg_storage:put(Options, K1, undefined, Value, [{I1, IV1}, {I2, IV2}]),
+    Ctx2 = mg_storage:put(Options, K2, undefined, Value, [{I1, IV2}, {I2, IV1}]),
+
+    {[{IV1, K1}], Cont1} = mg_storage:search(Options, {I1, {IV1, IV2}, 1, undefined}),
+    {[{IV2, K2}], Cont2} = mg_storage:search(Options, {I1, {IV1, IV2}, 1, Cont1}),
+    {[], undefined}      = mg_storage:search(Options, {I1, {IV1, IV2}, 1, Cont2}),
+
+    {[{IV1, K2}, {IV2, K1}], undefined} = mg_storage:search(Options, {I2, {IV1, IV2}, inf, undefined}),
+
+    ok = mg_storage:delete(Options, K1, Ctx1),
+    ok = mg_storage:delete(Options, K2, Ctx2),
 
     ok.
 

@@ -23,9 +23,10 @@
 }.
 -type event() :: mg_events:event(event_body()).
 -type options() :: #{
-    namespace => mg:ns(),
-    storage   => mg_storage:storage(),
-    logger    => mg_machine_logger:handler()
+    namespace    => mg:ns(),
+    storage      => mg_storage:storage(),
+    logger       => mg_machine_logger:handler(),
+    search_limit => mg_storage:search_limit()
 }.
 
 
