@@ -71,7 +71,9 @@
                      {continuation, binary()} |
                      {pagination_sort, boolean()} |
                      {max_results, non_neg_integer() | all}.
--type index_opts() :: [index_opt()].
+-type range_index_opt() :: {return_terms, boolean()} |
+                           {term_regex, binary()}.
+-type range_index_opts() :: [index_opt() | range_index_opt()].
 
 -type search_result_with_cont() ::
     {[{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()], continuation()}.
@@ -158,12 +160,12 @@ lift_query({Name, Val, Limit, Continuation}) ->
     {Name, Val, Limit, Continuation}.
 
 -spec index_opts(mg_storage:index_limit(), continuation()) ->
-    index_opts().
+    range_index_opts().
 index_opts(IndexLimit, Continuation) ->
     index_opts([], IndexLimit, Continuation).
 
--spec index_opts(index_opts(), mg_storage:index_limit(), continuation()) ->
-    index_opts().
+-spec index_opts(range_index_opts(), mg_storage:index_limit(), continuation()) ->
+    range_index_opts().
 index_opts(Opts, IndexLimit, Continuation) ->
     lists:append([
         common_index_opts(),
@@ -173,7 +175,7 @@ index_opts(Opts, IndexLimit, Continuation) ->
     ]).
 
 -spec continuation_opts(continuation()) ->
-    index_opts().
+    range_index_opts().
 continuation_opts(Continuation) ->
     case Continuation of
         undefined -> [];
@@ -181,7 +183,7 @@ continuation_opts(Continuation) ->
     end.
 
 -spec max_result_opts(mg_storage:index_limit()) ->
-    index_opts().
+    range_index_opts().
 max_result_opts(IndexLimit) ->
     case IndexLimit of
         inf -> [];
@@ -189,7 +191,7 @@ max_result_opts(IndexLimit) ->
     end.
 
 -spec common_index_opts() ->
-    index_opts().
+    range_index_opts().
 common_index_opts() ->
     [{pagination_sort, true}].
 

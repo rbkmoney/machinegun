@@ -24,8 +24,9 @@ start_link(Options, Namespace) ->
 %%
 %% mg_storage callbacks
 %%
--type context() :: non_neg_integer() | undefined.
--type options() :: _.
+-type context     () :: non_neg_integer() | undefined.
+-type options     () :: _.
+-type continuation() :: binary() | undefined.
 
 -spec child_spec(options(), mg:ns(), atom()) ->
     supervisor:child_spec().
@@ -54,9 +55,9 @@ get(_Options, Namespace, Key) when is_binary(Namespace) andalso is_binary(Key) -
     end.
 
 -spec search(_Options, mg:ns(), mg_storage:index_query()) ->
-    [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
+    {[{mg_storage:index_value(), mg_storage:key()}], continuation()} | {[mg_storage:key()], continuation()}.
 search(_Options, Namespace, Query) ->
-    gen_server:call(self_ref(Namespace), {search, Query}).
+    {Result, Remains} = gen_server:call(self_ref(Namespace), {search, Query}).
 
 -spec delete(_Options, mg:ns(), mg_storage:key(), context()) ->
     ok.
@@ -68,12 +69,14 @@ delete(_Options, Namespace, Key, Context) when is_binary(Namespace) andalso is_b
 %% gen_server callbacks
 %%
 -type state() :: #{
-    namespace => mg:ns(),
-    options   => options(),
-    values    => #{mg_storage:key() => {context(), mg_storage:value()}},
-    indexes   => #{mg_storage:index_name() => index()}
+    namespace   => mg:ns(),
+    options     => options(),
+    values      => #{mg_storage:key() => {context(), mg_storage:value()}},
+    indexes     => #{mg_storage:index_name() => index()},
+    last_search => 
 }.
 -type index() :: [{mg_storage:index_value(), mg_storage:key()}].
+-type search_result() :: [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
 
 -spec init({options(), mg:ns()}) ->
     mg_utils:gen_server_init_ret(state()).
@@ -163,9 +166,22 @@ do_get(Key, #{values := Values}) ->
     maps:get(Key, Values, undefined).
 
 -spec do_search(mg_storage:index_query(), state()) ->
-    [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
-do_search({IndexName, QueryValue}, #{indexes := Indexes}) ->
-    do_search_index(maps:get(IndexName, Indexes, []), QueryValue).
+    {search_result(), search_result()}.
+do_search({IndexName, QueryValue}, State) ->
+    {do_search({IndexName, QueryValue, inf, undefined}, State), []};
+do_search({IndexName, QueryValue, IndexLimit, _Continuation}, #{indexes := Indexes}) ->
+    Res = do_search_index(maps:get(IndexName, Indexes, []), QueryValue)
+    split_search_result(Res, IndexLimit).
+
+-spec split_search_result(search_result(), mg_storage:index_limit()) ->
+    {search_result(), search_result()}.
+split_search_result(SearchResult, IndexLimit)->
+    case IndexLimit == inf orelse IndexLimit <= erlang:length(A) of
+        true ->
+            lists:split(IndexLimit, SearchResult);
+        false ->
+            {SearchResult, []}
+    end
 
 -spec do_put(mg_storage:key(), context(), mg_storage:value(), [mg_storage:index_update()], state()) ->
     {context(), state()}.

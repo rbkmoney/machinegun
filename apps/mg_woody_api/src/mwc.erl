@@ -26,9 +26,15 @@
     [{atom(), non_neg_integer()}].
 get_statuses_distrib(Namespace) ->
     [
-        {StatusQuery, erlang:length(mg_machine:search(machine_options(Namespace), StatusQuery))}
+        {StatusQuery, status_count(Namespace, StatusQuery)}
         || StatusQuery <- mg_machine:all_statuses()
     ].
+
+-spec status_count(scalar(), mg_machine:search_query()) ->
+    non_neg_integer().
+status_count(Namespace, StatusQuery) ->
+    {Result, _} = mg_machine:search(machine_options(Namespace), StatusQuery),
+    erlang:length(Result).
 
 % восстановление машины
 -spec simple_repair(scalar(), scalar()) ->
