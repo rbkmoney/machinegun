@@ -174,7 +174,9 @@ indexes_test_with_limits(C) ->
     Ctx2 = mg_storage:put(Options, K2, undefined, Value, [{I1, IV2}, {I2, IV1}]),
 
     {[{IV1, K1}], Cont1} = mg_storage:search(Options, {I1, {IV1, IV2}, 1, undefined}),
+    io:format("kek1 ~p\n", [{[{IV1, K1}], Cont1}]),
     {[{IV2, K2}], Cont2} = mg_storage:search(Options, {I1, {IV1, IV2}, 1, Cont1}),
+    io:format("kek2 ~p\n", [{[{IV2, K2}], Cont2}]),
     {[], undefined}      = mg_storage:search(Options, {I1, {IV1, IV2}, 1, Cont2}),
 
     {[{IV1, K2}, {IV2, K1}], undefined} = mg_storage:search(Options, {I2, {IV1, IV2}, inf, undefined}),
