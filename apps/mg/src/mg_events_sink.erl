@@ -130,7 +130,7 @@ filter_duplicated(Options, EventSinkID, SourceNS, SourceMachineID, Events, State
     boolean().
 is_duplicate(Options, EventSinkID, SourceNS, SourceMachineID, #{id := EventID}, #{events_range := EventsRange}) ->
     Query = {?ext_id_idx, make_ext_id(EventSinkID, SourceNS, SourceMachineID, EventID)},
-    {Result, _} = mg_storage:search(events_storage_options(Options), Query),
+    Result = mg_storage:search(events_storage_options(Options), Query),
     lists:any(
         fun(OtherEventFullID) ->
             % возможно будет больше одного "мусного" эвента

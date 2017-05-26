@@ -199,7 +199,7 @@ get(Options, ID) ->
     State.
 
 -spec search(options(), search_query()) ->
-    {[{_TODO, mg:id()}], term()} | {[mg:id()], term()} | throws().
+    [{_TODO, mg:id()}] | [mg:id()] | throws().
 search(Options, Query) ->
     % TODO deadline
     mg_storage:search(storage_options(Options), storage_search_query(Query)).
@@ -244,7 +244,7 @@ reply(#{call_context := CallContext}, Reply) ->
     ok.
 handle_timers(Options) ->
     % TODO можно будет убрать возврат тела индекса
-    {Timers, _} = search(Options, {waiting, 1, genlib_time:now()}),
+    Timers = search(Options, {waiting, 1, genlib_time:now()}),
     handle_timers(Options, Timers).
 
 -spec handle_timers(options(), [{genlib_time:ts(), mg:id()}]) ->
@@ -289,7 +289,7 @@ handle_timer(Options, ID, Timestamp, ReqCtx, Deadline) ->
 -spec resume_interrupted(options()) ->
     ok.
 resume_interrupted(Options) ->
-    {Interrupted, _} = search(Options, processing),
+    Interrupted = search(Options, processing),
     resume_interrupted(Options, Interrupted).
 
 -spec resume_interrupted(options(), [mg:id()]) ->

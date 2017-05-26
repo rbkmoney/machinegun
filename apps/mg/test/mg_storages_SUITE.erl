@@ -124,33 +124,33 @@ indexes_test(C) ->
 
     Value = #{<<"hello">> => <<"world">>},
 
-    {[], _} = mg_storage:search(Options, {I1, IV1}),
-    {[], _} = mg_storage:search(Options, {I1, {IV1, IV2}}),
-    {[], _} = mg_storage:search(Options, {I2, {IV1, IV2}}),
+    [] = mg_storage:search(Options, {I1, IV1}),
+    [] = mg_storage:search(Options, {I1, {IV1, IV2}}),
+    [] = mg_storage:search(Options, {I2, {IV1, IV2}}),
 
     Ctx1 = mg_storage:put(Options, K1, undefined, Value, [{I1, IV1}, {I2, IV2}]),
 
-    {[K1       ], _} = mg_storage:search(Options, {I1, IV1       }),
-    {[{IV1, K1}], _} = mg_storage:search(Options, {I1, {IV1, IV2}}),
-    {[K1       ], _} = mg_storage:search(Options, {I2, IV2       }),
-    {[{IV2, K1}], _} = mg_storage:search(Options, {I2, {IV1, IV2}}),
+    [K1       ] = mg_storage:search(Options, {I1, IV1       }),
+    [{IV1, K1}] = mg_storage:search(Options, {I1, {IV1, IV2}}),
+    [K1       ] = mg_storage:search(Options, {I2, IV2       }),
+    [{IV2, K1}] = mg_storage:search(Options, {I2, {IV1, IV2}}),
 
     Ctx2 = mg_storage:put(Options, K2, undefined, Value, [{I1, IV2}, {I2, IV1}]),
 
-    {[K1                  ], _} = mg_storage:search(Options, {I1, IV1       }),
-    {[{IV1, K1}, {IV2, K2}], _} = mg_storage:search(Options, {I1, {IV1, IV2}}),
-    {[K1                  ], _} = mg_storage:search(Options, {I2, IV2       }),
-    {[{IV1, K2}, {IV2, K1}], _} = mg_storage:search(Options, {I2, {IV1, IV2}}),
+    [K1                  ] = mg_storage:search(Options, {I1, IV1       }),
+    [{IV1, K1}, {IV2, K2}] = mg_storage:search(Options, {I1, {IV1, IV2}}),
+    [K1                  ] = mg_storage:search(Options, {I2, IV2       }),
+    [{IV1, K2}, {IV2, K1}] = mg_storage:search(Options, {I2, {IV1, IV2}}),
 
     ok = mg_storage:delete(Options, K1, Ctx1),
 
-    {[{IV2, K2}], _} = mg_storage:search(Options, {I1, {IV1, IV2}}),
-    {[{IV1, K2}], _} = mg_storage:search(Options, {I2, {IV1, IV2}}),
+    [{IV2, K2}] = mg_storage:search(Options, {I1, {IV1, IV2}}),
+    [{IV1, K2}] = mg_storage:search(Options, {I2, {IV1, IV2}}),
 
     ok = mg_storage:delete(Options, K2, Ctx2),
 
-    {[], _} = mg_storage:search(Options, {I1, {IV1, IV2}}),
-    {[], _} = mg_storage:search(Options, {I2, {IV1, IV2}}),
+    [] = mg_storage:search(Options, {I1, {IV1, IV2}}),
+    [] = mg_storage:search(Options, {I2, {IV1, IV2}}),
 
     ok.
 
@@ -174,12 +174,10 @@ indexes_test_with_limits(C) ->
     Ctx2 = mg_storage:put(Options, K2, undefined, Value, [{I1, IV2}, {I2, IV1}]),
 
     {[{IV1, K1}], Cont1} = mg_storage:search(Options, {I1, {IV1, IV2}, 1, undefined}),
-    io:format("kek1 ~p\n", [{[{IV1, K1}], Cont1}]),
     {[{IV2, K2}], Cont2} = mg_storage:search(Options, {I1, {IV1, IV2}, 1, Cont1}),
-    io:format("kek2 ~p\n", [{[{IV2, K2}], Cont2}]),
     {[], undefined}      = mg_storage:search(Options, {I1, {IV1, IV2}, 1, Cont2}),
 
-    {[{IV1, K2}, {IV2, K1}], undefined} = mg_storage:search(Options, {I2, {IV1, IV2}, inf, undefined}),
+    [{IV1, K2}, {IV2, K1}] = mg_storage:search(Options, {I2, {IV1, IV2}, inf, undefined}),
 
     ok = mg_storage:delete(Options, K1, Ctx1),
     ok = mg_storage:delete(Options, K2, Ctx2),

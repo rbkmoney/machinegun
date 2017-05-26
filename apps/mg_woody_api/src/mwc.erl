@@ -33,7 +33,7 @@ get_statuses_distrib(Namespace) ->
 -spec status_count(scalar(), mg_machine:search_query()) ->
     non_neg_integer().
 status_count(Namespace, StatusQuery) ->
-    {Result, _} = mg_machine:search(machine_options(Namespace), StatusQuery),
+    Result = mg_machine:search(machine_options(Namespace), StatusQuery),
     erlang:length(Result).
 
 % восстановление машины

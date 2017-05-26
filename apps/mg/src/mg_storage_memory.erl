@@ -173,7 +173,7 @@ do_search({IndexName, QueryValue}, State) ->
     do_search({IndexName, QueryValue, inf, undefined}, State);
 do_search({IndexName, QueryValue, inf, _}, State = #{indexes := Indexes}) ->
     Res = do_search_index(maps:get(IndexName, Indexes, []), QueryValue),
-    {{Res, undefined}, State};
+    {Res, State};
 do_search({IndexName, QueryValue, IndexLimit, undefined}, State = #{indexes := Indexes}) ->
     Res = do_search_index(maps:get(IndexName, Indexes, []), QueryValue),
     generate_search_response(split_search_result(Res, IndexLimit), State);

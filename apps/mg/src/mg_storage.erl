@@ -98,7 +98,7 @@ get(Options, Key) ->
     apply_mod_opts(Options, get, [Key]).
 
 -spec search(options(), index_query()) ->
-    {[key()], continuation()}.
+    [key()] | {[key()], continuation()}.
 search(Options, Query) ->
     apply_mod_opts(Options, search, [Query]).
 

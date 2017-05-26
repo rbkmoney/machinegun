@@ -75,8 +75,9 @@
                            {term_regex, binary()}.
 -type range_index_opts() :: [index_opt() | range_index_opt()].
 
--type search_result_with_cont() ::
-    {[{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()], continuation()}.
+-type common_search_result() :: [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
+
+-type search_result_with_cont() :: {common_search_result(), continuation()}.
 
 %%
 %% mg_storage callbacks
@@ -138,19 +139,27 @@ do_get_index(Pid, Namespace, {IndexName, Value}, Options) ->
 
 -spec get_index_response(mg_storage:index_query(), get_index_results()) ->
     search_result_with_cont().
-get_index_response({_, Val, _, _}, #index_results_v1{keys = [], continuation = Cont}) when is_tuple(Val) ->
+get_index_response({_, Val, Limit, _}, #index_results_v1{keys = [], continuation = Cont}) when is_tuple(Val) ->
     % это какой-то пипец, а не код, они там все упоролись что-ли?
-    {[], Cont};
-get_index_response({_, Val, _, _}, #index_results_v1{terms = Terms, continuation = Cont}) when is_tuple(Val) ->
+    wrap_index_response([], Limit, Cont);
+get_index_response({_, Val, Limit, _}, #index_results_v1{terms = Terms, continuation = Cont}) when is_tuple(Val) ->
     Res = lists:map(
         fun({IndexValue, Key}) ->
             {erlang:binary_to_integer(IndexValue), Key}
         end,
         Terms
     ),
-    {Res, Cont};
-get_index_response({_, _, _, _}, #index_results_v1{keys = Keys, continuation = Cont}) ->
-    {Keys, Cont}.
+    wrap_index_response(Res, Limit, Cont);
+get_index_response({_, _, Limit, _}, #index_results_v1{keys = Keys, continuation = Cont}) ->
+    wrap_index_response(Keys, Limit, Cont).
+
+-spec wrap_index_response(common_search_result(), mg_storage:index_limit(), continuation()) ->
+    common_search_result() | search_result_with_cont().
+wrap_index_response(Res, Limit, Cont) ->
+    case Limit of
+        inf -> Res;
+        _   -> {Res, Cont}
+    end.
 
 -spec lift_query(mg_storage:index_query()) ->
     mg_storage:index_query().
