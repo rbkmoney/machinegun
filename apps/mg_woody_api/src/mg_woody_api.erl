@@ -176,7 +176,7 @@ event_sink_options(Storage) ->
         namespace    => <<"_event_sinks">>,
         storage      => Storage,
         logger       => ?logger,
-        search_limit => 5
+        search_limit => 1000
     }.
 
 -spec collect_event_sinks(config_nss()) ->

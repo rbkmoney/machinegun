@@ -170,7 +170,9 @@ do_get(Key, #{values := Values}) ->
 -spec do_search(mg_storage:index_query(), state()) ->
     {{search_result(), continuation()}, state()}.
 do_search({IndexName, QueryValue}, State) ->
-    do_search({IndexName, QueryValue, inf, undefined}, State);
+    do_search({IndexName, QueryValue, inf}, State);
+do_search({IndexName, QueryValue, Limit}, State) ->
+    do_search({IndexName, QueryValue, Limit, undefined}, State);
 do_search({IndexName, QueryValue, inf, _}, State = #{indexes := Indexes}) ->
     Res = do_search_index(maps:get(IndexName, Indexes, []), QueryValue),
     {Res, State};

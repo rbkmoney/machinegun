@@ -26,7 +26,7 @@
     namespace    => mg:ns(),
     storage      => mg_storage:storage(),
     logger       => mg_machine_logger:handler(),
-    search_limit => mg_storage:search_limit()
+    search_limit => mg_storage:index_limit()
 }.
 
 
@@ -125,13 +125,31 @@ filter_duplicated(Options, EventSinkID, SourceNS, SourceMachineID, Events, State
         end,
         Events
     ).
-
 -spec is_duplicate(options(), mg:id(), mg:ns(), mg:id(), mg_events:event(), state()) ->
     boolean().
-is_duplicate(Options, EventSinkID, SourceNS, SourceMachineID, #{id := EventID}, #{events_range := EventsRange}) ->
-    Query = {?ext_id_idx, make_ext_id(EventSinkID, SourceNS, SourceMachineID, EventID)},
-    Result = mg_storage:search(events_storage_options(Options), Query),
-    lists:any(
+is_duplicate(Options, EventSinkID, SourceNS, SourceMachineID, Event, State) ->
+    is_duplicate(Options, EventSinkID, SourceNS, SourceMachineID, Event, State, undefined).
+
+-spec is_duplicate(options(), mg:id(), mg:ns(), mg:id(), mg_events:event(), state(), mg_storage:continuation()) ->
+    boolean().
+is_duplicate(
+    Options,
+    EventSinkID,
+    SourceNS,
+    SourceMachineID,
+    Event = #{id := EventID},
+    State = #{events_range := EventsRange},
+    Cont
+) ->
+    Query = {
+        ?ext_id_idx,
+        make_ext_id(EventSinkID, SourceNS, SourceMachineID, EventID),
+        maps:get(search_limit, Options),
+        Cont
+    },
+    {Keys, NewCont} = mg_storage:search(events_storage_options(Options), Query),
+
+    Result = lists:any(
         fun(OtherEventFullID) ->
             % возможно будет больше одного "мусного" эвента
             % такого, который записался в сторадж эвентов,
@@ -140,8 +158,17 @@ is_duplicate(Options, EventSinkID, SourceNS, SourceMachineID, #{id := EventID}, 
             OtherEventID = mg_events:key_to_event_id(mg_events:remove_machine_id(EventSinkID, OtherEventFullID)),
             is_intersect(OtherEventID, EventsRange)
         end,
-        Result
-    ).
+        Keys
+    ),
+
+    case Result of
+        true  ->
+            true;
+        false when NewCont /= undefined ->
+            is_duplicate(Options, EventSinkID, SourceNS, SourceMachineID, Event, State, NewCont);
+        false when NewCont == undefined ->
+            false
+    end.
 
 -spec is_intersect(mg_events:id(), mg_events:events_range()) ->
     boolean().
@@ -219,10 +246,11 @@ machine_options(Options = #{namespace := Namespace, storage := Storage, logger :
 
 -spec events_storage_options(options()) ->
     mg_storage:options().
-events_storage_options(#{namespace := Namespace, storage := Storage}) ->
+events_storage_options(#{namespace := Namespace, storage := Storage, search_limit := SearchLimit}) ->
     #{
-        namespace => mg_utils:concatenate_namespaces(Namespace, <<"events">>),
-        module    => Storage
+        namespace    => mg_utils:concatenate_namespaces(Namespace, <<"events">>),
+        module       => Storage,
+        search_limit => SearchLimit
     }.
 
 -spec generate_sink_events(mg:ns(), mg:id(), [mg_events:event()], state()) ->

@@ -165,6 +165,8 @@ wrap_index_response(Res, Limit, Cont) ->
     mg_storage:index_query().
 lift_query({Name, Val}) ->
     {Name, Val, inf, undefined};
+lift_query({Name, Val, Limit}) ->
+    {Name, Val, Limit, undefined};
 lift_query({Name, Val, Limit, Continuation}) ->
     {Name, Val, Limit, Continuation}.
 

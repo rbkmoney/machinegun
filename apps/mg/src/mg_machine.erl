@@ -86,6 +86,8 @@
     processor              => mg_utils:mod_opts           (),
     storage_retry_policy   => mg_utils:genlib_retry_policy(), % optional
     processor_retry_policy => mg_utils:genlib_retry_policy(), % optional
+    timers_storage_limit   => mg_storage:index_limit      (),
+    overseer_storage_limit => mg_storage:index_limit      (),
     logger                 => mg_machine_logger:handler   ()
 }.
 
@@ -198,6 +200,11 @@ get(Options, ID) ->
         mg_utils:throw_if_undefined(element(2, get_storage_machine(Options, ID)), machine_not_found),
     State.
 
+-spec search(options(), search_query(), mg_storage:index_limit()) ->
+    {[{_TODO, mg:id()}], mg_storage:continuation()} | {[mg:id()], mg_storage:continuation()} | throws().
+search(Options, Query, Limit) ->
+    mg_storage:search(storage_options(Options), storage_search_query(Query, Limit)).
+
 -spec search(options(), search_query()) ->
     [{_TODO, mg:id()}] | [mg:id()] | throws().
 search(Options, Query) ->
@@ -244,7 +251,8 @@ reply(#{call_context := CallContext}, Reply) ->
     ok.
 handle_timers(Options) ->
     % TODO можно будет убрать возврат тела индекса
-    Timers = search(Options, {waiting, 1, genlib_time:now()}),
+    Limit = maps:get(timers_storage_limit, Options, 1000),
+    {Timers, _} = search(Options, {waiting, 1, genlib_time:now()}, Limit),
     handle_timers(Options, Timers).
 
 -spec handle_timers(options(), [{genlib_time:ts(), mg:id()}]) ->
@@ -289,7 +297,8 @@ handle_timer(Options, ID, Timestamp, ReqCtx, Deadline) ->
 -spec resume_interrupted(options()) ->
     ok.
 resume_interrupted(Options) ->
-    Interrupted = search(Options, processing),
+    Limit = maps:get(overseer_storage_limit, Options, 1000),
+    {Interrupted, _} = search(Options, processing, Limit),
     resume_interrupted(Options, Interrupted).
 
 -spec resume_interrupted(options(), [mg:id()]) ->
@@ -507,6 +516,11 @@ opaque_to_machine_status(Opaque) ->
 %%
 -define(status_idx , {integer, <<"status"      >>}).
 -define(waiting_idx, {integer, <<"waiting_date">>}).
+
+-spec storage_search_query(search_query(), mg_storage:index_limit()) ->
+    mg_storage:index_query().
+storage_search_query(Query, Limit) ->
+    erlang:append_element(storage_search_query(Query), Limit).
 
 -spec storage_search_query(search_query()) ->
     mg_storage:index_query().

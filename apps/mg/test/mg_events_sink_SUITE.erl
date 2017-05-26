@@ -126,7 +126,8 @@ event_sink_options() ->
     #{
         namespace => ?ES_ID,
         storage   => mg_storage_memory,
-        logger    => ?MODULE
+        logger    => ?MODULE,
+        search_limit => 1000
     }.
 
 -spec handle_machine_logging_event(_, mg_machine_logger:event()) ->

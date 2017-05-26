@@ -15,7 +15,7 @@
 -export_type([value       /0]).
 -export_type([kv          /0]).
 -export_type([context     /0]).
--export_type([search_limit/0]).
+-export_type([continuation/0]).
 
 -export_type([index_name       /0]).
 -export_type([index_value      /0]).
@@ -46,21 +46,22 @@
 -type kv          () :: {key(), value()}.
 -type context     () :: term().
 -type continuation() :: term().
--type search_limit() :: non_neg_integer() | inf.
 
 %% типизация получилась отвратная, но лучше не вышло :-\
 -type index_name       () :: {binary | integer, binary()}.
 -type index_value      () :: binary() | integer().
 -type index_update     () :: {index_name(), index_value()}.
 -type index_query_value() :: index_value() | {index_value(), index_value()}.
--type index_limit      () :: search_limit().
+-type index_limit      () :: non_neg_integer() | inf.
 -type index_query      () :: {index_name(), index_query_value()}
+                           | {index_name(), index_query_value(), index_limit()}
                            | {index_name(), index_query_value(), index_limit(), continuation()}.
 
 -type storage() :: mg_utils:mod_opts().
 -type options() :: #{
     namespace => mg:ns(),
-    module    => storage()
+    module    => storage(),
+    search_limit => index_limit()
 }.
 
 %%
