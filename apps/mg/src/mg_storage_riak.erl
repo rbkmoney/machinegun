@@ -38,15 +38,18 @@
 -export([child_spec/3, put/6, get/3, search/3, delete/4]).
 
 %% internal
--export([connect_to_riak/2]).
+-export([connect_to_riak/1]).
 
 -type options() :: #{
-    host      => inet:ip_address    (),
-    port      => inet:port_number   (),
-    pool      =>      pooler_options(),
-    r_options => _,
-    w_options => _,
-    d_options => _
+    host              => inet:ip_address     (),
+    port              => inet:port_number    (),
+    pool              => pooler_options      (),
+    pool_take_timeout => pooler_time_interval(),
+    connect_timeout   => timeout             (),
+    request_timeout   => timeout             (),
+    r_options         => _,
+    w_options         => _,
+    d_options         => _
 }.
 -type pooler_options() :: #{
     name                 => term(),
@@ -77,9 +80,10 @@ put(Options, Namespace, Key, Context, Value, IndexesUpdates) ->
     do(Options, Namespace,
         fun(Pid) ->
             Object = to_riak_obj(Namespace, Key, Context, Value, IndexesUpdates),
+            Timeout = get_option(request_timeout, Options),
             NewObject =
                 handle_riak_response(
-                    riakc_pb_socket:put(Pid, Object, [return_body] ++ get_option(w_options, Options))
+                    riakc_pb_socket:put(Pid, Object, [return_body] ++ get_option(w_options, Options), Timeout)
                 ),
             riakc_obj:vclock(NewObject)
         end
@@ -89,7 +93,8 @@ put(Options, Namespace, Key, Context, Value, IndexesUpdates) ->
     {context(), mg_storage:value()} | undefined.
 get(Options, Namespace, Key) ->
     do(Options, Namespace, fun(Pid) ->
-        case riakc_pb_socket:get(Pid, Namespace, Key, get_option(r_options, Options)) of
+        Timeout = get_option(request_timeout, Options),
+        case riakc_pb_socket:get(Pid, Namespace, Key, get_option(r_options, Options), Timeout) of
             {error, notfound} ->
                 undefined;
             Result ->
@@ -103,17 +108,19 @@ get(Options, Namespace, Key) ->
 search(Options, Namespace, Query) ->
     do(Options, Namespace,
         fun(Pid) ->
-                Result = handle_riak_response_(do_get_index(Pid, Namespace, Query)),
+                Result = handle_riak_response_(do_get_index(Pid, Namespace, Query, Options)),
                 get_index_response(Query, Result)
         end
     ).
 
--spec do_get_index(pid(), mg:ns(), mg_storage:index_query()) ->
+-spec do_get_index(pid(), mg:ns(), mg_storage:index_query(), options()) ->
     _.
-do_get_index(Pid, Namespace, {IndexName, {From, To}}) ->
-    riakc_pb_socket:get_index_range(Pid, Namespace, prepare_index_name(IndexName), From, To, [{return_terms, true}]);
-do_get_index(Pid, Namespace, {IndexName, Value}) ->
-    riakc_pb_socket:get_index_eq(Pid, Namespace, prepare_index_name(IndexName), Value).
+do_get_index(Pid, Namespace, {IndexName, {From, To}}, Options) ->
+    SearchOptions = [{return_terms, true}, {timeout, get_option(request_timeout, Options)}],
+    riakc_pb_socket:get_index_range(Pid, Namespace, prepare_index_name(IndexName), From, To, SearchOptions);
+do_get_index(Pid, Namespace, {IndexName, Value}, Options) ->
+    SearchOptions = [{timeout, get_option(request_timeout, Options)}],
+    riakc_pb_socket:get_index_eq(Pid, Namespace, prepare_index_name(IndexName), Value, SearchOptions).
 
 -spec get_index_response(mg_storage:index_query(), get_index_results()) ->
     [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
@@ -153,23 +160,19 @@ delete(Options, Namespace, Key, Context) ->
     pooler_options().
 pooler_options(Options=#{pool:=PoolOptions}, Namespace) ->
     PoolOptions#{
-        start_mfa =>
-            {
-                ?MODULE,
-                connect_to_riak,
-                [
-                    get_option(host, Options),
-                    get_option(port, Options)
-                ]
-            },
+        start_mfa => {?MODULE, connect_to_riak, [Options]},
         % имя пула может быть только атомом  :-\
         name => pool_name(Namespace)
     }.
 
--spec connect_to_riak(inet:ip_address() | inet:hostname(), inet:port_number()) ->
+-spec connect_to_riak(options()) ->
     {ok, pid()} | {error, term()}.
-connect_to_riak(Host, Port) ->
-    riakc_pb_socket:start_link(lists_random(get_addrs_by_host(Host)), Port).
+connect_to_riak(Options) ->
+    riakc_pb_socket:start_link(
+        lists_random(get_addrs_by_host(get_option(host, Options))),
+        get_option(port, Options),
+        [{connect_timeout, get_option(connect_timeout, Options)}]
+    ).
 
 -spec lists_random(list(T)) ->
     T.
@@ -317,6 +320,8 @@ handle_riak_response_({error, Reason}) ->
     _.
 default_option(host) -> "riakdb";
 default_option(port) -> 8087;
+default_option(connect_timeout) -> 5000;
+default_option(request_timeout) -> 10000;
 default_option(pool_take_timeout) -> {5, 'sec'};
 default_option(r_options) -> [{r, quorum}, {pr, quorum}];
 default_option(w_options) -> [{w, quorum}, {pw, quorum}, {dw, quorum}];
