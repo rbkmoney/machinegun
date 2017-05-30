@@ -60,6 +60,8 @@
 
 -export([concatenate_namespaces/2]).
 
+-export([start_from_elem/2]).
+
 %%
 %% API
 %% OTP
@@ -352,3 +354,12 @@ stop_wait(Pid, Reason, Timeout) ->
     mg:ns().
 concatenate_namespaces(NamespaceA, NamespaceB) ->
     <<NamespaceA/binary, "_", NamespaceB/binary>>.
+
+-spec start_from_elem(any(), list()) ->
+    list().
+start_from_elem(_, [])  ->
+    [];
+start_from_elem(Item, [Item|Tail]) ->
+    Tail;
+start_from_elem(Item, [_|Tail]) ->
+    start_from_elem(Item, Tail).

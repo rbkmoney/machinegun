@@ -45,7 +45,7 @@
 -type value       () :: opaque().
 -type kv          () :: {key(), value()}.
 -type context     () :: term().
--type continuation() :: term().
+-type continuation() :: term(). % undefined означает, что данные кончились
 
 %% типизация получилась отвратная, но лучше не вышло :-\
 -type index_name       () :: {binary | integer, binary()}.
@@ -59,8 +59,8 @@
 
 -type storage() :: mg_utils:mod_opts().
 -type options() :: #{
-    namespace => mg:ns(),
-    module    => storage(),
+    namespace    => mg:ns(),
+    module       => storage(),
     search_limit => index_limit()
 }.
 

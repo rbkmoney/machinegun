@@ -26,8 +26,7 @@ start_link(Options, Namespace) ->
 %%
 -type context      () :: non_neg_integer() | undefined.
 -type options      () :: _.
--type continuation () :: integer() | undefined.
--type continuations() :: #{continuation() => search_result()}.
+-type continuation () :: binary() | undefined.
 
 -spec child_spec(options(), mg:ns(), atom()) ->
     supervisor:child_spec().
@@ -73,8 +72,7 @@ delete(_Options, Namespace, Key, Context) when is_binary(Namespace) andalso is_b
     namespace   => mg:ns(),
     options     => options(),
     values      => #{mg_storage:key() => {context(), mg_storage:value()}},
-    indexes     => #{mg_storage:index_name() => index()},
-    conts       => #{continuation() => search_result()}
+    indexes     => #{mg_storage:index_name() => index()}
 }.
 -type index() :: [{mg_storage:index_value(), mg_storage:key()}].
 -type search_result() :: [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
@@ -87,8 +85,7 @@ init({Options, Namespace}) ->
             namespace => Namespace,
             options   => Options,
             values    => #{},
-            indexes   => #{},
-            conts     => #{}
+            indexes   => #{}
         }
     }.
 
@@ -178,43 +175,40 @@ do_search({IndexName, QueryValue, inf, _}, State = #{indexes := Indexes}) ->
     {Res, State};
 do_search({IndexName, QueryValue, IndexLimit, undefined}, State = #{indexes := Indexes}) ->
     Res = do_search_index(maps:get(IndexName, Indexes, []), QueryValue),
-    generate_search_response(split_search_result(Res, IndexLimit), State);
-do_search({_, _, IndexLimit, Continuation}, State = #{conts := Conts}) ->
-    {Res, Conts1} = find_continuation(Continuation, Conts),
-    generate_search_response(split_search_result(Res, IndexLimit), State#{conts := Conts1}).
+    {generate_search_response(split_search_result(Res, IndexLimit)), State};
+do_search({IndexName, QueryValue, IndexLimit, Cont}, State = #{indexes := Indexes}) ->
+    Res = find_continuation(do_search_index(maps:get(IndexName, Indexes, []), QueryValue), Cont),
+    {generate_search_response(split_search_result(Res, IndexLimit)), State}.
 
--spec find_continuation(continuation(), continuations()) ->
-    {search_result(), continuations()}.
-find_continuation(Cont, Conts0) ->
-    maps:take(Cont, Conts0).
+-spec find_continuation(search_result(), continuation()) ->
+    search_result().
+find_continuation(Result, undefined) ->
+    Result;
+find_continuation(Result, Cont) ->
+    Key = binary_to_term(Cont),
+    mg_utils:start_from_elem(Key, Result).
 
 -spec split_search_result(search_result(), mg_storage:index_limit()) ->
     {search_result(), search_result()}.
 split_search_result(SearchResult, IndexLimit) ->
-    case IndexLimit > erlang:length(SearchResult) of
+    case IndexLimit >= erlang:length(SearchResult) of
         true ->
             {SearchResult, []};
         false ->
             lists:split(IndexLimit, SearchResult)
     end.
 
--spec generate_search_response({search_result(), search_result()}, state()) ->
-    {{search_result(), continuation()}, state()}.
-generate_search_response({[], []}, State) ->
-    {{[], undefined}, State};
-generate_search_response({SearchResult, Remains}, State0 = #{conts := Conts}) ->
-    Cont = generate_continuation(State0),
-    State = State0#{conts := maps:put(Cont, Remains, Conts)},
-    {{SearchResult, Cont}, State}.
+-spec generate_search_response({search_result(), search_result()}) ->
+    {search_result(), continuation()}.
+generate_search_response({[], _Remains}) ->
+    {[], undefined};
+generate_search_response({SearchResult, _Remains}) ->
+    {SearchResult, generate_continuation(SearchResult)}.
 
--spec generate_continuation(state()) ->
+-spec generate_continuation(search_result()) ->
     continuation().
-generate_continuation(State = #{conts := Conts}) ->
-    Cont = rand:uniform(9999999),
-    case maps:is_key(Cont, Conts) of
-        true  -> generate_continuation(State);
-        false -> Cont
-    end.
+generate_continuation(Result) ->
+    term_to_binary(lists:last(Result)).
 
 -spec do_put(mg_storage:key(), context(), mg_storage:value(), [mg_storage:index_update()], state()) ->
     {context(), state()}.
