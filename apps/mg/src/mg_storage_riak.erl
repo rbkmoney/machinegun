@@ -124,17 +124,17 @@ search(Options, Namespace, Query) ->
     do(Options, Namespace,
         fun(Pid) ->
             Result = handle_riak_response_(do_get_index(Pid, Namespace, LiftedQuery, Options)),
-            get_index_response(Query, Result)
+            get_index_response(LiftedQuery, Result)
         end
     ).
 
 -spec do_get_index(pid(), mg:ns(), mg_storage:index_query(), options()) ->
     _.
-do_get_index(Pid, Namespace, {IndexName, {From, To}}, Options) ->
-    SearchOptions = index_opts([{return_terms, true}, {timeout, get_option(request_timeout, Options)}]),
+do_get_index(Pid, Namespace, {IndexName, {From, To}, IndexLimit, Continuation}, Options) ->
+    SearchOptions = index_opts([{return_terms, true}], Options, IndexLimit, Continuation),
     riakc_pb_socket:get_index_range(Pid, Namespace, prepare_index_name(IndexName), From, To, SearchOptions);
-do_get_index(Pid, Namespace, {IndexName, Value}, Options) ->
-    SearchOptions = index_opts([{timeout, get_option(request_timeout, Options)}]),
+do_get_index(Pid, Namespace, {IndexName, Value, IndexLimit, Continuation}, Options) ->
+    SearchOptions = index_opts(Options, IndexLimit, Continuation),
     riakc_pb_socket:get_index_eq(Pid, Namespace, prepare_index_name(IndexName), Value, SearchOptions).
 
 -spec get_index_response(mg_storage:index_query(), get_index_results()) ->
@@ -170,19 +170,19 @@ lift_query({Name, Val, Limit}) ->
 lift_query({Name, Val, Limit, Continuation}) ->
     {Name, Val, Limit, Continuation}.
 
--spec index_opts(mg_storage:index_limit(), continuation()) ->
+-spec index_opts(options(), mg_storage:index_limit(), continuation()) ->
     range_index_opts().
-index_opts(IndexLimit, Continuation) ->
-    index_opts([], IndexLimit, Continuation).
+index_opts(Options, IndexLimit, Continuation) ->
+    index_opts([], Options, IndexLimit, Continuation).
 
--spec index_opts(range_index_opts(), mg_storage:index_limit(), continuation()) ->
+-spec index_opts(range_index_opts(), options(), mg_storage:index_limit(), continuation()) ->
     range_index_opts().
-index_opts(Opts, IndexLimit, Continuation) ->
+index_opts(DefaultOpts, Options, IndexLimit, Continuation) ->
     lists:append([
-        common_index_opts(),
+        common_index_opts(Options),
         max_result_opts(IndexLimit),
         continuation_opts(Continuation),
-        Opts
+        DefaultOpts
     ]).
 
 -spec continuation_opts(continuation()) ->
@@ -201,10 +201,10 @@ max_result_opts(IndexLimit) ->
         _   -> [{max_results, IndexLimit}]
     end.
 
--spec common_index_opts() ->
+-spec common_index_opts(options()) ->
     range_index_opts().
-common_index_opts() ->
-    [{pagination_sort, true}].
+common_index_opts(Options) ->
+    [{pagination_sort, true}, {timeout, get_option(request_timeout, Options)}].
 
 -spec delete(options(), mg:ns(), mg_storage:key(), context()) ->
     ok.
