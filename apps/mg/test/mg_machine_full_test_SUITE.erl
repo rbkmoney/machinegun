@@ -149,7 +149,6 @@ next_state(_, {_, remove}, not_found) -> not_exists;
 
 next_state(not_exists, {start, sleep }, ok           ) -> sleeping;
 next_state(not_exists, {start, fail  }, failed       ) -> not_exists;
-next_state(not_exists, {start, remove}, ok           ) -> not_exists;
 next_state(S         , {start, _     }, already_exist) -> S;
 
 next_state(not_exists, _, not_found) -> not_exists;
@@ -160,7 +159,6 @@ next_state(_, fail, ok) -> failed;
 
 next_state(failed, {repair, sleep }, ok             ) -> sleeping;
 next_state(failed, {repair, fail  }, failed         ) -> failed;
-next_state(failed, {repair, remove}, ok             ) -> not_exists;
 next_state(failed, _               , failed         ) -> failed;
 next_state(S     , {repair, _     }, already_working) -> S;
 
@@ -169,7 +167,6 @@ next_state(State = failed, Action, Result) -> erlang:error(bad_transition, [Stat
 %% sleeping / sleep
 next_state(sleeping, {call, sleep }, ok    ) -> sleeping;
 next_state(sleeping, {call, fail  }, failed) -> failed;
-next_state(sleeping, {call, remove}, ok    ) -> not_exists;
 
 next_state(State, Action, Result) -> erlang:error(bad_transition, [State, Action, Result]).
 
