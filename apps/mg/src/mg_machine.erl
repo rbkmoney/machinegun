@@ -201,7 +201,7 @@ get(Options, ID) ->
     State.
 
 -spec search(options(), search_query(), mg_storage:index_limit()) ->
-    {[{_TODO, mg:id()}], mg_storage:continuation()} | {[mg:id()], mg_storage:continuation()} | throws().
+    {[{_TODO, mg:id()}] | [mg:id()], mg_storage:continuation()} | throws().
 search(Options, Query, Limit) ->
     mg_storage:search(storage_options(Options), storage_search_query(Query, Limit)).
 

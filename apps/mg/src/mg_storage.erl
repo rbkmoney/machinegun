@@ -60,8 +60,7 @@
 -type storage() :: mg_utils:mod_opts().
 -type options() :: #{
     namespace    => mg:ns(),
-    module       => storage(),
-    search_limit => index_limit()
+    module       => storage()
 }.
 
 %%

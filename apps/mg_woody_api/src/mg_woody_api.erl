@@ -173,10 +173,10 @@ api_event_sink_options(Config) ->
     mg_events_sink:options().
 event_sink_options(Storage) ->
     #{
-        namespace    => <<"_event_sinks">>,
-        storage      => Storage,
-        logger       => ?logger,
-        search_limit => 1000
+        namespace              => <<"_event_sinks">>,
+        storage                => Storage,
+        logger                 => ?logger,
+        duplicate_search_batch => 1000
     }.
 
 -spec collect_event_sinks(config_nss()) ->

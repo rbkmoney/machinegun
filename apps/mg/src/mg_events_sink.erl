@@ -26,7 +26,7 @@
     namespace    => mg:ns(),
     storage      => mg_storage:storage(),
     logger       => mg_machine_logger:handler(),
-    search_limit => mg_storage:index_limit()
+    duplicate_search_batch => mg_storage:index_limit()
 }.
 
 
@@ -34,10 +34,10 @@
     supervisor:child_spec().
 child_spec(Options, ChildID) ->
     #{
-        id       => ChildID,
-        start    => {?MODULE, start_link, [Options]},
-        restart  => permanent,
-        type     => supervisor
+        id      => ChildID,
+        start   => {?MODULE, start_link, [Options]},
+        restart => permanent,
+        type    => supervisor
     }.
 
 
@@ -144,7 +144,7 @@ is_duplicate(
     Query = {
         ?ext_id_idx,
         make_ext_id(EventSinkID, SourceNS, SourceMachineID, EventID),
-        maps:get(search_limit, Options),
+        maps:get(duplicate_search_batch, Options),
         Cont
     },
     {Keys, NewCont} = mg_storage:search(events_storage_options(Options), Query),
@@ -161,13 +161,13 @@ is_duplicate(
         Keys
     ),
 
-    case Result of
-        true  ->
+    case {Result, NewCont} of
+        {true, _} ->
             true;
-        false when NewCont /= undefined ->
-            is_duplicate(Options, EventSinkID, SourceNS, SourceMachineID, Event, State, NewCont);
-        false when NewCont == undefined ->
-            false
+        {false, undefined} ->
+            false;
+        {false, _} ->
+            is_duplicate(Options, EventSinkID, SourceNS, SourceMachineID, Event, State, NewCont)
     end.
 
 -spec is_intersect(mg_events:id(), mg_events:events_range()) ->
@@ -246,11 +246,10 @@ machine_options(Options = #{namespace := Namespace, storage := Storage, logger :
 
 -spec events_storage_options(options()) ->
     mg_storage:options().
-events_storage_options(#{namespace := Namespace, storage := Storage, search_limit := SearchLimit}) ->
+events_storage_options(#{namespace := Namespace, storage := Storage}) ->
     #{
-        namespace    => mg_utils:concatenate_namespaces(Namespace, <<"events">>),
-        module       => Storage,
-        search_limit => SearchLimit
+        namespace => mg_utils:concatenate_namespaces(Namespace, <<"events">>),
+        module    => Storage
     }.
 
 -spec generate_sink_events(mg:ns(), mg:id(), [mg_events:event()], state()) ->
