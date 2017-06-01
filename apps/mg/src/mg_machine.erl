@@ -86,8 +86,8 @@
     processor              => mg_utils:mod_opts           (),
     storage_retry_policy   => mg_utils:genlib_retry_policy(), % optional
     processor_retry_policy => mg_utils:genlib_retry_policy(), % optional
-    timers_storage_limit   => mg_storage:index_limit      (),
-    overseer_storage_limit => mg_storage:index_limit      (),
+    timers_search_limit    => mg_storage:index_limit      (),
+    overseer_search_limit  => mg_storage:index_limit      (),
     logger                 => mg_machine_logger:handler   ()
 }.
 
@@ -251,7 +251,7 @@ reply(#{call_context := CallContext}, Reply) ->
     ok.
 handle_timers(Options) ->
     % TODO можно будет убрать возврат тела индекса
-    Limit = maps:get(timers_storage_limit, Options, 10),
+    Limit = get_options(timers_search_limit, Options),
     {Timers, _} = search(Options, {waiting, 1, genlib_time:now()}, Limit),
     handle_timers(Options, Timers).
 
@@ -297,7 +297,7 @@ handle_timer(Options, ID, Timestamp, ReqCtx, Deadline) ->
 -spec resume_interrupted(options()) ->
     ok.
 resume_interrupted(Options) ->
-    Limit = maps:get(overseer_storage_limit, Options, 10),
+    Limit = get_options(overseer_search_limit, Options),
     {Interrupted, _} = search(Options, processing, Limit),
     resume_interrupted(Options, Interrupted).
 
@@ -747,6 +747,10 @@ get_options(Subj=storage_retry_policy, Options) ->
     maps:get(Subj, Options, default_retry_policy());
 get_options(Subj=processor_retry_policy, Options) ->
     maps:get(Subj, Options, default_retry_policy());
+get_options(Subj=timers_search_limit, Options) ->
+    maps:get(Subj, Options, 10);
+get_options(Subj=overseer_search_limit, Options) ->
+    maps:get(Subj, Options, 10);
 get_options(Subj, Options) ->
     maps:get(Subj, Options).
 
