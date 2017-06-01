@@ -24,8 +24,9 @@ start_link(Options, Namespace) ->
 %%
 %% mg_storage callbacks
 %%
--type context() :: non_neg_integer() | undefined.
--type options() :: _.
+-type context      () :: non_neg_integer() | undefined.
+-type options      () :: _.
+-type continuation () :: binary() | undefined.
 
 -spec child_spec(options(), mg:ns(), atom()) ->
     supervisor:child_spec().
@@ -54,7 +55,7 @@ get(_Options, Namespace, Key) when is_binary(Namespace) andalso is_binary(Key) -
     end.
 
 -spec search(_Options, mg:ns(), mg_storage:index_query()) ->
-    [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
+    {[{mg_storage:index_value(), mg_storage:key()}], continuation()} | {[mg_storage:key()], continuation()}.
 search(_Options, Namespace, Query) ->
     gen_server:call(self_ref(Namespace), {search, Query}).
 
@@ -68,12 +69,13 @@ delete(_Options, Namespace, Key, Context) when is_binary(Namespace) andalso is_b
 %% gen_server callbacks
 %%
 -type state() :: #{
-    namespace => mg:ns(),
-    options   => options(),
-    values    => #{mg_storage:key() => {context(), mg_storage:value()}},
-    indexes   => #{mg_storage:index_name() => index()}
+    namespace   => mg:ns(),
+    options     => options(),
+    values      => #{mg_storage:key() => {context(), mg_storage:value()}},
+    indexes     => #{mg_storage:index_name() => index()}
 }.
 -type index() :: [{mg_storage:index_value(), mg_storage:key()}].
+-type search_result() :: [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
 
 -spec init({options(), mg:ns()}) ->
     mg_utils:gen_server_init_ret(state()).
@@ -96,8 +98,8 @@ handle_call({get, Key}, _From, State) ->
     Resp = do_get(Key, State),
     {reply, Resp, State};
 handle_call({search, Query}, _From, State) ->
-    Resp = do_search(Query, State),
-    {reply, Resp, State};
+    {Resp, NewState} = do_search(Query, State),
+    {reply, Resp, NewState};
 handle_call({delete, Key, Context}, _From, State) ->
     NewState = do_delete(Key, Context, State),
     {reply, ok, NewState};
@@ -163,9 +165,50 @@ do_get(Key, #{values := Values}) ->
     maps:get(Key, Values, undefined).
 
 -spec do_search(mg_storage:index_query(), state()) ->
-    [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
-do_search({IndexName, QueryValue}, #{indexes := Indexes}) ->
-    do_search_index(maps:get(IndexName, Indexes, []), QueryValue).
+    {{search_result(), continuation()}, state()}.
+do_search({IndexName, QueryValue}, State) ->
+    do_search({IndexName, QueryValue, inf}, State);
+do_search({IndexName, QueryValue, Limit}, State) ->
+    do_search({IndexName, QueryValue, Limit, undefined}, State);
+do_search({IndexName, QueryValue, inf, _}, State = #{indexes := Indexes}) ->
+    Res = do_search_index(maps:get(IndexName, Indexes, []), QueryValue),
+    {Res, State};
+do_search({IndexName, QueryValue, IndexLimit, undefined}, State = #{indexes := Indexes}) ->
+    Res = do_search_index(maps:get(IndexName, Indexes, []), QueryValue),
+    {generate_search_response(split_search_result(Res, IndexLimit)), State};
+do_search({IndexName, QueryValue, IndexLimit, Cont}, State = #{indexes := Indexes}) ->
+    Res = find_continuation(do_search_index(maps:get(IndexName, Indexes, []), QueryValue), Cont),
+    {generate_search_response(split_search_result(Res, IndexLimit)), State}.
+
+-spec find_continuation(search_result(), continuation()) ->
+    search_result().
+find_continuation(Result, undefined) ->
+    Result;
+find_continuation(Result, Cont) ->
+    Key = binary_to_term(Cont),
+    start_from_elem(Key, Result).
+
+-spec split_search_result(search_result(), mg_storage:index_limit()) ->
+    {search_result(), search_result()}.
+split_search_result(SearchResult, IndexLimit) ->
+    case IndexLimit >= erlang:length(SearchResult) of
+        true ->
+            {SearchResult, []};
+        false ->
+            lists:split(IndexLimit, SearchResult)
+    end.
+
+-spec generate_search_response({search_result(), search_result()}) ->
+    {search_result(), continuation()}.
+generate_search_response({[], _Remains}) ->
+    {[], undefined};
+generate_search_response({SearchResult, _Remains}) ->
+    {SearchResult, generate_continuation(SearchResult)}.
+
+-spec generate_continuation(search_result()) ->
+    continuation().
+generate_continuation(Result) ->
+    term_to_binary(lists:last(Result)).
 
 -spec do_put(mg_storage:key(), context(), mg_storage:value(), [mg_storage:index_update()], state()) ->
     {context(), state()}.
@@ -205,7 +248,7 @@ next_context(Context) ->
 %% index
 %%
 -spec do_search_index(index(), mg_storage:index_query_value()) ->
-    [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
+    search_result().
 do_search_index(Index, QueryValue) ->
     lists:foldr(
         fun({IndexValue, Key}, ResultAcc) ->
@@ -283,3 +326,13 @@ do_cleanup_index(Key, Index) ->
         [],
         Index
     ).
+
+%% utils
+-spec start_from_elem(any(), list()) ->
+    list().
+start_from_elem(_, [])  ->
+    [];
+start_from_elem(Item, [Item|Tail]) ->
+    Tail;
+start_from_elem(Item, [_|Tail]) ->
+    start_from_elem(Item, Tail).

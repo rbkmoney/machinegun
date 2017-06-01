@@ -65,6 +65,20 @@
 
 -type context() :: riakc_obj:vclock() | undefined.
 
+-type index_opt() :: {timeout, timeout()} |
+                     {call_timeout, timeout()} |
+                     {stream, boolean()} |
+                     {continuation, binary()} |
+                     {pagination_sort, boolean()} |
+                     {max_results, non_neg_integer() | all}.
+-type range_index_opt() :: {return_terms, boolean()} |
+                           {term_regex, binary()}.
+-type range_index_opts() :: [index_opt() | range_index_opt()].
+
+-type common_search_result() :: [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
+
+-type search_result_with_cont() :: {common_search_result(), continuation()}.
+
 %%
 %% mg_storage callbacks
 %%
@@ -104,42 +118,93 @@ get(Options, Namespace, Key) ->
     end).
 
 -spec search(options(), mg:ns(), mg_storage:index_query()) ->
-    [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
+    search_result_with_cont().
 search(Options, Namespace, Query) ->
+    LiftedQuery = lift_query(Query),
     do(Options, Namespace,
         fun(Pid) ->
-                Result = handle_riak_response_(do_get_index(Pid, Namespace, Query, Options)),
-                get_index_response(Query, Result)
+            Result = handle_riak_response_(do_get_index(Pid, Namespace, LiftedQuery, Options)),
+            get_index_response(LiftedQuery, Result)
         end
     ).
 
 -spec do_get_index(pid(), mg:ns(), mg_storage:index_query(), options()) ->
     _.
-do_get_index(Pid, Namespace, {IndexName, {From, To}}, Options) ->
-    SearchOptions = [{return_terms, true}, {timeout, get_option(request_timeout, Options)}],
+do_get_index(Pid, Namespace, {IndexName, {From, To}, IndexLimit, Continuation}, Options) ->
+    SearchOptions = index_opts([{return_terms, true}], Options, IndexLimit, Continuation),
     riakc_pb_socket:get_index_range(Pid, Namespace, prepare_index_name(IndexName), From, To, SearchOptions);
-do_get_index(Pid, Namespace, {IndexName, Value}, Options) ->
-    SearchOptions = [{timeout, get_option(request_timeout, Options)}],
+do_get_index(Pid, Namespace, {IndexName, Value, IndexLimit, Continuation}, Options) ->
+    SearchOptions = index_opts(Options, IndexLimit, Continuation),
     riakc_pb_socket:get_index_eq(Pid, Namespace, prepare_index_name(IndexName), Value, SearchOptions).
 
 -spec get_index_response(mg_storage:index_query(), get_index_results()) ->
-    [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
-get_index_response({_, {_, _}}, #index_results_v1{keys = []}) ->
+    search_result_with_cont().
+get_index_response({_, Val, Limit, _}, #index_results_v1{keys = [], continuation = Cont}) when is_tuple(Val) ->
     % это какой-то пипец, а не код, они там все упоролись что-ли?
-    [];
-get_index_response({_, {_, _}}, #index_results_v1{terms = Terms}) ->
-    % получить из риака стабильный порядок следования не получилось,
-    % поэтому пришлось сделать небольшой хак
-    lists:sort(
-        lists:map(
-            fun({IndexValue, Key}) ->
-                {erlang:binary_to_integer(IndexValue), Key}
-            end,
-            Terms
-        )
-    );
-get_index_response({_, _}, #index_results_v1{keys = Keys}) ->
-    Keys.
+    wrap_index_response([], Limit, Cont);
+get_index_response({_, Val, Limit, _}, #index_results_v1{terms = Terms, continuation = Cont}) when is_tuple(Val) ->
+    Res = lists:map(
+        fun({IndexValue, Key}) ->
+            {erlang:binary_to_integer(IndexValue), Key}
+        end,
+        Terms
+    ),
+    wrap_index_response(Res, Limit, Cont);
+get_index_response({_, _, Limit, _}, #index_results_v1{keys = Keys, continuation = Cont}) ->
+    wrap_index_response(Keys, Limit, Cont).
+
+-spec wrap_index_response(common_search_result(), mg_storage:index_limit(), continuation()) ->
+    common_search_result() | search_result_with_cont().
+wrap_index_response(Res, Limit, Cont) ->
+    case Limit of
+        inf -> Res;
+        _   -> {Res, Cont}
+    end.
+
+-spec lift_query(mg_storage:index_query()) ->
+    mg_storage:index_query().
+lift_query({Name, Val}) ->
+    {Name, Val, inf, undefined};
+lift_query({Name, Val, Limit}) ->
+    {Name, Val, Limit, undefined};
+lift_query({Name, Val, Limit, Continuation}) ->
+    {Name, Val, Limit, Continuation}.
+
+-spec index_opts(options(), mg_storage:index_limit(), continuation()) ->
+    range_index_opts().
+index_opts(Options, IndexLimit, Continuation) ->
+    index_opts([], Options, IndexLimit, Continuation).
+
+-spec index_opts(range_index_opts(), options(), mg_storage:index_limit(), continuation()) ->
+    range_index_opts().
+index_opts(DefaultOpts, Options, IndexLimit, Continuation) ->
+    lists:append([
+        common_index_opts(Options),
+        max_result_opts(IndexLimit),
+        continuation_opts(Continuation),
+        DefaultOpts
+    ]).
+
+-spec continuation_opts(continuation()) ->
+    range_index_opts().
+continuation_opts(Continuation) ->
+    case Continuation of
+        undefined -> [];
+        _         -> [{continuation, Continuation}]
+    end.
+
+-spec max_result_opts(mg_storage:index_limit()) ->
+    range_index_opts().
+max_result_opts(IndexLimit) ->
+    case IndexLimit of
+        inf -> [];
+        _   -> [{max_results, IndexLimit}]
+    end.
+
+-spec common_index_opts(options()) ->
+    range_index_opts().
+common_index_opts(Options) ->
+    [{pagination_sort, true}, {timeout, get_option(request_timeout, Options)}].
 
 -spec delete(options(), mg:ns(), mg_storage:key(), context()) ->
     ok.
