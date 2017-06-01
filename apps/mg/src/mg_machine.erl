@@ -251,7 +251,7 @@ reply(#{call_context := CallContext}, Reply) ->
     ok.
 handle_timers(Options) ->
     % TODO можно будет убрать возврат тела индекса
-    Limit = maps:get(timers_storage_limit, Options, 1000),
+    Limit = maps:get(timers_storage_limit, Options, 10),
     {Timers, _} = search(Options, {waiting, 1, genlib_time:now()}, Limit),
     handle_timers(Options, Timers).
 
@@ -297,7 +297,7 @@ handle_timer(Options, ID, Timestamp, ReqCtx, Deadline) ->
 -spec resume_interrupted(options()) ->
     ok.
 resume_interrupted(Options) ->
-    Limit = maps:get(overseer_storage_limit, Options, 1000),
+    Limit = maps:get(overseer_storage_limit, Options, 10),
     {Interrupted, _} = search(Options, processing, Limit),
     resume_interrupted(Options, Interrupted).
 
