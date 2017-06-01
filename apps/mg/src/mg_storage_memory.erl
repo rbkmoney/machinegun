@@ -186,7 +186,7 @@ find_continuation(Result, undefined) ->
     Result;
 find_continuation(Result, Cont) ->
     Key = binary_to_term(Cont),
-    mg_utils:start_from_elem(Key, Result).
+    start_from_elem(Key, Result).
 
 -spec split_search_result(search_result(), mg_storage:index_limit()) ->
     {search_result(), search_result()}.
@@ -326,3 +326,13 @@ do_cleanup_index(Key, Index) ->
         [],
         Index
     ).
+
+%% utils
+-spec start_from_elem(any(), list()) ->
+    list().
+start_from_elem(_, [])  ->
+    [];
+start_from_elem(Item, [Item|Tail]) ->
+    Tail;
+start_from_elem(Item, [_|Tail]) ->
+    start_from_elem(Item, Tail).
