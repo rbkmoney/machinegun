@@ -80,10 +80,10 @@ get_event_ids(R0, {Ef, N, Direction}) ->
     {id(), id()}.
 intersect_range(R, undefined, _) ->
     R;
-intersect_range({A, B}, Ef, forward) when Ef >= A, Ef =< B ->
-    {Ef + 1, B};
-intersect_range({A, B}, Ef, backward) when Ef >= A, Ef =< B ->
-    {A, Ef - 1}.
+intersect_range({A, B}, Ef, forward) ->
+    {erlang:max(A, Ef + 1), B};
+intersect_range({A, B}, Ef, backward) ->
+    {A, erlang:min(B, Ef - 1)}.
 
 -spec limit_range({id(), id()}, undefined | non_neg_integer(), direction()) ->
     {id(), id()}.
@@ -96,6 +96,8 @@ limit_range({A, B}, N, backward) ->
 
 -spec enumerate_range({id(), id()}, direction()) ->
     [id()].
+enumerate_range({A, B}, _) when A > B ->
+    [];
 enumerate_range({A, B}, forward) ->
     lists:seq(A, B, 1);
 enumerate_range({A, B}, backward) ->

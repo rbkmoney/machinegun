@@ -5,10 +5,11 @@
 -export([all/0]).
 
 %% tests
--export([range_direction_test/1]).
--export([range_border_test/1]).
--export([range_missing_params_test/1]).
--export([range_no_intersection_test/1]).
+-export([range_direction_test           /1]).
+-export([range_border_test              /1]).
+-export([range_missing_params_test      /1]).
+-export([range_no_intersection_test     /1]).
+-export([range_partial_intersection_test/1]).
 
 %%
 %% tests descriptions
@@ -21,8 +22,8 @@
 all() ->
     [
         range_direction_test,
-        % на данный момент тест не работает
-        % range_no_intersection_test,
+        range_no_intersection_test,
+        range_partial_intersection_test,
         range_border_test,
         range_missing_params_test
     ].
@@ -37,8 +38,14 @@ range_direction_test(_C) ->
 -spec range_no_intersection_test(config()) ->
     _.
 range_no_intersection_test(_C) ->
-    EventsRange = {5, 10},
-    event_not_found = (catch mg_events:get_event_ids(EventsRange, {1, 3, forward})).
+    [] = mg_events:get_event_ids({5, 10}, {11, 1, forward }),
+    [] = mg_events:get_event_ids({5, 10}, {4 , 1, backward}).
+
+-spec range_partial_intersection_test(config()) ->
+    _.
+range_partial_intersection_test(_C) ->
+    [5 , 6] = mg_events:get_event_ids({5, 10}, {1 , 2, forward }),
+    [10, 9] = mg_events:get_event_ids({5, 10}, {11, 2, backward}).
 
 -spec range_border_test(config()) ->
     _.
