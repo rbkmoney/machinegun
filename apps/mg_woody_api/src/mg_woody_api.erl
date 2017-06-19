@@ -31,12 +31,16 @@
 }.
 -type config_nss() :: #{mg:ns() => config_ns()}.
 -type net_opts() :: list(tuple()).
+-type woody_server_config() :: #{
+    ip       => string(),
+    port     => inet:port_number(),
+    net_opts => net_opts(),
+    limits   => woody_server_thrift_http_handler:handler_limits()
+}.
 -type config_element() ::
-      {namespaces,         config_nss()}
-    | {ip        ,             string()}
-    | {port      ,   inet:port_number()}
-    | {net_opts  ,           net_opts()}
-    | {storage   , mg_storage:storage()}
+      {namespaces  ,          config_nss()}
+    | {woody_server, woody_server_config()}
+    | {storage     ,  mg_storage:storage()}
 .
 -type config() :: [config_element()].
 
@@ -64,7 +68,7 @@ init([]) ->
     ConfigNSs  = get_config_element(namespaces, Config),
     Storage    = get_config_element(storage   , Config),
     EventSinks = collect_event_sinks(ConfigNSs),
-    SupFlags = #{strategy => one_for_all},
+    SupFlags   = #{strategy => one_for_all},
     {ok, {SupFlags,
         [
             mg_events_machine:child_spec(ns_options(NS, ConfigNS, Storage), NS)
@@ -73,7 +77,7 @@ init([]) ->
         ++
         [mg_events_sink:child_spec(event_sink_options(Storage), ESID) || ESID <- EventSinks]
         ++
-        [woody_child_spec(Config, woody_api)]
+        [woody_server_child_spec(Config, woody_server)]
     }}.
 
 %%
@@ -94,20 +98,21 @@ stop(_State) ->
 %%
 -define(logger, mg_woody_api_logger).
 
--spec woody_child_spec(config(), atom()) ->
+-spec woody_server_child_spec(config(), atom()) ->
     supervisor:child_spec().
-woody_child_spec(Config, ChildID) ->
-    {ok, Ip} = inet:parse_address(get_config_element(ip, Config, "::")),
+woody_server_child_spec(Config, ChildID) ->
+    ServerConfig = get_config_element(woody_server, Config, #{}),
     woody_server:child_spec(
         ChildID,
         #{
-            protocol      => thrift,
-            transport     => http,
-            ip            => Ip,
-            port          => get_config_element(port    , Config, 8022),
-            net_opts      => get_config_element(net_opts, Config, []  ),
-            event_handler => {mg_woody_api_event_handler, server},
-            handlers      => [
+            protocol       => thrift,
+            transport      => http,
+            ip             => mg_utils:throw_if_error(inet:parse_address(maps:get(ip, ServerConfig, "::"))),
+            port           => maps:get(port    , ServerConfig, 8022),
+            net_opts       => maps:get(net_opts, ServerConfig, []  ),
+            event_handler  => {mg_woody_api_event_handler, server},
+            handler_limits => maps:get(limits  , ServerConfig, #{} ),
+            handlers       => [
                 mg_woody_api_automaton :handler(api_automaton_options (Config)),
                 mg_woody_api_event_sink:handler(api_event_sink_options(Config))
             ]
