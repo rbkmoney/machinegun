@@ -82,12 +82,15 @@
 
 -type ref() :: {id, mg:id()} | {tag, mg_machine_tags:tag()}.
 -type options() :: #{
-    namespace  => mg:ns(),
-    storage    => mg_storage:storage(),
-    processor  => mg_utils:mod_opts(),
-    tagging    => mg_machine_tags:options(),
-    logger     => mg_machine_logger:handler(),
-    event_sink => {mg:id(), mg_events_sink:options()} % optional
+    namespace       => mg:ns(),
+    storage         => mg_storage:storage(),
+    events_storage  => mg_storage:storage(),
+    processor       => mg_utils:mod_opts(),
+    tagging         => mg_machine_tags:options(),
+    logger          => mg_machine_logger:handler(),
+    event_sink      => {mg:id(), mg_events_sink:options()}, % optional
+    retryings       => mg_machine:retrying_opt(),
+    scheduled_tasks => mg_machine:scheduled_tasks_opt()
 }.
 
 
@@ -403,17 +406,16 @@ processor_options(Options) ->
 
 -spec machine_options(options()) ->
     mg_machine:options().
-machine_options(Options = #{namespace := Namespace, storage := Storage, logger := Logger}) ->
-    #{
+machine_options(Options = #{namespace := Namespace}) ->
+    MachineOptions = maps:with([storage, logger, retryings, scheduled_tasks], Options),
+    MachineOptions#{
         namespace => mg_utils:concatenate_namespaces(Namespace, <<"machines">>),
-        processor => {?MODULE, Options},
-        storage   => Storage,
-        logger    => Logger
+        processor => {?MODULE, Options}
     }.
 
 -spec events_storage_options(options()) ->
     mg_storage:options().
-events_storage_options(#{namespace := Namespace, storage := Storage}) ->
+events_storage_options(#{namespace := Namespace, events_storage := Storage}) ->
     #{
         namespace => mg_utils:concatenate_namespaces(Namespace, <<"events">>),
         module    => Storage

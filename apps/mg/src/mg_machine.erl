@@ -37,6 +37,8 @@
 %%
 
 %% API
+-export_type([retrying_opt          /0]).
+-export_type([scheduled_tasks_opt   /0]).
 -export_type([options               /0]).
 -export_type([thrown_error          /0]).
 -export_type([logic_error           /0]).
@@ -67,9 +69,7 @@
 -export([call_with_lazy_start/6]).
 
 %% Internal API
--export([handle_timers         /1]).
 -export([handle_timers         /2]).
--export([resume_interrupted    /1]).
 -export([resume_interrupted    /2]).
 -export([resume_interrupted_one/2]).
 -export([all_statuses          /0]).
@@ -83,15 +83,23 @@
 %%
 %% API
 %%
+-type scheduled_task_opt() :: disable | #{interval => pos_integer(), limit => mg_storage:index_limit()}.
+-type retrying_opt() :: #{
+    storage   => mg_utils:genlib_retry_policy(),
+    processor => mg_utils:genlib_retry_policy()
+}.
+-type scheduled_tasks_opt() :: #{
+    timers   => scheduled_task_opt(),
+    overseer => scheduled_task_opt()
+}.
+
 -type options() :: #{
-    namespace              => mg:ns(),
-    storage                => mg_storage:storage          (),
-    processor              => mg_utils:mod_opts           (),
-    storage_retry_policy   => mg_utils:genlib_retry_policy(), % optional
-    processor_retry_policy => mg_utils:genlib_retry_policy(), % optional
-    timers_search_limit    => mg_storage:index_limit      (),
-    overseer_search_limit  => mg_storage:index_limit      (),
-    logger                 => mg_machine_logger:handler   ()
+    namespace       => mg:ns(),
+    storage         => mg_storage:storage(),
+    processor       => mg_utils:mod_opts(),
+    logger          => mg_machine_logger:handler(),
+    retryings       => retrying_opt(),
+    scheduled_tasks => scheduled_tasks_opt()
 }.
 
 -type thrown_error() :: logic_error() | {transient, transient_error()} | {timeout, _Reason}.
@@ -166,11 +174,11 @@ start_link(Options) ->
         #{strategy => one_for_all},
         [
             mg_workers_manager:child_spec(manager_options      (Options), manager      ),
-            mg_storage        :child_spec(storage_options      (Options), storage      ),
-            mg_cron           :child_spec(timers_cron_options  (Options), timers_cron  ),
-            mg_cron           :child_spec(overseer_cron_options(Options), overseer_cron),
-            processor_child_spec(Options)
+            mg_storage        :child_spec(storage_options      (Options), storage      )
         ]
+        ++ scheduler_child_specs(timers  , Options)
+        ++ scheduler_child_specs(overseer, Options)
+        ++ [processor_child_spec(Options)]
     ).
 
 -spec start(options(), mg:id(), term(), mg:request_context(), mg_utils:deadline()) ->
@@ -264,17 +272,13 @@ reply(#{call_context := CallContext}, Reply) ->
         ok = error_logger:error_msg("error in ~s handler:~n~p", [Desc, Exception])
     end
 ).
--spec handle_timers(options()) ->
-    ok.
-handle_timers(Options) ->
-    % TODO можно будет убрать возврат тела индекса
-    Limit = get_options(timers_search_limit, Options),
-    {Timers, _} = search(Options, {waiting, 1, genlib_time:now()}, Limit),
-    handle_timers(Options, Timers).
+-define(DEFAULT_SCHEDULED_TASK, disable). % {1000, 10}
+-define(DEFAULT_RETRY_POLICY, {exponential, infinity, 2, 10, 60 * 1000}).
 
--spec handle_timers(options(), [{genlib_time:ts(), mg:id()}]) ->
+-spec handle_timers(options(), mg_storage:index_limit()) ->
     ok.
-handle_timers(Options, Timers) ->
+handle_timers(Options, Limit) ->
+    {Timers, _} = search(Options, {waiting, 1, genlib_time:now()}, Limit),
     lists:foreach(
         % такая схема потенциально опасная, но надо попробовать как она себя будет вести
         fun({_, ID}) ->
@@ -311,21 +315,15 @@ handle_timer(Options, ID, Timestamp, ReqCtx, Deadline) ->
             ok
     end.
 
--spec resume_interrupted(options()) ->
+-spec resume_interrupted(options(), mg_storage:index_limit()) ->
     ok.
-resume_interrupted(Options) ->
-    Limit = get_options(overseer_search_limit, Options),
+resume_interrupted(Options, Limit) ->
     {Interrupted, _} = search(Options, processing, Limit),
-    resume_interrupted(Options, Interrupted).
-
--spec resume_interrupted(options(), [mg:id()]) ->
-    ok.
-resume_interrupted(Options, MachinesIDs) ->
     lists:foreach(
         fun(ID) ->
             erlang:spawn_link(fun() -> ?SAFE(resume_interrupted, resume_interrupted_one(Options, ID)) end)
         end,
-        MachinesIDs
+        Interrupted
     ).
 
 -spec resume_interrupted_one(options(), mg:id()) ->
@@ -644,7 +642,8 @@ call_processor(Impact, ProcessingCtx, ReqCtx, State) ->
     F = fun() ->
             processor_process_machine(ID, Impact, ProcessingCtx, ReqCtx, MachineState, Options)
         end,
-    RetryStrategy = mg_utils:genlib_retry_new(get_options(processor_retry_policy, Options)),
+    RetryStrategy =
+        mg_utils:genlib_retry_new(maps:get(processor, maps:get(retryings, Options, #{}), ?DEFAULT_RETRY_POLICY)),
     do_with_retry(Options, ID, F, RetryStrategy, ReqCtx).
 
 -spec processor_process_machine(mg:id(), processor_impact(), processing_context(), ReqCtx, state(), options()) ->
@@ -694,8 +693,7 @@ transit_state(ReqCtx, NewStorageMachine, State=#{id:=ID, options:=Options, stora
                 storage_machine_to_indexes(NewStorageMachine)
             )
         end,
-    RetryStrategy = mg_utils:genlib_retry_new(get_options(storage_retry_policy, Options)),
-    NewStorageContext  = do_with_retry(Options, ID, F, RetryStrategy, ReqCtx),
+    NewStorageContext  = do_with_retry(Options, ID, F, storage_retry_strategy(Options), ReqCtx),
     State#{
         storage_machine := NewStorageMachine,
         storage_context := NewStorageContext
@@ -711,9 +709,13 @@ remove_from_storage(ReqCtx, State = #{id := ID, options := Options, storage_cont
                 StorageContext
             )
         end,
-    RetryStrategy = mg_utils:genlib_retry_new(get_options(storage_retry_policy, Options)),
-    ok = do_with_retry(Options, ID, F, RetryStrategy, ReqCtx),
+    ok = do_with_retry(Options, ID, F, storage_retry_strategy(Options), ReqCtx),
     State#{storage_machine := undefined, storage_context := undefined}.
+
+-spec storage_retry_strategy(options()) ->
+    genlib_retry:strategy().
+storage_retry_strategy(Options) ->
+    mg_utils:genlib_retry_new(maps:get(storage, maps:get(retryings, Options, #{}), ?DEFAULT_RETRY_POLICY)).
 
 %%
 
@@ -735,39 +737,24 @@ storage_options(Options) ->
         module    => get_options(storage  , Options)
     }.
 
--spec timers_cron_options(options()) ->
-    mg_cron:options().
-timers_cron_options(Options) ->
-    #{
-        interval => 1000, % 1 sec
-        job      => {?MODULE, handle_timers, [Options]}
-    }.
-
--spec overseer_cron_options(options()) ->
-    mg_cron:options().
-overseer_cron_options(Options) ->
-    #{
-        interval => 1000, % 1 sec
-        job      => {?MODULE, resume_interrupted, [Options]}
-    }.
+-spec scheduler_child_specs(overseer | timers, options()) ->
+    [supervisor:child_spec()].
+scheduler_child_specs(Task, Options) ->
+    case maps:get(Task, maps:get(scheduled_tasks, Options, #{}), ?DEFAULT_SCHEDULED_TASK) of
+        disable ->
+            [];
+        #{interval := Interval, limit := Limit} ->
+            F = case Task of
+                    timers   -> handle_timers;
+                    overseer -> resume_interrupted
+                end,
+            [mg_cron:child_spec(#{interval => Interval, job => {?MODULE, F, [Options, Limit]}}, Task)]
+    end.
 
 -spec get_options(atom(), options()) ->
     _.
-get_options(Subj=storage_retry_policy, Options) ->
-    maps:get(Subj, Options, default_retry_policy());
-get_options(Subj=processor_retry_policy, Options) ->
-    maps:get(Subj, Options, default_retry_policy());
-get_options(Subj=timers_search_limit, Options) ->
-    maps:get(Subj, Options, 10);
-get_options(Subj=overseer_search_limit, Options) ->
-    maps:get(Subj, Options, 10);
 get_options(Subj, Options) ->
     maps:get(Subj, Options).
-
--spec default_retry_policy() ->
-    _.
-default_retry_policy() ->
-    {exponential, infinity, 2, 10, 60 * 1000}.
 
 %%
 %% retrying

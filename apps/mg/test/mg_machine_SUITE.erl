@@ -146,7 +146,11 @@ automaton_options() ->
         namespace => <<"test">>,
         processor => ?MODULE,
         storage   => mg_storage_memory,
-        logger    => ?MODULE
+        logger    => ?MODULE,
+        scheduled_tasks => #{
+            timers   => #{ interval => 1000, limit => 10 },
+            overseer => #{ interval => 1000, limit => 10 }
+        }
     }.
 
 -spec handle_machine_logging_event(_, mg_machine_logger:event()) ->

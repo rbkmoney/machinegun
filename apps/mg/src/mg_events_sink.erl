@@ -238,10 +238,10 @@ new_state() ->
     mg_machine:options().
 machine_options(Options = #{namespace := Namespace, storage := Storage, logger := Logger}) ->
     #{
-        namespace => mg_utils:concatenate_namespaces(Namespace, <<"machines">>),
-        processor => {?MODULE, Options},
-        storage   => Storage,
-        logger    => Logger
+        namespace       => mg_utils:concatenate_namespaces(Namespace, <<"machines">>),
+        processor       => {?MODULE, Options},
+        storage         => Storage,
+        logger          => Logger
     }.
 
 -spec events_storage_options(options()) ->
