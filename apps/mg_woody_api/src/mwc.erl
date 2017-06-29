@@ -12,6 +12,7 @@
 -export([simple_repair         /3]).
 -export([resume_interrupted_one/2]).
 -export([kill                  /2]).
+-export([get_failed_machines   /1]).
 -export([get_machine           /2]).
 -export([get_events_machine    /3]).
 -export([get_db_state          /2]).
@@ -65,6 +66,16 @@ resume_interrupted_one(Namespace, ID) ->
 kill(Namespace, ID) ->
     ok = mg_workers_manager:brutal_kill(mg_machine:manager_options(machine_options(Namespace)), id(ID)).
 
+-spec get_failed_machines(mg:ns()) ->
+    [{mg:id(), Reason::term()}].
+get_failed_machines(Namespace) ->
+    Options = machine_options(Namespace),
+    [
+        {ID, Reason}
+    ||
+        {ID, {error, Reason, _}} <-
+            [{ID, mg_machine:get_status(Options, ID)} || ID <- mg_machine:search(Options, failed)]
+    ].
 
 % посмотреть стейт машины из процесса и из бд
 -spec get_machine(scalar(), scalar()) ->
