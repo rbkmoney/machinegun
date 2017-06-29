@@ -43,6 +43,7 @@
 -export_type([transient_error       /0]).
 -export_type([throws                /0]).
 -export_type([machine_state         /0]).
+-export_type([machine_status        /0]).
 -export_type([processor_impact      /0]).
 -export_type([processing_context    /0]).
 -export_type([processor_result      /0]).
@@ -60,6 +61,7 @@
 -export([fail                /4]).
 -export([fail                /5]).
 -export([get                 /2]).
+-export([get_status          /2]).
 -export([search              /2]).
 -export([reply               /2]).
 -export([call_with_lazy_start/6]).
@@ -72,6 +74,7 @@
 -export([resume_interrupted_one/2]).
 -export([all_statuses          /0]).
 -export([manager_options       /1]).
+-export([get_storage_machine   /2]).
 
 %% mg_worker
 -behaviour(mg_worker).
@@ -97,6 +100,13 @@
 
 -type throws() :: no_return().
 -type machine_state() :: mg_storage:opaque().
+
+-type machine_regular_status() ::
+       sleeping
+    | {waiting, genlib_time:ts(), mg:request_context(), HandlingTimeout::pos_integer()}
+    | {processing, mg:request_context()}
+.
+-type machine_status() :: machine_regular_status() | {error, Reason::term(), machine_regular_status()}.
 
 %%
 
@@ -196,9 +206,16 @@ fail(Options, ID, Exception, ReqCtx, Deadline) ->
 -spec get(options(), mg:id()) ->
     machine_state() | throws().
 get(Options, ID) ->
-    #{state:=State} =
+    #{state := State} =
         mg_utils:throw_if_undefined(element(2, get_storage_machine(Options, ID)), machine_not_found),
     State.
+
+-spec get_status(options(), mg:id()) ->
+    machine_status() | throws().
+get_status(Options, ID) ->
+    #{status := Status} =
+        mg_utils:throw_if_undefined(element(2, get_storage_machine(Options, ID)), machine_not_found),
+    Status.
 
 -spec search(options(), search_query(), mg_storage:index_limit()) ->
     {[{_TODO, mg:id()}] | [mg:id()], mg_storage:continuation()} | throws().
@@ -362,13 +379,6 @@ call_(Options, ID, Call, ReqCtx, Deadline) ->
     status => machine_status(),
     state  => machine_state()
 }.
-
--type machine_regular_status() ::
-       sleeping
-    | {waiting, genlib_time:ts(), mg:request_context(), HandlingTimeout::pos_integer()}
-    | {processing, mg:request_context()}
-.
--type machine_status() :: machine_regular_status() | {error, _, machine_regular_status()}.
 
 -spec handle_load(_ID, options(), mg:request_context()) ->
     {ok, state()}.
