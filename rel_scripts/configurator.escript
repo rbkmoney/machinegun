@@ -99,11 +99,11 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             storage => storage(YamlConfig),
             processor  => #{
                 url            => ?C:utf_bin(?C:conf([processor], NSYamlConfig)),
-                transport_opts => [{pool, erlang:list_to_atom(NameStr)}, {max_connections, 50}, {recv_timeout, 60000}]
+                transport_opts => [{pool, erlang:list_to_atom(NameStr)}, {max_connections, 50}, {recv_timeout, 60 * 1000}]
             },
             retryings => #{
-                storage   => {exponential, infinity, 2, 10, 60000},
-                processor => {exponential, 86400000, 2, 10, 60000}  % 24h
+                storage   => {exponential, infinity           , 2, 10, 60 * 1000},
+                processor => {exponential, 24 * 60 * 60 * 1000, 2, 10, 60 * 1000}
             },
             scheduled_tasks => #{
                 timers   => #{ interval => 1000, limit => 10 }, % | disable
