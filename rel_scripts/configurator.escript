@@ -19,21 +19,29 @@ main([YamlConfigFilename, SysConfigFilename, VMArgsFilename]) ->
 sys_config(YamlConfig) ->
     [
         {lager       , lager       (YamlConfig)},
+        {snowflake   , snowflake   (YamlConfig)},
         {mg_woody_api, mg_woody_api(YamlConfig)}
     ].
 
 lager(YamlConfig) ->
     [
+        {error_logger_hwm, 600},
         {log_root , ?C:filename(?C:conf([logging, root     ], YamlConfig, "/var/log/machinegun"))},
         {crash_log, ?C:filename(?C:conf([logging, crash_log], YamlConfig, "crash.json"         ))},
         {handlers, [
             {lager_file_backend, [
                 {file     , ?C:filename (?C:conf([logging, json_log], YamlConfig, "log.json"))},
                 {level    , ?C:log_level(?C:conf([logging, level   ], YamlConfig, "info"    ))},
-                {formatter, lager_logstash_formatter}
+                {formatter, lager_logstash_formatter},
+                %% disable log rotation
+                {size, 0},
+                {date, ""}
             ]}
         ]}
     ].
+
+snowflake(YamlConfig) ->
+    [{machine_id, ?C:conf([snowflake_machine_id], YamlConfig, 0)}].
 
 mg_woody_api(YamlConfig) ->
     [
@@ -46,7 +54,10 @@ woody_server(YamlConfig) ->
     #{
         ip       => ?C:ip(?C:conf([woody_server, ip], YamlConfig, "::")),
         port     => ?C:conf([woody_server, port], YamlConfig, 8022),
-        net_opts => [],
+        net_opts => [
+            % Bump keepalive timeout up to a minute
+            {timeout, 60000}
+        ],
         limits   => #{
             max_heap_size       => ?C:mem_words(?C:conf([limits, process_mem], YamlConfig, undefined)),
             total_mem_threshold => ?C:mem_bytes(?C:conf([limits, total_mem  ], YamlConfig, undefined))
@@ -88,7 +99,7 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             storage => storage(YamlConfig),
             processor  => #{
                 url            => ?C:utf_bin(?C:conf([processor], NSYamlConfig)),
-                transport_opts => [{pool, erlang:list_to_atom(NameStr)}, {max_connections, 100}, {recv_timeout, 60000}]
+                transport_opts => [{pool, erlang:list_to_atom(NameStr)}, {max_connections, 50}, {recv_timeout, 60000}]
             },
             retryings => #{
                 storage   => {exponential, infinity, 2, 10, 60000},
@@ -115,10 +126,10 @@ event_sink_ns(YamlConfig) ->
 %%
 %% vm.args
 %%
-vm_args(_YamlConfig) ->
+vm_args(YamlConfig) ->
     [
-        {'-sname'    , <<"mg">>       },
-        {'-setcookie', <<"mg_cookie">>},
-        {'+K'        , <<"true">>     },
-        {'+A'        , <<"10">>       }
+        {'-sname'    , ?C:utf_bin(?C:conf([erlang, sname ], YamlConfig, "mg"       ))},
+        {'-setcookie', ?C:utf_bin(?C:conf([erlang, cookie], YamlConfig, "mg_cookie"))},
+        {'+K'        , <<"true">>},
+        {'+A'        , <<"10">>  }
     ].
