@@ -196,32 +196,26 @@ init_per_group(TestGroup, C0) ->
 
 -spec mg_woody_api_config(atom(), config()) ->
     list().
-mg_woody_api_config(event_sink, C) ->
+mg_woody_api_config(_, C) ->
     [
-        {storage, ?config(storage, C)},
+        {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, net_opts => [], limits => #{}}},
         {namespaces, #{
             ?NS => #{
+                storage    => ?config(storage, C),
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
                     recv_timeout   => 5000,
                     transport_opts => [{pool, ns}, {max_connections, 100}]
                 },
-                event_sink => ?ES_ID
-            }
-        }}
-    ];
-mg_woody_api_config(_, C) ->
-    [
-        {storage, ?config(storage, C)},
-        {namespaces, #{
-            ?NS => #{
-                processor  => #{
-                    url            => <<"http://localhost:8023/processor">>,
-                    transport_opts => [{pool, ns}, {max_connections, 100}]
+                scheduled_tasks => #{
+                    timers   => #{ interval => 100, limit => 10 },
+                    overseer => #{ interval => 100, limit => 10 }
                 },
                 event_sink => ?ES_ID
             }
-        }}
+        }},
+        {event_sink_ns, #{storage => ?config(storage, C)}},
+        {event_sinks, [?ES_ID]}
     ].
 
 -spec end_per_group(group_name(), config()) ->
@@ -402,9 +396,10 @@ event_sink_lots_events_ordering(C) ->
     _.
 config_with_multiple_event_sinks(_C) ->
     Config = [
-        {storage, mg_storage_memory},
+        {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, net_opts => [], limits => #{}}},
         {namespaces, #{
             <<"1">> => #{
+                storage    => mg_storage_memory,
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => [{pool, pool1}, {max_connections, 100}]
@@ -412,15 +407,17 @@ config_with_multiple_event_sinks(_C) ->
                 event_sink => <<"SingleES">>
             },
             <<"2">> => #{
+                storage    => mg_storage_memory,
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => [{pool, pool2}, {max_connections, 100}]
                 },
                 event_sink => <<"SingleES">>
             }
-        }}
+        }},
+        {event_sink_ns, #{storage => mg_storage_memory}},
+        {event_sinks, [<<"SingleES">>]}
     ],
-
     Apps = genlib_app:start_application_with(mg_woody_api, Config),
     [application_stop(App) || App <- Apps].
 

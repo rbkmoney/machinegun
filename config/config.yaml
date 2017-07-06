@@ -1,0 +1,38 @@
+woody_server:
+    ip: "::"
+    port: 8022
+limits:
+    total_mem: 2G
+    process_mem: 2M
+logging:
+    root: /var/log/machinegun
+    crash_log: crash.log
+    json_log: log.json
+    level: info
+namespaces:
+    mg_test_ns:
+        event_sink: main_event_sink
+        processor: http://localhost:8022/processor
+storage:
+    type: memory
+# storage:
+#     type: riak
+#     host: "127.0.0.1"
+#     pool_size: 100
+#     port: 8080
+
+
+##
+## a short example for HG
+##
+# namespaces:
+#     invoice:
+#         event_sink: payproc
+#         processor: http://hellgate:8022/v1/stateproc/invoice
+#     party:
+#         event_sink: payproc
+#         processor: http://hellgate:8022/v1/stateproc/party
+#     domain-config:
+#         processor: http://dominant:8022/v1/stateproc/party
+# storage:
+#     type: memory

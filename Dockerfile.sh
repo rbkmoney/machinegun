@@ -3,7 +3,9 @@ cat <<EOF
 FROM $BASE_IMAGE
 MAINTAINER Petr Kozorezov <p.kozorezov@rbkmoney.com>
 COPY ./_build/prod/rel/machinegun /opt/machinegun
-CMD /opt/machinegun/bin/machinegun foreground
+WORKDIR /opt/machinegun
+ENTRYPOINT ./bin/entrypoint.sh
+CMD ./etc/config.yaml
 EXPOSE 8022
 LABEL base_image_tag=$BASE_IMAGE_TAG
 LABEL build_image_tag=$BUILD_IMAGE_TAG
@@ -20,5 +22,4 @@ LABEL branch=$( \
   fi)
 LABEL commit=$(git rev-parse HEAD)
 LABEL commit_number=$(git rev-list --count HEAD)
-WORKDIR /opt
 EOF

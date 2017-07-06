@@ -53,6 +53,10 @@
  {<<"woody">>,
   {git,"git@github.com:rbkmoney/woody_erlang.git",
        {ref,"2d00bda10454534e230d452b7338debafaf0a869"}},
+  0},
+ {<<"yamerl">>,
+  {git,"git@github.com:rbkmoney/yamerl.git",
+       {ref,"573199f422d5920a6429dc1f75aa983706b83083"}},
   0}]}.
 [
 {pkg_hash,[
