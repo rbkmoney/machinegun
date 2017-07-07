@@ -214,8 +214,7 @@ mg_woody_api_config(_, C) ->
                 event_sink => ?ES_ID
             }
         }},
-        {event_sink_ns, #{storage => ?config(storage, C)}},
-        {event_sinks, [?ES_ID]}
+        {event_sink_ns, #{storage => ?config(storage, C)}}
     ].
 
 -spec end_per_group(group_name(), config()) ->

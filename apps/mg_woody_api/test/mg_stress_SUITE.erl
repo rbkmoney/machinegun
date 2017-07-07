@@ -86,8 +86,7 @@ mg_woody_api_config(_C) ->
                 event_sink => ?ES_ID
             }
         }},
-        {event_sink_ns, #{storage => mg_storage_memory}},
-        {event_sinks, [?ES_ID]}
+        {event_sink_ns, #{storage => mg_storage_memory}}
     ].
 
 

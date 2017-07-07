@@ -17,7 +17,9 @@
 %% API
 %%
 -type processor() :: mg_woody_api_processor:options().
--type woody_server_net_opts() :: list(tuple()).
+% упс, а вот и протечка абстракции.
+% в woody этот тип не экспортируется, а хочется
+-type woody_server_net_opts() :: cowboy_protocol:opts().
 -type woody_server() :: #{
     ip       => tuple(),
     port     => inet:port_number(),
@@ -39,7 +41,6 @@
       {woody_server , woody_server()                 }
     | {namespaces   , #{mg:ns() => events_machines()}}
     | {event_sink_ns, event_sink_ns()                }
-    | {event_sinks  , [mg:id()]                      }
 .
 -type config() :: [config_element()].
 

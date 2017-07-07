@@ -7,7 +7,6 @@
 %%
 main([YamlConfigFilename, SysConfigFilename, VMArgsFilename]) ->
     YamlConfig = ?C:parse_yaml_config(YamlConfigFilename),
-    % io:format("Yaml config: ~p~n", [YamlConfig]),
     ?C:write_files([
         {SysConfigFilename, ?C:print_sys_config(sys_config(YamlConfig))},
         {VMArgsFilename   , ?C:print_vm_args   (vm_args   (YamlConfig))}
@@ -58,10 +57,10 @@ woody_server(YamlConfig) ->
             % Bump keepalive timeout up to a minute
             {timeout, 60000}
         ],
-        limits   => #{
+        limits   => genlib_map:compact(#{
             max_heap_size       => ?C:mem_words(?C:conf([limits, process_mem], YamlConfig, undefined)),
             total_mem_threshold => ?C:mem_bytes(?C:conf([limits, total_mem  ], YamlConfig, undefined))
-        }
+        })
     }.
 
 storage(YamlConfig) ->

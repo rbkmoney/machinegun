@@ -642,9 +642,7 @@ call_processor(Impact, ProcessingCtx, ReqCtx, State) ->
     F = fun() ->
             processor_process_machine(ID, Impact, ProcessingCtx, ReqCtx, MachineState, Options)
         end,
-    RetryStrategy =
-        mg_utils:genlib_retry_new(maps:get(processor, maps:get(retryings, Options, #{}), ?DEFAULT_RETRY_POLICY)),
-    do_with_retry(Options, ID, F, RetryStrategy, ReqCtx).
+    do_with_retry(Options, ID, F, retry_strategy(processor, Options), ReqCtx).
 
 -spec processor_process_machine(mg:id(), processor_impact(), processing_context(), ReqCtx, state(), options()) ->
     _Result
@@ -693,7 +691,7 @@ transit_state(ReqCtx, NewStorageMachine, State=#{id:=ID, options:=Options, stora
                 storage_machine_to_indexes(NewStorageMachine)
             )
         end,
-    NewStorageContext  = do_with_retry(Options, ID, F, storage_retry_strategy(Options), ReqCtx),
+    NewStorageContext  = do_with_retry(Options, ID, F, retry_strategy(storage, Options), ReqCtx),
     State#{
         storage_machine := NewStorageMachine,
         storage_context := NewStorageContext
@@ -709,13 +707,13 @@ remove_from_storage(ReqCtx, State = #{id := ID, options := Options, storage_cont
                 StorageContext
             )
         end,
-    ok = do_with_retry(Options, ID, F, storage_retry_strategy(Options), ReqCtx),
+    ok = do_with_retry(Options, ID, F, retry_strategy(storage, Options), ReqCtx),
     State#{storage_machine := undefined, storage_context := undefined}.
 
--spec storage_retry_strategy(options()) ->
+-spec retry_strategy(storage | processor, options()) ->
     genlib_retry:strategy().
-storage_retry_strategy(Options) ->
-    mg_utils:genlib_retry_new(maps:get(storage, maps:get(retryings, Options, #{}), ?DEFAULT_RETRY_POLICY)).
+retry_strategy(Subj, Options) ->
+    mg_utils:genlib_retry_new(maps:get(Subj, maps:get(retryings, Options, #{}), ?DEFAULT_RETRY_POLICY)).
 
 %%
 

@@ -111,7 +111,7 @@ rev_str_int(Mem) ->
 -spec pow2x0(integer()) ->
     integer().
 pow2x0(X) ->
-    1 bsl X * 10.
+    1 bsl (X * 10).
 
 -spec ip(string()) ->
     inet:ip_address().
