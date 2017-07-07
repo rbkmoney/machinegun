@@ -1,6 +1,8 @@
 erlang:
     sname: "mg"
     cookie: "mg_cookie"
+    ipv6: false
+    disable_dns_cache: false
 woody_server:
     ip: "::"
     port: 8022

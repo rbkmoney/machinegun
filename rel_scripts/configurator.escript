@@ -5,11 +5,13 @@
 %%
 %% main
 %%
-main([YamlConfigFilename, SysConfigFilename, VMArgsFilename]) ->
+main([YamlConfigFilename, ConfigsPath]) ->
     YamlConfig = ?C:parse_yaml_config(YamlConfigFilename),
+    ERLInetrcFilename = filename:join(ConfigsPath, "erl_inetrc"),
     ?C:write_files([
-        {SysConfigFilename, ?C:print_sys_config(sys_config(YamlConfig))},
-        {VMArgsFilename   , ?C:print_vm_args   (vm_args   (YamlConfig))}
+        {filename:join(ConfigsPath, "sys.config"), ?C:print_sys_config(sys_config(YamlConfig                   ))},
+        {filename:join(ConfigsPath, "vm.args"   ), ?C:print_vm_args   (vm_args   (YamlConfig, ERLInetrcFilename))},
+        {ERLInetrcFilename                       , ?C:print_erl_inetrc(erl_inetrc(YamlConfig                   ))}
     ]).
 
 %%
@@ -125,10 +127,24 @@ event_sink_ns(YamlConfig) ->
 %%
 %% vm.args
 %%
-vm_args(YamlConfig) ->
+vm_args(YamlConfig, ERLInetrcFilename) ->
     [
         {'-sname'    , ?C:utf_bin(?C:conf([erlang, sname ], YamlConfig, "mg"       ))},
         {'-setcookie', ?C:utf_bin(?C:conf([erlang, cookie], YamlConfig, "mg_cookie"))},
         {'+K'        , <<"true">>},
-        {'+A'        , <<"10">>  }
+        {'+A'        , <<"10">>  },
+        {'-kernel'   , <<"inetrc ", (?C:utf_bin(ERLInetrcFilename))/binary>>}
     ].
+
+%%
+%% erl_inetrc
+%%
+erl_inetrc(YamlConfig) ->
+    conf_if([erlang, ipv6             ], YamlConfig, [{inet6, true}, {tcp, inet6_tcp}]) ++
+    conf_if([erlang, disable_dns_cache], YamlConfig, [{cache_size, 0}                ]).
+
+conf_if(YamlConfigPath, YamlConfig, Value) ->
+    case ?C:conf(YamlConfigPath, YamlConfig, false) of
+        true  -> Value;
+        false -> []
+    end.

@@ -14,3 +14,4 @@ docker-compose.yml
 rebar3.crashdump
 config/sys.config
 config/vm.args
+config/erl_inetrc

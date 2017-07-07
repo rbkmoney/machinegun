@@ -5,6 +5,7 @@
 -export([write_file       /1]).
 -export([print_sys_config /1]).
 -export([print_vm_args    /1]).
+-export([print_erl_inetrc /1]).
 
 -export([filename        /1]).
 -export([log_level       /1]).
@@ -22,6 +23,7 @@
 
 -type vm_args() :: [{atom(), binary()}].
 -type sys_config() :: [{atom, term()}].
+-type erl_inetrc() :: [{atom, term()}].
 
 -type filename() :: file:filename().
 -type mem_words() :: non_neg_integer().
@@ -62,6 +64,10 @@ print_vm_args(VMArgs) ->
         VMArgs
     ).
 
+-spec print_erl_inetrc(erl_inetrc()) ->
+    iolist().
+print_erl_inetrc(ERLInetrc) ->
+    [[io_lib:print(E), $., $\n] || E <- ERLInetrc].
 
 -spec filename(maybe(string())) ->
     maybe(filename()).
