@@ -29,6 +29,7 @@
     duplicate_search_batch => mg_storage:index_limit()
 }.
 
+-define(default_duplicate_search_batch, 1000).
 
 -spec child_spec(options(), atom()) ->
     supervisor:child_spec().
@@ -144,7 +145,7 @@ is_duplicate(
     Query = {
         ?ext_id_idx,
         make_ext_id(EventSinkID, SourceNS, SourceMachineID, EventID),
-        maps:get(duplicate_search_batch, Options),
+        maps:get(duplicate_search_batch, Options, ?default_duplicate_search_batch),
         Cont
     },
     {Keys, NewCont} = mg_storage:search(events_storage_options(Options), Query),
@@ -238,10 +239,10 @@ new_state() ->
     mg_machine:options().
 machine_options(Options = #{namespace := Namespace, storage := Storage, logger := Logger}) ->
     #{
-        namespace => mg_utils:concatenate_namespaces(Namespace, <<"machines">>),
-        processor => {?MODULE, Options},
-        storage   => Storage,
-        logger    => Logger
+        namespace       => mg_utils:concatenate_namespaces(Namespace, <<"machines">>),
+        processor       => {?MODULE, Options},
+        storage         => Storage,
+        logger          => Logger
     }.
 
 -spec events_storage_options(options()) ->

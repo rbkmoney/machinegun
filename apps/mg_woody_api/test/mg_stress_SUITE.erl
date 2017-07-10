@@ -74,17 +74,21 @@ end_per_suite(C) ->
     list().
 mg_woody_api_config(_C) ->
     [
-        {storage, mg_storage_memory},
+        {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, net_opts => [], limits => #{}}},
         {namespaces, #{
             ?NS => #{
+                storage    => mg_storage_memory,
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
+                    recv_timeout   => 5000,
                     transport_opts => [{pool, ns}, {max_connections, 100}]
                 },
                 event_sink => ?ES_ID
             }
-        }}
+        }},
+        {event_sink_ns, #{storage => mg_storage_memory}}
     ].
+
 
 -spec stress_test(config()) -> _.
 stress_test(C) ->

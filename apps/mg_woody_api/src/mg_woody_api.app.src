@@ -12,7 +12,8 @@
         rfc3339,
         mg_proto,
         mg,
-        woody
+        woody,
+        yamerl
     ]},
     {env, []},
     {modules, []},

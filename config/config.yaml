@@ -1,0 +1,67 @@
+erlang:
+    sname: "mg"
+    cookie: "mg_cookie"
+    ipv6: false
+    disable_dns_cache: false
+woody_server:
+    ip: "::"
+    port: 8022
+    keep_alive_timeout: 60s
+limits:
+    total_mem: 2G
+    process_mem: 2M
+logging:
+    root: /var/log/machinegun
+    crash_log: crash.log
+    json_log: log.json
+    level: info
+namespaces:
+    mg_test_ns:
+        event_sink: main_event_sink
+        processor:
+            url: http://localhost:8022/processor
+            pool_size: 50
+            recv_timeout: 60s
+snowflake_machine_id: 1
+# memory storage backend
+storage:
+    type: memory
+## riak storage backend
+# storage:
+#     type: riak
+#     host: "127.0.0.1"
+#     port: 8080
+#     pool_size: 100
+#     pool_take_timeout: 5S
+#     connect_timeout: 5S
+#     request_timeout: 10S
+
+
+##
+## a short example for HG
+##
+# namespaces:
+#     invoice:
+#         event_sink: payproc
+#         processor:
+#             url: http://hellgate:8022/v1/stateproc/invoice
+#             recv_timeout: 60s
+#     party:
+#         event_sink: payproc
+#         processor:
+#             url: http://hellgate:8022/v1/stateproc/party
+#     domain-config:
+#         processor:
+#             url: http://dominant:8022/v1/stateproc/party
+# storage:
+#     type: memory
+
+##
+## a minimal config
+##
+# namespaces:
+#     mg_test_ns:
+#         processor:
+#             url: http://localhost:8022/processor
+# storage:
+#     type: memory
