@@ -56,8 +56,7 @@ woody_server(YamlConfig) ->
         ip       => ?C:ip(?C:conf([woody_server, ip], YamlConfig, "::")),
         port     => ?C:conf([woody_server, port], YamlConfig, 8022),
         net_opts => [
-            % Bump keepalive timeout up to a minute
-            {timeout, 60000}
+            {timeout, ?C:time_interval(?C:conf([woody_server, keep_alive_timeout], YamlConfig, "5S"), 'ms')}
         ],
         limits   => genlib_map:compact(#{
             max_heap_size       => ?C:mem_words(?C:conf([limits, process_mem], YamlConfig, undefined)),
@@ -78,9 +77,9 @@ storage(YamlConfig) ->
                     max_count     => ?C:conf([storage, pool_size], YamlConfig, 100),
                     cull_interval => {0, min}
                 },
-                pool_take_timeout => {5, 'sec'},
-                connect_timeout   => 5000,
-                request_timeout   => 10000
+                pool_take_timeout => ?C:time_interval(?C:conf([storage, pool_take_timeout], YamlConfig, "5S" )    ),
+                connect_timeout   => ?C:time_interval(?C:conf([storage, connect_timeout  ], YamlConfig, "5S" ), ms),
+                request_timeout   => ?C:time_interval(?C:conf([storage, request_timeout  ], YamlConfig, "10S"), ms)
             }}
     end.
 
@@ -99,8 +98,12 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
     NS0 = #{
             storage => storage(YamlConfig),
             processor  => #{
-                url            => ?C:utf_bin(?C:conf([processor], NSYamlConfig)),
-                transport_opts => [{pool, erlang:list_to_atom(NameStr)}, {max_connections, 50}, {recv_timeout, 60 * 1000}]
+                url            => ?C:utf_bin(?C:conf([processor, url], NSYamlConfig)),
+                transport_opts => [
+                    {pool, erlang:list_to_atom(NameStr)},
+                    {max_connections, ?C:conf([processor, pool_size], NSYamlConfig, 50)},
+                    {recv_timeout, ?C:time_interval(?C:conf([processor, recv_timeout], NSYamlConfig, "5S"), ms)}
+                ]
             },
             retryings => #{
                 storage   => {exponential, infinity           , 2, 10, 60 * 1000},

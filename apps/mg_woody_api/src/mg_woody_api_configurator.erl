@@ -7,14 +7,16 @@
 -export([print_vm_args    /1]).
 -export([print_erl_inetrc /1]).
 
--export([filename        /1]).
--export([log_level       /1]).
--export([mem_words       /1]).
--export([mem_bytes       /1]).
--export([ip              /1]).
--export([utf_bin         /1]).
--export([conf            /3]).
--export([conf            /2]).
+-export([filename         /1]).
+-export([log_level        /1]).
+-export([mem_words        /1]).
+-export([mem_bytes        /1]).
+-export([time_interval    /1]).
+-export([time_interval    /2]).
+-export([ip               /1]).
+-export([utf_bin          /1]).
+-export([conf             /3]).
+-export([conf             /2]).
 
 %%
 
@@ -30,6 +32,8 @@
 -type mem_bytes() :: non_neg_integer().
 -type maybe(T) :: undefined | T.
 
+-type time_interval_unit() :: 'week' | 'day' | 'hour' | 'min' | 'sec' | 'ms' | 'mu'.
+-type time_interval() :: {non_neg_integer(), time_interval_unit()}.
 
 -spec parse_yaml_config(filename()) ->
     yaml_config().
@@ -100,24 +104,95 @@ mem_words(MemStr) ->
 mem_bytes(undefined) ->
     undefined;
 mem_bytes(MemStr) ->
-    case lists:reverse(string:strip(MemStr)) of
-        "P" ++ RevTailMem -> pow2x0(5) * rev_str_int(RevTailMem);
-        "T" ++ RevTailMem -> pow2x0(4) * rev_str_int(RevTailMem);
-        "G" ++ RevTailMem -> pow2x0(3) * rev_str_int(RevTailMem);
-        "M" ++ RevTailMem -> pow2x0(2) * rev_str_int(RevTailMem);
-        "K" ++ RevTailMem -> pow2x0(1) * rev_str_int(RevTailMem);
-        ""  ++ RevTailMem -> pow2x0(0) * rev_str_int(RevTailMem)
+    Error = {'bad memory amount', MemStr},
+    case string:to_upper(lists:reverse(string:strip(MemStr))) of
+        "P" ++ RevTail -> pow2x0(5) * rev_str_int(RevTail, Error);
+        "T" ++ RevTail -> pow2x0(4) * rev_str_int(RevTail, Error);
+        "G" ++ RevTail -> pow2x0(3) * rev_str_int(RevTail, Error);
+        "M" ++ RevTail -> pow2x0(2) * rev_str_int(RevTail, Error);
+        "K" ++ RevTail -> pow2x0(1) * rev_str_int(RevTail, Error);
+        "B" ++ RevTail -> pow2x0(0) * rev_str_int(RevTail, Error);
+        _              -> erlang:throw(Error)
     end.
 
--spec rev_str_int(string()) ->
+-spec rev_str_int(string(), Error::term()) ->
     integer().
-rev_str_int(Mem) ->
-    list_to_integer(lists:reverse(Mem)).
+rev_str_int(RevIntStr, Error) ->
+    IntStr = lists:reverse(RevIntStr),
+    try
+        list_to_integer(IntStr)
+    catch error:badarg ->
+        erlang:throw(Error)
+    end.
 
 -spec pow2x0(integer()) ->
     integer().
 pow2x0(X) ->
     1 bsl (X * 10).
+
+
+-spec time_interval(maybe(string())) ->
+    maybe(time_interval()).
+time_interval(undefined) ->
+    undefined;
+time_interval(TimeStr) ->
+    parse_time_interval(TimeStr).
+
+-spec time_interval(maybe(string()), time_interval_unit()) ->
+    maybe(non_neg_integer()).
+time_interval(undefined, _) ->
+    undefined;
+time_interval(TimeStr, Unit) ->
+    time_interval_in(parse_time_interval(TimeStr), Unit).
+
+-spec parse_time_interval(string()) ->
+    time_interval().
+parse_time_interval(TimeStr) ->
+    Error = {'bad time interval', TimeStr},
+    case string:to_upper(lists:reverse(string:strip(TimeStr))) of
+        "W"  ++ RevTail -> {rev_str_int(RevTail, Error), 'week'};
+        "D"  ++ RevTail -> {rev_str_int(RevTail, Error), 'day' };
+        "H"  ++ RevTail -> {rev_str_int(RevTail, Error), 'hour'};
+        "M"  ++ RevTail -> {rev_str_int(RevTail, Error), 'min' };
+        "SM" ++ RevTail -> {rev_str_int(RevTail, Error), 'ms'  };
+        "UM" ++ RevTail -> {rev_str_int(RevTail, Error), 'mu'  };
+        "S"  ++ RevTail -> {rev_str_int(RevTail, Error), 'sec' };
+        _               -> erlang:throw(Error)
+    end.
+
+-spec time_interval_in(time_interval(), time_interval_unit()) ->
+    non_neg_integer().
+time_interval_in({Amount, UnitFrom}, UnitTo) ->
+    time_interval_in_(Amount, time_interval_unit_to_int(UnitFrom), time_interval_unit_to_int(UnitTo)).
+
+-spec time_interval_in_(non_neg_integer(), non_neg_integer(), non_neg_integer()) ->
+    non_neg_integer().
+time_interval_in_(Amount, UnitFrom, UnitTo) when UnitFrom =:= UnitTo ->
+    Amount;
+time_interval_in_(Amount, UnitFrom, UnitTo) when UnitFrom < UnitTo ->
+    time_interval_in_(Amount div time_interval_mul(UnitFrom + 1), UnitFrom + 1, UnitTo);
+time_interval_in_(Amount, UnitFrom, UnitTo) when UnitFrom > UnitTo ->
+    time_interval_in_(Amount * time_interval_mul(UnitFrom), UnitFrom - 1, UnitTo).
+
+-spec time_interval_unit_to_int(time_interval_unit()) ->
+    non_neg_integer().
+time_interval_unit_to_int('week') -> 6;
+time_interval_unit_to_int('day' ) -> 5;
+time_interval_unit_to_int('hour') -> 4;
+time_interval_unit_to_int('min' ) -> 3;
+time_interval_unit_to_int('sec' ) -> 2;
+time_interval_unit_to_int('ms'  ) -> 1;
+time_interval_unit_to_int('mu'  ) -> 0.
+
+-spec time_interval_mul(non_neg_integer()) ->
+    non_neg_integer().
+time_interval_mul(6) -> 7;
+time_interval_mul(5) -> 24;
+time_interval_mul(4) -> 60;
+time_interval_mul(3) -> 60;
+time_interval_mul(2) -> 1000;
+time_interval_mul(1) -> 1000.
+
 
 -spec ip(string()) ->
     inet:ip_address().

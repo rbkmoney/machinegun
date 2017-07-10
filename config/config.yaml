@@ -6,6 +6,7 @@ erlang:
 woody_server:
     ip: "::"
     port: 8022
+    keep_alive_timeout: 60S
 limits:
     total_mem: 2G
     process_mem: 2M
@@ -17,7 +18,10 @@ logging:
 namespaces:
     mg_test_ns:
         event_sink: main_event_sink
-        processor: http://localhost:8022/processor
+        processor:
+            url: http://localhost:8022/processor
+            pool_size: 50
+            recv_timeout: 60S
 snowflake_machine_id: 1
 # memory storage backend
 storage:
@@ -26,8 +30,11 @@ storage:
 # storage:
 #     type: riak
 #     host: "127.0.0.1"
-#     pool_size: 100
 #     port: 8080
+#     pool_size: 100
+#     pool_take_timeout: 5S
+#     connect_timeout: 5S
+#     request_timeout: 10S
 
 
 ##
@@ -36,12 +43,16 @@ storage:
 # namespaces:
 #     invoice:
 #         event_sink: payproc
-#         processor: http://hellgate:8022/v1/stateproc/invoice
+#         processor:
+#             url: http://hellgate:8022/v1/stateproc/invoice
+#             recv_timeout: 60S
 #     party:
 #         event_sink: payproc
-#         processor: http://hellgate:8022/v1/stateproc/party
+#         processor:
+#             url: http://hellgate:8022/v1/stateproc/party
 #     domain-config:
-#         processor: http://dominant:8022/v1/stateproc/party
+#         processor:
+#             url: http://dominant:8022/v1/stateproc/party
 # storage:
 #     type: memory
 
@@ -50,6 +61,7 @@ storage:
 ##
 # namespaces:
 #     mg_test_ns:
-#         processor: http://localhost:8022/processor
+#         processor:
+#             url: http://localhost:8022/processor
 # storage:
 #     type: memory
