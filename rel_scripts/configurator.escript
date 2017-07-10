@@ -136,7 +136,7 @@ vm_args(YamlConfig, ERLInetrcFilename) ->
         {'-setcookie', ?C:utf_bin(?C:conf([erlang, cookie], YamlConfig, "mg_cookie"))},
         {'+K'        , <<"true">>},
         {'+A'        , <<"10">>  },
-        {'-kernel'   , <<"inetrc ", (?C:utf_bin(ERLInetrcFilename))/binary>>}
+        {'-kernel'   , <<"inetrc '\"", (?C:utf_bin(ERLInetrcFilename))/binary, "\"'">>}
     ].
 
 %%
