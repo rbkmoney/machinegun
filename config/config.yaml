@@ -6,7 +6,7 @@ erlang:
 woody_server:
     ip: "::"
     port: 8022
-    keep_alive_timeout: 60S
+    keep_alive_timeout: 60s
 limits:
     total_mem: 2G
     process_mem: 2M
@@ -21,7 +21,7 @@ namespaces:
         processor:
             url: http://localhost:8022/processor
             pool_size: 50
-            recv_timeout: 60S
+            recv_timeout: 60s
 snowflake_machine_id: 1
 # memory storage backend
 storage:
@@ -45,7 +45,7 @@ storage:
 #         event_sink: payproc
 #         processor:
 #             url: http://hellgate:8022/v1/stateproc/invoice
-#             recv_timeout: 60S
+#             recv_timeout: 60s
 #     party:
 #         event_sink: payproc
 #         processor:
