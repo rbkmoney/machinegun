@@ -211,6 +211,7 @@ mg_woody_api_config(_, C) ->
                     timers   => #{ interval => 100, limit => 10 },
                     overseer => #{ interval => 100, limit => 10 }
                 },
+                retryings => #{},
                 event_sink => ?ES_ID
             }
         }},
@@ -403,6 +404,11 @@ config_with_multiple_event_sinks(_C) ->
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => [{pool, pool1}, {max_connections, 100}]
                 },
+                scheduled_tasks => #{
+                    timers   => #{ interval => 100, limit => 10 },
+                    overseer => #{ interval => 100, limit => 10 }
+                },
+                retryings => #{},
                 event_sink => <<"SingleES">>
             },
             <<"2">> => #{
@@ -411,6 +417,11 @@ config_with_multiple_event_sinks(_C) ->
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => [{pool, pool2}, {max_connections, 100}]
                 },
+                scheduled_tasks => #{
+                    timers   => #{ interval => 100, limit => 10 },
+                    overseer => #{ interval => 100, limit => 10 }
+                },
+                retryings => #{},
                 event_sink => <<"SingleES">>
             }
         }},

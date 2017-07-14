@@ -7,7 +7,6 @@
         stdlib,
         genlib,
         gproc,
-        pooler,
         riakc,
         msgpack
     ]},

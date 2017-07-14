@@ -32,16 +32,18 @@
     [test_name() | {group, group_name()}].
 all() ->
     [
-        {group, memory},
-        {group, riak  }
+        {group, memory   },
+        {group, riak     },
+        {group, riak_pool}
     ].
 
 -spec groups() ->
     [{group_name(), list(_), test_name()}].
 groups() ->
     [
-        {memory, [], tests()},
-        {riak  , [], tests()}
+        {memory   , [], tests()},
+        {riak     , [], tests()},
+        {riak_pool, [], tests()}
     ].
 
 -spec tests() ->
@@ -88,7 +90,7 @@ end_per_group(_, _C) ->
 -spec base_test(config()) ->
     _.
 base_test(C) ->
-    Options = storage_options(?config(storage_type, C), <<"base_test_ns">>),
+    Options = storage_options(?config(storage_type, C), <<"base_test">>),
     _ = start_storage(Options),
     base_test(1, Options).
 
@@ -99,19 +101,19 @@ base_test(ID, Options) ->
     Value1 = #{<<"hello">> => <<"world">>},
     Value2 = [<<"hello">>, 1],
 
-    undefined      = mg_storage:get   (Options, Key),
-    Ctx1           = mg_storage:put   (Options, Key, undefined, Value1, []),
-    {Ctx1, Value1} = mg_storage:get   (Options, Key),
-    Ctx2           = mg_storage:put   (Options, Key, Ctx1, Value2, []),
-    {Ctx2, Value2} = mg_storage:get   (Options, Key),
-    ok             = mg_storage:delete(Options, Key, Ctx2),
-    undefined      = mg_storage:get   (Options, Key),
+    undefined      = mg_storage:get   (Options, storage, Key),
+    Ctx1           = mg_storage:put   (Options, storage, Key, undefined, Value1, []),
+    {Ctx1, Value1} = mg_storage:get   (Options, storage, Key),
+    Ctx2           = mg_storage:put   (Options, storage, Key, Ctx1, Value2, []),
+    {Ctx2, Value2} = mg_storage:get   (Options, storage, Key),
+    ok             = mg_storage:delete(Options, storage, Key, Ctx2),
+    undefined      = mg_storage:get   (Options, storage, Key),
     ok.
 
 -spec indexes_test(config()) ->
     _.
 indexes_test(C) ->
-    Options = storage_options(?config(storage_type, C), <<"base_test_ns">>),
+    Options = storage_options(?config(storage_type, C), <<"indexes_test">>),
     _ = start_storage(Options),
 
     K1  = <<"Key_24">>,
@@ -124,40 +126,40 @@ indexes_test(C) ->
 
     Value = #{<<"hello">> => <<"world">>},
 
-    [] = mg_storage:search(Options, {I1, IV1}),
-    [] = mg_storage:search(Options, {I1, {IV1, IV2}}),
-    [] = mg_storage:search(Options, {I2, {IV1, IV2}}),
+    [] = mg_storage:search(Options, storage, {I1, IV1}),
+    [] = mg_storage:search(Options, storage, {I1, {IV1, IV2}}),
+    [] = mg_storage:search(Options, storage, {I2, {IV1, IV2}}),
 
-    Ctx1 = mg_storage:put(Options, K1, undefined, Value, [{I1, IV1}, {I2, IV2}]),
+    Ctx1 = mg_storage:put(Options, storage, K1, undefined, Value, [{I1, IV1}, {I2, IV2}]),
 
-    [K1       ] = mg_storage:search(Options, {I1, IV1       }),
-    [{IV1, K1}] = mg_storage:search(Options, {I1, {IV1, IV2}}),
-    [K1       ] = mg_storage:search(Options, {I2, IV2       }),
-    [{IV2, K1}] = mg_storage:search(Options, {I2, {IV1, IV2}}),
+    [K1       ] = mg_storage:search(Options, storage, {I1, IV1       }),
+    [{IV1, K1}] = mg_storage:search(Options, storage, {I1, {IV1, IV2}}),
+    [K1       ] = mg_storage:search(Options, storage, {I2, IV2       }),
+    [{IV2, K1}] = mg_storage:search(Options, storage, {I2, {IV1, IV2}}),
 
-    Ctx2 = mg_storage:put(Options, K2, undefined, Value, [{I1, IV2}, {I2, IV1}]),
+    Ctx2 = mg_storage:put(Options, storage, K2, undefined, Value, [{I1, IV2}, {I2, IV1}]),
 
-    [K1                  ] = mg_storage:search(Options, {I1, IV1       }),
-    [{IV1, K1}, {IV2, K2}] = mg_storage:search(Options, {I1, {IV1, IV2}}),
-    [K1                  ] = mg_storage:search(Options, {I2, IV2       }),
-    [{IV1, K2}, {IV2, K1}] = mg_storage:search(Options, {I2, {IV1, IV2}}),
+    [K1                  ] = mg_storage:search(Options, storage, {I1, IV1       }),
+    [{IV1, K1}, {IV2, K2}] = mg_storage:search(Options, storage, {I1, {IV1, IV2}}),
+    [K1                  ] = mg_storage:search(Options, storage, {I2, IV2       }),
+    [{IV1, K2}, {IV2, K1}] = mg_storage:search(Options, storage, {I2, {IV1, IV2}}),
 
-    ok = mg_storage:delete(Options, K1, Ctx1),
+    ok = mg_storage:delete(Options, storage, K1, Ctx1),
 
-    [{IV2, K2}] = mg_storage:search(Options, {I1, {IV1, IV2}}),
-    [{IV1, K2}] = mg_storage:search(Options, {I2, {IV1, IV2}}),
+    [{IV2, K2}] = mg_storage:search(Options, storage, {I1, {IV1, IV2}}),
+    [{IV1, K2}] = mg_storage:search(Options, storage, {I2, {IV1, IV2}}),
 
-    ok = mg_storage:delete(Options, K2, Ctx2),
+    ok = mg_storage:delete(Options, storage, K2, Ctx2),
 
-    [] = mg_storage:search(Options, {I1, {IV1, IV2}}),
-    [] = mg_storage:search(Options, {I2, {IV1, IV2}}),
+    [] = mg_storage:search(Options, storage, {I1, {IV1, IV2}}),
+    [] = mg_storage:search(Options, storage, {I2, {IV1, IV2}}),
 
     ok.
 
 -spec indexes_test_with_limits(config()) ->
     _.
 indexes_test_with_limits(C) ->
-    Options = storage_options(?config(storage_type, C), <<"base_test_ns">>),
+    Options = storage_options(?config(storage_type, C), <<"indexes_test_with_limits">>),
     _ = start_storage(Options),
 
     K1  = <<"Key_24">>,
@@ -170,24 +172,24 @@ indexes_test_with_limits(C) ->
 
     Value = #{<<"hello">> => <<"world">>},
 
-    Ctx1 = mg_storage:put(Options, K1, undefined, Value, [{I1, IV1}, {I2, IV2}]),
-    Ctx2 = mg_storage:put(Options, K2, undefined, Value, [{I1, IV2}, {I2, IV1}]),
+    Ctx1 = mg_storage:put(Options, storage, K1, undefined, Value, [{I1, IV1}, {I2, IV2}]),
+    Ctx2 = mg_storage:put(Options, storage, K2, undefined, Value, [{I1, IV2}, {I2, IV1}]),
 
-    {[{IV1, K1}], Cont1} = mg_storage:search(Options, {I1, {IV1, IV2}, 1, undefined}),
-    {[{IV2, K2}], Cont2} = mg_storage:search(Options, {I1, {IV1, IV2}, 1, Cont1}),
-    {[], undefined}      = mg_storage:search(Options, {I1, {IV1, IV2}, 1, Cont2}),
+    {[{IV1, K1}], Cont1} = mg_storage:search(Options, storage, {I1, {IV1, IV2}, 1, undefined}),
+    {[{IV2, K2}], Cont2} = mg_storage:search(Options, storage, {I1, {IV1, IV2}, 1, Cont1}),
+    {[], undefined}      = mg_storage:search(Options, storage, {I1, {IV1, IV2}, 1, Cont2}),
 
-    [{IV1, K2}, {IV2, K1}] = mg_storage:search(Options, {I2, {IV1, IV2}, inf, undefined}),
+    [{IV1, K2}, {IV2, K1}] = mg_storage:search(Options, storage, {I2, {IV1, IV2}, inf, undefined}),
 
-    ok = mg_storage:delete(Options, K1, Ctx1),
-    ok = mg_storage:delete(Options, K2, Ctx2),
+    ok = mg_storage:delete(Options, storage, K1, Ctx1),
+    ok = mg_storage:delete(Options, storage, K2, Ctx2),
 
     ok.
 
 -spec stress_test(_C) ->
     ok.
 stress_test(C) ->
-    Options = storage_options(?config(storage_type, C), <<"stress_test_ns">>),
+    Options = storage_options(?config(storage_type, C), <<"stress_test">>),
     _ = start_storage(Options),
     ProcessCount = 20,
     Processes = [stress_test_start_process(ID, ProcessCount, Options) || ID <- lists:seq(1, ProcessCount)],
@@ -256,25 +258,25 @@ stop_wait(Pid, Reason, Timeout) ->
 
 %%
 
--spec storage_options(atom(), binary()) -> config().
-storage_options(Type, Namespace) ->
-    Module =
-        case Type of
-            riak ->
-                {mg_storage_riak, #{
-                    host => "riakdb",
-                    port => 8087,
-                    pool => #{
-                        init_count => 1,
-                        max_count  => 10
-                    }
-                }};
-            memory ->
-                mg_storage_memory
-        end,
-    #{
-        namespace => Namespace,
-        module    => Module
+-spec storage_options(atom(), binary()) ->
+    config().
+storage_options(riak, Namespace) ->
+    {mg_storage_riak, #{
+        host   => "riakdb",
+        port   => 8087,
+        bucket => Namespace
+    }};
+storage_options(memory, _) ->
+    mg_storage_memory;
+storage_options(riak_pool, Namespace) ->
+    {
+        mg_storage_pool,
+        #{
+            worker          => storage_options(riak, mg_utils:concatenate_namespaces(Namespace, <<"pool">>)),
+            size            => 10,
+            queue_len_limit => 100,
+            retry_attempts  => 10
+        }
     }.
 
 -spec start_storage(mg_storage:options()) ->
@@ -283,6 +285,6 @@ start_storage(Options) ->
     mg_utils:throw_if_error(
         mg_utils_supervisor_wrapper:start_link(
             #{strategy => one_for_all},
-            [mg_storage:child_spec(Options, storage)]
+            [mg_storage:child_spec(Options, storage, {local, storage})]
         )
     ).

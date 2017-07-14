@@ -32,7 +32,6 @@ storage:
 #     host: "127.0.0.1"
 #     port: 8080
 #     pool_size: 100
-#     pool_take_timeout: 5S
 #     connect_timeout: 5S
 #     request_timeout: 10S
 

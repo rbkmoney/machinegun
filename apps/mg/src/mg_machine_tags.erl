@@ -13,7 +13,7 @@
 
 -type options() :: #{
     namespace => mg:ns(),
-    storage   => mg_storage:storage(),
+    storage   => mg_storage:options(),
     logger    => mg_machine_logger:handler()
 }.
 -type tag() :: binary().

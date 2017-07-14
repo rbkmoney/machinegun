@@ -129,15 +129,14 @@ is_alive(Options, ID) ->
 -spec start_child(options(), _ID, _ReqCtx) ->
     {ok, pid()} | {error, term()}.
 start_child(Options, ID, ReqCtx) ->
-    case mg_utils:get_msg_queue_len(self_reg_name(Options)) < message_queue_len_limit(Options) of
-        true ->
-            try
-                supervisor:start_child(self_ref(Options), [maps:get(name, Options), ID, ReqCtx])
-            catch
-                exit:{timeout, Reason} ->
-                    {error, {timeout, Reason}}
-            end;
-        false ->
+    SelfRef = self_ref(Options),
+    try
+        ok = mg_utils:check_overload(SelfRef, message_queue_len_limit(Options)),
+        supervisor:start_child(SelfRef, [maps:get(name, Options), ID, ReqCtx])
+    catch
+        exit:{timeout, Reason} ->
+            {error, {timeout, Reason}};
+        exit:overload ->
             {error, {transient, overload}}
     end.
 

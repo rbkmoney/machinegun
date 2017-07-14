@@ -7,7 +7,7 @@
 %% mg_storage callbacks
 -behaviour(mg_storage).
 -export_type([options/0]).
--export([child_spec/3, put/6, get/3, search/3, delete/4]).
+-export([child_spec/3, do_request/3]).
 
 %% gen_server callbacks
 -behaviour(gen_server).
@@ -16,60 +16,39 @@
 %%
 %% internal API
 %%
--spec start_link(options(), mg:ns()) ->
+-spec start_link(options(), mg_utils:gen_reg_name()) ->
     mg_utils:gen_start_ret().
-start_link(Options, Namespace) ->
-    gen_server:start_link(self_reg_name(Namespace), ?MODULE, {Options, Namespace}, []).
+start_link(Options, RegName) ->
+    gen_server:start_link(RegName, ?MODULE, Options, []).
 
 %%
 %% mg_storage callbacks
 %%
 -type context      () :: non_neg_integer() | undefined.
--type options      () :: _.
+-type options      () :: undefined.
 -type continuation () :: binary() | undefined.
+-type self_ref     () :: mg_utils:gen_ref().
 
--spec child_spec(options(), mg:ns(), atom()) ->
+
+-spec child_spec(options(), atom(), mg_utils:gen_reg_name()) ->
     supervisor:child_spec().
-child_spec(Options, Namespace, ChildID) ->
+child_spec(Options, ChildID, RegName) ->
     #{
         id       => ChildID,
-        start    => {?MODULE, start_link, [Options, Namespace]},
+        start    => {?MODULE, start_link, [Options, RegName]},
         restart  => permanent,
         shutdown => 5000
     }.
 
-%% тут происходит упаковка и проверка, чтобы пораньше увидеть потенциальные проблемы
--spec put(options(), mg:ns(), mg_storage:key(), context(), mg_storage:value(), [mg_storage:index_update()]) ->
-    context().
-put(_Options, Namespace, Key, Context, Value, IndexesUpdates) when is_binary(Namespace) andalso is_binary(Key) ->
-    gen_server:call(self_ref(Namespace), {put, Key, Context, mg_storage:opaque_to_binary(Value), IndexesUpdates}).
-
--spec get(_Options, mg:ns(), mg_storage:key()) ->
-    {context(), mg_storage:value()} | undefined.
-get(_Options, Namespace, Key) when is_binary(Namespace) andalso is_binary(Key) ->
-    case gen_server:call(self_ref(Namespace), {get, Key}) of
-        undefined ->
-            undefined;
-        {Context, Value} ->
-            {Context, mg_storage:binary_to_opaque(Value)}
-    end.
-
--spec search(_Options, mg:ns(), mg_storage:index_query()) ->
-    {[{mg_storage:index_value(), mg_storage:key()}], continuation()} | {[mg_storage:key()], continuation()}.
-search(_Options, Namespace, Query) ->
-    gen_server:call(self_ref(Namespace), {search, Query}).
-
--spec delete(_Options, mg:ns(), mg_storage:key(), context()) ->
-    ok.
-delete(_Options, Namespace, Key, Context) when is_binary(Namespace) andalso is_binary(Key) ->
-    gen_server:call(self_ref(Namespace), {delete, Key, Context}).
-
+-spec do_request(options(), self_ref(), mg_storage:request()) ->
+    mg_storage:response().
+do_request(_, SelfRef, Req) ->
+    gen_server:call(SelfRef, Req).
 
 %%
 %% gen_server callbacks
 %%
 -type state() :: #{
-    namespace   => mg:ns(),
     options     => options(),
     values      => #{mg_storage:key() => {context(), mg_storage:value()}},
     indexes     => #{mg_storage:index_name() => index()}
@@ -77,12 +56,11 @@ delete(_Options, Namespace, Key, Context) when is_binary(Namespace) andalso is_b
 -type index() :: [{mg_storage:index_value(), mg_storage:key()}].
 -type search_result() :: [{mg_storage:index_value(), mg_storage:key()}] | [mg_storage:key()].
 
--spec init({options(), mg:ns()}) ->
+-spec init(options()) ->
     mg_utils:gen_server_init_ret(state()).
-init({Options, Namespace}) ->
+init(Options) ->
     {ok,
         #{
-            namespace => Namespace,
             options   => Options,
             values    => #{},
             indexes   => #{}
@@ -137,28 +115,6 @@ terminate(_, _) ->
 %%
 %% local
 %%
--spec self_ref(mg:ns()) ->
-    mg_utils:gen_ref().
-self_ref(Namespace) ->
-    {via, gproc, gproc_key(Namespace)}.
-
--spec self_reg_name(mg:ns()) ->
-    mg_utils:gen_reg_name().
-self_reg_name(Namespace) ->
-    {via, gproc, gproc_key(Namespace)}.
-
--spec gproc_key(mg:ns()) ->
-    gproc:key().
-gproc_key(Namespace) ->
-    {n, l, wrap(Namespace)}.
-
--spec wrap(_) ->
-    term().
-wrap(V) ->
-    {?MODULE, V}.
-
-%%
-
 -spec do_get(mg_storage:key(), state()) ->
     {context(), mg_storage:value()} | undefined.
 do_get(Key, #{values := Values}) ->

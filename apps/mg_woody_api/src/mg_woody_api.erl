@@ -27,14 +27,14 @@
     limits   => woody_server_thrift_http_handler:handler_limits()
 }.
 -type events_machines() :: #{
-    processor       => processor(),
-    storage         => mg_storage:storage(),
+    processor       := processor(),
+    storage         := mg_storage:options(),
     event_sink      => mg:id(),
-    retryings       => mg_machine:retrying_opt(),
-    scheduled_tasks => mg_machine:scheduled_tasks_opt()
+    retryings       := mg_machine:retrying_opt(),
+    scheduled_tasks := mg_machine:scheduled_tasks_opt()
 }.
 -type event_sink_ns() :: #{
-    storage                => mg_storage:storage(),
+    storage                => mg_storage:options(),
     duplicate_search_batch => mg_storage:index_limit()
 }.
 -type config_element() ::
@@ -130,22 +130,23 @@ api_automaton_options(Config) ->
         NSs
     ).
 
--spec events_machine_options(mg:ns(), events_machines(), mg_events_sink:options()) ->
+-spec events_machine_options(mg:ns(), events_machines(), event_sink_ns()) ->
     mg_events_machine:options().
 events_machine_options(NS, Config = #{processor := ProcessorConfig, storage := Storage}, EventSinkNS) ->
     EventSinkOptions = event_sink_options(EventSinkNS),
     events_machine_options_event_sink(
+        maps:get(event_sink, Config, undefined),
         EventSinkOptions,
-        Config#{
-            namespace      => NS,
-            processor      => processor(ProcessorConfig),
-            logger         => ?logger,
-            tagging        => tags_options(NS, Storage),
-            events_storage => Storage
+        #{
+            namespace        => NS,
+            processor        => processor(ProcessorConfig),
+            tagging          => tags_options(NS, Storage),
+            machines         => machines_options(NS, Config, Storage),
+            events_storage   => add_sub_namespace(<<"events">>, Storage)
         }
     ).
 
--spec tags_options(mg:ns(), mg_storage:storage()) ->
+-spec tags_options(mg:ns(), mg_storage:options()) ->
     mg_machine_tags:options().
 tags_options(NS, Storage) ->
     #{
@@ -154,14 +155,25 @@ tags_options(NS, Storage) ->
         logger    => ?logger
     }.
 
--spec events_machine_options_event_sink(mg_events_sink:options(), mg_events_machine:options()) ->
+-spec machines_options(mg:ns(), events_machines(), mg_storage:options()) ->
+    mg_machine:options().
+machines_options(NS, #{retryings := Retryings, scheduled_tasks := STasks}, Storage) ->
+    #{
+        namespace       => NS,
+        storage         => add_sub_namespace(<<"events">>, Storage),
+        logger          => ?logger,
+        retryings       => Retryings,
+        scheduled_tasks => STasks
+    }.
+
+-spec events_machine_options_event_sink(mg:id(), mg_events_sink:options(), mg_events_machine:options()) ->
     mg_events_machine:options().
-events_machine_options_event_sink(EventSinkOptions, Options = #{event_sink := EventSinkID}) ->
+events_machine_options_event_sink(undefined, _, Options) ->
+    Options;
+events_machine_options_event_sink(EventSinkID, EventSinkOptions, Options) ->
     Options#{
         event_sink => {EventSinkID, EventSinkOptions}
-    };
-events_machine_options_event_sink(_, Options) ->
-    Options.
+    }.
 
 -spec processor(processor()) ->
     mg_utils:mod_opts().
@@ -177,10 +189,11 @@ api_event_sink_options(Config) ->
 
 -spec event_sink_options(event_sink_ns()) ->
     mg_events_sink:options().
-event_sink_options(EventSinkNS) ->
+event_sink_options(EventSinkNS = #{storage := Storage}) ->
     EventSinkNS#{
-        namespace => <<"_event_sinks">>,
-        logger    => ?logger
+        namespace      => <<"_event_sinks">>,
+        logger         => ?logger,
+        events_storage => add_sub_namespace(<<"events">>, Storage)
     }.
 
 -spec collect_event_sinks(config()) ->
@@ -196,3 +209,14 @@ collect_event_sinks(Config) ->
         ordsets:new(),
         proplists:get_value(namespaces, Config)
     )).
+
+-spec add_sub_namespace(mg:ns(), mg_storage:options()) ->
+    mg_storage:options().
+add_sub_namespace(_, Storage = mg_storage_memory) ->
+    Storage;
+add_sub_namespace(_, Storage = {mg_storage_memory, _}) ->
+    Storage;
+add_sub_namespace(SubNS, {mg_storage_pool, Options = #{worker := Worker}}) ->
+    {mg_storage_pool, Options#{worker := add_sub_namespace(SubNS, Worker)}};
+add_sub_namespace(SubNS, {mg_storage_riak, Options = #{bucket := Bucket}}) ->
+    {mg_storage_riak, Options#{bucket := mg_utils:concatenate_namespaces(Bucket, SubNS)}}.
