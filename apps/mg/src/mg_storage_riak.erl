@@ -93,7 +93,7 @@ child_spec(Options, ChildID) ->
         id       => ChildID,
         start    => {?MODULE, start_link, [Options]},
         restart  => permanent,
-        type     => supervisor
+        shutdown => 5000
     }.
 
 -spec child_spec(options(), atom(), mg_utils:gen_reg_name()) ->
@@ -103,7 +103,7 @@ child_spec(Options, ChildID, RegName) ->
         id       => ChildID,
         start    => {?MODULE, start_link, [Options, RegName]},
         restart  => permanent,
-        type     => supervisor
+        shutdown => 5000
     }.
 
 -spec do_request(options(), self_ref(), mg_storage:request()) ->
