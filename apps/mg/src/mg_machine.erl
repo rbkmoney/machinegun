@@ -175,8 +175,8 @@ start_link(Options) ->
         mg_utils:lists_compact([
             mg_workers_manager:child_spec(manager_options(Options), manager),
             mg_storage        :child_spec(storage_options(Options), storage, storage_reg_name(Options)),
-            scheduler_child_specs(timers  , Options),
-            scheduler_child_specs(overseer, Options),
+            scheduler_child_spec(timers  , Options),
+            scheduler_child_spec(overseer, Options),
             processor_child_spec(Options)
         ])
     ).
@@ -749,9 +749,9 @@ storage_reg_name(Options) ->
 gproc_key(Type, #{namespace := Namespace}) ->
     {n, l, {?MODULE, Type, Namespace}}.
 
--spec scheduler_child_specs(overseer | timers, options()) ->
+-spec scheduler_child_spec(overseer | timers, options()) ->
     supervisor:child_spec() | undefined.
-scheduler_child_specs(Task, Options) ->
+scheduler_child_spec(Task, Options) ->
     case maps:get(Task, maps:get(scheduled_tasks, Options, #{}), ?DEFAULT_SCHEDULED_TASK) of
         disable ->
             undefined;
