@@ -118,7 +118,12 @@ terminate(_, _) ->
 -spec do_get(mg_storage:key(), state()) ->
     {context(), mg_storage:value()} | undefined.
 do_get(Key, #{values := Values}) ->
-    maps:get(Key, Values, undefined).
+    case maps:get(Key, Values, undefined) of
+        undefined ->
+            undefined;
+        {Context, Value} ->
+            {Context, mg_storage:binary_to_opaque(Value)}
+    end.
 
 -spec do_search(mg_storage:index_query(), state()) ->
     {{search_result(), continuation()}, state()}.
@@ -177,7 +182,7 @@ do_put(Key, Context, Value, IndexesUpdates, State0 = #{values := Values}) ->
             {undefined        , _        } -> exit({not_found, Key});
             {{OtherContext, _}, Context  } -> exit({conflict, Context, OtherContext})
         end,
-    State1 = State0#{values := maps:put(Key, {NextContext, Value}, Values)},
+    State1 = State0#{values := maps:put(Key, {NextContext, mg_storage:opaque_to_binary(Value)}, Values)},
     {NextContext, do_update_indexes(IndexesUpdates, Key, do_cleanup_indexes(Key, State1))}.
 
 -spec do_delete(mg_storage:key(), context(), state()) ->
