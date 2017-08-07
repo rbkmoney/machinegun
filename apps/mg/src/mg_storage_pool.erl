@@ -116,12 +116,7 @@ wrap(SelfRef, WorkerID) ->
 -spec random_worker_id(pos_integer()) ->
     worker_id().
 random_worker_id(N) ->
-    worker_id(rand:uniform(N)).
-
--spec worker_id(integer()) ->
-    worker_id().
-worker_id(N) ->
-    list_to_atom(integer_to_list(N)).
+    rand:uniform(N).
 
 -spec try_gen_call(fun(() -> Result)) ->
     {ok, Result} | {error, _}.
