@@ -47,7 +47,7 @@ do_request(Options = #{retry_attempts := RetryAttempts}, SelfRef, Req) ->
 -spec do_request(options(), mg_utils:gen_ref(), mg_storage:request(), pos_integer()) ->
     mg_storage:response() | no_return().
 do_request(_Options, _SelfRef, _Req, 0) ->
-    erlang:throw({storage_unavailable, {'storage request error', overload}});
+    throw_error({'storage request error', overload});
 do_request(Options = #{size := Size, worker := Worker, queue_len_limit := Limit}, SelfRef, Req, RemainAttempts) ->
     WorkerID = random_worker_id(Size),
     WorkerRef = worker_ref(SelfRef, WorkerID),
@@ -62,7 +62,7 @@ do_request(Options = #{size := Size, worker := Worker, queue_len_limit := Limit}
         {error, overload} ->
             do_request(Options, SelfRef, Req, RemainAttempts -1 );
         {error, Reason} ->
-            erlang:throw({storage_unavailable, {'storage request error', Reason}});
+            throw_error({'storage request error', Reason});
         R ->
             R
     end.
@@ -82,9 +82,15 @@ start_worker(#{queue_len_limit := Limit}, SelfRef, WorkerID) ->
             ok;
         {error, {already_started, _}} ->
             ok;
-        {error, Reason} ->
-            erlang:throw({storage_unavailable, {'start pool worker error', Reason}})
+        {error
+        , Reason} ->
+            throw_error({'start pool worker error', Reason})
     end.
+
+-spec throw_error(term()) ->
+    no_return().
+throw_error(Error) ->
+    erlang:throw({transient, {storage_unavailable, Error}}).
 
 -spec worker_reg_name(mg_utils:gen_ref(), worker_id()) ->
     mg_utils:gen_ref().
