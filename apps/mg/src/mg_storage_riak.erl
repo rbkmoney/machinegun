@@ -167,12 +167,12 @@ delete(Options = #{bucket := Bucket}, SelfRef, Key, Context) ->
 
 -spec do_get_index(self_ref(), bucket(), mg_storage:index_query(), options()) ->
     _.
-do_get_index(SelfRef, Namespace, {IndexName, {From, To}, IndexLimit, Continuation}, Options) ->
+do_get_index(SelfRef, Bucket, {IndexName, {From, To}, IndexLimit, Continuation}, Options) ->
     SearchOptions = index_opts([{return_terms, true}], Options, IndexLimit, Continuation),
-    riakc_pb_socket:get_index_range(SelfRef, Namespace, prepare_index_name(IndexName), From, To, SearchOptions);
-do_get_index(SelfRef, Namespace, {IndexName, Value, IndexLimit, Continuation}, Options) ->
+    riakc_pb_socket:get_index_range(SelfRef, Bucket, prepare_index_name(IndexName), From, To, SearchOptions);
+do_get_index(SelfRef, Bucket, {IndexName, Value, IndexLimit, Continuation}, Options) ->
     SearchOptions = index_opts(Options, IndexLimit, Continuation),
-    riakc_pb_socket:get_index_eq(SelfRef, Namespace, prepare_index_name(IndexName), Value, SearchOptions).
+    riakc_pb_socket:get_index_eq(SelfRef, Bucket, prepare_index_name(IndexName), Value, SearchOptions).
 
 -spec get_index_response(mg_storage:index_query(), get_index_results()) ->
     mg_storage:search_result().
