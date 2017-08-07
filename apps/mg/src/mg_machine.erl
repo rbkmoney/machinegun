@@ -737,17 +737,17 @@ storage_options(#{storage := Storage}) ->
 -spec storage_ref(options()) ->
     mg_utils:gen_ref().
 storage_ref(Options) ->
-    {via, gproc, gproc_key(Options)}.
+    {via, gproc, gproc_key(storage, Options)}.
 
 -spec storage_reg_name(options()) ->
     mg_utils:gen_reg_name().
 storage_reg_name(Options) ->
-    {via, gproc, gproc_key(Options)}.
+    {via, gproc, gproc_key(storage, Options)}.
 
--spec gproc_key(options()) ->
+-spec gproc_key(atom(), options()) ->
     gproc:key().
-gproc_key(#{namespace := Namespace}) ->
-    {n, l, {?MODULE, Namespace}}.
+gproc_key(Type, #{namespace := Namespace}) ->
+    {n, l, {?MODULE, Type, Namespace}}.
 
 -spec scheduler_child_specs(overseer | timers, options()) ->
     supervisor:child_spec() | undefined.

@@ -8,6 +8,10 @@
 -export([start/0]).
 -export([stop /0]).
 
+%%
+-export([events_machine_options/3]).
+-export([machine_options       /2]).
+
 %% application callbacks
 -behaviour(application).
 -export([start/2]).
@@ -141,8 +145,8 @@ events_machine_options(NS, Config = #{processor := ProcessorConfig, storage := S
             namespace        => NS,
             processor        => processor(ProcessorConfig),
             tagging          => tags_options(NS, Storage),
-            machines         => machines_options(NS, Config, Storage),
-            events_storage   => add_sub_namespace(<<"events">>, Storage)
+            machines         => machine_options(NS, Config),
+            events_storage   => add_bucket_postfix(<<"events">>, Storage)
         }
     ).
 
@@ -150,17 +154,17 @@ events_machine_options(NS, Config = #{processor := ProcessorConfig, storage := S
     mg_machine_tags:options().
 tags_options(NS, Storage) ->
     #{
-        namespace => NS,
-        storage   => Storage,
+        namespace => mg_utils:concatenate_namespaces(NS, <<"tags">>),
+        storage   => Storage, % по логике тут должен быть sub namespace, но его по историческим причинам нет
         logger    => ?logger
     }.
 
--spec machines_options(mg:ns(), events_machines(), mg_storage:options()) ->
+-spec machine_options(mg:ns(), events_machines()) ->
     mg_machine:options().
-machines_options(NS, #{retryings := Retryings, scheduled_tasks := STasks}, Storage) ->
+machine_options(NS, #{retryings := Retryings, scheduled_tasks := STasks, storage := Storage}) ->
     #{
         namespace       => NS,
-        storage         => add_sub_namespace(<<"events">>, Storage),
+        storage         => add_bucket_postfix(<<"machines">>, Storage),
         logger          => ?logger,
         retryings       => Retryings,
         scheduled_tasks => STasks
@@ -193,7 +197,7 @@ event_sink_options(EventSinkNS = #{storage := Storage}) ->
     EventSinkNS#{
         namespace      => <<"_event_sinks">>,
         logger         => ?logger,
-        events_storage => add_sub_namespace(<<"events">>, Storage)
+        events_storage => add_bucket_postfix(<<"events">>, Storage)
     }.
 
 -spec collect_event_sinks(config()) ->
@@ -210,13 +214,13 @@ collect_event_sinks(Config) ->
         proplists:get_value(namespaces, Config)
     )).
 
--spec add_sub_namespace(mg:ns(), mg_storage:options()) ->
+-spec add_bucket_postfix(mg:ns(), mg_storage:options()) ->
     mg_storage:options().
-add_sub_namespace(_, Storage = mg_storage_memory) ->
+add_bucket_postfix(_, Storage = mg_storage_memory) ->
     Storage;
-add_sub_namespace(_, Storage = {mg_storage_memory, _}) ->
+add_bucket_postfix(_, Storage = {mg_storage_memory, _}) ->
     Storage;
-add_sub_namespace(SubNS, {mg_storage_pool, Options = #{worker := Worker}}) ->
-    {mg_storage_pool, Options#{worker := add_sub_namespace(SubNS, Worker)}};
-add_sub_namespace(SubNS, {mg_storage_riak, Options = #{bucket := Bucket}}) ->
+add_bucket_postfix(SubNS, {mg_storage_pool, Options = #{worker := Worker}}) ->
+    {mg_storage_pool, Options#{worker := add_bucket_postfix(SubNS, Worker)}};
+add_bucket_postfix(SubNS, {mg_storage_riak, Options = #{bucket := Bucket}}) ->
     {mg_storage_riak, Options#{bucket := mg_utils:concatenate_namespaces(Bucket, SubNS)}}.

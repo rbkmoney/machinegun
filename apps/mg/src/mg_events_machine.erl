@@ -404,9 +404,8 @@ processor_options(Options) ->
 
 -spec machine_options(options()) ->
     mg_machine:options().
-machine_options(Options = #{namespace := Namespace, machines := MachinesOptions}) ->
-    (maps:without([namespace, processor], MachinesOptions))#{
-        namespace => mg_utils:concatenate_namespaces(Namespace, <<"machines">>), % TODO убрать копипасту этого
+machine_options(Options = #{machines := MachinesOptions}) ->
+    (maps:without([processor], MachinesOptions))#{
         processor => {?MODULE, Options}
     }.
 
@@ -418,17 +417,17 @@ events_storage_options(#{events_storage := EventsStorage}) ->
 -spec events_storage_ref(options()) ->
     mg_utils:gen_ref().
 events_storage_ref(Options) ->
-    {via, gproc, gproc_key(Options)}.
+    {via, gproc, gproc_key(events, Options)}.
 
 -spec events_storage_reg_name(options()) ->
     mg_utils:gen_reg_name().
 events_storage_reg_name(Options) ->
-    {via, gproc, gproc_key(Options)}.
+    {via, gproc, gproc_key(events, Options)}.
 
--spec gproc_key(options()) ->
+-spec gproc_key(atom(), options()) ->
     gproc:key().
-gproc_key(#{namespace := Namespace}) ->
-    {n, l, {?MODULE, Namespace}}.
+gproc_key(Type, #{namespace := Namespace}) ->
+    {n, l, {?MODULE, Type, Namespace}}.
 
 -spec tags_machine_options(options()) ->
     mg_machine_tags:options().

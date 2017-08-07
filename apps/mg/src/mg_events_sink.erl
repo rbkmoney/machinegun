@@ -258,17 +258,17 @@ events_storage_options(#{events_storage := EventsStorage}) ->
 -spec events_storage_ref(options()) ->
     mg_utils:gen_ref().
 events_storage_ref(Options) ->
-    {via, gproc, gproc_key(Options)}.
+    {via, gproc, gproc_key(events, Options)}.
 
 -spec events_storage_reg_name(options()) ->
     mg_utils:gen_reg_name().
 events_storage_reg_name(Options) ->
-    {via, gproc, gproc_key(Options)}.
+    {via, gproc, gproc_key(events, Options)}.
 
--spec gproc_key(options()) ->
+-spec gproc_key(atom(), options()) ->
     gproc:key().
-gproc_key(#{namespace := Namespace}) ->
-    {n, l, {?MODULE, Namespace}}.
+gproc_key(Type, #{namespace := Namespace}) ->
+    {n, l, {?MODULE, Type, Namespace}}.
 
 %%
 
