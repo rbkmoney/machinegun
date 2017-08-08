@@ -14,8 +14,11 @@
 -export([kill                  /2]).
 -export([get_failed_machines   /1]).
 -export([get_machine           /2]).
+-export([get_events_machine    /2]).
 -export([get_events_machine    /3]).
--export([get_db_state          /2]).
+
+-export([m_opts /1]).
+-export([em_opts/1]).
 
 %%
 %% API
@@ -34,7 +37,7 @@ get_statuses_distrib(Namespace) ->
 -spec status_count(scalar(), mg_machine:search_query()) ->
     non_neg_integer().
 status_count(Namespace, StatusQuery) ->
-    Result = mg_machine:search(machine_options(Namespace), StatusQuery),
+    Result = mg_machine:search(m_opts(Namespace), StatusQuery),
     erlang:length(Result).
 
 % восстановление машины
@@ -48,7 +51,7 @@ simple_repair(Namespace, ID) ->
 simple_repair(Namespace, ID, Deadline) ->
     WoodyCtx = woody_context:new(),
     ok = mg_machine:simple_repair(
-            machine_options(Namespace),
+            m_opts(Namespace),
             id(ID),
             mg_woody_api_utils:woody_context_to_opaque(WoodyCtx),
             Deadline
@@ -58,18 +61,18 @@ simple_repair(Namespace, ID, Deadline) ->
 -spec resume_interrupted_one(scalar(), scalar()) ->
     ok | no_return().
 resume_interrupted_one(Namespace, ID) ->
-    ok = mg_machine:resume_interrupted_one(machine_options(Namespace), id(ID)).
+    ok = mg_machine:resume_interrupted_one(m_opts(Namespace), id(ID)).
 
 % убийство машины
 -spec kill(scalar(), scalar()) ->
     ok.
 kill(Namespace, ID) ->
-    ok = mg_workers_manager:brutal_kill(mg_machine:manager_options(machine_options(Namespace)), id(ID)).
+    ok = mg_workers_manager:brutal_kill(mg_machine:manager_options(m_opts(Namespace)), id(ID)).
 
 -spec get_failed_machines(mg:ns()) ->
     [{mg:id(), Reason::term()}].
 get_failed_machines(Namespace) ->
-    Options = machine_options(Namespace),
+    Options = m_opts(Namespace),
     [
         {ID, Reason}
     ||
@@ -77,45 +80,42 @@ get_failed_machines(Namespace) ->
             [{ID, mg_machine:get_status(Options, ID)} || ID <- mg_machine:search(Options, failed)]
     ].
 
-% посмотреть стейт машины из процесса и из бд
+% посмотреть стейт машины
 -spec get_machine(scalar(), scalar()) ->
     mg_machine:machine_state().
 get_machine(Namespace, ID) ->
-    mg_machine:get(machine_options(Namespace), id(ID)).
+    mg_machine:get(m_opts(Namespace), id(ID)).
+
+-spec get_events_machine(scalar(), mg_events_machine:ref()) ->
+    mg_events_machine:machine().
+get_events_machine(Namespace, Ref) ->
+    get_events_machine(Namespace, Ref, {undefined, undefined, forward}).
 
 -spec get_events_machine(scalar(), mg_events_machine:ref(), mg_events:history_range()) ->
     mg_events_machine:machine().
 get_events_machine(Namespace, Ref, HRange) ->
-    mg_events_machine:get_machine(machine_options(Namespace), Ref, HRange).
-
--spec get_db_state(scalar(), scalar()) ->
-    mg_storage:value() | undefined.
-get_db_state(Namespace, ID) ->
-    mg_storage:get(storage_options(Namespace), id(ID)).
+    mg_events_machine:get_machine(em_opts(Namespace), Ref, HRange).
 
 %%
 
--spec machine_options(scalar()) ->
+-spec em_opts(scalar()) ->
+    mg_events_machine:options().
+em_opts(Namespace) ->
+    mg_woody_api:events_machine_options(
+        ns(Namespace),
+        ns_config(Namespace),
+        genlib_app:env(mg_woody_api, event_sink_ns)
+    ).
+
+-spec m_opts(scalar()) ->
     mg_machine:options().
-machine_options(Namespace) ->
-    #{
-        namespace => ns(Namespace),
-        storage   => storage(),
-        logger    => mg_woody_api_logger
-    }.
+m_opts(Namespace) ->
+    mg_woody_api:machine_options(ns(Namespace), ns_config(Namespace)).
 
--spec storage_options(mg:ns()) ->
-    mg_storage:options().
-storage_options(Namespace) ->
-    #{
-        namespace => Namespace,
-        module    => storage()
-    }.
-
--spec storage() ->
-    mg_storage:storage().
-storage() ->
-    genlib_app:env(mg_woody_api, storage).
+-spec ns_config(scalar()) ->
+    _Config.
+ns_config(Namespace) ->
+    maps:get(ns(Namespace), genlib_app:env(mg_woody_api, namespaces)).
 
 -spec ns(scalar()) ->
     mg:ns().

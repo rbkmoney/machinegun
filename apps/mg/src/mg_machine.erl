@@ -95,7 +95,7 @@
 
 -type options() :: #{
     namespace       => mg:ns(),
-    storage         => mg_storage:storage(),
+    storage         => mg_storage:options(),
     processor       => mg_utils:mod_opts(),
     logger          => mg_machine_logger:handler(),
     retryings       => retrying_opt(),
@@ -141,7 +141,7 @@
 -type processor_result() :: {processor_reply_action(), processor_flow_action(), machine_state()}.
 
 -callback processor_child_spec(_Options) ->
-    mg_utils_supervisor_wrapper:child_spec().
+    supervisor:child_spec() | undefined.
 -callback process_machine(_Options, mg:id(), processor_impact(), processing_context(), ReqCtx, machine_state()) ->
     processor_result()
 when ReqCtx :: mg:request_context().
@@ -172,13 +172,13 @@ child_spec(Options, ChildID) ->
 start_link(Options) ->
     mg_utils_supervisor_wrapper:start_link(
         #{strategy => one_for_all},
-        [
-            mg_workers_manager:child_spec(manager_options      (Options), manager      ),
-            mg_storage        :child_spec(storage_options      (Options), storage      )
-        ]
-        ++ scheduler_child_specs(timers  , Options)
-        ++ scheduler_child_specs(overseer, Options)
-        ++ [processor_child_spec(Options)]
+        mg_utils:lists_compact([
+            mg_workers_manager:child_spec(manager_options(Options), manager),
+            mg_storage        :child_spec(storage_options(Options), storage, storage_reg_name(Options)),
+            scheduler_child_spec(timers  , Options),
+            scheduler_child_spec(overseer, Options),
+            processor_child_spec(Options)
+        ])
     ).
 
 -spec start(options(), mg:id(), term(), mg:request_context(), mg_utils:deadline()) ->
@@ -228,13 +228,13 @@ get_status(Options, ID) ->
 -spec search(options(), search_query(), mg_storage:index_limit()) ->
     {[{_TODO, mg:id()}] | [mg:id()], mg_storage:continuation()} | throws().
 search(Options, Query, Limit) ->
-    mg_storage:search(storage_options(Options), storage_search_query(Query, Limit)).
+    mg_storage:search(storage_options(Options), storage_ref(Options), storage_search_query(Query, Limit)).
 
 -spec search(options(), search_query()) ->
     [{_TODO, mg:id()}] | [mg:id()] | throws().
 search(Options, Query) ->
     % TODO deadline
-    mg_storage:search(storage_options(Options), storage_search_query(Query)).
+    mg_storage:search(storage_options(Options), storage_ref(Options), storage_search_query(Query)).
 
 -spec call_with_lazy_start(options(), mg:id(), term(), mg:request_context(), mg_utils:deadline(), term()) ->
     _Resp | throws().
@@ -471,7 +471,7 @@ new_storage_machine() ->
 -spec get_storage_machine(options(), mg:id()) ->
     {mg_storage:context(), storage_machine()} | undefined.
 get_storage_machine(Options, ID) ->
-    case mg_storage:get(storage_options(Options), ID) of
+    case mg_storage:get(storage_options(Options), storage_ref(Options), ID) of
         undefined ->
             {undefined, undefined};
         {Context, PackedMachine} ->
@@ -655,9 +655,9 @@ processor_process_machine(ID, Impact, ProcessingCtx, ReqCtx, MachineState, Optio
     ).
 
 -spec processor_child_spec(options()) ->
-    mg_utils_supervisor_wrapper:child_spec().
+    supervisor:child_spec().
 processor_child_spec(Options) ->
-    mg_utils:apply_mod_opts_if_defined(get_options(processor, Options), processor_child_spec, empty_child_spec).
+    mg_utils:apply_mod_opts_if_defined(get_options(processor, Options), processor_child_spec, undefined).
 
 -spec do_reply_action(processor_reply_action(), undefined | processing_context()) ->
     ok.
@@ -685,6 +685,7 @@ transit_state(ReqCtx, NewStorageMachine, State=#{id:=ID, options:=Options, stora
     F = fun() ->
             mg_storage:put(
                 storage_options(Options),
+                storage_ref(Options),
                 ID,
                 StorageContext,
                 storage_machine_to_opaque(NewStorageMachine),
@@ -703,6 +704,7 @@ remove_from_storage(ReqCtx, State = #{id := ID, options := Options, storage_cont
     F = fun() ->
             mg_storage:delete(
                 storage_options(Options),
+                storage_ref(Options),
                 ID,
                 StorageContext
             )
@@ -729,24 +731,36 @@ manager_options(Options) ->
 
 -spec storage_options(options()) ->
     mg_storage:options().
-storage_options(Options) ->
-    #{
-        namespace => get_options(namespace, Options),
-        module    => get_options(storage  , Options)
-    }.
+storage_options(#{storage := Storage}) ->
+    Storage.
 
--spec scheduler_child_specs(overseer | timers, options()) ->
-    [supervisor:child_spec()].
-scheduler_child_specs(Task, Options) ->
+-spec storage_ref(options()) ->
+    mg_utils:gen_ref().
+storage_ref(Options) ->
+    {via, gproc, gproc_key(storage, Options)}.
+
+-spec storage_reg_name(options()) ->
+    mg_utils:gen_reg_name().
+storage_reg_name(Options) ->
+    {via, gproc, gproc_key(storage, Options)}.
+
+-spec gproc_key(atom(), options()) ->
+    gproc:key().
+gproc_key(Type, #{namespace := Namespace}) ->
+    {n, l, {?MODULE, Type, Namespace}}.
+
+-spec scheduler_child_spec(overseer | timers, options()) ->
+    supervisor:child_spec() | undefined.
+scheduler_child_spec(Task, Options) ->
     case maps:get(Task, maps:get(scheduled_tasks, Options, #{}), ?DEFAULT_SCHEDULED_TASK) of
         disable ->
-            [];
+            undefined;
         #{interval := Interval, limit := Limit} ->
             F = case Task of
                     timers   -> handle_timers;
                     overseer -> resume_interrupted
                 end,
-            [mg_cron:child_spec(#{interval => Interval, job => {?MODULE, F, [Options, Limit]}}, Task)]
+            mg_cron:child_spec(#{interval => Interval, job => {?MODULE, F, [Options, Limit]}}, Task)
     end.
 
 -spec get_options(atom(), options()) ->

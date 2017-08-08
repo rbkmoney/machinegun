@@ -54,7 +54,7 @@ start_link(Options, NS, ID, ReqCtx) ->
 -spec call(_NS, _ID, _Call, _ReqCtx, mg_utils:deadline(), pos_integer()) ->
     _Result | {error, _}.
 call(NS, ID, Call, ReqCtx, Deadline, MaxQueueLength) ->
-    case mg_utils:get_msg_queue_len(self_reg_name({NS, ID})) < MaxQueueLength of
+    case mg_utils:msg_queue_len(self_ref({NS, ID})) < MaxQueueLength of
         true ->
             gen_server:call(
                 self_ref({NS, ID}),
@@ -69,7 +69,7 @@ call(NS, ID, Call, ReqCtx, Deadline, MaxQueueLength) ->
 -spec brutal_kill(_NS, _ID) ->
     ok.
 brutal_kill(NS, ID) ->
-    case mg_utils:gen_where(self_ref({NS, ID})) of
+    case mg_utils:gen_reg_name_to_pid(self_ref({NS, ID})) of
         undefined ->
             ok;
         Pid ->
@@ -87,14 +87,14 @@ reply(CallCtx, Reply) ->
 -spec get_call_queue(_NS, _ID) ->
     [_Call].
 get_call_queue(NS, ID) ->
-    Pid = mg_utils:exit_if_undefined(mg_utils:gen_where(self_ref({NS, ID})), noproc),
+    Pid = mg_utils:exit_if_undefined(mg_utils:gen_reg_name_to_pid(self_ref({NS, ID})), noproc),
     {messages, Messages} = erlang:process_info(Pid, messages),
     [Call || {'$gen_call', _, {call, _, Call, _}} <- Messages].
 
 -spec is_alive(_NS, _ID) ->
     boolean().
 is_alive(NS, ID) ->
-    Pid = mg_utils:gen_where(self_ref({NS, ID})),
+    Pid = mg_utils:gen_reg_name_to_pid(self_ref({NS, ID})),
     Pid =/= undefined andalso erlang:is_process_alive(Pid).
 
 %%

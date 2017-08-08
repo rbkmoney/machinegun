@@ -23,10 +23,11 @@
 }.
 -type event() :: mg_events:event(event_body()).
 -type options() :: #{
-    namespace    => mg:ns(),
-    storage      => mg_storage:storage(),
-    logger       => mg_machine_logger:handler(),
-    duplicate_search_batch => mg_storage:index_limit()
+    namespace              := mg:ns(),
+    storage                := mg_storage:options(),
+    logger                 := mg_machine_logger:handler(),
+    duplicate_search_batch := mg_storage:index_limit(),
+    events_storage         := mg_storage:options()
 }.
 
 -define(default_duplicate_search_batch, 1000).
@@ -47,10 +48,10 @@ child_spec(Options, ChildID) ->
 start_link(Options) ->
     mg_utils_supervisor_wrapper:start_link(
         #{strategy => one_for_all},
-        [
-            mg_machine:child_spec(machine_options       (Options), automaton     ),
-            mg_storage:child_spec(events_storage_options(Options), events_storage)
-        ]
+        mg_utils:lists_compact([
+            mg_machine:child_spec(machine_options       (Options), automaton),
+            mg_storage:child_spec(events_storage_options(Options), events_storage, events_storage_reg_name(Options))
+        ])
     ).
 
 
@@ -76,13 +77,16 @@ get_history(Options, EventSinkID, HistoryRange) ->
     EventsKeys = get_events_keys(EventSinkID, EventsRange, HistoryRange),
     kvs_to_sink_events(EventSinkID, [
         {Key, Value} ||
-        {Key, {_, Value}} <- [{Key, mg_storage:get(events_storage_options(Options), Key)} || Key <- EventsKeys]
+        {Key, {_, Value}} <- [
+            {Key, mg_storage:get(events_storage_options(Options), events_storage_ref(Options), Key)} ||
+            Key <- EventsKeys
+        ]
     ]).
 
 -spec repair(options(), mg:id(), mg:request_context(), mg_utils:deadline()) ->
     ok.
 repair(Options, EventSinkID, ReqCtx, Deadline) ->
-    mg_machine:repair(Options, EventSinkID, undefined, ReqCtx, Deadline).
+    mg_machine:repair(machine_options(Options), EventSinkID, undefined, ReqCtx, Deadline).
 
 %%
 %% mg_processor handler
@@ -148,7 +152,7 @@ is_duplicate(
         maps:get(duplicate_search_batch, Options, ?default_duplicate_search_batch),
         Cont
     },
-    {Keys, NewCont} = mg_storage:search(events_storage_options(Options), Query),
+    {Keys, NewCont} = mg_storage:search(events_storage_options(Options), events_storage_ref(Options), Query),
 
     Result = lists:any(
         fun(OtherEventFullID) ->
@@ -193,7 +197,8 @@ store_sink_events(Options, EventSinkID, SinkEvents) ->
 store_event(Options, EventSinkID, SinkEvent) ->
     ExtID = make_ext_id(EventSinkID, SinkEvent),
     {Key, Value} = sink_event_to_kv(EventSinkID, SinkEvent),
-    _ = mg_storage:put(events_storage_options(Options), Key, undefined, Value, [{?ext_id_idx, ExtID}]),
+    _ = mg_storage:put(events_storage_options(Options), events_storage_ref(Options), Key,
+            undefined, Value, [{?ext_id_idx, ExtID}]),
     ok.
 
 -spec get_events_keys(mg:id(), mg_events:events_range(), mg_events:history_range()) ->
@@ -247,11 +252,25 @@ machine_options(Options = #{namespace := Namespace, storage := Storage, logger :
 
 -spec events_storage_options(options()) ->
     mg_storage:options().
-events_storage_options(#{namespace := Namespace, storage := Storage}) ->
-    #{
-        namespace => mg_utils:concatenate_namespaces(Namespace, <<"events">>),
-        module    => Storage
-    }.
+events_storage_options(#{events_storage := EventsStorage}) ->
+    EventsStorage.
+
+-spec events_storage_ref(options()) ->
+    mg_utils:gen_ref().
+events_storage_ref(Options) ->
+    {via, gproc, gproc_key(events, Options)}.
+
+-spec events_storage_reg_name(options()) ->
+    mg_utils:gen_reg_name().
+events_storage_reg_name(Options) ->
+    {via, gproc, gproc_key(events, Options)}.
+
+-spec gproc_key(atom(), options()) ->
+    gproc:key().
+gproc_key(Type, #{namespace := Namespace}) ->
+    {n, l, {?MODULE, Type, Namespace}}.
+
+%%
 
 -spec generate_sink_events(mg:ns(), mg:id(), [mg_events:event()], state()) ->
     {[event()], state()}.

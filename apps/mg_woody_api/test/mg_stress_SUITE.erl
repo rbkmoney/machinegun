@@ -83,6 +83,11 @@ mg_woody_api_config(_C) ->
                     recv_timeout   => 5000,
                     transport_opts => [{pool, ns}, {max_connections, 100}]
                 },
+                scheduled_tasks => #{
+                    timers   => #{ interval => 100, limit => 10 },
+                    overseer => #{ interval => 100, limit => 10 }
+                },
+                retryings => #{},
                 event_sink => ?ES_ID
             }
         }},

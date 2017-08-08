@@ -64,22 +64,23 @@ woody_server(YamlConfig) ->
         })
     }.
 
-storage(YamlConfig) ->
+storage(NS, YamlConfig) ->
     case ?C:conf([storage, type], YamlConfig) of
         "memory" ->
             mg_storage_memory;
         "riak" ->
-            {mg_storage_riak, #{
-                host => ?C:conf([storage, host], YamlConfig),
-                port => ?C:conf([storage, port], YamlConfig),
-                pool => #{
-                    init_count    => ?C:conf([storage, pool_size], YamlConfig, 100),
-                    max_count     => ?C:conf([storage, pool_size], YamlConfig, 100),
-                    cull_interval => {0, min}
-                },
-                pool_take_timeout => ?C:time_interval(?C:conf([storage, pool_take_timeout], YamlConfig, "5S" )    ),
-                connect_timeout   => ?C:time_interval(?C:conf([storage, connect_timeout  ], YamlConfig, "5S" ), ms),
-                request_timeout   => ?C:time_interval(?C:conf([storage, request_timeout  ], YamlConfig, "10S"), ms)
+            {mg_storage_pool, #{
+                worker =>
+                    {mg_storage_riak, #{
+                        host   => ?C:utf_bin(?C:conf([storage, host], YamlConfig)),
+                        port   =>            ?C:conf([storage, port], YamlConfig),
+                        bucket => NS,
+                        connect_timeout => ?C:time_interval(?C:conf([storage, connect_timeout  ], YamlConfig, "5S" ), ms),
+                        request_timeout => ?C:time_interval(?C:conf([storage, request_timeout  ], YamlConfig, "10S"), ms)
+                    }},
+                size => ?C:conf([storage, pool_size], YamlConfig, 100),
+                queue_len_limit => 10,
+                retry_attempts  => 10
             }}
     end.
 
@@ -96,7 +97,7 @@ namespaces(YamlConfig) ->
 namespace({NameStr, NSYamlConfig}, YamlConfig) ->
     Name = ?C:utf_bin(NameStr),
     NS0 = #{
-            storage => storage(YamlConfig),
+            storage    => storage(Name, YamlConfig),
             processor  => #{
                 url            => ?C:utf_bin(?C:conf([processor, url], NSYamlConfig)),
                 transport_opts => [
@@ -123,7 +124,7 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
 
 event_sink_ns(YamlConfig) ->
     #{
-        storage                => storage(YamlConfig),
+        storage                => storage(<<"_event_sinks">>, YamlConfig),
         duplicate_search_batch => 1000
     }.
 

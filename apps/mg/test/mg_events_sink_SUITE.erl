@@ -127,7 +127,8 @@ event_sink_options() ->
         namespace              => ?ES_ID,
         storage                => mg_storage_memory,
         logger                 => ?MODULE,
-        duplicate_search_batch => 1000
+        duplicate_search_batch => 1000,
+        events_storage         => mg_storage_memory
     }.
 
 -spec handle_machine_logging_event(_, mg_machine_logger:event()) ->

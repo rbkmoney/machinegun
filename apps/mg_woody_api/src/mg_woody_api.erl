@@ -8,6 +8,10 @@
 -export([start/0]).
 -export([stop /0]).
 
+%%
+-export([events_machine_options/3]).
+-export([machine_options       /2]).
+
 %% application callbacks
 -behaviour(application).
 -export([start/2]).
@@ -27,14 +31,14 @@
     limits   => woody_server_thrift_http_handler:handler_limits()
 }.
 -type events_machines() :: #{
-    processor       => processor(),
-    storage         => mg_storage:storage(),
+    processor       := processor(),
+    storage         := mg_storage:options(),
     event_sink      => mg:id(),
-    retryings       => mg_machine:retrying_opt(),
-    scheduled_tasks => mg_machine:scheduled_tasks_opt()
+    retryings       := mg_machine:retrying_opt(),
+    scheduled_tasks := mg_machine:scheduled_tasks_opt()
 }.
 -type event_sink_ns() :: #{
-    storage                => mg_storage:storage(),
+    storage                => mg_storage:options(),
     duplicate_search_batch => mg_storage:index_limit()
 }.
 -type config_element() ::
@@ -130,38 +134,50 @@ api_automaton_options(Config) ->
         NSs
     ).
 
--spec events_machine_options(mg:ns(), events_machines(), mg_events_sink:options()) ->
+-spec events_machine_options(mg:ns(), events_machines(), event_sink_ns()) ->
     mg_events_machine:options().
 events_machine_options(NS, Config = #{processor := ProcessorConfig, storage := Storage}, EventSinkNS) ->
     EventSinkOptions = event_sink_options(EventSinkNS),
     events_machine_options_event_sink(
+        maps:get(event_sink, Config, undefined),
         EventSinkOptions,
-        Config#{
-            namespace      => NS,
-            processor      => processor(ProcessorConfig),
-            logger         => ?logger,
-            tagging        => tags_options(NS, Storage),
-            events_storage => Storage
+        #{
+            namespace        => NS,
+            processor        => processor(ProcessorConfig),
+            tagging          => tags_options(NS, Storage),
+            machines         => machine_options(NS, Config),
+            events_storage   => add_bucket_postfix(<<"events">>, Storage)
         }
     ).
 
--spec tags_options(mg:ns(), mg_storage:storage()) ->
+-spec tags_options(mg:ns(), mg_storage:options()) ->
     mg_machine_tags:options().
 tags_options(NS, Storage) ->
     #{
-        namespace => NS,
-        storage   => Storage,
+        namespace => mg_utils:concatenate_namespaces(NS, <<"tags">>),
+        storage   => Storage, % по логике тут должен быть sub namespace, но его по историческим причинам нет
         logger    => ?logger
     }.
 
--spec events_machine_options_event_sink(mg_events_sink:options(), mg_events_machine:options()) ->
+-spec machine_options(mg:ns(), events_machines()) ->
+    mg_machine:options().
+machine_options(NS, #{retryings := Retryings, scheduled_tasks := STasks, storage := Storage}) ->
+    #{
+        namespace       => NS,
+        storage         => add_bucket_postfix(<<"machines">>, Storage),
+        logger          => ?logger,
+        retryings       => Retryings,
+        scheduled_tasks => STasks
+    }.
+
+-spec events_machine_options_event_sink(mg:id(), mg_events_sink:options(), mg_events_machine:options()) ->
     mg_events_machine:options().
-events_machine_options_event_sink(EventSinkOptions, Options = #{event_sink := EventSinkID}) ->
+events_machine_options_event_sink(undefined, _, Options) ->
+    Options;
+events_machine_options_event_sink(EventSinkID, EventSinkOptions, Options) ->
     Options#{
         event_sink => {EventSinkID, EventSinkOptions}
-    };
-events_machine_options_event_sink(_, Options) ->
-    Options.
+    }.
 
 -spec processor(processor()) ->
     mg_utils:mod_opts().
@@ -177,10 +193,11 @@ api_event_sink_options(Config) ->
 
 -spec event_sink_options(event_sink_ns()) ->
     mg_events_sink:options().
-event_sink_options(EventSinkNS) ->
+event_sink_options(EventSinkNS = #{storage := Storage}) ->
     EventSinkNS#{
-        namespace => <<"_event_sinks">>,
-        logger    => ?logger
+        namespace      => <<"_event_sinks">>,
+        logger         => ?logger,
+        events_storage => add_bucket_postfix(<<"events">>, Storage)
     }.
 
 -spec collect_event_sinks(config()) ->
@@ -196,3 +213,14 @@ collect_event_sinks(Config) ->
         ordsets:new(),
         proplists:get_value(namespaces, Config)
     )).
+
+-spec add_bucket_postfix(mg:ns(), mg_storage:options()) ->
+    mg_storage:options().
+add_bucket_postfix(_, Storage = mg_storage_memory) ->
+    Storage;
+add_bucket_postfix(_, Storage = {mg_storage_memory, _}) ->
+    Storage;
+add_bucket_postfix(SubNS, {mg_storage_pool, Options = #{worker := Worker}}) ->
+    {mg_storage_pool, Options#{worker := add_bucket_postfix(SubNS, Worker)}};
+add_bucket_postfix(SubNS, {mg_storage_riak, Options = #{bucket := Bucket}}) ->
+    {mg_storage_riak, Options#{bucket := mg_utils:concatenate_namespaces(Bucket, SubNS)}}.

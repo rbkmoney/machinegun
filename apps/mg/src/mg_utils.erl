@@ -18,9 +18,18 @@
 -export_type([gen_server_handle_info_ret/1]).
 -export_type([gen_server_code_change_ret/1]).
 -export_type([supervisor_ret            /0]).
--export([gen_reg_name2_ref/1]).
--export([gen_where        /1]).
--export([get_msg_queue_len/1]).
+-export([gen_reg_name_to_ref/1]).
+-export([gen_reg_name_to_pid/1]).
+-export([gen_ref_to_pid     /1]).
+-export([msg_queue_len      /1]).
+-export([check_overload     /2]).
+
+-export_type([supervisor_old_spec      /0]).
+-export_type([supervisor_old_flags     /0]).
+-export_type([supervisor_old_child_spec/0]).
+-export([supervisor_old_spec      /1]).
+-export([supervisor_old_flags     /1]).
+-export([supervisor_old_child_spec/1]).
 
 %% deadlines
 -export_type([deadline/0]).
@@ -56,6 +65,7 @@
 -export_type([genlib_retry_policy/0]).
 -export([genlib_retry_new/1]).
 
+-export([lists_compact/1]).
 -export([stop_wait_all/3]).
 
 -export([concatenate_namespaces/2]).
@@ -135,26 +145,73 @@
 .
 
 -spec
-gen_reg_name2_ref(gen_reg_name()) -> gen_ref().
-gen_reg_name2_ref({local, Name} ) -> Name;
-gen_reg_name2_ref(V={global, _} ) -> V;
-gen_reg_name2_ref(V={via, _, _} ) -> V. % Is this correct?
+gen_reg_name_to_ref(gen_reg_name()) -> gen_ref().
+gen_reg_name_to_ref({local, Name} ) -> Name;
+gen_reg_name_to_ref(V={global, _} ) -> V;
+gen_reg_name_to_ref(V={via, _, _} ) -> V. % Is this correct?
 
--spec gen_where(gen_reg_name()) ->
+-spec gen_reg_name_to_pid(gen_reg_name()) ->
     pid() | undefined.
-gen_where({global, Name}) ->
+gen_reg_name_to_pid({global, Name}) ->
     global:whereis_name(Name);
-gen_where({via, Module, Name}) ->
+gen_reg_name_to_pid({via, Module, Name}) ->
     Module:whereis_name(Name);
-gen_where({local, Name})  ->
+gen_reg_name_to_pid({local, Name})  ->
     erlang:whereis(Name).
 
--spec get_msg_queue_len(gen_reg_name()) ->
-    pos_integer() | undefined.
-get_msg_queue_len(Name) ->
-    Pid = exit_if_undefined(gen_where(Name), noproc),
+-spec gen_ref_to_pid(gen_ref()) ->
+    pid() | undefined.
+gen_ref_to_pid(Name) when is_atom(Name) ->
+    erlang:whereis(Name);
+gen_ref_to_pid({Name, Node}) when is_atom(Name) andalso is_atom(Node) ->
+    erlang:exit(not_implemented);
+gen_ref_to_pid({global, Name}) ->
+    global:whereis_name(Name);
+gen_ref_to_pid({via, Module, Name}) ->
+    Module:whereis_name(Name);
+gen_ref_to_pid(Pid) when is_pid(Pid) ->
+    Pid.
+
+-spec msg_queue_len(gen_ref()) ->
+    non_neg_integer() | undefined.
+msg_queue_len(Ref) ->
+    Pid = exit_if_undefined(gen_ref_to_pid(Ref), noproc),
     {message_queue_len, Len} = exit_if_undefined(erlang:process_info(Pid, message_queue_len), noproc),
     Len.
+
+-spec check_overload(gen_ref(), pos_integer()) ->
+    ok | no_return().
+check_overload(Ref, Limit) ->
+    case msg_queue_len(Ref) < Limit of
+        true  -> ok;
+        false -> exit(overload)
+    end.
+
+-type supervisor_old_spec()       :: {supervisor_old_flags(), supervisor_old_child_spec()}.
+-type supervisor_old_flags()      :: _TODO.
+-type supervisor_old_child_spec() :: _TODO.
+
+-spec supervisor_old_spec({supervisor:sup_flags(), [supervisor:child_spec()]}) ->
+    supervisor_old_spec().
+supervisor_old_spec({Flags, ChildSpecs}) ->
+    {supervisor_old_flags(Flags), lists:map(fun supervisor_old_child_spec/1, ChildSpecs)}.
+
+-spec supervisor_old_flags(supervisor:sup_flags()) ->
+    supervisor_old_flags().
+supervisor_old_flags(Flags = #{strategy := Strategy}) ->
+    {Strategy, maps:get(intensity, Flags, 1), maps:get(period, Flags, 5)}.
+
+-spec supervisor_old_child_spec(supervisor:child_spec()) ->
+    supervisor_old_child_spec().
+supervisor_old_child_spec(ChildSpec = #{id := ChildID, start := Start = {M, _, _}}) ->
+    {
+        ChildID,
+        Start,
+        maps:get(restart , ChildSpec, permanent),
+        maps:get(shutdown, ChildSpec, 5000     ),
+        maps:get(type    , ChildSpec, worker   ),
+        maps:get(modules , ChildSpec, [M]      )
+    }.
 
 %%
 %% deadlines
@@ -320,6 +377,17 @@ genlib_retry_new({timecap, Timeout, Policy}) ->
     genlib_retry:timecap(Timeout, genlib_retry_new(Policy));
 genlib_retry_new(BadPolicy) ->
     erlang:error(badarg, [BadPolicy]).
+
+-spec lists_compact(list(T)) ->
+    list(T).
+lists_compact(List) ->
+    lists:filter(
+        fun
+            (undefined) -> false;
+            (_        ) -> true
+        end,
+        List
+    ).
 
 -spec stop_wait_all([pid()], _Reason, timeout()) ->
     ok.
