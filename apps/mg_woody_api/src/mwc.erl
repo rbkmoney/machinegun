@@ -99,7 +99,7 @@ get_events_machine(Namespace, Ref, HRange) ->
 %%
 
 -spec em_opts(scalar()) ->
-    mg_machine:options().
+    mg_events_machine:options().
 em_opts(Namespace) ->
     mg_woody_api:events_machine_options(
         ns(Namespace),
