@@ -144,19 +144,20 @@ events_machine_options(NS, Config = #{processor := ProcessorConfig, storage := S
         #{
             namespace        => NS,
             processor        => processor(ProcessorConfig),
-            tagging          => tags_options(NS, Storage),
+            tagging          => tags_options(NS, Config),
             machines         => machine_options(NS, Config),
             events_storage   => add_bucket_postfix(<<"events">>, Storage)
         }
     ).
 
--spec tags_options(mg:ns(), mg_storage:options()) ->
+-spec tags_options(mg:ns(), events_machines()) ->
     mg_machine_tags:options().
-tags_options(NS, Storage) ->
+tags_options(NS, #{retryings := Retryings, storage := Storage}) ->
     #{
         namespace => mg_utils:concatenate_namespaces(NS, <<"tags">>),
         storage   => Storage, % по логике тут должен быть sub namespace, но его по историческим причинам нет
-        logger    => ?logger
+        logger    => ?logger,
+        retryings => Retryings
     }.
 
 -spec machine_options(mg:ns(), events_machines()) ->

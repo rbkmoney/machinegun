@@ -5,6 +5,7 @@
 -export_type([meta   /0]).
 -export_type([level  /0]).
 -export([log/1]).
+-export([log/4]).
 -export([woody_rpc_id_to_meta/1]).
 
 -behaviour(mg_machine_logger).
@@ -22,6 +23,11 @@ log({Level, Msg, Meta}) ->
     {MsgFormat, MsgArgs} = expand_msg(Msg),
     ok = lager:log(Level, [{pid, erlang:self()} | Meta], MsgFormat, MsgArgs).
 
+-spec log(mg:ns(), mg_events_machine:ref(), woody_context:ctx(), log_msg()) ->
+    ok.
+log(NS, ID, WoodyContext, LogMsg) ->
+    log(append_machine_id(NS, ID, add_woody_context(WoodyContext, LogMsg))).
+
 -spec expand_msg(msg()) ->
     expanded_msg().
 expand_msg(Msg={_, _}) ->
@@ -37,21 +43,19 @@ woody_rpc_id_to_meta(RPCID) ->
 -spec handle_machine_logging_event(_, mg_machine_logger:event()) ->
     ok.
 handle_machine_logging_event(_, {NS, ID, ReqCtx, SubEvent}) ->
-    ok = log(append_machine_id(NS, ID, add_woody_context(ReqCtx, format_machine_log_event(SubEvent)))).
+    ok = log(NS, {id, ID}, mg_woody_api_utils:opaque_to_woody_context(ReqCtx), format_machine_log_event(SubEvent)).
 
--spec add_woody_context(mg:request_context(), log_msg()) ->
+-spec add_woody_context(woody_context:ctx(), log_msg()) ->
     log_msg().
-add_woody_context(null, Msg) ->
-    % в старых данных конекста ещё нет
-    Msg;
-add_woody_context(ReqCtx, {Level, Msg, Meta}) ->
-    #{rpc_id := RPCID} = mg_woody_api_utils:opaque_to_woody_context(ReqCtx),
+add_woody_context(#{rpc_id := RPCID}, {Level, Msg, Meta}) ->
     {Level, Msg, woody_rpc_id_to_meta(RPCID) ++ Meta}.
 
--spec append_machine_id(mg:ns(), mg:id(), log_msg()) ->
+-spec append_machine_id(mg:ns(), mg_events_machine:ref(), log_msg()) ->
     log_msg().
-append_machine_id(NS, ID, {Level, Msg, Meta}) ->
-    {Level, Msg, [{machine_ns, NS}, {machine_id, ID} | Meta]}.
+append_machine_id(NS, {id, ID}, {Level, Msg, Meta}) ->
+    {Level, Msg, [{machine_ns, NS}, {machine_id, ID} | Meta]};
+append_machine_id(NS, {tag, Tag}, {Level, Msg, Meta}) ->
+    {Level, Msg, [{machine_ns, NS}, {machine_tag, Tag} | Meta]}.
 
 -spec format_machine_log_event(mg_machine_logger:sub_event()) ->
     log_msg().

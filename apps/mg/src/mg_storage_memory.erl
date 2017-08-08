@@ -25,7 +25,9 @@ start_link(Options, RegName) ->
 %% mg_storage callbacks
 %%
 -type context      () :: non_neg_integer() | undefined.
--type options      () :: undefined.
+-type options      () :: undefined | #{
+    random_transient_fail => float()
+}.
 -type continuation () :: binary() | undefined.
 -type self_ref     () :: mg_utils:gen_ref().
 
@@ -42,7 +44,8 @@ child_spec(Options, ChildID, RegName) ->
 
 -spec do_request(options(), self_ref(), mg_storage:request()) ->
     mg_storage:response().
-do_request(_, SelfRef, Req) ->
+do_request(Options, SelfRef, Req) ->
+    ok = random_fail(Options),
     gen_server:call(SelfRef, Req).
 
 %%
@@ -287,6 +290,18 @@ do_cleanup_index(Key, Index) ->
         [],
         Index
     ).
+
+-spec random_fail(options()) ->
+    ok | no_return().
+random_fail(undefined) ->
+    ok;
+random_fail(#{random_transient_fail := Prob}) ->
+    case rand:uniform() < Prob of
+        true ->
+            erlang:throw({transient, {storage_unavailable, random_fail}});
+        false ->
+            ok
+    end.
 
 %% utils
 -spec start_from_elem(any(), list()) ->
