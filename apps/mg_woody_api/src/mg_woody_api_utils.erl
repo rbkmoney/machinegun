@@ -23,7 +23,10 @@ handle_safe_with_retry_(NS, Ref, WoodyContext, F, Retry) ->
     try
         F()
     catch throw:Error ->
-        ok = mg_woody_api_logger:log(NS, Ref, WoodyContext, {warning, {"request handling error: ~p", [Error]}, []}),
+        ok = mg_woody_api_logger:log(
+                NS, Ref, WoodyContext,
+                {warning, {"request handling error: ~p ~p", [Error, erlang:get_stacktrace()]}, []}
+            ),
         case handle_error(Error, genlib_retry:next_step(Retry))  of
             {rethrow, NewError} ->
                 erlang:throw(NewError);
