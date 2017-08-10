@@ -34,7 +34,7 @@
     processor       := processor(),
     storage         := mg_storage:options(),
     event_sink      => mg:id(),
-    retryings       := mg_machine:retrying_opt(),
+    retries         := mg_machine:retrying_opt(),
     scheduled_tasks := mg_machine:scheduled_tasks_opt()
 }.
 -type event_sink_ns() :: #{
@@ -152,22 +152,22 @@ events_machine_options(NS, Config = #{processor := ProcessorConfig, storage := S
 
 -spec tags_options(mg:ns(), events_machines()) ->
     mg_machine_tags:options().
-tags_options(NS, #{retryings := Retryings, storage := Storage}) ->
+tags_options(NS, #{retries := Retries, storage := Storage}) ->
     #{
         namespace => mg_utils:concatenate_namespaces(NS, <<"tags">>),
         storage   => Storage, % по логике тут должен быть sub namespace, но его по историческим причинам нет
         logger    => ?logger,
-        retryings => Retryings
+        retries   => Retries
     }.
 
 -spec machine_options(mg:ns(), events_machines()) ->
     mg_machine:options().
-machine_options(NS, #{retryings := Retryings, scheduled_tasks := STasks, storage := Storage}) ->
+machine_options(NS, #{retries := Retries, scheduled_tasks := STasks, storage := Storage}) ->
     #{
         namespace       => NS,
         storage         => add_bucket_postfix(<<"machines">>, Storage),
         logger          => ?logger,
-        retryings       => Retryings,
+        retries         => Retries,
         scheduled_tasks => STasks
     }.
 

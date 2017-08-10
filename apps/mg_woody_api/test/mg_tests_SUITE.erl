@@ -227,7 +227,7 @@ mg_woody_api_config(C) ->
                     timers   => #{ interval => 100, limit => 10 },
                     overseer => #{ interval => 100, limit => 10 }
                 },
-                retryings => #{
+                retries => #{
                     % вообще этого тут быть не должно,
                     % но ввиду того, что events_machine — это процессор,
                     % то проблемы с events_storage приводят к тому,
@@ -454,7 +454,7 @@ config_with_multiple_event_sinks(_C) ->
                     timers   => #{ interval => 100, limit => 10 },
                     overseer => #{ interval => 100, limit => 10 }
                 },
-                retryings => #{},
+                retries => #{},
                 event_sink => <<"SingleES">>
             },
             <<"2">> => #{
@@ -467,7 +467,7 @@ config_with_multiple_event_sinks(_C) ->
                     timers   => #{ interval => 100, limit => 10 },
                     overseer => #{ interval => 100, limit => 10 }
                 },
-                retryings => #{},
+                retries => #{},
                 event_sink => <<"SingleES">>
             }
         }},

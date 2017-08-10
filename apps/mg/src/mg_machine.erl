@@ -98,7 +98,7 @@
     storage         => mg_storage:options(),
     processor       => mg_utils:mod_opts(),
     logger          => mg_machine_logger:handler(),
-    retryings       => retrying_opt(),
+    retries         => retrying_opt(),
     scheduled_tasks => scheduled_tasks_opt()
 }.
 
@@ -715,7 +715,7 @@ remove_from_storage(ReqCtx, State = #{id := ID, options := Options, storage_cont
 -spec retry_strategy(storage | processor, options()) ->
     genlib_retry:strategy().
 retry_strategy(Subj, Options) ->
-    mg_utils:genlib_retry_new(maps:get(Subj, maps:get(retryings, Options, #{}), ?DEFAULT_RETRY_POLICY)).
+    mg_utils:genlib_retry_new(maps:get(Subj, maps:get(retries, Options, #{}), ?DEFAULT_RETRY_POLICY)).
 
 %%
 

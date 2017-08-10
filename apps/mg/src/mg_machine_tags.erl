@@ -15,7 +15,7 @@
     namespace => mg:ns(),
     storage   => mg_storage:options(),
     logger    => mg_machine_logger:handler(),
-    retryings => mg_machine:retrying_opt()
+    retries   => mg_machine:retrying_opt()
 }.
 -type tag() :: binary().
 
@@ -64,13 +64,13 @@ process_machine(_, _, {call, {add_tag, ID}}, _, _, PackedState) ->
 %%
 -spec machine_options(options()) ->
     mg_machine:options().
-machine_options(#{namespace:=Namespace, storage:=Storage, logger := Logger, retryings := Retryings}) ->
+machine_options(#{namespace:=Namespace, storage:=Storage, logger := Logger, retries := Retries}) ->
     #{
         namespace => Namespace,
         processor => ?MODULE,
         storage   => Storage,
         logger    => Logger,
-        retryings => Retryings
+        retries   => Retries
     }.
 
 %%
