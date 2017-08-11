@@ -11,6 +11,7 @@
 -export([tag           /1]).
 -export([idempotent_tag/1]).
 -export([double_tag    /1]).
+-export([replace       /1]).
 -export([resolve       /1]).
 
 %% logger
@@ -38,6 +39,7 @@ groups() ->
             tag,
             idempotent_tag,
             double_tag,
+            replace,
             resolve
         ]}
     ].
@@ -72,7 +74,7 @@ end_per_suite(C) ->
 -spec tag(config()) ->
     _.
 tag(_C) ->
-    ok = mg_machine_tags:add_tag(automaton_options(), ?TAG, ?ID, null, mg_utils:default_deadline()).
+    ok = mg_machine_tags:add(automaton_options(), ?TAG, ?ID, null, mg_utils:default_deadline()).
 
 -spec idempotent_tag(config()) ->
     _.
@@ -83,12 +85,17 @@ idempotent_tag(C) ->
     _.
 double_tag(_C) ->
     {already_exists, ?ID} =
-        mg_machine_tags:add_tag(automaton_options(), ?TAG, ?OTHER_ID, null, mg_utils:default_deadline()).
+        mg_machine_tags:add(automaton_options(), ?TAG, ?OTHER_ID, null, mg_utils:default_deadline()).
+
+-spec replace(config()) ->
+    _.
+replace(_C) ->
+    ok = mg_machine_tags:replace(automaton_options(), ?TAG, ?ID, null, mg_utils:default_deadline()).
 
 -spec resolve(config()) ->
     _.
 resolve(_C) ->
-    ?ID = mg_machine_tags:resolve_tag(automaton_options(), ?TAG).
+    ?ID = mg_machine_tags:resolve(automaton_options(), ?TAG).
 
 %%
 %% utils

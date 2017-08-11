@@ -70,8 +70,9 @@
 
 %% actions
 -type complex_action  () :: #{
-    timer => timer_action() | undefined,
-    tag   => tag_action  () | undefined
+    timer  => timer_action() | undefined,
+    tag    => tag_action  () | undefined,
+    remove => remove         | undefined
 }.
 -type tag_action  () :: mg_machine_tags:tag().
 -type timer_action() ::
@@ -181,7 +182,7 @@ remove(Options, ID, ReqCtx, Deadline) ->
 ref2id(_, {id, ID}) ->
     ID;
 ref2id(Options, {tag, Tag}) ->
-    case mg_machine_tags:resolve_tag(tags_machine_options(Options), Tag) of
+    case mg_machine_tags:resolve(tags_machine_options(Options), Tag) of
         undefined -> throw(machine_not_found);
         ID        -> ID
     end.
@@ -198,6 +199,7 @@ ref2id(Options, {tag, Tag}) ->
 -type delayed_actions() :: #{
     add_tag           => mg_machine_tags:tag() | undefined,
     new_timer         => int_timer() | undefined | unchanged,
+    remove            => remove | undefined,
     add_events        => [mg_events:event()],
     new_aux_state     => aux_state(),
     new_events_range  => mg_events:events_range()
@@ -230,10 +232,6 @@ process_machine(Options, ID, Impact, PCtx, ReqCtx, PackedState) ->
 -spec process_machine_(options(), mg:id(), mg_machine:processor_impact() | {'timeout', _}, _, ReqCtx, state()) ->
     _TODO
 when ReqCtx :: request_context().
-%% слой совместимости с машинами у которых не проставлен timer
-%% нужно будет убрать
-process_machine_(Options, ID, Subj=timeout, PCtx, ReqCtx, State=#{timer := undefined}) ->
-    process_machine_(Options, ID, {Subj, {undefined, {undefined, undefined, forward}}}, PCtx, ReqCtx, State);
 process_machine_(Options, ID, Subj=timeout, PCtx, ReqCtx, State=#{timer := {_, _, _, HRange}}) ->
     NewState = State#{timer := undefined},
     process_machine_(Options, ID, {Subj, {undefined, HRange}}, PCtx, ReqCtx, NewState);
@@ -260,6 +258,7 @@ process_machine_(Options, ID, continuation, PCtx, ReqCtx, State = #{delayed_acti
     %  - эвенты добавляются в event sink
     %  - обновится event_range
     %  - отсылается ответ
+    %  - если есть удаление, то удаляется
     % надо быть аккуратнее, мест чтобы накосячить тут вагон и маленькая тележка  :-\
     %
     % действия должны обязательно произойти в конце концов (таймаута нет), либо машина должна упасть
@@ -275,20 +274,34 @@ process_machine_(Options, ID, continuation, PCtx, ReqCtx, State = #{delayed_acti
             undefined ->
                 noreply
         end,
-    NewState = apply_delayed_actions_to_state(DelayedActions, State),
-    {ReplyAction, state_to_flow_action(NewState), NewState}.
+    {FlowAction, NewState} =
+        case apply_delayed_actions_to_state(DelayedActions, State) of
+            remove ->
+                {remove, State};
+            NewState_ ->
+                {state_to_flow_action(NewState_), NewState_}
+        end,
+    {ReplyAction, FlowAction, NewState}.
 
 -spec add_tag(options(), mg:id(), request_context(), undefined | mg_machine_tags:tag()) ->
     ok.
 add_tag(_, _, _, undefined) ->
     ok;
 add_tag(Options, ID, ReqCtx, Tag) ->
-    case mg_machine_tags:add_tag(tags_machine_options(Options), Tag, ID, ReqCtx, mg_utils:default_deadline()) of
+    case mg_machine_tags:add(tags_machine_options(Options), Tag, ID, ReqCtx, mg_utils:default_deadline()) of
         ok ->
             ok;
         {already_exists, OtherMachineID} ->
-            % была договорённость, что при двойном тэгировании роняем машину
-            exit({double_tagging, OtherMachineID})
+            case mg_machine:is_exist(machine_options(Options), OtherMachineID) of
+                true ->
+                    % была договорённость, что при двойном тэгировании роняем машину
+                    exit({double_tagging, OtherMachineID});
+                false ->
+                    % это забытый после удаления тэг
+                    ok = mg_machine_tags:replace(
+                            tags_machine_options(Options), Tag, ID, ReqCtx, mg_utils:default_deadline()
+                        )
+            end
     end.
 
 -spec store_events(options(), mg:id(), request_context(), [mg_events:event()]) ->
@@ -329,7 +342,9 @@ state_to_flow_action(#{timer := {Timestamp, ReqCtx, HandlingTimeout, _}}) ->
     {wait, Timestamp, ReqCtx, HandlingTimeout}.
 
 -spec apply_delayed_actions_to_state(delayed_actions(), state()) ->
-    state().
+    state() | remove.
+apply_delayed_actions_to_state(#{remove := remove}, _) ->
+    remove;
 apply_delayed_actions_to_state(DA = #{new_aux_state := NewAuxState, new_events_range := NewEventsRange}, State) ->
     apply_delayed_timer_actions_to_state(
         DA,
@@ -383,7 +398,8 @@ handle_state_change({AuxState, EventsBodies}, EventsRange, DelayedActions) ->
 handle_complex_action(ComplexAction, DelayedActions, ReqCtx) ->
     DelayedActions#{
         add_tag   => maps:get(tag, ComplexAction, undefined),
-        new_timer => get_timer_action(maps:get(timer, ComplexAction, undefined), ReqCtx)
+        new_timer => get_timer_action(maps:get(timer, ComplexAction, undefined), ReqCtx),
+        remove    => maps:get(remove, ComplexAction, undefined)
     }.
 
 -spec get_timer_action(undefined | timer_action(), request_context()) ->
@@ -546,11 +562,13 @@ delayed_actions_to_opaque(DelayedActions) ->
         new_timer        := Timer,
         add_events       := Events,
         new_aux_state    := AuxState,
-        new_events_range := EventsRange
+        new_events_range := EventsRange,
+        remove           := Remove
     } = DelayedActions,
-    [1,
-        mg_events:maybe_to_opaque(Tag, fun mg_events:identity/1),
-        delayed_timer_actions_to_opaque(Timer),
+    [2,
+        mg_events:maybe_to_opaque(Tag   , fun mg_events:identity             /1),
+        mg_events:maybe_to_opaque(Timer , fun delayed_timer_actions_to_opaque/1),
+        mg_events:maybe_to_opaque(Remove, fun remove_to_opaque               /1),
         mg_events:events_to_opaques(Events),
         AuxState,
         mg_events:events_range_to_opaque(EventsRange)
@@ -562,17 +580,20 @@ opaque_to_delayed_actions(null) ->
     undefined;
 opaque_to_delayed_actions([1, Tag, Timer, Events, AuxState, EventsRange]) ->
     #{
-        add_tag          => mg_events:maybe_from_opaque(Tag, fun mg_events:identity/1),
-        new_timer        => opaque_to_delayed_timer_actions(Timer),
+        add_tag          => mg_events:maybe_from_opaque(Tag  , fun mg_events:identity             /1),
+        new_timer        => mg_events:maybe_from_opaque(Timer, fun opaque_to_delayed_timer_actions/1),
+        remove           => undefined,
         add_events       => mg_events:opaques_to_events(Events),
         new_aux_state    => AuxState,
         new_events_range => mg_events:opaque_to_events_range(EventsRange)
+    };
+opaque_to_delayed_actions([2, Tag, Timer, Remove, Events, AuxState, EventsRange]) ->
+    (opaque_to_delayed_actions([1, Tag, Timer, Events, AuxState, EventsRange]))#{
+        remove := mg_events:maybe_from_opaque(Remove, fun opaque_to_remove/1)
     }.
 
--spec delayed_timer_actions_to_opaque(genlib_time:ts() | undefined | unchanged) ->
+-spec delayed_timer_actions_to_opaque(genlib_time:ts() | unchanged) ->
     mg_storage:opaque().
-delayed_timer_actions_to_opaque(undefined) ->
-    null;
 delayed_timer_actions_to_opaque(unchanged) ->
     <<"unchanged">>;
 delayed_timer_actions_to_opaque(Timer) ->
@@ -580,12 +601,30 @@ delayed_timer_actions_to_opaque(Timer) ->
 
 -spec opaque_to_delayed_timer_actions(mg_storage:opaque()) ->
     genlib_time:ts() | undefined | unchanged.
-opaque_to_delayed_timer_actions(null) ->
-    undefined;
 opaque_to_delayed_timer_actions(<<"unchanged">>) ->
     unchanged;
 opaque_to_delayed_timer_actions(Timer) ->
     opaque_to_int_timer(Timer).
+
+-spec remove_to_opaque(remove) ->
+    mg_storage:opaque().
+remove_to_opaque(Value) ->
+    enum_to_int(Value, [remove]).
+
+-spec opaque_to_remove(mg_storage:opaque()) ->
+    remove.
+opaque_to_remove(Value) ->
+    int_to_enum(Value, [remove]).
+
+-spec enum_to_int(T, [T]) ->
+    pos_integer().
+enum_to_int(Value, Enum) ->
+    lists_at(Value, Enum).
+
+-spec int_to_enum(pos_integer(), [T]) ->
+    T.
+int_to_enum(Value, Enum) ->
+    lists:nth(Value, Enum).
 
 -spec int_timer_to_opaque(int_timer()) ->
     mg_storage:opaque().
@@ -596,3 +635,19 @@ int_timer_to_opaque({Timestamp, ReqCtx, HandlingTimeout, HRange}) ->
     int_timer().
 opaque_to_int_timer([1, Timestamp, ReqCtx, HandlingTimeout, HRange]) ->
     {Timestamp, ReqCtx, HandlingTimeout, mg_events:opaque_to_history_range(HRange)}.
+
+%%
+
+-spec lists_at(E, [E]) ->
+    pos_integer() | undefined.
+lists_at(E, L) ->
+    lists_at(E, L, 1).
+
+-spec lists_at(E, [E], pos_integer()) ->
+    pos_integer() | undefined.
+lists_at(_, [], _) ->
+    undefined;
+lists_at(E, [H|_], N) when E =:= H ->
+    N;
+lists_at(E, [_|T], N) ->
+    lists_at(E, T, N + 1).

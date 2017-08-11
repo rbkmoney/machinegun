@@ -65,6 +65,7 @@
 -export([fail                /5]).
 -export([get                 /2]).
 -export([get_status          /2]).
+-export([is_exist            /2]).
 -export([search              /2]).
 -export([reply               /2]).
 -export([call_with_lazy_start/6]).
@@ -218,14 +219,19 @@ fail(Options, ID, Exception, ReqCtx, Deadline) ->
 -spec get(options(), mg:id()) ->
     machine_state() | throws().
 get(Options, ID) ->
-    #{state := State} = mg_utils:throw_if_undefined(element(2, get_storage_machine(Options, ID)), machine_not_found),
+    {_, #{state := State}} = mg_utils:throw_if_undefined(get_storage_machine(Options, ID), machine_not_found),
     State.
 
 -spec get_status(options(), mg:id()) ->
     machine_status() | throws().
 get_status(Options, ID) ->
-    #{status := Status} = mg_utils:throw_if_undefined(element(2, get_storage_machine(Options, ID)), machine_not_found),
+    {_, #{status := Status}} = mg_utils:throw_if_undefined(get_storage_machine(Options, ID), machine_not_found),
     Status.
+
+-spec is_exist(options(), mg:id()) ->
+    boolean() | throws().
+is_exist(Options, ID) ->
+    get_storage_machine(Options, ID) =/= undefined.
 
 -spec search(options(), search_query(), mg_storage:index_limit()) ->
     {[{_TODO, mg:id()}] | [mg:id()], mg_storage:continuation()} | throws().
@@ -407,7 +413,12 @@ call_(Options, ID, Call, ReqCtx, Deadline) ->
     {ok, state()}.
 handle_load(ID, Options, ReqCtx) ->
     try
-        {StorageContext, StorageMachine} = get_storage_machine(Options, ID),
+        {StorageContext, StorageMachine} =
+            case get_storage_machine(Options, ID) of
+                undefined -> {undefined, undefined};
+                V         -> V
+            end,
+
         State =
             #{
                 id              => ID,
@@ -498,7 +509,7 @@ new_storage_machine() ->
 get_storage_machine(Options, ID) ->
     case mg_storage:get(storage_options(Options), storage_ref(Options), ID) of
         undefined ->
-            {undefined, undefined};
+            undefined;
         {Context, PackedMachine} ->
             {Context, opaque_to_storage_machine(PackedMachine)}
     end.
