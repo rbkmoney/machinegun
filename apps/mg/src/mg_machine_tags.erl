@@ -15,7 +15,7 @@
     namespace => mg:ns(),
     storage   => mg_storage:options(),
     logger    => mg_machine_logger:handler(),
-    retries   => mg_machine:retrying_opt()
+    retries   => mg_machine:retry_opt()
 }.
 -type tag() :: binary().
 

@@ -9,23 +9,26 @@
 %%
 %% API
 %%
--spec handle_safe_with_retry(mg:ns(), mg_events_machine:ref(), _, fun(() -> R), mg_utils:deadline()) ->
+-type ctx() :: mg:request_context().
+-type logger() :: mg_machine_logger:handler().
+
+-spec handle_safe_with_retry(mg_events_machine:ref(), ctx(), fun(() -> R), mg_utils:deadline(), logger()) ->
     R.
-handle_safe_with_retry(NS, Ref, WoodyContext, F, Deadline) ->
+handle_safe_with_retry(Ref, ReqCtx, F, Deadline, Logger) ->
     handle_safe_with_retry_(
-        NS, Ref, WoodyContext, F,
-        genlib_retry:exponential({max_total_timeout, mg_utils:deadline_to_timeout(Deadline)}, 2, 10)
+        Ref, ReqCtx, F,
+        genlib_retry:exponential({max_total_timeout, mg_utils:deadline_to_timeout(Deadline)}, 2, 10),
+        Logger
     ).
 
--spec handle_safe_with_retry_(mg:ns(), mg_events_machine:ref(), _, fun(() -> R), genlib_retry:strategy()) ->
+-spec handle_safe_with_retry_(mg_events_machine:ref(), ctx(), fun(() -> R), genlib_retry:strategy(), logger()) ->
     R.
-handle_safe_with_retry_(NS, Ref, WoodyContext, F, Retry) ->
+handle_safe_with_retry_(Ref, ReqCtx, F, Retry, Logger) ->
     try
         F()
     catch throw:Error ->
-        ok = mg_woody_api_logger:log(
-                NS, Ref, WoodyContext,
-                {warning, {"request handling error: ~p ~p", [Error, erlang:get_stacktrace()]}, []}
+        ok = mg_machine_logger:handle_event(
+                Logger, {request_event, Ref, ReqCtx, {request_failed, {throw, Error, erlang:get_stacktrace()}}}
             ),
         case handle_error(Error, genlib_retry:next_step(Retry))  of
             {rethrow, NewError} ->
@@ -34,9 +37,11 @@ handle_safe_with_retry_(NS, Ref, WoodyContext, F, Retry) ->
                 BinaryDescription = erlang:list_to_binary(io_lib:format("~9999p", [Description])),
                 woody_error:raise(system, {internal, WoodyErrorClass, BinaryDescription});
             {retry_in, Timeout, NewRetry} ->
-                ok = mg_woody_api_logger:log(NS, Ref, WoodyContext, {warning, {"retrying in ~p msec", [Timeout]}, []}),
+                ok = mg_machine_logger:handle_event(
+                        Logger, {request_event, Ref, ReqCtx, {retrying, Timeout}}
+                    ),
                 ok = timer:sleep(Timeout),
-                handle_safe_with_retry_(NS, Ref, WoodyContext, F, NewRetry)
+                handle_safe_with_retry_(Ref, ReqCtx, F, NewRetry, Logger)
         end
     end.
 

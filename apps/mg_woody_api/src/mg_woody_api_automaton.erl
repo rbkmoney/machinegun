@@ -29,59 +29,48 @@ handler(Options) ->
 
 handle_function('Start', [NS, ID_, Args], WoodyContext, Options) ->
     ID = unpack(id, ID_),
+    ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
     Deadline = mg_utils:default_deadline(),
     ok = mg_woody_api_utils:handle_safe_with_retry(
-            NS, {id, ID}, WoodyContext,
+            {id, ID}, ReqCtx,
             fun() ->
                 mg_events_machine:start(
-                    get_ns_options(NS, Options),
-                    ID,
-                    unpack(args, Args),
-                    mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
-                    Deadline
+                    get_ns_options(NS, Options), ID, unpack(args, Args), ReqCtx, Deadline
                 )
             end,
-            Deadline
+            Deadline, logger(NS, Options)
         ),
     {ok, ok};
 
 handle_function('Repair', [MachineDesc, Args], WoodyContext, Options) ->
     Deadline = mg_utils:default_deadline(),
+    ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
     {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
     ok = mg_woody_api_utils:handle_safe_with_retry(
-            NS, Ref, WoodyContext,
+            Ref, ReqCtx,
             fun() ->
                 mg_events_machine:repair(
-                    get_ns_options(NS, Options),
-                    Ref,
-                    unpack(args, Args),
-                    Range,
-                    mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
-                    Deadline
+                    get_ns_options(NS, Options), Ref, unpack(args, Args), Range, ReqCtx, Deadline
                 )
             end,
-            Deadline
+            Deadline, logger(NS, Options)
         ),
     {ok, ok};
 
 handle_function('Call', [MachineDesc, Args], WoodyContext, Options) ->
     Deadline = mg_utils:default_deadline(),
+    ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
     {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
     Response =
         mg_woody_api_utils:handle_safe_with_retry(
-            NS, Ref, WoodyContext,
+            Ref, ReqCtx,
             % блин, как же в эрланге не хватает каррирования... :-\
             fun() ->
                 mg_events_machine:call(
-                    get_ns_options(NS, Options),
-                    Ref,
-                    unpack(args, Args),
-                    Range,
-                    mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
-                    Deadline
+                    get_ns_options(NS, Options), Ref, unpack(args, Args), Range, ReqCtx, Deadline
                 )
             end,
-            Deadline
+            Deadline, logger(NS, Options)
         ),
     {ok, pack(call_response, Response)};
 
@@ -90,32 +79,28 @@ handle_function('GetMachine', [MachineDesc], WoodyContext, Options) ->
     {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
     History =
         mg_woody_api_utils:handle_safe_with_retry(
-            NS, Ref, WoodyContext,
+            Ref, mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
             fun() ->
                 mg_events_machine:get_machine(
-                    get_ns_options(NS, Options),
-                    Ref,
-                    Range
+                    get_ns_options(NS, Options), Ref, Range
                 )
             end,
-            Deadline
+            Deadline, logger(NS, Options)
         ),
     {ok, pack(machine, History)};
 
 handle_function('Remove', [NS, ID_], WoodyContext, Options) ->
     ID = unpack(id, ID_),
     Deadline = mg_utils:default_deadline(),
+    ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
     ok = mg_woody_api_utils:handle_safe_with_retry(
-            NS, ID, WoodyContext,
+            ID, ReqCtx,
             fun() ->
                 mg_events_machine:remove(
-                    get_ns_options(NS, Options),
-                    ID,
-                    mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
-                    Deadline
+                    get_ns_options(NS, Options), ID, ReqCtx, Deadline
                 )
             end,
-            Deadline
+            Deadline, logger(NS, Options)
         ),
     {ok, ok}.
 
@@ -130,4 +115,12 @@ get_ns_options(Namespace, Options) ->
     catch
         error:{badkey, Namespace} ->
             throw(namespace_not_found)
+    end.
+
+-spec logger(mg:ns(), options()) ->
+    mg_machine_logger:handler().
+logger(NS, Options) ->
+    case maps:get(NS, Options, undefined) of
+        undefined                          -> undefined;
+        #{machines := #{logger := Logger}} -> Logger
     end.

@@ -34,7 +34,7 @@
     processor       := processor(),
     storage         := mg_storage:options(),
     event_sink      => mg:id(),
-    retries         := mg_machine:retrying_opt(),
+    retries         := mg_machine:retry_opt(),
     scheduled_tasks := mg_machine:scheduled_tasks_opt()
 }.
 -type event_sink_ns() :: #{
@@ -83,8 +83,6 @@ stop(_State) ->
 %%
 %% local
 %%
--define(logger, mg_woody_api_logger).
-
 -spec events_machines_child_specs(config()) ->
     [supervisor:child_spec()].
 events_machines_child_specs(Config) ->
@@ -156,7 +154,7 @@ tags_options(NS, #{retries := Retries, storage := Storage}) ->
     #{
         namespace => mg_utils:concatenate_namespaces(NS, <<"tags">>),
         storage   => Storage, % по логике тут должен быть sub namespace, но его по историческим причинам нет
-        logger    => ?logger,
+        logger    => logger({machine_tags, NS}),
         retries   => Retries
     }.
 
@@ -166,7 +164,7 @@ machine_options(NS, #{retries := Retries, scheduled_tasks := STasks, storage := 
     #{
         namespace       => NS,
         storage         => add_bucket_postfix(<<"machines">>, Storage),
-        logger          => ?logger,
+        logger          => logger({machine, NS}),
         retries         => Retries,
         scheduled_tasks => STasks
     }.
@@ -197,7 +195,7 @@ api_event_sink_options(Config) ->
 event_sink_options(EventSinkNS = #{storage := Storage}) ->
     EventSinkNS#{
         namespace      => <<"_event_sinks">>,
-        logger         => ?logger,
+        logger         => logger(event_sink),
         events_storage => add_bucket_postfix(<<"events">>, Storage)
     }.
 
@@ -225,3 +223,8 @@ add_bucket_postfix(SubNS, {mg_storage_pool, Options = #{worker := Worker}}) ->
     {mg_storage_pool, Options#{worker := add_bucket_postfix(SubNS, Worker)}};
 add_bucket_postfix(SubNS, {mg_storage_riak, Options = #{bucket := Bucket}}) ->
     {mg_storage_riak, Options#{bucket := mg_utils:concatenate_namespaces(Bucket, SubNS)}}.
+
+-spec logger(mg_woody_api_logger:subj()) ->
+    mg_machine_logger:handler().
+logger(Subj) ->
+    {mg_woody_api_logger, Subj}.

@@ -164,7 +164,12 @@ init_per_group(C) ->
     %% TODO сделать нормальную генерацию урлов
     Apps =
         genlib_app:start_application_with(lager, [
-            {handlers, [{lager_common_test_backend, info}]},
+            {handlers, [
+                {lager_common_test_backend, [
+                    info,
+                    {lager_default_formatter, [time, " ", severity, " ", metadata, " ", message]}
+                ]}
+            ]},
             {async_threshold, undefined}
         ])
         ++
