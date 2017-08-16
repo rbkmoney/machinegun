@@ -47,11 +47,12 @@ handle_safe_with_retry_(Ref, ReqCtx, F, Retry, Logger) ->
 
 -spec handle_error(mg_machine:thrown_error() | namespace_not_found, {wait, _, _} | finish) ->
     {rethrow, _} | {woody_error, {woody_error:class(), _Details}} | {retry_in, pos_integer(), genlib_retry:strategy()}.
-handle_error(machine_not_found    , _) -> {rethrow, #'MachineNotFound'     {}};
-handle_error(machine_already_exist, _) -> {rethrow, #'MachineAlreadyExists'{}};
-handle_error(machine_failed       , _) -> {rethrow, #'MachineFailed'       {}};
-handle_error(namespace_not_found  , _) -> {rethrow, #'NamespaceNotFound'   {}};
-handle_error(event_sink_not_found , _) -> {rethrow, #'EventSinkNotFound'   {}};
+handle_error(machine_not_found      , _) -> {rethrow, #'MachineNotFound'      {}};
+handle_error(machine_already_exist  , _) -> {rethrow, #'MachineAlreadyExists' {}};
+handle_error(machine_failed         , _) -> {rethrow, #'MachineFailed'        {}};
+handle_error(machine_already_working, _) -> {rethrow, #'MachineAlreadyWorking'{}};
+handle_error(namespace_not_found    , _) -> {rethrow, #'NamespaceNotFound'    {}};
+handle_error(event_sink_not_found   , _) -> {rethrow, #'EventSinkNotFound'    {}};
 
 % может Reason не прокидывать дальше?
 % TODO logs

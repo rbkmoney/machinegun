@@ -83,7 +83,6 @@ pack(int_timer, {Timestamp, _, _, _}) ->
 %% actions
 pack(complex_action, ComplexAction) ->
     #'ComplexAction'{
-        set_timer = undefined,
         timer  = pack(timer_action , maps:get(timer , ComplexAction, undefined)),
         tag    = pack(tag_action   , maps:get(tag   , ComplexAction, undefined)),
         remove = pack(remove_action, maps:get(remove, ComplexAction, undefined))

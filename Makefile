@@ -42,6 +42,9 @@ submodules: $(SUBTARGETS)
 rebar-update:
 	$(REBAR) update
 
+upgrade-proto:
+	$(REBAR) upgrade mg_proto
+
 compile: submodules rebar-update
 	$(REBAR) compile
 
