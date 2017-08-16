@@ -24,11 +24,11 @@
 
 -export([child_spec /2]).
 -export([start_link /1]).
--export([start      /4]).
--export([repair     /5]).
--export([call       /5]).
+-export([start      /5]).
+-export([repair     /6]).
+-export([call       /6]).
 -export([get_machine/3]).
--export([remove     /3]).
+-export([remove     /4]).
 
 %% mg_machine handler
 -behaviour(mg_machine).
@@ -116,38 +116,38 @@ start_link(Options) ->
 
 -define(default_deadline, mg_utils:timeout_to_deadline(5000)).
 
--spec start(options(), mg:id(), term(), request_context()) ->
+-spec start(options(), mg:id(), term(), request_context(), mg_utils:deadline()) ->
     ok.
-start(Options, ID, Args, ReqCtx) ->
+start(Options, ID, Args, ReqCtx, Deadline) ->
     HRange = {undefined, undefined, forward},
     ok = mg_machine:start(
             machine_options(Options),
             ID,
             {Args, HRange},
             ReqCtx,
-            mg_utils:default_deadline()
+            Deadline
         ).
 
--spec repair(options(), ref(), term(), mg_events:history_range(), request_context()) ->
+-spec repair(options(), ref(), term(), mg_events:history_range(), request_context(), mg_utils:deadline()) ->
     ok.
-repair(Options, Ref, Args, HRange, ReqCtx) ->
+repair(Options, Ref, Args, HRange, ReqCtx, Deadline) ->
     ok = mg_machine:repair(
             machine_options(Options),
             ref2id(Options, Ref),
             {Args, HRange},
             ReqCtx,
-            mg_utils:default_deadline()
+            Deadline
         ).
 
--spec call(options(), ref(), term(), mg_events:history_range(), request_context()) ->
+-spec call(options(), ref(), term(), mg_events:history_range(), request_context(), mg_utils:deadline()) ->
     _Resp.
-call(Options, Ref, Args, HRange, ReqCtx) ->
+call(Options, Ref, Args, HRange, ReqCtx, Deadline) ->
     mg_machine:call(
         machine_options(Options),
         ref2id(Options, Ref),
         {Args, HRange},
         ReqCtx,
-        mg_utils:default_deadline()
+        Deadline
     ).
 
 -spec get_machine(options(), ref(), mg_events:history_range()) ->
@@ -158,10 +158,10 @@ get_machine(Options, Ref, HRange) ->
     State = opaque_to_state(mg_machine:get(machine_options(Options), ID)),
     machine(Options, ID, State, HRange).
 
--spec remove(options(), mg:id(), request_context()) ->
+-spec remove(options(), mg:id(), request_context(), mg_utils:deadline()) ->
     ok.
-remove(Options, ID, ReqCtx) ->
-    mg_machine:call(machine_options(Options), ID, remove, ReqCtx, mg_utils:default_deadline()).
+remove(Options, ID, ReqCtx, Deadline) ->
+    mg_machine:call(machine_options(Options), ID, remove, ReqCtx, Deadline).
 
 %%
 

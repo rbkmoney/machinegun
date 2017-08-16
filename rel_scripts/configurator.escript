@@ -106,7 +106,7 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
                     {recv_timeout, ?C:time_interval(?C:conf([processor, recv_timeout], NSYamlConfig, "5S"), ms)}
                 ]
             },
-            retryings => #{
+            retries => #{
                 storage   => {exponential, infinity           , 2, 10, 60 * 1000},
                 processor => {exponential, 24 * 60 * 60 * 1000, 2, 10, 60 * 1000}
             },

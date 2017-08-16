@@ -71,20 +71,17 @@
     [test_name() | {group, group_name()}].
 all() ->
     [
-        {group, memory},
+        {group, base      },
+        {group, repair    },
+        {group, timers    },
+        {group, event_sink},
+        {group, mwc       },
         config_with_multiple_event_sinks
     ].
 
 -spec groups() ->
     [{group_name(), list(_), test_name()}].
 groups() ->
-    [
-        {memory, [sequence], tests_groups()}
-    ].
-
--spec tests_groups() ->
-    [{group_name(), list(_), test_name()}].
-tests_groups() ->
     [
         % TODO проверить отмену таймера
         % TODO проверить отдельно get_history
@@ -146,7 +143,7 @@ tests_groups() ->
     config().
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
-    % dbg:tpl({mg_storage, '_', '_'}, x),
+    % dbg:tpl({mg_machine, retry_strategy, '_'}, x),
     C.
 
 -spec end_per_suite(config()) ->
@@ -156,18 +153,27 @@ end_per_suite(_C) ->
 
 -spec init_per_group(group_name(), config()) ->
     config().
-init_per_group(memory, C) ->
-    [{storage, mg_storage_memory} | C];
-init_per_group(TestGroup, C0) ->
-    C = [{test_instance, erlang:atom_to_binary(TestGroup, utf8)} | C0],
+init_per_group(mwc, C) ->
+    init_per_group([{storage, mg_storage_memory} | C]);
+init_per_group(_, C) ->
+    init_per_group([{storage, {mg_storage_memory, #{random_transient_fail => 0.1 }}} | C]).
+
+-spec init_per_group(config()) ->
+    config().
+init_per_group(C) ->
     %% TODO сделать нормальную генерацию урлов
     Apps =
         genlib_app:start_application_with(lager, [
-            {handlers, [{lager_common_test_backend, info}]},
+            {handlers, [
+                {lager_common_test_backend, [
+                    info,
+                    {lager_default_formatter, [time, " ", severity, " ", metadata, " ", message]}
+                ]}
+            ]},
             {async_threshold, undefined}
         ])
         ++
-        genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(TestGroup, C))
+        genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(C))
     ,
 
     SetTimer = {set_timer, {timeout, 1}, {undefined, undefined, forward}, 30},
@@ -209,9 +215,9 @@ init_per_group(TestGroup, C0) ->
         C
     ].
 
--spec mg_woody_api_config(atom(), config()) ->
+-spec mg_woody_api_config(config()) ->
     list().
-mg_woody_api_config(_, C) ->
+mg_woody_api_config(C) ->
     [
         {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, net_opts => [], limits => #{}}},
         {namespaces, #{
@@ -226,11 +232,21 @@ mg_woody_api_config(_, C) ->
                     timers   => #{ interval => 100, limit => 10 },
                     overseer => #{ interval => 100, limit => 10 }
                 },
-                retryings => #{},
+                retries => #{
+                    % вообще этого тут быть не должно,
+                    % но ввиду того, что events_machine — это процессор,
+                    % то проблемы с events_storage приводят к тому,
+                    % что срабатывают именно эти ретраи
+                    % TODO это нужно исправить
+                    processor => {exponential, infinity, 1, 10},
+                    storage   => {exponential, infinity, 1, 10}
+                },
                 event_sink => ?ES_ID
             }
         }},
-        {event_sink_ns, #{storage => ?config(storage, C)}}
+        {event_sink_ns, #{
+            storage => mg_storage_memory
+        }}
     ].
 
 -spec end_per_group(group_name(), config()) ->
@@ -443,7 +459,7 @@ config_with_multiple_event_sinks(_C) ->
                     timers   => #{ interval => 100, limit => 10 },
                     overseer => #{ interval => 100, limit => 10 }
                 },
-                retryings => #{},
+                retries => #{},
                 event_sink => <<"SingleES">>
             },
             <<"2">> => #{
@@ -456,7 +472,7 @@ config_with_multiple_event_sinks(_C) ->
                     timers   => #{ interval => 100, limit => 10 },
                     overseer => #{ interval => 100, limit => 10 }
                 },
-                retryings => #{},
+                retries => #{},
                 event_sink => <<"SingleES">>
             }
         }},

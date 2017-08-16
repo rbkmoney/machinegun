@@ -2,41 +2,64 @@
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 %% API
--export([handle_safe/1]).
+-export([handle_safe_with_retry /5]).
 -export([opaque_to_woody_context/1]).
 -export([woody_context_to_opaque/1]).
 
 %%
 %% API
 %%
--spec handle_safe(fun(() -> R)) ->
+-type ctx() :: mg:request_context().
+-type logger() :: mg_machine_logger:handler().
+
+-spec handle_safe_with_retry(mg_events_machine:ref(), ctx(), fun(() -> R), mg_utils:deadline(), logger()) ->
     R.
-handle_safe(F) ->
+handle_safe_with_retry(Ref, ReqCtx, F, Deadline, Logger) ->
+    handle_safe_with_retry_(
+        Ref, ReqCtx, F,
+        genlib_retry:exponential({max_total_timeout, mg_utils:deadline_to_timeout(Deadline)}, 2, 10),
+        Logger
+    ).
+
+-spec handle_safe_with_retry_(mg_events_machine:ref(), ctx(), fun(() -> R), genlib_retry:strategy(), logger()) ->
+    R.
+handle_safe_with_retry_(Ref, ReqCtx, F, Retry, Logger) ->
     try
         F()
     catch throw:Error ->
-        case map_error(Error) of
-            {throw, NewError} ->
+        ok = mg_machine_logger:handle_event(
+                Logger, {request_event, Ref, ReqCtx, {request_failed, {throw, Error, erlang:get_stacktrace()}}}
+            ),
+        case handle_error(Error, genlib_retry:next_step(Retry))  of
+            {rethrow, NewError} ->
                 erlang:throw(NewError);
             {woody_error, {WoodyErrorClass, Description}} ->
                 BinaryDescription = erlang:list_to_binary(io_lib:format("~9999p", [Description])),
-                woody_error:raise(system, {internal, WoodyErrorClass, BinaryDescription})
+                woody_error:raise(system, {internal, WoodyErrorClass, BinaryDescription});
+            {retry_in, Timeout, NewRetry} ->
+                ok = mg_machine_logger:handle_event(
+                        Logger, {request_event, Ref, ReqCtx, {retrying, Timeout}}
+                    ),
+                ok = timer:sleep(Timeout),
+                handle_safe_with_retry_(Ref, ReqCtx, F, NewRetry, Logger)
         end
     end.
 
--spec map_error(mg_machine:thrown_error() | namespace_not_found) ->
-    {throw, _} | {woody_error, {woody_error:class(), _Details}}.
-map_error(machine_not_found    ) -> {throw, #'MachineNotFound'     {}};
-map_error(machine_already_exist) -> {throw, #'MachineAlreadyExists'{}};
-map_error(machine_failed       ) -> {throw, #'MachineFailed'       {}};
-map_error(namespace_not_found  ) -> {throw, #'NamespaceNotFound'   {}};
-map_error(event_sink_not_found ) -> {throw, #'EventSinkNotFound'   {}};
+-spec handle_error(mg_machine:thrown_error() | namespace_not_found, {wait, _, _} | finish) ->
+    {rethrow, _} | {woody_error, {woody_error:class(), _Details}} | {retry_in, pos_integer(), genlib_retry:strategy()}.
+handle_error(machine_not_found    , _) -> {rethrow, #'MachineNotFound'     {}};
+handle_error(machine_already_exist, _) -> {rethrow, #'MachineAlreadyExists'{}};
+handle_error(machine_failed       , _) -> {rethrow, #'MachineFailed'       {}};
+handle_error(namespace_not_found  , _) -> {rethrow, #'NamespaceNotFound'   {}};
+handle_error(event_sink_not_found , _) -> {rethrow, #'EventSinkNotFound'   {}};
 
 % может Reason не прокидывать дальше?
-map_error({transient, Reason}) -> {woody_error, {resource_unavailable, Reason}};
-map_error(Reason={timeout, _}) -> {woody_error, {result_unknown      , Reason}};
+% TODO logs
+handle_error({transient, _     }, {wait, Timeout, NewStrategy}) -> {retry_in, Timeout, NewStrategy};
+handle_error({transient, Reason}, finish                      ) -> {woody_error, {resource_unavailable, Reason}};
+handle_error(Reason={timeout, _}, _                           ) -> {woody_error, {result_unknown      , Reason}};
 
-map_error(UnknownError) -> erlang:error(badarg, [UnknownError]).
+handle_error(UnknownError, _) -> erlang:error(badarg, [UnknownError]).
 
 %%
 %% packer to opaque

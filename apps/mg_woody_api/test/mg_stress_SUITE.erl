@@ -87,7 +87,7 @@ mg_woody_api_config(_C) ->
                     timers   => #{ interval => 100, limit => 10 },
                     overseer => #{ interval => 100, limit => 10 }
                 },
-                retryings => #{},
+                retries => #{},
                 event_sink => ?ES_ID
             }
         }},

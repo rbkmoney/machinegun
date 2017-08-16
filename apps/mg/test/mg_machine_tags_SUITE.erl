@@ -109,7 +109,8 @@ automaton_options() ->
     #{
         namespace => <<"test_tags">>,
         storage   => mg_storage_memory,
-        logger    => ?MODULE
+        logger    => ?MODULE,
+        retries   => #{}
     }.
 
 -spec handle_machine_logging_event(_, mg_machine_logger:event()) ->
