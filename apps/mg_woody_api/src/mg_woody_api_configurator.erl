@@ -239,7 +239,7 @@ conf_maybe_default({default, Default}) ->
 
 -spec probability(term()) ->
     float() | integer()| no_return().
-probability(Prob) when (is_float(Prob) orelse is_integer(Prob)) andalso 0.0 =< Prob andalso Prob =< 1 ->
+probability(Prob) when is_number(Prob) andalso 0 =< Prob andalso Prob =< 1 ->
     Prob;
 probability(Prob) ->
     throw({'bad probability', Prob}).

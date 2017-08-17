@@ -797,9 +797,9 @@ get_options(Subj, Options) ->
 -spec try_suicide(state(), request_context()) ->
     ok | no_return().
 try_suicide(#{options := Options = #{suicide_probability := Prob}, id := ID}, ReqCtx) ->
-    case (Prob =/= undefined) and (rand:uniform() < Prob) of
+    case (Prob =/= undefined) andalso (rand:uniform() < Prob) of
         true ->
-            ok = emit_log_machine_event(Options, ID, ReqCtx, suicide),
+            ok = emit_log_machine_event(Options, ID, ReqCtx, committed_suicide),
             erlang:exit(self(), kill);
         false ->
             ok

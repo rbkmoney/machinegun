@@ -25,7 +25,7 @@
     | {machine_failed , mg_utils:exception()}  % в работе машины произошла неожиданная ошибка
     | {transient_error, mg_utils:exception()}  % в работе машины произошла временная ошибка
     | {retrying       , Delay::pos_integer()}  % повтор предыдущей операции после временной ошибки
-    |  suicide                                 % машина совершила преднамеренное самоубийство
+    |  committed_suicide                       % машина совершила преднамеренное самоубийство
 .
 -type handler() :: mg_utils:mod_opts() | undefined.
 
