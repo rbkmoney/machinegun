@@ -17,6 +17,7 @@
 -export([utf_bin          /1]).
 -export([conf             /3]).
 -export([conf             /2]).
+-export([probability      /1]).
 
 %%
 
@@ -235,3 +236,10 @@ conf_maybe_default({throw, Path}) ->
     erlang:throw({'config element not found', Path});
 conf_maybe_default({default, Default}) ->
     Default.
+
+-spec probability(term()) ->
+    float() | integer()| no_return().
+probability(Prob) when (is_float(Prob) orelse is_integer(Prob)) andalso 0.0 =< Prob andalso Prob =< 1 ->
+    Prob;
+probability(Prob) ->
+    throw({'bad probability', Prob}).

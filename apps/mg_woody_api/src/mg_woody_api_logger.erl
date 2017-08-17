@@ -55,6 +55,8 @@ format_machine_event({transient_error, Exception}) ->
     {warning, {"transient error ~p", [Exception]}, []};
 format_machine_event({retrying, RetryTimeout}) ->
     {warning, {"retrying in ~p msec", [RetryTimeout]}, []};
+format_machine_event(suicide) ->
+    {warning, {"machine has done an intentional suicide", []}, []};
 format_machine_event(UnknownLogEvent) ->
     {warning, {"unknown log event ~p", [UnknownLogEvent]}, []}.
 

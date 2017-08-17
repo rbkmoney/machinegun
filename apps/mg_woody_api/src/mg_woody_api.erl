@@ -31,11 +31,12 @@
     limits   => woody_server_thrift_http_handler:handler_limits()
 }.
 -type events_machines() :: #{
-    processor       := processor(),
-    storage         := mg_storage:options(),
-    event_sink      => mg:id(),
-    retries         := mg_machine:retry_opt(),
-    scheduled_tasks := mg_machine:scheduled_tasks_opt()
+    processor           := processor(),
+    storage             := mg_storage:options(),
+    event_sink          => mg:id(),
+    retries             := mg_machine:retry_opt(),
+    scheduled_tasks     := mg_machine:scheduled_tasks_opt(),
+    suicide_probability => mg_machine:suicide_probability()
 }.
 -type event_sink_ns() :: #{
     storage                => mg_storage:options(),
@@ -160,13 +161,16 @@ tags_options(NS, #{retries := Retries, storage := Storage}) ->
 
 -spec machine_options(mg:ns(), events_machines()) ->
     mg_machine:options().
-machine_options(NS, #{retries := Retries, scheduled_tasks := STasks, storage := Storage}) ->
+machine_options(NS, Config) ->
+    #{retries := Retries, scheduled_tasks := STasks, storage := Storage} = Config,
     #{
-        namespace       => NS,
-        storage         => add_bucket_postfix(<<"machines">>, Storage),
-        logger          => logger({machine, NS}),
-        retries         => Retries,
-        scheduled_tasks => STasks
+        namespace           => NS,
+        storage             => add_bucket_postfix(<<"machines">>, Storage),
+        logger              => logger({machine, NS}),
+        retries             => Retries,
+        scheduled_tasks     => STasks,
+        % TODO сделать аналогично в event_sink'е и тэгах
+        suicide_probability => maps:get(suicide_probability, Config, undefined)
     }.
 
 -spec events_machine_options_event_sink(mg:id(), mg_events_sink:options(), mg_events_machine:options()) ->
