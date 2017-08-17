@@ -39,6 +39,7 @@
 %% API
 -export_type([retry_opt             /0]).
 -export_type([scheduled_tasks_opt   /0]).
+-export_type([suicide_probability   /0]).
 -export_type([options               /0]).
 -export_type([thrown_error          /0]).
 -export_type([logic_error           /0]).
@@ -92,19 +93,21 @@
     timers   => scheduled_task_opt(),
     overseer => scheduled_task_opt()
 }.
+-type suicide_probability() :: float() | integer() | undefined. % [0, 1]
 
 -type options() :: #{
-    namespace       => mg:ns(),
-    storage         => mg_storage:options(),
-    processor       => mg_utils:mod_opts(),
-    logger          => mg_machine_logger:handler(),
-    retries         => retry_opt(),
-    scheduled_tasks => scheduled_tasks_opt()
+    namespace           => mg:ns(),
+    storage             => mg_storage:options(),
+    processor           => mg_utils:mod_opts(),
+    logger              => mg_machine_logger:handler(),
+    retries             => retry_opt(),
+    scheduled_tasks     => scheduled_tasks_opt(),
+    suicide_probability => suicide_probability()
 }.
 
 -type thrown_error() :: logic_error() | {transient, transient_error()} | {timeout, _Reason}.
 -type logic_error() :: machine_already_exist | machine_not_found | machine_failed | machine_already_working.
--type transient_error() :: overload | {storage_unavailable, _Reason} | {processor_unavailable, _Reason}.
+-type transient_error() :: overload | {storage_unavailable, _Reason} | {processor_unavailable, _Reason} | unavailable.
 
 -type throws() :: no_return().
 -type machine_state() :: mg_storage:opaque().
@@ -215,15 +218,13 @@ fail(Options, ID, Exception, ReqCtx, Deadline) ->
 -spec get(options(), mg:id()) ->
     machine_state() | throws().
 get(Options, ID) ->
-    #{state := State} =
-        mg_utils:throw_if_undefined(element(2, get_storage_machine(Options, ID)), machine_not_found),
+    #{state := State} = mg_utils:throw_if_undefined(element(2, get_storage_machine(Options, ID)), machine_not_found),
     State.
 
 -spec get_status(options(), mg:id()) ->
     machine_status() | throws().
 get_status(Options, ID) ->
-    #{status := Status} =
-        mg_utils:throw_if_undefined(element(2, get_storage_machine(Options, ID)), machine_not_found),
+    #{status := Status} = mg_utils:throw_if_undefined(element(2, get_storage_machine(Options, ID)), machine_not_found),
     Status.
 
 -spec search(options(), search_query(), mg_storage:index_limit()) ->
@@ -438,8 +439,8 @@ handle_call(Call, CallContext, ReqCtx, S=#{storage_machine:=StorageMachine}) ->
 
         % сюда мы не должны попадать если машина не падала во время обработки запроса
         % (когда мы переходили в стейт processing)
-        {_, #{status := processing}} ->
-            handle_call(Call, CallContext, ReqCtx, process(continuation, undefined, ReqCtx, S));
+        {_, #{status := {processing, ProcessingReqCtx}}} ->
+            handle_call(Call, CallContext, ReqCtx, process(continuation, undefined, ProcessingReqCtx, S));
 
         % ничего не просходит, просто убеждаемся, что машина загружена
         {resume_interrupted_one, _} -> {{reply, {ok, ok}}, S};
@@ -636,9 +637,10 @@ handle_exception(Exception, Impact, ReqCtx, State) ->
 
 -spec process_unsafe(processor_impact(), processing_context(), request_context(), state()) ->
     state().
-process_unsafe(Impact, ProcessingCtx, ReqCtx, State=#{storage_machine := StorageMachine}) ->
+process_unsafe(Impact, ProcessingCtx, ReqCtx, State = #{storage_machine := StorageMachine}) ->
     {ReplyAction, Action, NewMachineState} =
         call_processor(Impact, ProcessingCtx, ReqCtx, State),
+    ok = try_suicide(State, ReqCtx),
     NewStorageMachine = StorageMachine#{state := NewMachineState},
     NewState =
         case Action of
@@ -791,6 +793,19 @@ scheduler_child_spec(Task, Options) ->
     _.
 get_options(Subj, Options) ->
     maps:get(Subj, Options).
+
+-spec try_suicide(state(), request_context()) ->
+    ok | no_return().
+try_suicide(#{options := Options = #{suicide_probability := Prob}, id := ID}, ReqCtx) ->
+    case (Prob =/= undefined) andalso (rand:uniform() < Prob) of
+        true ->
+            ok = emit_log_machine_event(Options, ID, ReqCtx, committed_suicide),
+            erlang:exit(self(), kill);
+        false ->
+            ok
+    end;
+try_suicide(#{}, _) ->
+    ok.
 
 %%
 %% retrying

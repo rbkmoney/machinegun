@@ -97,8 +97,8 @@ namespaces(YamlConfig) ->
 namespace({NameStr, NSYamlConfig}, YamlConfig) ->
     Name = ?C:utf_bin(NameStr),
     NS0 = #{
-            storage    => storage(Name, YamlConfig),
-            processor  => #{
+            storage   => storage(Name, YamlConfig),
+            processor => #{
                 url            => ?C:utf_bin(?C:conf([processor, url], NSYamlConfig)),
                 transport_opts => [
                     {pool, erlang:list_to_atom(NameStr)},
@@ -113,7 +113,8 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             scheduled_tasks => #{
                 timers   => #{ interval => 1000, limit => 10 }, % | disable
                 overseer => #{ interval => 1000, limit => 10 } % | disable
-            }
+            },
+            suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0))
         },
     NS1 =
         case ?C:conf([event_sink], NSYamlConfig, undefined) of

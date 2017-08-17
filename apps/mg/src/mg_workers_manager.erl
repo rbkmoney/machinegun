@@ -78,6 +78,7 @@ handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason) ->
         {normal    , _} -> start_and_retry_call(Options, ID, Call, ReqCtx, Deadline);
         {shutdown  , _} -> start_and_retry_call(Options, ID, Call, ReqCtx, Deadline);
         {timeout   , _} -> {error, Reason};
+        {killed    , _} -> {error, {transient, unavailable}};
          Unknown        -> {error, {unexpected_exit, Unknown}}
     end.
 

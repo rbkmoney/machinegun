@@ -17,6 +17,8 @@ logging:
     level: info
 namespaces:
     mg_test_ns:
+        # only for testing, default 0
+        # suicide_probability: 0.1
         event_sink: main_event_sink
         processor:
             url: http://localhost:8022/processor

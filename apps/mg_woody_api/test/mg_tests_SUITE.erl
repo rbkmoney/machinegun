@@ -241,6 +241,11 @@ mg_woody_api_config(C) ->
                     processor => {exponential, infinity, 1, 10},
                     storage   => {exponential, infinity, 1, 10}
                 },
+                % сейчас существуют проблемы, которые не дают включить на постоянной основе эту опцию
+                % (а очень хочется, чтобы проверять работоспособность идемпотентных ретраев)
+                % TODO в будущем нужно это сделать
+                % сейчас же можно иногда включать и смотреть
+                % suicide_probability => 0.1,
                 event_sink => ?ES_ID
             }
         }},
@@ -488,7 +493,13 @@ config_with_multiple_event_sinks(_C) ->
 -spec start_machine(config(), mg:id()) ->
     ok.
 start_machine(C, ID) ->
-    mg_automaton_client:start(automaton_options(C), ID, ID).
+    case catch mg_automaton_client:start(automaton_options(C), ID, ID) of
+        ok ->
+            ok
+        % сейчас это не идемпотентная операция
+        % #'MachineAlreadyExists'{} ->
+        %     ok
+    end.
 
 -spec create_event(binary(), config(), mg:id()) ->
     _.
