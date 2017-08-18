@@ -200,7 +200,8 @@ event_sink_options(EventSinkNS = #{storage := Storage}) ->
     EventSinkNS#{
         namespace      => <<"_event_sinks">>,
         logger         => logger(event_sink),
-        events_storage => add_bucket_postfix(<<"events">>, Storage)
+        storage        => add_bucket_postfix(<<"machines">>, Storage),
+        events_storage => add_bucket_postfix(<<"events"  >>, Storage)
     }.
 
 -spec collect_event_sinks(config()) ->
