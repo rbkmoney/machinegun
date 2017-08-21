@@ -1,2 +1,0 @@
-include/mg_*_thrift.hrl
-src/mg_*_thrift.erl
