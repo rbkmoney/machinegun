@@ -22,13 +22,14 @@
 -export_type([call_result     /0]).
 -export_type([request_context /0]).
 
--export([child_spec /2]).
--export([start_link /1]).
--export([start      /5]).
--export([repair     /6]).
--export([call       /6]).
--export([get_machine/3]).
--export([remove     /4]).
+-export([child_spec   /2]).
+-export([start_link   /1]).
+-export([start        /5]).
+-export([repair       /6]).
+-export([simple_repair/4]).
+-export([call         /6]).
+-export([get_machine  /3]).
+-export([remove       /4]).
 
 %% mg_machine handler
 -behaviour(mg_machine).
@@ -135,6 +136,16 @@ repair(Options, Ref, Args, HRange, ReqCtx, Deadline) ->
             machine_options(Options),
             ref2id(Options, Ref),
             {Args, HRange},
+            ReqCtx,
+            Deadline
+        ).
+
+-spec simple_repair(options(), ref(), request_context(), mg_utils:deadline()) ->
+    ok.
+simple_repair(Options, Ref, ReqCtx, Deadline) ->
+    ok = mg_machine:simple_repair(
+            machine_options(Options),
+            ref2id(Options, Ref),
             ReqCtx,
             Deadline
         ).
