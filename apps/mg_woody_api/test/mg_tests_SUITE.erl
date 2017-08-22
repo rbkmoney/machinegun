@@ -30,6 +30,7 @@
 -export([failed_machine_call         /1]).
 -export([failed_machine_repair_error /1]).
 -export([failed_machine_repair       /1]).
+-export([failed_machine_simple_repair/1]).
 
 %% timer group tests
 -export([handle_timer/1]).
@@ -106,7 +107,14 @@ groups() ->
             machine_processor_error,
             failed_machine_call,
             failed_machine_repair_error,
-            failed_machine_repair
+            failed_machine_repair,
+            machine_call_by_id,
+            machine_remove,
+            machine_start,
+            machine_processor_error,
+            failed_machine_simple_repair,
+            machine_call_by_id,
+            machine_remove
         ]},
 
         {timers, [sequence], [
@@ -346,6 +354,11 @@ failed_machine_repair_error(C) ->
     _.
 failed_machine_repair(C) ->
     ok = mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"ok">>).
+
+-spec failed_machine_simple_repair(config()) ->
+    _.
+failed_machine_simple_repair(C) ->
+    ok = mg_automaton_client:simple_repair(automaton_options(C), {id, ?ID}).
 
 %%
 %% timer

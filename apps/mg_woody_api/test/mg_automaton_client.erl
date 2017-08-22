@@ -2,11 +2,12 @@
 
 %% API
 -export_type([options/0]).
--export([start      /3]).
--export([repair     /3]).
--export([remove     /2]).
--export([call       /3]).
--export([get_machine/3]).
+-export([start        /3]).
+-export([repair       /3]).
+-export([simple_repair/2]).
+-export([remove       /2]).
+-export([call         /3]).
+-export([get_machine  /3]).
 
 %% уменьшаем писанину
 -import(mg_woody_api_packer, [pack/2, unpack/2]).
@@ -29,6 +30,11 @@ start(#{url := BaseURL, ns := NS, retry_strategy := Strategy}, ID, Args) ->
     ok.
 repair(#{url := BaseURL, ns := NS, retry_strategy := Strategy}, Ref, Args) ->
     ok = call_service(BaseURL, 'Repair', [machine_desc(NS, Ref), pack(args, Args)], Strategy).
+
+-spec simple_repair(options(), mg_events_machine:ref()) ->
+    ok.
+simple_repair(#{url := BaseURL, ns := NS, retry_strategy := Strategy}, Ref) ->
+    ok = call_service(BaseURL, 'SimpleRepair', [pack(ns, NS), pack(ref, Ref)], Strategy).
 
 -spec remove(options(), mg:id()) ->
     ok.

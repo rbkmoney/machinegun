@@ -57,6 +57,21 @@ handle_function('Repair', [MachineDesc, Args], WoodyContext, Options) ->
         ),
     {ok, ok};
 
+handle_function('SimpleRepair', [NS, Ref_], WoodyContext, Options) ->
+    Deadline = mg_utils:default_deadline(),
+    ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
+    Ref = unpack(ref, Ref_),
+    ok = mg_woody_api_utils:handle_safe_with_retry(
+            Ref, ReqCtx,
+            fun() ->
+                mg_events_machine:simple_repair(
+                    get_ns_options(NS, Options), Ref, ReqCtx, Deadline
+                )
+            end,
+            Deadline, logger(NS, Options)
+        ),
+    {ok, ok};
+
 handle_function('Call', [MachineDesc, Args], WoodyContext, Options) ->
     Deadline = mg_utils:default_deadline(),
     ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
