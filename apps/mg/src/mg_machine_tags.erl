@@ -3,9 +3,10 @@
 %% API
 -export_type([options/0]).
 -export_type([tag    /0]).
--export([child_spec  /2]).
--export([add_tag     /5]).
--export([resolve_tag /2]).
+-export([child_spec/2]).
+-export([add       /5]).
+-export([replace   /5]).
+-export([resolve   /2]).
 
 %% mg_machine handler
 -behaviour(mg_machine).
@@ -24,14 +25,19 @@
 child_spec(Options, ChildID) ->
     mg_machine:child_spec(machine_options(Options), ChildID).
 
--spec add_tag(options(), tag(), mg:id(), mg:request_context(), mg_utils:deadline()) ->
+-spec add(options(), tag(), mg:id(), mg:request_context(), mg_utils:deadline()) ->
     ok | {already_exists, mg:id()} | no_return().
-add_tag(Options, Tag, ID, ReqCtx, Deadline) ->
-    mg_machine:call_with_lazy_start(machine_options(Options), Tag, {add_tag, ID}, ReqCtx, Deadline, undefined).
+add(Options, Tag, ID, ReqCtx, Deadline) ->
+    mg_machine:call_with_lazy_start(machine_options(Options), Tag, {add, ID}, ReqCtx, Deadline, undefined).
 
--spec resolve_tag(options(), tag()) ->
+-spec replace(options(), tag(), mg:id(), mg:request_context(), mg_utils:deadline()) ->
+    ok | no_return().
+replace(Options, Tag, ID, ReqCtx, Deadline) ->
+    mg_machine:call_with_lazy_start(machine_options(Options), Tag, {replace, ID}, ReqCtx, Deadline, undefined).
+
+-spec resolve(options(), tag()) ->
     mg:id() | undefined | no_return().
-resolve_tag(Options, Tag) ->
+resolve(Options, Tag) ->
     try
         opaque_to_state(mg_machine:get(machine_options(Options), Tag))
     catch throw:machine_not_found ->
@@ -49,7 +55,7 @@ process_machine(_, _, {init, undefined}, _, _, _) ->
     {{reply, ok}, sleep, state_to_opaque(undefined)};
 process_machine(_, _, {repair, undefined}, _, _, State) ->
     {{reply, ok}, sleep, State};
-process_machine(_, _, {call, {add_tag, ID}}, _, _, PackedState) ->
+process_machine(_, _, {call, {add, ID}}, _, _, PackedState) ->
     case opaque_to_state(PackedState) of
         undefined ->
             {{reply, ok}, sleep, state_to_opaque(ID)};
@@ -57,7 +63,9 @@ process_machine(_, _, {call, {add_tag, ID}}, _, _, PackedState) ->
             {{reply, ok}, sleep, PackedState};
         OtherID ->
             {{reply, {already_exists, OtherID}}, sleep, PackedState}
-    end.
+    end;
+process_machine(_, _, {call, {replace, ID}}, _, _, _) ->
+    {{reply, ok}, sleep, state_to_opaque(ID)}.
 
 %%
 %% local

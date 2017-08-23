@@ -81,11 +81,11 @@ pack(int_timer, {Timestamp, _, _, _}) ->
 
 
 %% actions
-pack(complex_action, #{timer := TimerAction, tag := TagAction}) ->
+pack(complex_action, ComplexAction) ->
     #'ComplexAction'{
-        set_timer = undefined,
-        timer = pack(timer_action, TimerAction),
-        tag   = pack(tag_action  , TagAction  )
+        timer  = pack(timer_action , maps:get(timer , ComplexAction, undefined)),
+        tag    = pack(tag_action   , maps:get(tag   , ComplexAction, undefined)),
+        remove = pack(remove_action, maps:get(remove, ComplexAction, undefined))
     };
 pack(timer_action, {set_timer, Timer, HRange, HandlingTimeout}) ->
     {set_timer,
@@ -99,6 +99,8 @@ pack(timer_action, unset_timer) ->
     {unset_timer, #'UnsetTimerAction'{}};
 pack(tag_action, Tag) ->
     #'TagAction'{tag = pack(tag, Tag)};
+pack(remove_action, remove) ->
+    #'RemoveAction'{};
 
 %% calls, signals, get_gistory
 pack(state_change, {AuxState, EventBodies}) ->
@@ -243,10 +245,11 @@ unpack(int_timer, Timestamp) ->
     {unpack(timestamp, Timestamp), undefined, undefined, undefined};
 
 %% actions
-unpack(complex_action, #'ComplexAction'{timer = TimerAction, tag = TagAction}) ->
+unpack(complex_action, #'ComplexAction'{timer = TimerAction, tag = TagAction, remove = RemoveAction}) ->
     #{
-        timer => unpack(timer_action, TimerAction),
-        tag   => unpack(tag_action  , TagAction  )
+        timer  => unpack(timer_action , TimerAction ),
+        tag    => unpack(tag_action   , TagAction   ),
+        remove => unpack(remove_action, RemoveAction)
     };
 unpack(timer_action, {set_timer, #'SetTimerAction'{timer = Timer, range = HRange, timeout = HandlingTimeout}}) ->
     {set_timer,
@@ -258,6 +261,8 @@ unpack(timer_action, {unset_timer, #'UnsetTimerAction'{}}) ->
     unset_timer;
 unpack(tag_action, #'TagAction'{tag = Tag}) ->
     unpack(tag, Tag);
+unpack(remove_action, #'RemoveAction'{}) ->
+    remove;
 
 %% calls, signals, get_gistory
 unpack(state_change, #'MachineStateChange'{aux_state=AuxState, events=EventBodies}) ->

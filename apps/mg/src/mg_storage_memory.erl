@@ -24,7 +24,7 @@ start_link(Options, RegName) ->
 %%
 %% mg_storage callbacks
 %%
--type context      () :: non_neg_integer() | undefined.
+-type context      () :: {pos_integer(), non_neg_integer()} | undefined.
 -type options      () :: undefined | #{
     random_transient_fail => float()
 }.
@@ -176,17 +176,27 @@ generate_continuation(Result) ->
 
 -spec do_put(mg_storage:key(), context(), mg_storage:value(), [mg_storage:index_update()], state()) ->
     {context(), state()}.
-do_put(Key, Context, Value, IndexesUpdates, State0 = #{values := Values}) ->
+do_put(Key, NewContext, Value, IndexesUpdates, State0 = #{values := Values}) ->
     % по текущей схеме (пишет всегда только один процесс) конфликтов никогда не должно быть
-    NextContext =
-        case {do_get(Key, State0), Context} of
-            {undefined        , undefined} -> 0;
-            {{Context, _}     , Context  } -> next_context(Context);
-            {undefined        , _        } -> exit({not_found, Key});
-            {{OtherContext, _}, Context  } -> exit({conflict, Context, OtherContext})
+    R = case {do_get(Key, State0), NewContext} of
+            {_                  , undefined} -> {put, new_context()};
+            {undefined          , _        } -> {error, {not_found, Key}};
+            {{CurrentContext, _}, _        } ->
+                case compare_context(CurrentContext, NewContext) of
+                    replace  -> {put, next_context(NewContext)};
+                    ignore   -> {nop, CurrentContext};
+                    conflict -> {error, {conflict, NewContext, CurrentContext}}
+                end
         end,
-    State1 = State0#{values := maps:put(Key, {NextContext, mg_storage:opaque_to_binary(Value)}, Values)},
-    {NextContext, do_update_indexes(IndexesUpdates, Key, do_cleanup_indexes(Key, State1))}.
+    case R of
+        {put, NextContext} ->
+            State1 = State0#{values := maps:put(Key, {NextContext, mg_storage:opaque_to_binary(Value)}, Values)},
+            {NextContext, do_update_indexes(IndexesUpdates, Key, do_cleanup_indexes(Key, State1))};
+        {nop, NextContext} ->
+            {NextContext, State0};
+        {error, Error} ->
+            exit(Error)
+    end.
 
 -spec do_delete(mg_storage:key(), context(), state()) ->
     state().
@@ -203,10 +213,26 @@ do_delete(Key, Context, State = #{values := Values}) ->
     end.
 
 %% это аналог vclock'а для тестов
--spec next_context(context()) ->
+-spec new_context() ->
     context().
-next_context(Context) ->
-    Context + 1.
+new_context() ->
+    {rand:uniform(1000000), 0}. % число от балды, просто много :)
+
+-spec next_context(context() | undefined) ->
+    context().
+next_context({Seed, Counter}) ->
+    {Seed, Counter + 1}.
+
+-spec compare_context(context(), context()) ->
+    replace | ignore | conflict.
+compare_context({SeedA, CounterA}, {SeedB, CounterB}) when SeedA =:= SeedB ->
+    case CounterA =< CounterB of
+        true  -> replace;
+        false -> ignore
+    end;
+compare_context({_, _}, {_, _}) ->
+    conflict.
+
 
 %%
 %% index

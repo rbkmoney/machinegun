@@ -149,7 +149,7 @@ handle_call({call, Deadline, Call, ReqCtx}, From, State=#{mod:=Mod, status:={wor
                 noreply        -> {noreply, schedule_unload_timer(NewState), hibernate_timeout(NewState)}
             end;
         true ->
-            ok = error_logger:error_msg("rancid worker call received: ~p from ~p", [Call, From]),
+            ok = error_logger:warning_msg("rancid worker call received: ~p from ~p", [Call, From]),
             {noreply, schedule_unload_timer(State), hibernate_timeout(State)}
     end;
 handle_call(Call, From, State) ->

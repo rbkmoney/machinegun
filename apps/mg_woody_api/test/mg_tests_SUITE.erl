@@ -14,15 +14,16 @@
 -export([end_per_group   /2]).
 
 %% base group tests
--export([namespace_not_found    /1]).
--export([machine_start          /1]).
--export([machine_already_exists /1]).
--export([machine_call_by_id     /1]).
--export([machine_id_not_found   /1]).
--export([machine_set_tag        /1]).
--export([machine_call_by_tag    /1]).
--export([machine_tag_not_found  /1]).
--export([machine_remove         /1]).
+-export([namespace_not_found     /1]).
+-export([machine_start           /1]).
+-export([machine_already_exists  /1]).
+-export([machine_call_by_id      /1]).
+-export([machine_id_not_found    /1]).
+-export([machine_set_tag         /1]).
+-export([machine_call_by_tag     /1]).
+-export([machine_tag_not_found   /1]).
+-export([machine_remove          /1]).
+-export([machine_remove_by_action/1]).
 
 %% repair group tests
 -export([failed_machine_start        /1]).
@@ -31,6 +32,7 @@
 -export([failed_machine_repair_error /1]).
 -export([failed_machine_repair       /1]).
 -export([failed_machine_simple_repair/1]).
+-export([working_machine_repair      /1]).
 
 %% timer group tests
 -export([handle_timer/1]).
@@ -97,6 +99,9 @@ groups() ->
             machine_tag_not_found,
             machine_call_by_tag,
             machine_remove,
+            machine_id_not_found,
+            machine_start,
+            machine_remove_by_action,
             machine_id_not_found
         ]},
 
@@ -109,6 +114,7 @@ groups() ->
             failed_machine_repair_error,
             failed_machine_repair,
             machine_call_by_id,
+            working_machine_repair,
             machine_remove,
             machine_start,
             machine_processor_error,
@@ -189,12 +195,13 @@ init_per_group(C) ->
     CallFunc =
         fun({Args, _Machine}) ->
             case Args of
-                <<"tag">>   -> {Args, {<<>>, [<<"tag_body"  >>]}, #{timer =>  undefined  , tag => Args     }};
-                <<"event">> -> {Args, {<<>>, [<<"event_body">>]}, #{timer =>  undefined  , tag => undefined}};
-                <<"nop"  >> -> {Args, {<<>>, [                ]}, #{timer =>  undefined  , tag => undefined}};
-                <<"set_timer"  >> -> {Args, {<<>>, [<<"timer_body">>]}, #{timer => SetTimer   , tag => undefined}};
-                <<"unset_timer">> -> {Args, {<<>>, [<<"timer_body">>]}, #{timer => unset_timer, tag => undefined}};
-                <<"fail">>  -> erlang:error(fail)
+                <<"tag"  >> -> {Args, {<<>>, [<<"tag_body"  >>]}, #{tag => Args}};
+                <<"event">> -> {Args, {<<>>, [<<"event_body">>]}, #{}};
+                <<"nop"  >> -> {Args, {<<>>, [                ]}, #{}};
+                <<"set_timer"  >> -> {Args, {<<>>, [<<"timer_body">>]}, #{timer => SetTimer   }};
+                <<"unset_timer">> -> {Args, {<<>>, [<<"timer_body">>]}, #{timer => unset_timer}};
+                <<"fail"  >> -> erlang:error(fail);
+                <<"remove">> -> {Args, {<<>>, [<<"removed">>]}, #{remove => remove}}
             end
         end
     ,
@@ -326,6 +333,10 @@ machine_call_by_tag(C) ->
 machine_remove(C) ->
     ok = mg_automaton_client:remove(automaton_options(C), ?ID).
 
+-spec machine_remove_by_action(config()) -> _.
+machine_remove_by_action(C) ->
+    <<"remove">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"remove">>).
+
 %%
 %% repair group tests
 %%
@@ -359,6 +370,11 @@ failed_machine_repair(C) ->
     _.
 failed_machine_simple_repair(C) ->
     ok = mg_automaton_client:simple_repair(automaton_options(C), {id, ?ID}).
+
+-spec working_machine_repair(config()) ->
+    _.
+working_machine_repair(C) ->
+    #'MachineAlreadyWorking'{} = (catch mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"ok">>)).
 
 %%
 %% timer
