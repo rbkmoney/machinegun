@@ -24,7 +24,7 @@ child_spec(Options, ChildID, RegName) ->
     #{
         id       => ChildID,
         start    => {?MODULE, start_link, [Options, RegName]},
-        restart  => permanent,
+        restart  => temporary,
         type     => supervisor
     }.
 
