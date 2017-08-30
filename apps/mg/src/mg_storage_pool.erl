@@ -24,7 +24,7 @@ child_spec(Options, ChildID, RegName) ->
     #{
         id       => ChildID,
         start    => {?MODULE, start_link, [Options, RegName]},
-        restart  => temporary,
+        restart  => permanent,
         type     => supervisor
     }.
 
@@ -35,7 +35,7 @@ start_link(#{worker := Worker}, RegName) ->
         RegName,
         #{strategy => simple_one_for_one},
         [
-            mg_storage:child_spec(Worker, worker)
+            fix_restart_type(mg_storage:child_spec(Worker, worker))
         ]
     ).
 
@@ -82,8 +82,7 @@ start_worker(#{queue_len_limit := Limit}, SelfRef, WorkerID) ->
             ok;
         {error, {already_started, _}} ->
             ok;
-        {error
-        , Reason} ->
+        {error, Reason} ->
             throw_error({'start pool worker error', Reason})
     end.
 
@@ -109,8 +108,10 @@ gproc_key(SelfRef, WorkerID) ->
 
 -spec wrap(mg_utils:gen_ref(), worker_id()) ->
     term().
+wrap(SelfRef, _) when is_pid(SelfRef) ->
+    % если сюда передать pid, то ничего работать не будет :)
+    exit(unsupported);
 wrap(SelfRef, WorkerID) ->
-    % нужно быть аккуратным, если сюда передать pid, то ничего работать не будет :)
     {?MODULE, SelfRef, WorkerID}.
 
 -spec random_worker_id(pos_integer()) ->
@@ -131,3 +132,8 @@ try_gen_call(F) ->
         exit:{timeout , Details} -> {error, {timeout , Details}};
         exit:overload            -> {error, overload}
     end.
+
+-spec fix_restart_type(supervisor:child_spec()) ->
+    supervisor:child_spec().
+fix_restart_type(Spec = #{}) ->
+    Spec#{restart => temporary}.
