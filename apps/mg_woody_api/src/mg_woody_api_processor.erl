@@ -44,7 +44,8 @@ process_call(Options, ReqCtx, {Call, Machine}) ->
     _Result.
 call_processor(Options, ReqCtx, Function, Args) ->
     % TODO сделать нормально!
-    {ok, TRef} = timer:kill_after(maps:get(recv_timeout, Options, 5000) + 3000),
+    RecvTimeout = proplists:get_value(recv_timeout, maps:get(transport_opts, Options, #{}), 5000),
+    {ok, TRef} = timer:kill_after(RecvTimeout + 3000),
     try
         {ok, R} =
             woody_client:call(
