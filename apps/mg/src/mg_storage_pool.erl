@@ -125,12 +125,17 @@ try_gen_call(F) ->
     try
         F()
     catch
-        exit: noproc             -> {error, noproc};
-        exit:{noproc  , _      } -> {error, noproc};
-        exit:{normal  , _      } -> {error, noproc};
-        exit:{shutdown, _      } -> {error, noproc};
-        exit:{timeout , Details} -> {error, {timeout , Details}};
-        exit:overload            -> {error, overload}
+        % TODO сделать нормально
+        % Тут есть проблема, что если сторадж запустить в обход пула, то нормально работать не будет
+        % (например riak будет падать с exit при дисконнекте).
+        % И лучше будет сделать универсальный интерфейс для кидания ошибок стораджа,
+        % в который ввести ошибку отсутствия процесса и ловить её тут.
+        exit: noproc                                     -> {error, noproc             };
+        exit:{noproc  ,           {gen_server, call, _}} -> {error, noproc             };
+        exit:{normal  ,           {gen_server, call, _}} -> {error, noproc             };
+        exit:{shutdown,           {gen_server, call, _}} -> {error, noproc             };
+        exit:{timeout , Details = {gen_server, call, _}} -> {error, {timeout , Details}};
+        exit:overload                                    -> {error, overload           }
     end.
 
 -spec fix_restart_type(supervisor:child_spec()) ->
