@@ -123,6 +123,18 @@ do_request(Options, SelfRef, Request) ->
 %%
 %% local
 %%
+%% MG-123
+%% При отваливании сокета процесс riakc_pb_socket падает c reason `disconnected`.
+%% По его мнению это нестандартная ситуация (и нужно именно падать, а не выходить с normal),
+%% но мы думаем иначе.
+%%
+-define(SAFE(Expr),
+    try
+        Expr
+    catch exit:{disconnected, _} ->
+        {error, disconnected}
+    end
+).
 -spec put(options(), self_ref(), mg_storage:key(), context(), mg_storage:value(), [mg_storage:index_update()]) ->
     context().
 put(Options = #{bucket := Bucket}, SelfRef, Key, Context, Value, IndexesUpdates) ->
@@ -130,7 +142,7 @@ put(Options = #{bucket := Bucket}, SelfRef, Key, Context, Value, IndexesUpdates)
     Timeout = get_option(request_timeout, Options),
     NewObject =
         handle_riak_response(
-            riakc_pb_socket:put(SelfRef, Object, [return_body] ++ get_option(w_options, Options), Timeout)
+            ?SAFE(riakc_pb_socket:put(SelfRef, Object, [return_body] ++ get_option(w_options, Options), Timeout))
         ),
     riakc_obj:vclock(NewObject).
 
@@ -138,7 +150,7 @@ put(Options = #{bucket := Bucket}, SelfRef, Key, Context, Value, IndexesUpdates)
     {context(), mg_storage:value()} | undefined.
 get(Options = #{bucket := Bucket}, SelfRef, Key) ->
     Timeout = get_option(request_timeout, Options),
-    case riakc_pb_socket:get(SelfRef, Bucket, Key, get_option(r_options, Options), Timeout) of
+    case ?SAFE(riakc_pb_socket:get(SelfRef, Bucket, Key, get_option(r_options, Options), Timeout)) of
         {error, notfound} ->
             undefined;
         Result ->
@@ -156,7 +168,7 @@ search(Options = #{bucket := Bucket}, SelfRef, Query) ->
 -spec delete(options(), self_ref(), mg_storage:key(), context()) ->
     ok.
 delete(Options = #{bucket := Bucket}, SelfRef, Key, Context) ->
-    case riakc_pb_socket:delete_vclock(SelfRef, Bucket, Key, Context, get_option(d_options, Options)) of
+    case ?SAFE(riakc_pb_socket:delete_vclock(SelfRef, Bucket, Key, Context, get_option(d_options, Options))) of
         ok ->
             ok;
         {error, Reason} ->
@@ -169,10 +181,10 @@ delete(Options = #{bucket := Bucket}, SelfRef, Key, Context) ->
     _.
 do_get_index(SelfRef, Bucket, {IndexName, {From, To}, IndexLimit, Continuation}, Options) ->
     SearchOptions = index_opts([{return_terms, true}], Options, IndexLimit, Continuation),
-    riakc_pb_socket:get_index_range(SelfRef, Bucket, prepare_index_name(IndexName), From, To, SearchOptions);
+    ?SAFE(riakc_pb_socket:get_index_range(SelfRef, Bucket, prepare_index_name(IndexName), From, To, SearchOptions));
 do_get_index(SelfRef, Bucket, {IndexName, Value, IndexLimit, Continuation}, Options) ->
     SearchOptions = index_opts(Options, IndexLimit, Continuation),
-    riakc_pb_socket:get_index_eq(SelfRef, Bucket, prepare_index_name(IndexName), Value, SearchOptions).
+    ?SAFE(riakc_pb_socket:get_index_eq(SelfRef, Bucket, prepare_index_name(IndexName), Value, SearchOptions)).
 
 -spec get_index_response(mg_storage:index_query(), get_index_results()) ->
     mg_storage:search_result().
