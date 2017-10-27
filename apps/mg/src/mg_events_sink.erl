@@ -43,7 +43,8 @@
     storage                := mg_storage:options(),
     logger                 := mg_machine_logger:handler(),
     duplicate_search_batch := mg_storage:index_limit(),
-    events_storage         := mg_storage:options()
+    events_storage         := mg_storage:options(),
+    raft                   := raft:options()
 }.
 
 -define(default_duplicate_search_batch, 1000).
@@ -258,12 +259,13 @@ new_state() ->
 
 -spec machine_options(options()) ->
     mg_machine:options().
-machine_options(Options = #{namespace := Namespace, storage := Storage, logger := Logger}) ->
+machine_options(Options = #{namespace := Namespace, storage := Storage, logger := Logger, raft := Raft}) ->
     #{
-        namespace       => mg_utils:concatenate_namespaces(Namespace, <<"machines">>),
-        processor       => {?MODULE, Options},
-        storage         => Storage,
-        logger          => Logger
+        namespace => mg_utils:concatenate_namespaces(Namespace, <<"machines">>),
+        processor => {?MODULE, Options},
+        storage   => Storage,
+        logger    => Logger,
+        raft      => Raft
     }.
 
 -spec events_storage_options(options()) ->

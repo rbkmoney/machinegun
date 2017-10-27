@@ -18,233 +18,176 @@
 
 %% API
 -export_type([options     /0]).
--export_type([call_context/0]).
+% -export_type([call_context/0]).
 
--export([child_spec    /2]).
--export([start_link    /4]).
--export([call          /6]).
--export([brutal_kill   /2]).
--export([reply         /2]).
--export([get_call_queue/2]).
--export([is_alive      /2]).
+-export([child_spec/2]).
+-export([start_link/2]).
+-export([call      /5]).
 
-%% gen_server callbacks
--behaviour(gen_server).
--export([init/1, handle_info/2, handle_cast/2, handle_call/3, code_change/3, terminate/2]).
+%% raft
+-behaviour(raft).
+-export([init/1, handle_election/2, handle_command/4, handle_async_command/4, handle_info/3, apply_delta/4]).
 
 %%
 %% API
 %%
--callback handle_load(_ID, _Args, _ReqCtx) ->
-    {ok, _State} | {error, _Error}.
+-type options() :: #{
+    namespace      => _,
+    worker         => worker(),
+    raft           => raft:options(),
+    unload_timeout => pos_integer(),
+    unload_fun     => fun(() -> _)
+}.
 
--callback handle_unload(_State) ->
+-type worker      () :: mg_utils:mod_opts().
+-type worker_state() :: _.
+
+%%
+
+-callback handle_load(_, _ID, _ReqCtx) ->
+    {ok, worker_state()} | {error, _Error}.
+
+-callback handle_call(_, _ID, _Call, _ReqCtx, worker_state()) ->
+    {{reply, _Reply} | noreply, worker_state()}.
+
+-callback handle_unload(_, _ID, _State) ->
     ok.
 
--callback handle_call(_Call, call_context(), _ReqCtx, _State) ->
-    {{reply, _Reply} | noreply, _State}.
+%%
 
-
--type options() :: #{
-    worker            => mg_utils:mod_opts(),
-    hibernate_timeout => pos_integer(),
-    unload_timeout    => pos_integer()
-}.
--type call_context() :: _. % в OTP он не описан, а нужно бы :(
-
--spec child_spec(atom(), options()) ->
+-spec child_spec(_ID, options()) ->
     supervisor:child_spec().
-child_spec(ChildID, Options) ->
+child_spec(ID, Options) ->
     #{
-        id       => ChildID,
-        start    => {?MODULE, start_link, [Options]},
-        restart  => temporary,
+        id       => ID,
+        start    => {?MODULE, start_link, [Options, ID]},
+        restart  => permanent,
         shutdown => brutal_kill
     }.
 
--spec start_link(options(), _NS, _ID, _ReqCtx) ->
+-spec start_link(options(), _ID) ->
     mg_utils:gen_start_ret().
-start_link(Options, NS, ID, ReqCtx) ->
-    gen_server:start_link(self_reg_name({NS, ID}), ?MODULE, {ID, Options, ReqCtx}, []).
+start_link(Options, ID) ->
+    raft:start_link(self_reg_name(Options, ID), {?MODULE, {ID, Options}}, raft_options(Options, ID)).
 
--spec call(_NS, _ID, _Call, _ReqCtx, mg_utils:deadline(), pos_integer()) ->
+-spec call(options(), _ID, _Call, _ReqCtx, mg_utils:deadline()) ->
     _Result | {error, _}.
-call(NS, ID, Call, ReqCtx, Deadline, MaxQueueLength) ->
-    case mg_utils:msg_queue_len(self_ref({NS, ID})) < MaxQueueLength of
-        true ->
-            gen_server:call(
-                self_ref({NS, ID}),
-                {call, Deadline, Call, ReqCtx},
-                mg_utils:deadline_to_timeout(Deadline)
-            );
-        false ->
-            {error, {transient, overload}}
-    end.
-
-%% for testing
--spec brutal_kill(_NS, _ID) ->
-    ok.
-brutal_kill(NS, ID) ->
-    case mg_utils:gen_reg_name_to_pid(self_ref({NS, ID})) of
-        undefined ->
-            ok;
-        Pid ->
-            true = erlang:exit(Pid, kill),
-            ok
-    end.
-
-%% Internal API
--spec reply(call_context(), _Reply) ->
-    _.
-reply(CallCtx, Reply) ->
-    _ = gen_server:reply(CallCtx, Reply),
-    ok.
-
--spec get_call_queue(_NS, _ID) ->
-    [_Call].
-get_call_queue(NS, ID) ->
-    Pid = mg_utils:exit_if_undefined(mg_utils:gen_reg_name_to_pid(self_ref({NS, ID})), noproc),
-    {messages, Messages} = erlang:process_info(Pid, messages),
-    [Call || {'$gen_call', _, {call, _, Call, _}} <- Messages].
-
--spec is_alive(_NS, _ID) ->
-    boolean().
-is_alive(NS, ID) ->
-    Pid = mg_utils:gen_reg_name_to_pid(self_ref({NS, ID})),
-    Pid =/= undefined andalso erlang:is_process_alive(Pid).
+call(Options = #{raft := #{rpc := RPC}}, ID, Call, ReqCtx, Deadline) ->
+    raft:send_command(
+        RPC,
+        cluster_with_id(Options, ID),
+        undefined,
+        {call, Deadline, Call, ReqCtx},
+        genlib_retry:linear(10, 100)
+    ).
 
 %%
-%% gen_server callbacks
+%% raft
 %%
--type state() ::
-    #{
-        id                => _ID,
-        mod               => module(),
-        status            => {loading, _Args, _ReqCtx} | {working, _State},
-        unload_tref       => reference() | undefined,
-        hibernate_timeout => timeout(),
-        unload_timeout    => timeout()
-    }.
+-type command() :: {call, mg_utils:deadline(), _Call, _ReqCtx}.
+-type status () :: loading | {working, worker_state()}.
+-type state  () :: #{
+    status      => status(),
+    unload_tref => reference() | undefined
+}.
+-type delta  () :: worker_state().
 
 -spec init(_) ->
-    mg_utils:gen_server_init_ret(state()).
-init({ID, Options = #{worker := WorkerModOpts}, ReqCtx}) ->
-    HibernateTimeout = maps:get(hibernate_timeout, Options,  5 * 1000),
-    UnloadTimeout    = maps:get(unload_timeout   , Options, 60 * 1000),
-    {Mod, Args} = mg_utils:separate_mod_opts(WorkerModOpts),
-    State =
-        #{
-            id                => ID,
-            mod               => Mod,
-            status            => {loading, Args, ReqCtx},
-            unload_tref       => undefined,
-            hibernate_timeout => HibernateTimeout,
-            unload_timeout    => UnloadTimeout
-        },
-    {ok, State}.
+    state().
+init(_) ->
+    #{
+        status      => loading,
+        unload_tref => undefined
+    }.
 
--spec handle_call(_Call, mg_utils:gen_server_from(), state()) ->
-    mg_utils:gen_server_handle_call_ret(state()).
+-spec handle_election({_ID, options()}, state()) ->
+    {delta() | undefined, state()}.
+handle_election({_, Options}, State) ->
+    {undefined, schedule_unload_timer(Options, State)}.
 
-% загрузка делается отдельно и лениво, чтобы не блокировать этим супервизор,
-% т.к. у него легко может начать расти очередь
-handle_call(Call={call, _, _, _}, From, State=#{id:=ID, mod:=Mod, status:={loading, Args, ReqCtx}}) ->
-    case Mod:handle_load(ID, Args, ReqCtx) of
-        {ok, ModState} ->
-            handle_call(Call, From, State#{status:={working, ModState}});
-        Error={error, _} ->
-            {stop, normal, Error, State}
+-spec handle_async_command(_, raft_rpc:request_id(), _, state()) ->
+    {raft:reply_action(), state()}.
+handle_async_command(_, _, AsyncCmd, State) ->
+    ok = error_logger:error_msg("unexpected async_command received: ~p", [AsyncCmd]),
+    {noreply, State}.
+
+-spec handle_command({_, options()}, raft_rpc:request_id(), command(), state()) ->
+    {raft:reply_action(), delta() | undefined, state()}.
+handle_command({ID, Options = #{worker := Worker}}, ReqID, Cmd = {call, _, _, ReqCtx}, State = #{status := loading}) ->
+    case mg_utils:apply_mod_opts(Worker, handle_load, [ID, ReqCtx]) of
+        {ok, NewWorkerState} ->
+            handle_command({ID, Options}, ReqID, Cmd, State#{status := {working, NewWorkerState}});
+        Error = {error, _} ->
+            {{reply, Error}, undefined, schedule_unload_timer(Options, State)}
     end;
-handle_call({call, Deadline, Call, ReqCtx}, From, State=#{mod:=Mod, status:={working, ModState}}) ->
+handle_command({ID, Options = #{worker := Worker}}, _, Call, State = #{status := {working, WorkerState}}) ->
+    {call, Deadline, CallBody, ReqCtx} = Call,
     case mg_utils:is_deadline_reached(Deadline) of
         false ->
-            {ReplyAction, NewModState} = Mod:handle_call(Call, From, ReqCtx, ModState),
-            NewState = State#{status:={working, NewModState}},
-            case ReplyAction of
-                {reply, Reply} -> {reply, Reply, schedule_unload_timer(NewState), hibernate_timeout(NewState)};
-                noreply        -> {noreply, schedule_unload_timer(NewState), hibernate_timeout(NewState)}
-            end;
+            {ReplyAction, NewWorkerState} =
+                mg_utils:apply_mod_opts(Worker, handle_call, [ID, CallBody, ReqCtx, WorkerState]),
+            {ReplyAction, NewWorkerState, schedule_unload_timer(Options, State)};
         true ->
-            ok = error_logger:warning_msg("rancid worker call received: ~p from ~p", [Call, From]),
-            {noreply, schedule_unload_timer(State), hibernate_timeout(State)}
-    end;
-handle_call(Call, From, State) ->
-    ok = error_logger:error_msg("unexpected gen_server call received: ~p from ~p", [Call, From]),
-    {noreply, State, hibernate_timeout(State)}.
+            ok = error_logger:warning_msg("rancid worker call received: ~p", [Call]),
+            {noreply, undefined, schedule_unload_timer(Options, State)}
+    end.
 
--spec handle_cast(_Cast, state()) ->
-    mg_utils:gen_server_handle_cast_ret(state()).
-handle_cast(Cast, State) ->
-    ok = error_logger:error_msg("unexpected gen_server cast received: ~p", [Cast]),
-    {noreply, State, hibernate_timeout(State)}.
-
--spec handle_info(_Info, state()) ->
-    mg_utils:gen_server_handle_info_ret(state()).
-handle_info(timeout, State) ->
-    {noreply, State, hibernate};
-handle_info({timeout, TRef, unload}, State=#{mod:=Mod, unload_tref:=TRef, status:=Status}) ->
-    case Status of
-        {working, ModState} ->
-            _ = Mod:handle_unload(ModState);
-        {loading, _} ->
+-spec handle_info({_, options()}, _Info, state()) ->
+    {delta(), state()}.
+handle_info({ID, Options}, {timeout, TRef, unload}, State = #{unload_tref := TRef}) ->
+    #{unload_fun := UnloadFun, worker := Worker} = Options,
+    % приготовления перед смертью
+    case State of
+        #{status := {working, WorkerState}} ->
+            _ = (catch mg_utils:apply_mod_opts(Worker, handle_unload, [ID, WorkerState]));
+        #{status := _} ->
             ok
     end,
-    {stop, normal, State};
-handle_info({timeout, _, unload}, State=#{}) ->
-    % А кто-то опаздал!
-    {noreply, schedule_unload_timer(State), hibernate_timeout(State)};
-handle_info(Info, State) ->
-    ok = error_logger:error_msg("unexpected gen_server info ~p", [Info]),
-    {noreply, State, hibernate_timeout(State)}.
+    % вызов приведёт к самоубийству
+    _ = UnloadFun(),
+    {undefined, State}.
 
--spec code_change(_, state(), _) ->
-    mg_utils:gen_server_code_change_ret(state()).
-code_change(_, State, _) ->
-    {ok, State}.
-
--spec terminate(_Reason, state()) ->
-    ok.
-terminate(_, _) ->
-    ok.
-
-%%
-%% local
-%%
--spec hibernate_timeout(state()) ->
-    timeout().
-hibernate_timeout(#{hibernate_timeout:=Timeout}) ->
-    Timeout.
-
--spec unload_timeout(state()) ->
-    timeout().
-unload_timeout(#{unload_timeout:=Timeout}) ->
-    Timeout.
-
--spec schedule_unload_timer(state()) ->
+-spec apply_delta(_, raft_rpc:request_id(), delta(), state()) ->
     state().
-schedule_unload_timer(State=#{unload_tref:=UnloadTRef}) ->
+apply_delta(_, _, WorkerState, State) ->
+    State#{status := {working, WorkerState}}.
+
+%%
+
+-spec self_reg_name(options(), _ID) ->
+    mg_utils:gen_reg_name().
+self_reg_name(#{namespace := NS}, ID) ->
+    {via, gproc, {n, l, {?MODULE, NS, ID}}}.
+
+-spec raft_options(options(), _ID) ->
+    raft:options().
+raft_options(Options = #{raft := RaftOptions = #{self := SelfNode}}, ID) ->
+    RaftOptions#{
+        self    := {self_reg_name(Options, ID), SelfNode},
+        cluster := cluster_with_id(Options, ID)
+    }.
+
+% делается предположение, что у всех endpoint'ов вид {Name, Node}
+-spec cluster_with_id(options(), _ID) ->
+    raft_rpc:endpoint().
+cluster_with_id(Options = #{raft := #{cluster := Cluster}}, ID) ->
+    [{self_reg_name(Options, ID), Node} || Node <- Cluster].
+
+-spec unload_timeout(options()) ->
+    timeout().
+unload_timeout(Options) ->
+    maps:get(unload_timeout, Options, 5000).
+
+-spec schedule_unload_timer(options(), state()) ->
+    state().
+schedule_unload_timer(Options, State = #{unload_tref := UnloadTRef}) ->
     _ = case UnloadTRef of
             undefined -> ok;
             TRef      -> erlang:cancel_timer(TRef)
         end,
-    State#{unload_tref:=start_timer(State)}.
+    State#{unload_tref := start_timer(Options)}.
 
--spec start_timer(state()) ->
+-spec start_timer(options()) ->
     reference().
-start_timer(State) ->
-    erlang:start_timer(unload_timeout(State), erlang:self(), unload).
-
--spec self_ref(_ID) ->
-    mg_utils:gen_ref().
-self_ref(ID) ->
-    {via, gproc, {n, l, wrap_id(ID)}}.
-
--spec self_reg_name(_ID) ->
-    mg_utils:gen_reg_name().
-self_reg_name(ID) ->
-    {via, gproc, {n, l, wrap_id(ID)}}.
-
--spec wrap_id(_ID) ->
-    term().
-wrap_id(ID) ->
-    {?MODULE, ID}.
+start_timer(Options) ->
+    erlang:start_timer(unload_timeout(Options), erlang:self(), unload).

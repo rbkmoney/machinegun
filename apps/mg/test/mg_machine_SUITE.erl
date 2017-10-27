@@ -163,6 +163,7 @@ automaton_options() ->
         processor => ?MODULE,
         storage   => mg_storage_memory,
         logger    => ?MODULE,
+        raft      => mg_utils:default_test_raft_options(),
         scheduled_tasks => #{
             timers   => #{ interval => 1000, limit => 10 },
             overseer => #{ interval => 1000, limit => 10 }

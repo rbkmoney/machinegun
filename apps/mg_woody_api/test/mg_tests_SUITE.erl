@@ -173,7 +173,9 @@ groups() ->
     config().
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
-    % dbg:tpl({mg_machine, retry_strategy, '_'}, x),
+    % dbg:tpl({mg_machine, handle_load, '_'}, x),
+    % dbg:tpl({mg_machine, handle_call, '_'}, x),
+    % dbg:tpl({mg_worker, apply_delta, '_'}, x),
     C.
 
 -spec end_per_suite(config()) ->

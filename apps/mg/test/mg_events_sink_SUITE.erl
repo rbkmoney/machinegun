@@ -144,7 +144,8 @@ event_sink_options() ->
         storage                => mg_storage_memory,
         logger                 => ?MODULE,
         duplicate_search_batch => 1000,
-        events_storage         => mg_storage_memory
+        events_storage         => mg_storage_memory,
+        raft                   => mg_utils:default_test_raft_options()
     }.
 
 -spec handle_machine_logging_event(_, mg_machine_logger:event()) ->

@@ -133,7 +133,8 @@ automaton_options() ->
         namespace => <<"test_tags">>,
         storage   => mg_storage_memory,
         logger    => ?MODULE,
-        retries   => #{}
+        retries   => #{},
+        raft      => mg_utils:default_test_raft_options()
     }.
 
 -spec handle_machine_logging_event(_, mg_machine_logger:event()) ->

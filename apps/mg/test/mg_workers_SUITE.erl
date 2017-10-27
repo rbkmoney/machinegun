@@ -41,7 +41,7 @@
 
 %% mg_worker
 -behaviour(mg_worker).
--export([handle_load/3, handle_call/4, handle_unload/1]).
+-export([handle_load/3, handle_unload/3, handle_call/5]).
 
 %%
 %% tests descriptions
@@ -69,7 +69,9 @@ all() ->
     config().
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
-    % dbg:tpl({mg_workers_manager, '_', '_'}, x),
+    % dbg:tpl({mg_worker, '_', '_'}, x),
+    % dbg:tpl({raft_rpc_erl, 'send', '_'}, x),
+    % dbg:tpl({raft_rpc_erl, 'recv', '_'}, x),
     % dbg:tpl({mg_workers, '_', '_'}, x),
     Apps = genlib_app:start_application(mg),
     [{apps, Apps} | C].
@@ -82,16 +84,17 @@ end_per_suite(C) ->
 %%
 %% base group tests
 %%
--define(unload_timeout, 10).
+-define(unload_timeout, 200).
 -define(req_ctx, <<"req_ctx">>).
 
 -spec base_test(config()) ->
     _.
 base_test(_C) ->
     % чтобы увидеть падение воркера линкуемся к нему
-    Options = workers_options(?unload_timeout, #{link_pid=>erlang:self()}),
+    % Options = workers_options(?unload_timeout, #{}),
+    Options = workers_options(?unload_timeout, #{link_pid => erlang:self()}),
     Pid     = start_workers(Options),
-    hello   = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_utils:default_deadline()),
+    hello   = mg_workers:call(Options, 42, hello, ?req_ctx, mg_utils:default_deadline()),
     ok      = wait_machines_unload(?unload_timeout),
     ok      = stop_workers(Pid).
 
@@ -99,10 +102,10 @@ base_test(_C) ->
     _.
 load_fail_test(_C) ->
     % тут процесс специально падает, поэтому линк не нужен
-    Options = workers_options(?unload_timeout, #{fail_on=>load}),
+    Options = workers_options(?unload_timeout, #{fail_on => load}),
     Pid     = start_workers(Options),
-    {error, {unexpected_exit, _}} =
-        mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_utils:default_deadline()),
+    {'EXIT', {{timeout, _, _, _}, _}} =
+        (catch mg_workers:call(Options, 42, hello, ?req_ctx, mg_utils:default_deadline())),
     ok      = wait_machines_unload(?unload_timeout),
     ok      = stop_workers(Pid).
 
@@ -110,9 +113,9 @@ load_fail_test(_C) ->
     _.
 load_error_test(_C) ->
     % чтобы увидеть падение воркера линкуемся к нему
-    Options = workers_options(?unload_timeout, #{load_error=>test_error, link_pid=>erlang:self()}),
+    Options = workers_options(?unload_timeout, #{load_error => test_error, link_pid => erlang:self()}),
     Pid     = start_workers(Options),
-    {error, test_error} = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_utils:default_deadline()),
+    {error, test_error} = mg_workers:call(Options, 42, hello, ?req_ctx, mg_utils:default_deadline()),
     ok      = wait_machines_unload(?unload_timeout),
     ok      = stop_workers(Pid).
 
@@ -120,10 +123,10 @@ load_error_test(_C) ->
     _.
 call_fail_test(_C) ->
     % тут процесс специально падает, поэтому линк не нужен
-    Options = workers_options(?unload_timeout, #{fail_on=>call}),
+    Options = workers_options(?unload_timeout, #{fail_on => call}),
     Pid     = start_workers(Options),
-    {error, {unexpected_exit, _}} =
-        mg_workers_manager:call(Options, 43, hello, ?req_ctx, mg_utils:default_deadline()),
+    {'EXIT', {{timeout, _, _, _}, _}} =
+        (catch mg_workers:call(Options, 43, hello, ?req_ctx, mg_utils:default_deadline())),
     ok      = wait_machines_unload(?unload_timeout),
     ok      = stop_workers(Pid).
 
@@ -131,21 +134,22 @@ call_fail_test(_C) ->
     _.
 unload_fail_test(_C) ->
     % падение при unload'е мы не замечаем :(
-    Options = workers_options(?unload_timeout, #{fail_on=>unload}),
+    Options = workers_options(?unload_timeout, #{fail_on => unload}),
     Pid     = start_workers(Options),
-    hello   = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_utils:default_deadline()),
+    hello   = mg_workers:call(Options, 42, hello, ?req_ctx, mg_utils:default_deadline()),
     ok      = wait_machines_unload(?unload_timeout),
     ok      = stop_workers(Pid).
 
 -spec stress_test(config()) ->
     _.
 stress_test(_C) ->
+    % сейчас это какой-то хилый стресс, нужно подтюнить нагрузку и таймауты
     TestTimeout        = 5 * 1000,
-    WorkersCount       = 50,
-    TestProcessesCount = 1000,
-    UnloadTimeout      = 0, % чтобы машины выгружались в процессе теста
+    WorkersCount       = 10,
+    TestProcessesCount = 100,
+    UnloadTimeout      = 200, % чтобы машины выгружались в процессе теста
 
-    Options = workers_options(UnloadTimeout, #{link_pid=>erlang:self()}),
+    Options = workers_options(UnloadTimeout, #{link_pid => erlang:self()}),
     WorkersPid = start_workers(Options),
 
     TestProcesses = [stress_test_start_process(Options, WorkersCount) || _ <- lists:seq(1, TestProcessesCount)],
@@ -155,37 +159,38 @@ stress_test(_C) ->
     ok = wait_machines_unload(UnloadTimeout + 10),
     ok = stop_workers(WorkersPid).
 
--spec stress_test_start_process(mg_workers_manager:options(), pos_integer()) ->
+-spec stress_test_start_process(mg_workers:options(), pos_integer()) ->
     pid().
 stress_test_start_process(Options, WorkersCount) ->
     erlang:spawn_link(fun() -> stress_test_process(Options, WorkersCount) end).
 
--spec stress_test_process(mg_workers_manager:options(), pos_integer()) ->
+-spec stress_test_process(mg_workers:options(), pos_integer()) ->
     no_return().
 stress_test_process(Options, WorkersCount) ->
     ok = stress_test_do_test_call(Options, WorkersCount),
     stress_test_process(Options, WorkersCount).
 
--spec stress_test_do_test_call(mg_workers_manager:options(), pos_integer()) ->
+-spec stress_test_do_test_call(mg_workers:options(), pos_integer()) ->
     ok.
 stress_test_do_test_call(Options, WorkersCount) ->
     ID = rand:uniform(WorkersCount),
     % проверим, что отвечают действительно на наш запрос
     Call = {hello, erlang:make_ref()},
-    Call = mg_workers_manager:call(Options, ID, Call, ?req_ctx, mg_utils:default_deadline()),
+    Call = mg_workers:call(Options, ID, Call, ?req_ctx, mg_utils:default_deadline()),
     ok.
 
 -spec workers_options(non_neg_integer(), worker_params()) ->
-    mg_workers_manager:options().
+    mg_workers:options().
 workers_options(UnloadTimeout, WorkerParams) ->
     #{
-        name => base_test_workers,
-        message_queue_len_limit => 10000,
+        namespace => base_test_workers,
+        % message_queue_len_limit => 10000,
         worker_options => #{
-            worker            => {?MODULE, WorkerParams},
-            hibernate_timeout => UnloadTimeout div 2,
+            worker => {?MODULE, WorkerParams},
+            % hibernate_timeout => UnloadTimeout div 2,
             unload_timeout    => UnloadTimeout
-        }
+        },
+        raft => mg_utils:default_test_raft_options()
     }.
 
 %%
@@ -203,22 +208,22 @@ workers_options(UnloadTimeout, WorkerParams) ->
 
 -spec handle_load(_ID, _, worker_params()) ->
     {ok, worker_state()} | {error, _}.
-handle_load(_, #{load_error := Reason}, ?req_ctx) ->
+handle_load(#{load_error := Reason}, _, ?req_ctx) ->
     {error, Reason};
-handle_load(_, Params, ?req_ctx) ->
+handle_load(Params, _, ?req_ctx) ->
     ok = try_link(Params),
     ok = try_exit(load, Params),
     {ok, Params}.
 
--spec handle_call(_Call, _From, _, worker_state()) ->
+-spec handle_call(_, _, _, _, worker_state()) ->
     {{reply, _Resp}, worker_state()}.
-handle_call(Call, _From, ?req_ctx, State) ->
+handle_call(_, _, Call, ?req_ctx, State) ->
     ok = try_exit(call, State),
     {{reply, Call}, State}.
 
--spec handle_unload(worker_state()) ->
+-spec handle_unload(_, _, worker_state()) ->
     ok.
-handle_unload(State) ->
+handle_unload(_, _, State) ->
     ok = try_exit(unload, State),
     ok = try_unlink(State).
 
@@ -231,7 +236,7 @@ try_exit(_Stage, #{}) ->
 
 -spec try_link(worker_params()) ->
     ok.
-try_link(#{link_pid:=Pid}) ->
+try_link(#{link_pid := Pid}) ->
     true = erlang:link(Pid), ok;
 try_link(#{}) ->
     ok.
@@ -249,7 +254,7 @@ try_unlink(#{}) ->
 -spec start_workers(_Options) ->
     pid().
 start_workers(Options) ->
-    mg_utils:throw_if_error(mg_workers_manager:start_link(Options)).
+    mg_utils:throw_if_error(mg_workers:start_link(Options)).
 
 -spec stop_workers(pid()) ->
     ok.

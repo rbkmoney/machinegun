@@ -86,6 +86,8 @@
 
 -export([concatenate_namespaces/2]).
 
+-export([default_test_raft_options/0]).
+
 %%
 %% API
 %% OTP
@@ -436,3 +438,19 @@ stop_wait(Pid, Reason, Timeout) ->
     mg:ns().
 concatenate_namespaces(NamespaceA, NamespaceB) ->
     <<NamespaceA/binary, "_", NamespaceB/binary>>.
+
+
+%% TODO перенести в более подходящее место
+-spec default_test_raft_options() ->
+    raft:options().
+default_test_raft_options() ->
+    #{
+        self              => erlang:node(),
+        cluster           => [erlang:node()],
+        election_timeout  => {15, 20},
+        broadcast_timeout => 10,
+        storage           => raft_storage_memory,
+        rpc               => raft_rpc_erl,
+        logger            => undefined
+        % logger            => raft_logger_io_plant_uml
+    }.

@@ -237,7 +237,8 @@ automaton_options() ->
         namespace => <<"test">>,
         processor => ?MODULE,
         storage   => mg_storage_memory,
-        logger    => ?MODULE
+        logger    => ?MODULE,
+        raft      => mg_utils:default_test_raft_options()
     }.
 
 -spec lists_random(list(T)) ->

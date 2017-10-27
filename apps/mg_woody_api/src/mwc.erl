@@ -83,7 +83,7 @@ resume_interrupted_one(Namespace, ID) ->
 -spec kill(scalar(), scalar()) ->
     ok.
 kill(Namespace, ID) ->
-    ok = mg_workers_manager:brutal_kill(mg_machine:manager_options(m_opts(Namespace)), id(ID)).
+    ok = mg_workers:unload(mg_machine:workers_options(m_opts(Namespace)), id(ID)).
 
 -spec get_failed_machines(mg:ns()) ->
     [{mg:id(), Reason::term()}].
