@@ -57,7 +57,7 @@ child_spec(Options, ChildID) ->
 -spec start_link(options()) ->
     mg_utils:gen_start_ret().
 start_link(Options) ->
-    raft_supervisor:start_link(raft_server_name(Options), sup_name(Options), raft_options(Options)).
+    mg_workers_raft_supervisor:start_link(raft_server_name(Options), sup_name(Options), raft_options(Options)).
 
 -spec call(options(), _ID, _Call, _ReqCtx, mg_utils:deadline()) ->
     _Reply | {error, _}.
@@ -81,18 +81,21 @@ load_worker_if_needed(Options, ID) ->
 -spec is_loaded(options(), _ID) ->
     boolean().
 is_loaded(Options, ID) ->
-    raft_supervisor:is_started(raft_options(Options), ID).
+    mg_workers_raft_supervisor:is_started(raft_options(Options), ID).
 
 -spec load(options(), _ID) ->
     ok.
 load(Options, ID) ->
-    _ = raft_supervisor:start_child(raft_options(Options), mg_worker:child_spec(ID, worker_options(Options, ID))),
+    _ = mg_workers_raft_supervisor:start_child(
+            raft_options(Options),
+            mg_worker:child_spec(ID, worker_options(Options, ID))
+        ),
     ok.
 
 -spec unload(options(), _ID) ->
     ok.
 unload(Options, ID) ->
-    _ = raft_supervisor:stop_child(raft_options(Options), ID),
+    _ = mg_workers_raft_supervisor:stop_child(raft_options(Options), ID),
     ok.
 
 %%
