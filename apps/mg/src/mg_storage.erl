@@ -67,7 +67,7 @@
 -type key         () :: binary().
 -type value       () :: opaque().
 -type kv          () :: {key(), value()}.
--type context     () :: term().
+-type context     () :: opaque().
 -type continuation() :: term(). % undefined означает, что данные кончились
 
 %% типизация получилась отвратная, но лучше не вышло :-\

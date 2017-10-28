@@ -413,24 +413,23 @@ call_(Options, ID, Call, ReqCtx, Deadline) ->
 }.
 
 -spec handle_load(options(), _ID, request_context()) ->
-    {ok, state()}.
+    {ok, mg_storage:opaque()}.
 handle_load(Options, ID, ReqCtx) ->
     try
-        {ok, get_state(Options, ID)}
+        {ok, state_to_opaque(get_state(Options, ID))}
     catch throw:Reason ->
         Exception = {throw, Reason, erlang:get_stacktrace()},
         ok = emit_log_machine_event(Options, ID, ReqCtx, {loading_failed, Exception}),
         {error, Reason}
     end.
 
--spec handle_call(options(), _ID, _Call, request_context(), state()) ->
-    {{reply, _Resp} | noreply, state()}.
-handle_call(Options, ID, Call, ReqCtx, State) ->
-    % PCtx = new_processing_context(CallContext),
+-spec handle_call(options(), _ID, _Call, request_context(), mg_storage:opaque()) ->
+    {{reply, _Resp} | noreply, mg_storage:opaque()}.
+handle_call(Options, ID, Call, ReqCtx, OpaqueState) ->
     PCtx = new_processing_context(),
-    HS = #{storage_machine := StorageMachine} = new_hstate(Options, ID, State),
+    HS = #{storage_machine := StorageMachine} = new_hstate(Options, ID, opaque_to_state(OpaqueState)),
 
-    % довольно сложное место, тут определяется приоритет реакции на внешние раздражители, нужно быть аккуратнее
+    % довольно сложное место, тут определяется приоритет реакции на внешние раздражители, нужно быть очень аккурантым
     {Reply, NewHState} =
         case {Call, StorageMachine} of
             % start
@@ -470,9 +469,9 @@ handle_call(Options, ID, Call, ReqCtx, State) ->
             {{timeout, _}, #{status:=_}} ->
                 {{reply, {ok, ok}}, HS}
         end,
-    {Reply, hstate_to_state(NewHState)}.
+    {Reply, state_to_opaque(hstate_to_state(NewHState))}.
 
--spec handle_unload(_, mg:id(), state()) ->
+-spec handle_unload(_, mg:id(), mg_storage:opaque()) ->
     ok.
 handle_unload(_, _, _) ->
     ok.
@@ -481,6 +480,8 @@ handle_unload(_, _, _) ->
 
 -spec hstate_to_state(hstate()) ->
     state().
+hstate_to_state(#{storage_machine := undefined, storage_context := undefined}) ->
+    undefined;
 hstate_to_state(#{storage_machine := StorageMachine, storage_context := StorageContext}) ->
     {StorageContext, StorageMachine}.
 
@@ -530,6 +531,30 @@ get_state(Options, ID) ->
 %%
 %% packer to opaque
 %%
+-spec state_to_opaque(state()) ->
+    mg_storage:opaque().
+state_to_opaque(undefined) ->
+    [1, null];
+state_to_opaque({StorageContext, StorageMachine}) ->
+    [1, storage_context_to_opaque(StorageContext), storage_machine_to_opaque(StorageMachine)].
+
+-spec opaque_to_state(mg_storage:opaque()) ->
+    state().
+opaque_to_state([1, null]) ->
+    undefined;
+opaque_to_state([1, StorageContext, StorageMachine]) ->
+    {opaque_to_storage_context(StorageContext), opaque_to_storage_machine(StorageMachine)}.
+
+-spec storage_context_to_opaque(mg_storage:context()) ->
+    mg_storage:opaque().
+storage_context_to_opaque(StorageContext) ->
+    StorageContext.
+
+-spec opaque_to_storage_context(mg_storage:opaque()) ->
+    mg_storage:context().
+opaque_to_storage_context(StorageContext) ->
+    StorageContext.
+
 -spec storage_machine_to_opaque(storage_machine()) ->
     mg_storage:opaque().
 storage_machine_to_opaque(#{status := Status, state := State }) ->
@@ -680,7 +705,6 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, HState = #{storage_machine := Stor
                 remove_from_storage(ReqCtx, HState)
         end,
     case Action of
-        % TODO починить
         {continue, NewProcessingSubState} ->
             process(continuation, ProcessingCtx#{state := NewProcessingSubState}, ReqCtx, NewHState);
         _ ->

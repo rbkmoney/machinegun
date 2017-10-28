@@ -79,8 +79,8 @@ do_request(Options = #{size := Size, worker := Worker, queue_len_limit := Limit}
             do_request(Options, SelfRef, Req, RemainAttempts -1 );
         {error, Reason} ->
             throw_error({'storage request error', Reason});
-        R ->
-            R
+        Result ->
+            Result
     end.
 
 %%
@@ -136,7 +136,7 @@ random_worker_id(N) ->
     rand:uniform(N).
 
 -spec try_gen_call(fun(() -> Result)) ->
-    {ok, Result} | {error, _}.
+    {error, _} | Result.
 try_gen_call(F) ->
     try
         F()
