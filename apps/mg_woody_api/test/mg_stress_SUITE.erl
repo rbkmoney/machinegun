@@ -104,10 +104,14 @@ mg_woody_api_config(_C) ->
                     overseer => #{ interval => 100, limit => 10 }
                 },
                 retries => #{},
-                event_sink => ?ES_ID
+                event_sink => ?ES_ID,
+                raft => mg_utils:default_test_raft_options()
             }
         }},
-        {event_sink_ns, #{storage => mg_storage_memory}}
+        {event_sink_ns, #{
+            storage => mg_storage_memory,
+            raft => mg_utils:default_test_raft_options()
+        }}
     ].
 
 

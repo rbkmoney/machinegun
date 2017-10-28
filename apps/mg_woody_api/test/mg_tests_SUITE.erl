@@ -279,11 +279,13 @@ mg_woody_api_config(C) ->
                 % TODO в будущем нужно это сделать
                 % сейчас же можно иногда включать и смотреть
                 % suicide_probability => 0.1,
-                event_sink => ?ES_ID
+                event_sink => ?ES_ID,
+                raft => mg_utils:default_test_raft_options()
             }
         }},
         {event_sink_ns, #{
-            storage => mg_storage_memory
+            storage => mg_storage_memory,
+            raft => mg_utils:default_test_raft_options()
         }}
     ].
 
@@ -512,7 +514,8 @@ config_with_multiple_event_sinks(_C) ->
                     overseer => #{ interval => 100, limit => 10 }
                 },
                 retries => #{},
-                event_sink => <<"SingleES">>
+                event_sink => <<"SingleES">>,
+                raft => mg_utils:default_test_raft_options()
             },
             <<"2">> => #{
                 storage    => mg_storage_memory,
@@ -525,10 +528,11 @@ config_with_multiple_event_sinks(_C) ->
                     overseer => #{ interval => 100, limit => 10 }
                 },
                 retries => #{},
-                event_sink => <<"SingleES">>
+                event_sink => <<"SingleES">>,
+                raft => mg_utils:default_test_raft_options()
             }
         }},
-        {event_sink_ns, #{storage => mg_storage_memory}},
+        {event_sink_ns, #{storage => mg_storage_memory, raft => mg_utils:default_test_raft_options()}},
         {event_sinks, [<<"SingleES">>]}
     ],
     Apps = genlib_app:start_application_with(mg_woody_api, Config),
