@@ -61,7 +61,7 @@ start_link(Options) ->
 
 -spec call(options(), _ID, _Call, _ReqCtx, mg_utils:deadline()) ->
     _Reply | {error, _}.
-call(Options = #{}, ID, Call, ReqCtx, Deadline) ->
+call(Options, ID, Call, ReqCtx, Deadline) ->
     case mg_utils:is_deadline_reached(Deadline) of
         false ->
             ok = load_worker_if_needed(Options, ID),

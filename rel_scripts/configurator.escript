@@ -130,7 +130,8 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
                 timers   => #{ interval => 1000, limit => 10 }, % | disable
                 overseer => #{ interval => 1000, limit => 10 } % | disable
             },
-            suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0))
+            suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0)),
+            raft                => raft_options(YamlConfig)
         },
     NS1 =
         case ?C:conf([event_sink], NSYamlConfig, undefined) of
@@ -142,8 +143,42 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
 event_sink_ns(YamlConfig) ->
     #{
         storage                => storage(<<"_event_sinks">>, YamlConfig),
-        duplicate_search_batch => 1000
+        duplicate_search_batch => 1000,
+        raft                   => raft_options(YamlConfig)
     }.
+
+raft_options(YamlConfig) ->
+    RPC = raft_rpc(?C:conf([raft, rpc_type], YamlConfig)),
+    #{
+        self              => raft_endpoint (RPC, ?C:conf([raft, self   ], YamlConfig)),
+        cluster           => raft_cluster(RPC, ?C:conf([raft, cluster], YamlConfig)),
+        election_timeout  => raft_election_timeout(?C:conf([raft, election_timeout], YamlConfig)),
+        broadcast_timeout => raft_timeout(?C:conf([raft, broadcast_timeout], YamlConfig)),
+        storage           => raft_storage_memory,
+        rpc               => RPC,
+        logger            => undefined
+    }.
+
+raft_election_timeout([From, To]) ->
+    {raft_timeout(From), raft_timeout(To)};
+raft_election_timeout(Fixed) ->
+    raft_timeout(Fixed).
+
+raft_timeout(Timeout) ->
+    ?C:time_interval(Timeout, ms).
+
+raft_cluster(RPC, Endpoints) ->
+    ordsets:from_list([raft_endpoint(RPC, Endpoint) || Endpoint <- Endpoints]).
+
+raft_endpoint(raft_rpc_erl, NodeName) ->
+    erlang_node_name(NodeName).
+
+raft_rpc("erl" ) -> raft_rpc_erl;
+% raft_rpc("sctp") -> {raft_rpc_sctp, sctp_peer(Mode, Peer, Name)};
+raft_rpc(RPC) -> throw({bad_rpc, RPC}).
+
+erlang_node_name(NodeName) ->
+    erlang:list_to_atom(NodeName).
 
 %%
 %% vm.args

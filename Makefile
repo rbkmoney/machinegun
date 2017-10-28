@@ -60,7 +60,7 @@ rebar-update:
 upgrade-proto:
 	$(REBAR) upgrade mg_proto
 
-compile: submodules rebar-update
+compile: submodules
 	$(REBAR) compile
 
 xref: submodules
@@ -71,6 +71,9 @@ lint:
 
 dialyze:
 	$(REBAR) dialyzer
+
+configurator_test_run:
+	ERL_LIBS=_build/default/lib ./rel_scripts/configurator.escript config/config.yaml config
 
 start: submodules
 	$(REBAR) run

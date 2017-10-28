@@ -1,5 +1,6 @@
 log
 /_build/
+/_checkouts/
 *~
 erl_crash.dump
 .tags*

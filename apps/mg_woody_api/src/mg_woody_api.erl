@@ -52,11 +52,22 @@
     event_sink          => mg:id(),
     retries             := mg_machine:retry_opt(),
     scheduled_tasks     := mg_machine:scheduled_tasks_opt(),
-    suicide_probability => mg_machine:suicide_probability()
+    suicide_probability => mg_machine:suicide_probability(),
+    raft                := raft_options()
 }.
 -type event_sink_ns() :: #{
-    storage                => mg_storage:options(),
-    duplicate_search_batch => mg_storage:index_limit()
+    storage                := mg_storage:options(),
+    duplicate_search_batch := mg_storage:index_limit(),
+    raft                   := raft_options()
+}.
+-type raft_options() :: #{
+    self              := raft_rpc:endpoint(),
+    cluster           := ordsets:ordset(raft_rpc:endpoint()),
+    election_timeout  := raft:timeout_ms() | {raft:timeout_ms(), raft:timeout_ms()},
+    broadcast_timeout := raft:timeout_ms(),
+    storage           := raft_storage:storage(),
+    rpc               := raft_rpc_erl,
+    logger            := raft_logger:logger()
 }.
 -type config_element() ::
       {woody_server , woody_server()                 }
@@ -167,19 +178,19 @@ events_machine_options(NS, Config = #{processor := ProcessorConfig, storage := S
 
 -spec tags_options(mg:ns(), events_machines()) ->
     mg_machine_tags:options().
-tags_options(NS, #{retries := Retries, storage := Storage}) ->
+tags_options(NS, #{retries := Retries, storage := Storage, raft := Raft}) ->
     #{
         namespace => mg_utils:concatenate_namespaces(NS, <<"tags">>),
         storage   => Storage, % по логике тут должен быть sub namespace, но его по историческим причинам нет
         logger    => logger({machine_tags, NS}),
         retries   => Retries,
-        raft      => mg_utils:default_test_raft_options()
+        raft      => Raft
     }.
 
 -spec machine_options(mg:ns(), events_machines()) ->
     mg_machine:options().
 machine_options(NS, Config) ->
-    #{retries := Retries, scheduled_tasks := STasks, storage := Storage} = Config,
+    #{retries := Retries, scheduled_tasks := STasks, storage := Storage, raft := Raft} = Config,
     #{
         namespace           => NS,
         storage             => add_bucket_postfix(<<"machines">>, Storage),
@@ -188,7 +199,7 @@ machine_options(NS, Config) ->
         scheduled_tasks     => STasks,
         % TODO сделать аналогично в event_sink'е и тэгах
         suicide_probability => maps:get(suicide_probability, Config, undefined),
-        raft                => mg_utils:default_test_raft_options()
+        raft                => Raft
     }.
 
 -spec events_machine_options_event_sink(mg:id(), mg_events_sink:options(), mg_events_machine:options()) ->
@@ -214,13 +225,13 @@ api_event_sink_options(Config) ->
 
 -spec event_sink_options(event_sink_ns()) ->
     mg_events_sink:options().
-event_sink_options(EventSinkNS = #{storage := Storage}) ->
+event_sink_options(EventSinkNS = #{storage := Storage, raft := Raft}) ->
     EventSinkNS#{
         namespace      => <<"_event_sinks">>,
         logger         => logger(event_sink),
         storage        => add_bucket_postfix(<<"machines">>, Storage),
         events_storage => add_bucket_postfix(<<"events"  >>, Storage),
-        raft           => mg_utils:default_test_raft_options()
+        raft           => Raft
     }.
 
 -spec collect_event_sinks(config()) ->

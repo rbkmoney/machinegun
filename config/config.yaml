@@ -53,6 +53,16 @@ storage:
 #     connect_timeout: 5S
 #     request_timeout: 10S
 
+raft:
+    rpc_type: erl
+    self: mg@node1
+    cluster: [mg@node1, mg@node2, mg@node3]
+
+    # таймауты raft протокола (это важная настройка!)
+    # election_timeout << broadcast_timeout << mean_time_between_failures
+    # election_timeout ~ 2 * broadcast_timeout
+    election_timeout:  [100ms, 200ms]
+    broadcast_timeout: 50ms
 
 ##
 ## a short example for HG
