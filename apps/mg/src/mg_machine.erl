@@ -442,9 +442,10 @@ handle_call(Options, ID, Call, ReqCtx, OpaqueState) ->
 
             % сюда мы не должны попадать если машина не падала во время обработки запроса
             % (когда мы переходили в стейт processing)
-            % TODO починить
-            % {_, #{status := {processing, ProcessingReqCtx}}} ->
-            %     handle_call(Call, CallContext, ReqCtx, process(continuation, undefined, ProcessingReqCtx, HS));
+            % и пол логике тут вернуться reply не может, поэтому игнорим ответ
+            {_, #{status := {processing, ProcessingReqCtx}}} ->
+                {_, HState_} = process(continuation, undefined, ProcessingReqCtx, HS),
+                handle_call(Options, ID, Call, ReqCtx, state_to_opaque(hstate_to_state(HState_)));
 
             % ничего не просходит, просто убеждаемся, что машина загружена
             {resume_interrupted_one, _} -> {{reply, {ok, ok}}, HS};
