@@ -43,6 +43,7 @@
     worker_options => mg_worker:options(),
     raft           => raft_server:options()
 }.
+-define(leader_group_size, 1). % TODO get from conf
 
 -spec child_spec(options(), atom()) ->
     supervisor:child_spec().
@@ -56,8 +57,38 @@ child_spec(Options, ChildID) ->
 
 -spec start_link(options()) ->
     mg_utils:gen_start_ret().
-start_link(Options) ->
-    mg_workers_raft_supervisor:start_link(raft_server_name(Options), sup_name(Options), raft_options(Options)).
+start_link(Options = #{raft := #{cluster := Cluster, self := SelfNode}}) ->
+    AllGroups = groups(Cluster, ?leader_group_size),
+    {LocalGroupsIDs, _} =
+        lists:unzip(
+            lists:filter(
+                fun({_, Group}) ->
+                    lists:member(SelfNode, Group)
+                end,
+                lists:zip(lists:seq(1, erlang:length(AllGroups)), AllGroups)
+            )
+        ),
+
+    mg_utils_supervisor_wrapper:start_link(
+        #{strategy => one_for_all},
+        [raft_supervisor_child_spec(Options, GroupID) || GroupID <- LocalGroupsIDs]
+    ).
+
+-spec raft_supervisor_child_spec(options(), group_id()) ->
+    supervisor:child_spec().
+raft_supervisor_child_spec(Options, GroupID) ->
+    SupStartArgs =
+        [
+            sup_raft_server_name(Options, GroupID),
+            sup_name(Options, GroupID),
+            sup_raft_options(Options, GroupID)
+        ],
+    #{
+        id       => {group, GroupID},
+        start    => {mg_workers_raft_supervisor, start_link, SupStartArgs},
+        restart  => permanent,
+        type     => supervisor
+    }.
 
 -spec call(options(), _ID, _Call, _ReqCtx, mg_utils:deadline()) ->
     _Reply | {error, _}.
@@ -81,13 +112,13 @@ load_worker_if_needed(Options, ID) ->
 -spec is_loaded(options(), _ID) ->
     boolean().
 is_loaded(Options, ID) ->
-    mg_workers_raft_supervisor:is_started(raft_options(Options), ID).
+    mg_workers_raft_supervisor:is_started(sup_raft_options(Options, worker_id_to_group_id(ID)), ID).
 
 -spec load(options(), _ID) ->
     ok.
 load(Options, ID) ->
     _ = mg_workers_raft_supervisor:start_child(
-            raft_options(Options),
+            sup_raft_options(Options, worker_id_to_group_id(ID)),
             mg_worker:child_spec(ID, worker_options(Options, ID))
         ),
     ok.
@@ -95,39 +126,69 @@ load(Options, ID) ->
 -spec unload(options(), _ID) ->
     ok.
 unload(Options, ID) ->
-    _ = mg_workers_raft_supervisor:stop_child(raft_options(Options), ID),
+    _ = mg_workers_raft_supervisor:stop_child(sup_raft_options(Options, worker_id_to_group_id(ID)), ID),
     ok.
 
 %%
 
--spec raft_server_name(options()) ->
+-spec sup_raft_server_name(options(), group_id()) ->
     raft_utils:gen_reg_name().
-raft_server_name(#{namespace := NS}) ->
-    {via, gproc, gproc_key({?MODULE, raft_server, NS})}.
+sup_raft_server_name(#{namespace := NS}, GroupID) ->
+    {via, gproc, gproc_key({?MODULE, raft_server, NS, GroupID})}.
 
--spec sup_name(options()) ->
+-spec sup_name(options(), group_id()) ->
     raft_utils:gen_reg_name().
-sup_name(#{namespace := NS}) ->
-    {via, gproc, gproc_key({?MODULE, supervisor, NS})}.
+sup_name(#{namespace := NS}, GroupID) ->
+    {via, gproc, gproc_key({?MODULE, supervisor, NS, GroupID})}.
 
 -spec gproc_key(term()) ->
     gproc:key().
 gproc_key(Term) ->
     {n, l, Term}.
 
--spec raft_options(options()) ->
+-spec sup_raft_options(options(), group_id()) ->
     raft_server:options().
-raft_options(Options = #{raft := RaftOptions = #{cluster := Cluster, self := SelfNode}}) ->
+sup_raft_options(Options = #{raft := RaftOptions = #{cluster := Cluster, self := SelfNode}}, GroupID) ->
+    Group = group(Cluster, ?leader_group_size, GroupID),
     RaftOptions#{
-        self    := {raft_server_name(Options), SelfNode},
-        cluster := [{raft_server_name(Options), Node} || Node <- Cluster]
+        self    := {sup_raft_server_name(Options, GroupID), SelfNode},
+        cluster := [{sup_raft_server_name(Options, GroupID), Node} || Node <- Group]
     }.
 
 -spec worker_options(options(), _) ->
     mg_worker:options().
-worker_options(Options = #{worker_options := WorkerOptions, namespace := NS, raft := Raft}, ID) ->
+worker_options(Options, ID) ->
+    #{worker_options := WorkerOptions, namespace := NS, raft := Raft = #{cluster := Cluster}} = Options,
     WorkerOptions#{
         namespace  => NS,
         unload_fun => fun() -> unload(Options, ID) end,
-        raft       => Raft
+        raft       => Raft#{cluster := group(Cluster, ?leader_group_size, worker_id_to_group_id(ID))}
     }.
+
+-spec worker_id_to_group_id(_ID) ->
+    group_id().
+worker_id_to_group_id(ID) ->
+    Bin = erlang:term_to_binary(ID),
+    BitSize = erlang:size(Bin) * 8,
+    <<N:BitSize/integer>> = Bin,
+    N rem ?leader_group_size + 1.
+
+%%
+%% leader groups
+%%
+-type group_id() :: pos_integer().
+
+-spec group([Element], pos_integer(), pos_integer()) ->
+    [Element].
+group(Cluster, GroupSize, GroupNumber) ->
+    Groups = groups(Cluster, GroupSize),
+    lists:nth(GroupNumber rem erlang:length(Groups) + 1, Groups).
+
+-spec groups([Element], non_neg_integer()) ->
+    [Element].
+groups(L, 1) ->
+    [[E] || E <- L];
+groups(L, S) when length(L) =:= S ->
+    [L];
+groups([H | T], S) ->
+    [[H | L] || L <- groups(T, S - 1)] ++ groups(T, S).
