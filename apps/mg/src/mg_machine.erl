@@ -119,7 +119,7 @@
     retries             => retry_opt(),
     scheduled_tasks     => scheduled_tasks_opt(),
     suicide_probability => suicide_probability(),
-    raft                => raft:options()
+    raft                => raft_server:options()
 }.
 
 -type thrown_error() :: logic_error() | {transient, transient_error()} | {timeout, _Reason}.

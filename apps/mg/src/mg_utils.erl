@@ -442,7 +442,7 @@ concatenate_namespaces(NamespaceA, NamespaceB) ->
 
 %% TODO перенести в более подходящее место
 -spec default_test_raft_options() ->
-    raft:options().
+    raft_server:options().
 default_test_raft_options() ->
     #{
         self              => erlang:node(),
@@ -452,5 +452,5 @@ default_test_raft_options() ->
         storage           => raft_storage_memory,
         rpc               => raft_rpc_erl,
         logger            => undefined
-        % logger            => raft_logger_io_plant_uml
+        % logger            => raft_rpc_logger_io_plant_uml
     }.

@@ -33,7 +33,7 @@
     storage   => mg_storage:options(),
     logger    => mg_machine_logger:handler(),
     retries   => mg_machine:retry_opt(),
-    raft      => raft:options()
+    raft      => raft_server:options()
 }.
 -type tag() :: binary().
 

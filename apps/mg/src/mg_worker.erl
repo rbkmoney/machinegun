@@ -24,8 +24,8 @@
 -export([start_link/2]).
 -export([call      /5]).
 
-%% raft
--behaviour(raft).
+%% raft_server
+-behaviour(raft_server).
 -export([init/1, handle_election/2, handle_command/4, handle_async_command/4, handle_info/3, apply_delta/4]).
 
 %%
@@ -34,7 +34,7 @@
 -type options() :: #{
     namespace      => _,
     worker         => worker(),
-    raft           => raft:options(),
+    raft           => raft_server:options(),
     unload_timeout => pos_integer(),
     unload_fun     => fun(() -> _)
 }.
@@ -68,21 +68,21 @@ child_spec(ID, Options) ->
 -spec start_link(options(), _ID) ->
     mg_utils:gen_start_ret().
 start_link(Options, ID) ->
-    raft:start_link(self_reg_name(Options, ID), {?MODULE, {ID, Options}}, raft_options(Options, ID)).
+    raft_server:start_link(self_reg_name(Options, ID), {?MODULE, {ID, Options}}, raft_options(Options, ID)).
 
 -spec call(options(), _ID, _Call, _ReqCtx, mg_utils:deadline()) ->
     _Result | {error, _}.
 call(Options = #{raft := #{rpc := RPC}}, ID, Call, ReqCtx, Deadline) ->
-    raft:send_command(
+    raft_server:send_command(
         RPC,
         cluster_with_id(Options, ID),
         undefined,
         {call, Deadline, Call, ReqCtx},
-        genlib_retry:linear(10, 100)
+        genlib_retry:linear({max_total_timeout, 1000}, 100)
     ).
 
 %%
-%% raft
+%% raft_server
 %%
 -type command() :: {call, mg_utils:deadline(), _Call, _ReqCtx}.
 -type status () :: loading | {working, worker_state()}.
@@ -106,13 +106,13 @@ handle_election({_, Options}, State) ->
     {undefined, schedule_unload_timer(Options, State)}.
 
 -spec handle_async_command(_, raft_rpc:request_id(), _, state()) ->
-    {raft:reply_action(), state()}.
+    {raft_server:reply_action(), state()}.
 handle_async_command(_, _, AsyncCmd, State) ->
     ok = error_logger:error_msg("unexpected async_command received: ~p", [AsyncCmd]),
     {noreply, State}.
 
 -spec handle_command({_, options()}, raft_rpc:request_id(), command(), state()) ->
-    {raft:reply_action(), delta() | undefined, state()}.
+    {raft_server:reply_action(), delta() | undefined, state()}.
 handle_command({ID, Options = #{worker := Worker}}, ReqID, Cmd = {call, _, _, ReqCtx}, State = #{status := loading}) ->
     case mg_utils:apply_mod_opts(Worker, handle_load, [ID, ReqCtx]) of
         {ok, NewWorkerState} ->
@@ -160,7 +160,7 @@ self_reg_name(#{namespace := NS}, ID) ->
     {via, gproc, {n, l, {?MODULE, NS, ID}}}.
 
 -spec raft_options(options(), _ID) ->
-    raft:options().
+    raft_server:options().
 raft_options(Options = #{raft := RaftOptions = #{self := SelfNode}}, ID) ->
     RaftOptions#{
         self    := {self_reg_name(Options, ID), SelfNode},

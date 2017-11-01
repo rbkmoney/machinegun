@@ -41,7 +41,7 @@
 -type options() :: #{
     namespace      => _,
     worker_options => mg_worker:options(),
-    raft           => raft:options()
+    raft           => raft_server:options()
 }.
 
 -spec child_spec(options(), atom()) ->
@@ -116,7 +116,7 @@ gproc_key(Term) ->
     {n, l, Term}.
 
 -spec raft_options(options()) ->
-    raft:options().
+    raft_server:options().
 raft_options(Options = #{raft := RaftOptions = #{cluster := Cluster, self := SelfNode}}) ->
     RaftOptions#{
         self    := {raft_server_name(Options), SelfNode},

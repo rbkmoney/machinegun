@@ -44,7 +44,7 @@
     logger                 := mg_machine_logger:handler(),
     duplicate_search_batch := mg_storage:index_limit(),
     events_storage         := mg_storage:options(),
-    raft                   := raft:options()
+    raft                   := raft_server:options()
 }.
 
 -define(default_duplicate_search_batch, 1000).

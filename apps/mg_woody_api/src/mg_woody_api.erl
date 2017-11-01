@@ -63,11 +63,11 @@
 -type raft_options() :: #{
     self              := raft_rpc:endpoint(),
     cluster           := ordsets:ordset(raft_rpc:endpoint()),
-    election_timeout  := raft:timeout_ms() | {raft:timeout_ms(), raft:timeout_ms()},
-    broadcast_timeout := raft:timeout_ms(),
+    election_timeout  := raft_server:timeout_ms() | {raft_server:timeout_ms(), raft_server:timeout_ms()},
+    broadcast_timeout := raft_server:timeout_ms(),
     storage           := raft_storage:storage(),
     rpc               := raft_rpc_erl,
-    logger            := raft_logger:logger()
+    logger            := raft_rpc_logger:logger()
 }.
 -type config_element() ::
       {woody_server , woody_server()                 }

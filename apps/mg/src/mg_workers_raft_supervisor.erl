@@ -31,16 +31,17 @@
 -export([get_childspec/2]).
 -export([is_started   /2]).
 
-%% raft
--behaviour(raft).
+%% raft_server
+-behaviour(raft_server).
 -export([init/1, handle_election/2, handle_command/4, handle_async_command/4, handle_info/3, apply_delta/4]).
 
 %%
 %% API
 %%
--spec start_link(raft_utils:gen_reg_name(), raft_utils:gen_reg_name(), raft:options()) ->
+-spec start_link(raft_utils:gen_reg_name(), raft_utils:gen_reg_name(), raft_server:options()) ->
     raft_utils:gen_start_ret().
 start_link(RaftRegName, SupRegName, RaftOptions) ->
+    RaftServerStartArgs = [RaftRegName, {?MODULE, gen_reg_name_to_ref(SupRegName)}, RaftOptions],
     mg_utils_supervisor_wrapper:start_link(
         #{strategy => one_for_all},
         [
@@ -52,60 +53,60 @@ start_link(RaftRegName, SupRegName, RaftOptions) ->
             },
             #{
                 id       => raft_server,
-                start    => {raft, start_link, [RaftRegName, {?MODULE, gen_reg_name_to_ref(SupRegName)}, RaftOptions]},
+                start    => {raft_server, start_link, RaftServerStartArgs},
                 restart  => permanent,
                 type     => worker
             }
         ]
     ).
 
--spec start_child(raft:options(), supervisor:child_spec()) ->
+-spec start_child(raft_server:options(), supervisor:child_spec()) ->
     ok | {error, already_started}.
 start_child(#{rpc := RPC, cluster := Cluster}, ChildSpec) ->
-    raft:send_command(
+    raft_server:send_command(
         RPC,
         Cluster,
         undefined,
         {start_child, ChildSpec},
-        genlib_retry:linear(10, 100)
+        genlib_retry:linear({max_total_timeout, 100}, 10)
     ).
 
--spec stop_child(raft:options(), _ID) ->
+-spec stop_child(raft_server:options(), _ID) ->
     ok | {error, not_found}.
 stop_child(#{rpc := RPC, cluster := Cluster}, ID) ->
-    raft:send_command(
+    raft_server:send_command(
         RPC,
         Cluster,
         undefined,
         {stop_child, ID},
-        genlib_retry:linear(10, 100)
+        genlib_retry:linear({max_total_timeout, 100}, 10)
     ).
 
--spec get_childspec(raft:options(), _ID) ->
+-spec get_childspec(raft_server:options(), _ID) ->
     {ok, supervisor:child_spec()} | {error, not_found}.
 get_childspec(#{rpc := RPC, cluster := Cluster}, ID) ->
-    raft:send_async_command(
+    raft_server:send_async_command(
         RPC,
         Cluster,
         undefined,
         {get_childspec, ID},
-        genlib_retry:linear(10, 100)
+        genlib_retry:linear({max_total_timeout, 100}, 10)
     ).
 
--spec is_started(raft:options(), _ID) ->
+-spec is_started(raft_server:options(), _ID) ->
     boolean().
 is_started(#{rpc := RPC, cluster := Cluster}, ID) ->
-    raft:send_async_command(
+    raft_server:send_async_command(
         RPC,
         Cluster,
         undefined,
         {is_started, ID},
-        genlib_retry:linear(10, 100)
+        genlib_retry:linear({max_total_timeout, 100}, 10)
     ).
 
 
 %%
-%% raft
+%% raft_server
 %%
 -type async_command() :: {get_childspec, _ID} | {is_started, _ID}.
 -type sync_command () :: {start_child, supervisor:child_spec()} | {stop_child, _ID}.
@@ -123,7 +124,7 @@ handle_election(_, State) ->
     {undefined, State}.
 
 -spec handle_async_command(raft_utils:gen_ref(), raft_rpc:request_id(), async_command(), state()) ->
-    {raft:reply_action(), state()}.
+    {raft_server:reply_action(), state()}.
 handle_async_command(SupRef, _, {get_childspec, ID}, State) ->
     {reply, supervisor:get_childspec(SupRef, ID), State};
 handle_async_command(SupRef, _, {is_started, ID}, State) ->
@@ -135,7 +136,7 @@ handle_async_command(SupRef, _, {is_started, ID}, State) ->
     {{reply, Reply}, State}.
 
 -spec handle_command(raft_utils:gen_ref(), raft_rpc:request_id(), sync_command(), state()) ->
-    {raft:reply_action(), delta() | undefined, state()}.
+    {raft_server:reply_action(), delta() | undefined, state()}.
 handle_command(SupRef, _, {start_child, ChildSpec = #{id := ID}}, State) ->
     case supervisor:get_childspec(SupRef, ID) of
         {ok, _} ->
