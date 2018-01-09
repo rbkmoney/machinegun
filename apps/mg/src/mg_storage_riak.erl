@@ -147,8 +147,13 @@ do_request(Options, SelfRef, Request) ->
 -define(SAFE(Expr),
     try
         Expr
-    catch exit:{disconnected, _} ->
-        {error, disconnected}
+    catch
+        exit:{disconnected, _} ->
+            {error, disconnected};
+        % в риак клиенте все ошибки при подключении будут выглядеть так
+        % https://github.com/rbkmoney/riak-erlang-client/blob/edba3d0f/src/riakc_pb_socket.erl#L1378
+        exit:{tcp, _} ->
+            {error, disconnected}
     end
 ).
 -spec put(options(), self_ref(), mg_storage:key(), context(), mg_storage:value(), [mg_storage:index_update()]) ->
