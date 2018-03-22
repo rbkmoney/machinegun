@@ -140,10 +140,10 @@ do_action(Options, ID, Seq, Action) ->
                 mg_machine:call(Options, id(ID), ResultAction, req_ctx(ID, Seq), mg_utils:default_deadline())
         end
     catch
-        throw:machine_failed          -> failed;
-        throw:machine_already_exist   -> already_exist;
-        throw:machine_not_found       -> not_found;
-        throw:machine_already_working -> already_working
+        throw:{logic, machine_failed         } -> failed;
+        throw:{logic, machine_already_exist  } -> already_exist;
+        throw:{logic, machine_not_found      } -> not_found;
+        throw:{logic, machine_already_working} -> already_working
     end.
 
 -spec req_ctx(id(), seq()) ->
