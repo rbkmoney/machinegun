@@ -52,6 +52,9 @@ format_event(Subj, {machine_event, SubjID, ReqCtx, MachineEvent}) ->
 
 -spec format_request_event(mg_machine_logger:request_event()) ->
     log_msg().
+format_request_event({request_failed, Exception={throw, {logic, _}, _}}) ->
+    % бизнес ошибки это не warning
+    {info, {"request handling failed ~p", [Exception]}, []};
 format_request_event({request_failed, Exception}) ->
     {warning, {"request handling failed ~p", [Exception]}, []};
 format_request_event({timer_handling_failed, Exception}) ->

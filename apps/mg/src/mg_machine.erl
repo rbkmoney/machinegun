@@ -28,7 +28,7 @@
 %%
 %% Возможные ошибки:
 %%  - ожиданные -- throw()
-%%   - бизнес-логические
+%%   - бизнес-логические -- logic
 %%    - машина не найдена -- machine_not_found
 %%    - машина уже существует -- machine_already_exist
 %%    - машина находится в упавшем состоянии -- machine_failed
@@ -41,7 +41,7 @@
 %%  - неожиданные
 %%   - что-то пошло не так -- падение с любой другой ошибкой
 %%
-%% Например: throw:machine_not_found, throw:{transient, {storage_unavailable, ...}}, error:badarg
+%% Например: throw:{logic, machine_not_found}, throw:{transient, {storage_unavailable, ...}}, error:badarg
 %%
 %% Если в процессе обработки внешнего запроса происходит ожидаемая ошибка, она мапится в код ответа,
 %%  если неожидаемая ошибка, то запрос падает с internal_error, ошибка пишется в лог.
@@ -122,7 +122,7 @@
     suicide_probability => suicide_probability()
 }.
 
--type thrown_error() :: logic_error() | {transient, transient_error()} | {timeout, _Reason}.
+-type thrown_error() :: {logic, logic_error()} | {transient, transient_error()} | {timeout, _Reason}.
 -type logic_error() :: machine_already_exist | machine_not_found | machine_failed | machine_already_working.
 -type transient_error() :: overload | {storage_unavailable, _Reason} | {processor_unavailable, _Reason} | unavailable.
 
@@ -235,13 +235,15 @@ fail(Options, ID, Exception, ReqCtx, Deadline) ->
 -spec get(options(), mg:id()) ->
     machine_state() | throws().
 get(Options, ID) ->
-    {_, #{state := State}} = mg_utils:throw_if_undefined(get_storage_machine(Options, ID), machine_not_found),
+    {_, #{state := State}} =
+        mg_utils:throw_if_undefined(get_storage_machine(Options, ID), {logic, machine_not_found}),
     State.
 
 -spec get_status(options(), mg:id()) ->
     machine_status() | throws().
 get_status(Options, ID) ->
-    {_, #{status := Status}} = mg_utils:throw_if_undefined(get_storage_machine(Options, ID), machine_not_found),
+    {_, #{status := Status}} =
+        mg_utils:throw_if_undefined(get_storage_machine(Options, ID), {logic, machine_not_found}),
     Status.
 
 -spec is_exist(options(), mg:id()) ->
@@ -265,10 +267,10 @@ search(Options, Query) ->
 call_with_lazy_start(Options, ID, Call, ReqCtx, Deadline, StartArgs) ->
     try
         call(Options, ID, Call, ReqCtx, Deadline)
-    catch throw:machine_not_found ->
+    catch throw:{logic, machine_not_found} ->
         try
             _ = start(Options, ID, StartArgs, ReqCtx, Deadline)
-        catch throw:machine_already_exist ->
+        catch throw:{logic, machine_already_exist} ->
             % вдруг кто-то ещё делает аналогичный процесс
             ok
         end,
@@ -458,8 +460,8 @@ handle_call(Call, CallContext, ReqCtx, S=#{storage_machine:=StorageMachine}) ->
     case {Call, StorageMachine} of
         % start
         {{start, Args}, undefined   } -> {noreply, process_start(Args, PCtx, ReqCtx, S)};
-        { _           , undefined   } -> {{reply, {error, machine_not_found    }}, S};
-        {{start, _   }, #{status:=_}} -> {{reply, {error, machine_already_exist}}, S};
+        { _           , undefined   } -> {{reply, {error, {logic, machine_not_found    }}}, S};
+        {{start, _   }, #{status:=_}} -> {{reply, {error, {logic, machine_already_exist}}}, S};
 
         % fail
         {{fail, Exception}, _} -> {{reply, ok}, handle_exception(Exception, undefined, ReqCtx, S)};
@@ -475,15 +477,15 @@ handle_call(Call, CallContext, ReqCtx, S=#{storage_machine:=StorageMachine}) ->
         % call
         {{call  , SubCall}, #{status:= sleeping         }} -> {noreply, process({call, SubCall}, PCtx, ReqCtx, S)};
         {{call  , SubCall}, #{status:={waiting, _, _, _}}} -> {noreply, process({call, SubCall}, PCtx, ReqCtx, S)};
-        {{call  , _      }, #{status:={error  , _, _   }}} -> {{reply, {error, machine_failed}}, S};
+        {{call  , _      }, #{status:={error  , _, _   }}} -> {{reply, {error, {logic, machine_failed}}}, S};
 
         % repair
         {{repair, Args}, #{status:={error  , _, _}}} -> {noreply, process({repair, Args}, PCtx, ReqCtx, S)};
-        {{repair, _   }, #{status:=_              }} -> {{reply, {error, machine_already_working}}, S};
+        {{repair, _   }, #{status:=_              }} -> {{reply, {error, {logic, machine_already_working}}}, S};
 
         % simple_repair
         {simple_repair, #{status:={error  , _, _}}} -> {{reply, ok}, process_simple_repair(ReqCtx, S)};
-        {simple_repair, #{status:=_              }} -> {{reply, {error, machine_already_working}}, S};
+        {simple_repair, #{status:=_              }} -> {{reply, {error, {logic, machine_already_working}}}, S};
 
         % timers
         {{timeout, Ts0}, #{status:={waiting, Ts1, _, _}}}
@@ -642,7 +644,7 @@ process(Impact, ProcessingCtx, ReqCtx, State) ->
     try
         process_unsafe(Impact, ProcessingCtx, ReqCtx, State)
     catch Class:Reason ->
-        ok = do_reply_action({reply, {error, machine_failed}}, ProcessingCtx),
+        ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
         handle_exception({Class, Reason, erlang:get_stacktrace()}, Impact, ReqCtx, State)
     end.
 

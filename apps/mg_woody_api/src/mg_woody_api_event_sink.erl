@@ -63,7 +63,7 @@ check_event_sink(AvaliableEventSinks, EventSinkID) ->
         true ->
             ok;
         false ->
-            throw(event_sink_not_found)
+            throw({logic, event_sink_not_found})
     end.
 
 -spec logger(mg_events_sink:options()) ->

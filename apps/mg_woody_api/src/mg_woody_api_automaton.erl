@@ -145,7 +145,7 @@ get_ns_options(Namespace, Options) ->
         maps:get(Namespace, Options)
     catch
         error:{badkey, Namespace} ->
-            throw(namespace_not_found)
+            throw({logic, namespace_not_found})
     end.
 
 -spec logger(mg:ns(), options()) ->

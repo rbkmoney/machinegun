@@ -199,7 +199,7 @@ ref2id(_, {id, ID}) ->
     ID;
 ref2id(Options, {tag, Tag}) ->
     case mg_machine_tags:resolve(tags_machine_options(Options), Tag) of
-        undefined -> throw(machine_not_found);
+        undefined -> throw({logic, machine_not_found});
         ID        -> ID
     end.
 

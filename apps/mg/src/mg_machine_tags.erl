@@ -56,7 +56,7 @@ replace(Options, Tag, ID, ReqCtx, Deadline) ->
 resolve(Options, Tag) ->
     try
         opaque_to_state(mg_machine:get(machine_options(Options), Tag))
-    catch throw:machine_not_found ->
+    catch throw:{logic, machine_not_found} ->
         undefined
     end.
 

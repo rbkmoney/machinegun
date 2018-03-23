@@ -247,7 +247,7 @@ make_ext_id(EventSinkID, SourceNS, SourceMachineID, EventID) ->
 get_state(Options, EventSinkID) ->
     try
         opaque_to_state(mg_machine:get(machine_options(Options), EventSinkID))
-    catch throw:machine_not_found ->
+    catch throw:{logic, machine_not_found} ->
         new_state()
     end.
 
