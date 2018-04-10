@@ -7,7 +7,7 @@
  {<<"cowboy">>,{pkg,<<"cowboy">>,<<"1.0.4">>},1},
  {<<"cowlib">>,{pkg,<<"cowlib">>,<<"1.0.2">>},2},
  {<<"erl_health">>,
-  {git,"git@github.com:rbkmoney/erlang-health.git",
+  {git,"https://github.com/rbkmoney/erlang-health.git",
        {ref,"0398b5c6cf276732cb5d2170f247f04207cb9ebb"}},
   0},
  {<<"genlib">>,
@@ -38,7 +38,7 @@
   {git,"git@github.com:rbkmoney/msgpack-erlang.git",
        {ref,"9d56647ed77498c7655da39891c4985142697083"}},
   0},
- {<<"ranch">>,{pkg,<<"ranch">>,<<"1.3.2">>},2},
+ {<<"ranch">>,{pkg,<<"ranch">>,<<"1.5.0">>},2},
  {<<"recon">>,{pkg,<<"recon">>,<<"2.3.2">>},0},
  {<<"rfc3339">>,
   {git,"git://github.com/talentdeficit/rfc3339.git",
@@ -82,7 +82,7 @@
  {<<"lager">>, <<"EEF4E18B39E4195D37606D9088EA05BF1B745986CF8EC84F01D332456FE88D17">>},
  {<<"metrics">>, <<"25F094DEA2CDA98213CECC3AEFF09E940299D950904393B2A29D191C346A8486">>},
  {<<"mimerl">>, <<"993F9B0E084083405ED8252B99460C4F0563E41729AB42D9074FD5E52439BE88">>},
- {<<"ranch">>, <<"E4965A144DC9FBE70E5C077C65E73C57165416A901BD02EA899CFD95AA890986">>},
+ {<<"ranch">>, <<"F04166F456790FEE2AC1AA05A02745CC75783C2BFB26D39FAF6AEFC9A3D3A58A">>},
  {<<"recon">>, <<"4444C879BE323B1B133EEC5241CB84BD3821EA194C740D75617E106BE4744318">>},
  {<<"ssl_verify_fun">>, <<"28A4D65B7F59893BC2C7DE786DEC1E1555BD742D336043FE644AE956C3497FBE">>}]}
 ].
