@@ -93,3 +93,6 @@ test: submodules
 	$(REBAR) ct
 
 dev_test: xref lint test
+
+test_configurator:
+	ERL_LIBS=_build/default/lib ./rel_scripts/configurator.escript config/config.yaml config
