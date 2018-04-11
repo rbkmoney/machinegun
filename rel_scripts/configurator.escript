@@ -130,7 +130,7 @@ wait_value(_, 0, _, Key) ->
 wait_value(Fun, Timeout, Interval, Key) ->
     case Fun() of
         undefined ->
-            timer:sleep(100),
+            timer:sleep(Interval),
             wait_value(Fun, erlang:max(0, Timeout - Interval), Interval, Key);
         Value ->
             Value
