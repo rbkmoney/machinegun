@@ -29,7 +29,9 @@
         mg_proto,
         mg,
         woody,
-        yamerl
+        yamerl,
+        cg_mon,
+        erl_health
     ]},
     {env, []},
     {modules, []},

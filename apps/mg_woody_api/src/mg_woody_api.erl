@@ -59,9 +59,10 @@
     duplicate_search_batch => mg_storage:index_limit()
 }.
 -type config_element() ::
-      {woody_server , woody_server()                 }
-    | {namespaces   , #{mg:ns() => events_machines()}}
-    | {event_sink_ns, event_sink_ns()                }
+      {woody_server   , woody_server()                 }
+    | {health_checkers, [erl_health:checker()]         }
+    | {namespaces     , #{mg:ns() => events_machines()}}
+    | {event_sink_ns  , event_sink_ns()                }
 .
 -type config() :: [config_element()].
 
@@ -118,7 +119,8 @@ event_sink_ns_child_spec(Config, ChildID) ->
 -spec woody_server_child_spec(config(), atom()) ->
     supervisor:child_spec().
 woody_server_child_spec(Config, ChildID) ->
-    WoodyConfig = proplists:get_value(woody_server, Config),
+    WoodyConfig    = proplists:get_value(woody_server   , Config),
+    HealthCheckers = proplists:get_value(health_checkers, Config),
     woody_server:child_spec(
         ChildID,
         #{
@@ -132,6 +134,9 @@ woody_server_child_spec(Config, ChildID) ->
             handlers       => [
                 mg_woody_api_automaton :handler(api_automaton_options (Config)),
                 mg_woody_api_event_sink:handler(api_event_sink_options(Config))
+            ],
+            additional_routes => [
+                erl_health_handle:get_route(HealthCheckers)
             ]
         }
     ).

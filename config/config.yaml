@@ -14,8 +14,8 @@
 # limitations under the License.
 #
 
+service_name: machinegun
 erlang:
-    sname: "mg"
     cookie: "mg_cookie"
     ipv6: false
     disable_dns_cache: false
@@ -24,8 +24,13 @@ woody_server:
     port: 8022
     keep_alive_timeout: 60s
 limits:
-    total_mem: 2G
-    process_mem: 2M
+    process_heap: 2M # heap limit
+    disk: # uses only for health check
+        path: "/"
+        value: 99%
+    memory: # return 503 if breaks
+        type: cgroups  # cgroups | total
+        value: 90%
 logging:
     root: /var/log/machinegun
     crash_log: crash.log

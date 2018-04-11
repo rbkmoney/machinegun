@@ -85,12 +85,14 @@ handle_error(UnknownError, _) -> erlang:error(badarg, [UnknownError]).
     woody_context:ctx().
 opaque_to_woody_context([1, RPCID, ContextMeta]) ->
     #{
-        rpc_id => opaque_to_woody_rpc_id(RPCID),
-        meta   => ContextMeta
+        rpc_id   => opaque_to_woody_rpc_id(RPCID),
+        meta     => ContextMeta,
+        deadline => undefined %% FIXME
     };
 opaque_to_woody_context([1, RPCID]) ->
     #{
-        rpc_id => opaque_to_woody_rpc_id(RPCID)
+        rpc_id   => opaque_to_woody_rpc_id(RPCID),
+        deadline => undefined %% FIXME
     }.
 
 -spec woody_context_to_opaque(woody_context:ctx()) ->

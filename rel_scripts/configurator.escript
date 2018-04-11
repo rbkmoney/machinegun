@@ -62,9 +62,10 @@ snowflake(YamlConfig) ->
 
 mg_woody_api(YamlConfig) ->
     [
-        {woody_server , woody_server (YamlConfig)},
-        {namespaces   , namespaces   (YamlConfig)},
-        {event_sink_ns, event_sink_ns(YamlConfig)}
+        {woody_server   , woody_server   (YamlConfig)},
+        {health_checkers, health_checkers(YamlConfig)},
+        {namespaces     , namespaces     (YamlConfig)},
+        {event_sink_ns  , event_sink_ns  (YamlConfig)}
     ].
 
 woody_server(YamlConfig) ->
@@ -75,10 +76,65 @@ woody_server(YamlConfig) ->
             {timeout, ?C:time_interval(?C:conf([woody_server, keep_alive_timeout], YamlConfig, "5S"), 'ms')}
         ],
         limits   => genlib_map:compact(#{
-            max_heap_size       => ?C:mem_words(?C:conf([limits, process_mem], YamlConfig, undefined)),
-            total_mem_threshold => ?C:mem_bytes(?C:conf([limits, total_mem  ], YamlConfig, undefined))
+            max_heap_size       => ?C:mem_words(?C:conf([limits, process_heap], YamlConfig, undefined)),
+            total_mem_threshold => absolute_memory_limit(YamlConfig)
         })
     }.
+
+health_checkers(YamlConfig) ->
+    case ?C:conf([limits, disk], YamlConfig, undefined) of
+        undefined ->
+            [];
+        DiskConfig ->
+            [{erl_health, disk, [?C:conf([path], DiskConfig, "/"), percent(?C:conf([value], DiskConfig))]}]
+    end ++
+    case relative_memory_limit(YamlConfig) of
+        undefined ->
+            [];
+        {TypeStr, Limit} ->
+            Type =
+                case TypeStr of
+                    "total"   -> total;
+                    "cgroups" -> cg_memory
+                end,
+            [{erl_health, Type, [Limit]}]
+    end ++
+    [{erl_health, service, [?C:utf_bin(?C:conf([service_name], YamlConfig))]}].
+
+percent(Value) ->
+    [$%|RevInt] = lists:reverse(Value),
+    erlang:list_to_integer(lists:reverse(RevInt)).
+
+relative_memory_limit(YamlConfig) ->
+    case ?C:conf([limits, memory], YamlConfig, undefined) of
+        undefined    -> undefined;
+        MemoryConfig -> {?C:conf([type], MemoryConfig, "total"), percent(?C:conf([value], MemoryConfig))}
+    end.
+
+absolute_memory_limit(YamlConfig) ->
+    {ok, _} = application:ensure_all_started(cg_mon),
+    {ok, _} = application:ensure_all_started(os_mon),
+    case relative_memory_limit(YamlConfig) of
+        undefined ->
+            undefined;
+        {Type, RelativeLimit} ->
+            CGMemLimit = wait_value(fun() -> memory_amount(Type) end, 1000, 10, memory_limit),
+            RelativeLimit * CGMemLimit div 100
+    end.
+
+memory_amount("cgroups") -> cg_mem_sup:limit();
+memory_amount("total"  ) -> proplist:get_value(memsup:get_system_memory_data()).
+
+wait_value(_, 0, _, Key) ->
+    exit({failed_fetch, Key});
+wait_value(Fun, Timeout, Interval, Key) ->
+    case Fun() of
+        undefined ->
+            timer:sleep(Interval),
+            wait_value(Fun, erlang:max(0, Timeout - Interval), Interval, Key);
+        Value ->
+            Value
+    end.
 
 storage(NS, YamlConfig) ->
     case ?C:conf([storage, type], YamlConfig) of
@@ -150,8 +206,8 @@ event_sink_ns(YamlConfig) ->
 %%
 vm_args(YamlConfig, ERLInetrcFilename) ->
     [
-        {'-sname'    , ?C:utf_bin(?C:conf([erlang, sname ], YamlConfig, "mg"       ))},
-        {'-setcookie', ?C:utf_bin(?C:conf([erlang, cookie], YamlConfig, "mg_cookie"))},
+        {'-sname'    , ?C:utf_bin(?C:conf([service_name  ], YamlConfig, "machinegun"))},
+        {'-setcookie', ?C:utf_bin(?C:conf([erlang, cookie], YamlConfig, "mg_cookie" ))},
         {'+K'        , <<"true">>},
         {'+A'        , <<"10">>  },
         {'-kernel'   , <<"inetrc '\"", (?C:utf_bin(ERLInetrcFilename))/binary, "\"'">>}
