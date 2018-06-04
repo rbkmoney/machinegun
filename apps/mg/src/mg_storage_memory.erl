@@ -13,7 +13,11 @@
 %%% See the License for the specific language governing permissions and
 %%% limitations under the License.
 %%%
-
+%%% TODO:
+%%%  - лучше бы сделать хранение в ets'ках и писать из вызывающего процесса,
+%%%    это больше похоже на реальный сторадж,
+%%%    и таким образом можно проявить проблемы синхронизации
+%%%
 -module(mg_storage_memory).
 -include_lib("stdlib/include/ms_transform.hrl").
 
