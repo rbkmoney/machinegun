@@ -311,23 +311,25 @@ handle_timers(Options, Limit) ->
             {Timers, _} = search(Options, {waiting, 1, genlib_time:now()}, Limit),
             lists:foreach(
                 % такая схема потенциально опасная, но надо попробовать как она себя будет вести
-                fun({_, ID}) ->
-                    erlang:spawn_link(fun() -> handle_timer(Options, ID) end)
+                fun({Ts, ID}) ->
+                    erlang:spawn_link(fun() -> handle_timer(Options, ID, Ts) end)
                 end,
                 Timers
             )
         end
     ).
 
--spec handle_timer(options(), mg:id()) ->
+-spec handle_timer(options(), mg:id(), genlib_time:ts()) ->
     ok.
-handle_timer(Options, ID) ->
+handle_timer(Options, ID, TimerTs) ->
     ?safe_request(
         Options, ID, null, timer_handling_failed,
         begin
             {_, StorageMachine} = get_storage_machine(Options, ID),
             case StorageMachine of
-                #{status := {waiting, Timestamp, ReqCtx, Timeout}} ->
+                % Важный момент, что если не проверить соответствие таймстемпов, то будет рейс
+                % когда по старому индексу вычитается новый таймер и сработает не вовремя!
+                #{status := {waiting, Timestamp, ReqCtx, Timeout}} when Timestamp =:= TimerTs ->
                     handle_timer(Options, ID, Timestamp, ReqCtx, mg_utils:timeout_to_deadline(Timeout));
                 #{status := _} ->
                     ok
