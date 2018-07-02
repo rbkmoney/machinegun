@@ -69,13 +69,14 @@ process_call(Options, ReqCtx, Deadline, {Call, Machine}) ->
     _Result.
 call_processor(Options, ReqCtx, Deadline, Function, Args) ->
     % TODO сделать нормально!
-    {ok, TRef} = timer:kill_after(call_duration_limit(Options, Deadline)),
+    {ok, TRef} = timer:kill_after(call_duration_limit(Options, Deadline) + 3000),
     try
+        WoodyContext = mg_woody_api_utils:set_deadline(Deadline, request_context_to_woody_context(ReqCtx)),
         {ok, R} =
             woody_client:call(
                 {{mg_proto_state_processing_thrift, 'Processor'}, Function, Args},
                 Options,
-                request_context_to_woody_context(ReqCtx, Deadline)
+                WoodyContext
             ),
         R
     catch
@@ -87,21 +88,20 @@ call_processor(Options, ReqCtx, Deadline, Function, Args) ->
         {ok, cancel} = timer:cancel(TRef)
     end.
 
--spec request_context_to_woody_context(mg_events_machine:request_context(), mg_utils:deadline()) ->
+-spec request_context_to_woody_context(mg_events_machine:request_context()) ->
     woody_context:ctx().
-request_context_to_woody_context(null, Deadline) ->
-    Context = woody_context:new(),
-    mg_woody_api_utils:set_deadline(Deadline, Context);
-request_context_to_woody_context(ReqCtx, Deadline) ->
-    Context = mg_woody_api_utils:opaque_to_woody_context(ReqCtx),
-    mg_woody_api_utils:set_deadline(Deadline, Context).
+request_context_to_woody_context(null) ->
+    woody_context:new();
+request_context_to_woody_context(ReqCtx) ->
+    mg_woody_api_utils:opaque_to_woody_context(ReqCtx).
 
 -spec call_duration_limit(options(), mg_utils:deadline()) -> timeout().
 call_duration_limit(Options, undefined) ->
     TransportOptions = maps:get(transport_opts, Options, #{}),
     %% use default values from hackney:request/5 options
-    RecvTimeout = proplists:get_value(recv_timeout, TransportOptions, 5000),
     ConnectTimeout = proplists:get_value(connect_timeout, TransportOptions, 8000),
-    RecvTimeout + ConnectTimeout + 3000;
+    SendTimeout = proplists:get_value(connect_timeout, TransportOptions, 5000),  % not documented option
+    RecvTimeout = proplists:get_value(recv_timeout, TransportOptions, 5000),
+    RecvTimeout + ConnectTimeout + SendTimeout;
 call_duration_limit(_Options, Deadline) ->
-    mg_utils:deadline_to_timeout(Deadline) + 3000.
+    mg_utils:deadline_to_timeout(Deadline).

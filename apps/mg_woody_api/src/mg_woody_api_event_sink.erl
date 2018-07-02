@@ -41,7 +41,7 @@ handler(Options) ->
     {ok, _Result} | no_return().
 
 handle_function('GetHistory', [EventSinkID, Range], WoodyContext, {AvaliableEventSinks, Options}) ->
-    Deadline = mg_woody_api_utils:get_deadline(WoodyContext),
+    Deadline = mg_woody_api_utils:check_deadline(WoodyContext),
     SinkHistory =
         mg_woody_api_utils:handle_safe_with_retry(
             EventSinkID, mg_woody_api_utils:woody_context_to_opaque(WoodyContext),

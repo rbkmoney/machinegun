@@ -53,7 +53,6 @@
 -export([deadline_to_timeout/1]).
 -export([is_deadline_reached/1]).
 -export([default_deadline   /0]).
--export([throw_if_deadline  /2]).
 
 %% Woody
 -export_type([woody_handlers/0]).
@@ -260,15 +259,6 @@ is_deadline_reached(Deadline) ->
     deadline().
 default_deadline() ->
     timeout_to_deadline(5000).
-
--spec throw_if_deadline(deadline(), any()) -> not_reached | no_return().
-throw_if_deadline(Deadline, Place) ->
-    case is_deadline_reached(Deadline) of
-        true ->
-            erlang:throw({timeout, Place});
-        false ->
-            not_reached
-    end.
 
 %%
 

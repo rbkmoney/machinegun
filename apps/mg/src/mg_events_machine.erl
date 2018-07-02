@@ -396,7 +396,6 @@ apply_delayed_timer_actions_to_state(#{new_timer := Timer}, State) ->
 -spec process_signal(options(), request_context(), deadline(), signal(), machine(), mg_events:events_range()) ->
     {ok, delayed_actions()}.
 process_signal(#{processor := Processor}, ReqCtx, Deadline, Signal, Machine, EventsRange) ->
-    not_reached = mg_utils:throw_if_deadline(Deadline, process_signal_deadline_reached),
     SignalArgs = [ReqCtx, Deadline, {Signal, Machine}],
     {StateChange, ComplexAction} = mg_utils:apply_mod_opts(Processor, process_signal, SignalArgs),
     {ok, handle_processing_result(StateChange, ComplexAction, EventsRange, ReqCtx)}.
@@ -404,7 +403,6 @@ process_signal(#{processor := Processor}, ReqCtx, Deadline, Signal, Machine, Eve
 -spec process_call(options(), request_context(), deadline(), term(), machine(), mg_events:events_range()) ->
     {_Resp, delayed_actions()}.
 process_call(#{processor := Processor}, ReqCtx, Deadline, Args, Machine, EventsRange) ->
-    not_reached = mg_utils:throw_if_deadline(Deadline, process_call_deadline_reached),
     CallArgs = [ReqCtx, Deadline, {Args, Machine}],
     {Resp, StateChange, ComplexAction} = mg_utils:apply_mod_opts(Processor, process_call, CallArgs),
     {Resp, handle_processing_result(StateChange, ComplexAction, EventsRange, ReqCtx)}.
