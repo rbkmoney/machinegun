@@ -96,7 +96,7 @@
 
 %% mg_worker
 -behaviour(mg_worker).
--export([handle_load/3, handle_call/4, handle_unload/1]).
+-export([handle_load/3, handle_call/5, handle_unload/1]).
 
 %%
 %% API
@@ -163,9 +163,15 @@
 
 -callback processor_child_spec(_Options) ->
     supervisor:child_spec() | undefined.
--callback process_machine(_Options, mg:id(), processor_impact(), processing_context(), ReqCtx, machine_state()) ->
-    processor_result()
-when ReqCtx :: request_context().
+-callback process_machine(Options, ID, Impact, PCtx, ReqCtx, Deadline, MachineState) -> Result when
+    Options :: any(),
+    ID :: mg:id(),
+    Impact :: processor_impact(),
+    PCtx :: processing_context(),
+    ReqCtx :: request_context(),
+    Deadline :: mg_utils:deadline(),
+    MachineState :: machine_state(),
+    Result :: processor_result().
 -optional_callbacks([processor_child_spec/1]).
 
 -type search_query() ::
@@ -453,15 +459,15 @@ handle_load(ID, Options, ReqCtx) ->
         {error, Reason}
     end.
 
--spec handle_call(_Call, mg_worker:call_context(), request_context(), state()) ->
+-spec handle_call(_Call, mg_worker:call_context(), request_context(), mg_utils:deadline(), state()) ->
     {{reply, _Resp} | noreply, state()}.
-handle_call(Call, CallContext, ReqCtx, S=#{storage_machine:=StorageMachine}) ->
+handle_call(Call, CallContext, ReqCtx, Deadline, S=#{storage_machine:=StorageMachine}) ->
     PCtx = new_processing_context(CallContext),
 
     % довольно сложное место, тут определяется приоритет реакции на внешние раздражители, нужно быть аккуратнее
     case {Call, StorageMachine} of
         % start
-        {{start, Args}, undefined   } -> {noreply, process_start(Args, PCtx, ReqCtx, S)};
+        {{start, Args}, undefined   } -> {noreply, process_start(Args, PCtx, ReqCtx, Deadline, S)};
         { _           , undefined   } -> {{reply, {error, {logic, machine_not_found    }}}, S};
         {{start, _   }, #{status:=_}} -> {{reply, {error, {logic, machine_already_exist}}}, S};
 
@@ -471,18 +477,21 @@ handle_call(Call, CallContext, ReqCtx, S=#{storage_machine:=StorageMachine}) ->
         % сюда мы не должны попадать если машина не падала во время обработки запроса
         % (когда мы переходили в стейт processing)
         {_, #{status := {processing, ProcessingReqCtx}}} ->
-            handle_call(Call, CallContext, ReqCtx, process(continuation, undefined, ProcessingReqCtx, S));
+            S1 = process(continuation, undefined, ProcessingReqCtx, Deadline, S),
+            handle_call(Call, CallContext, ReqCtx, Deadline, S1);
 
         % ничего не просходит, просто убеждаемся, что машина загружена
         {resume_interrupted_one, _} -> {{reply, {ok, ok}}, S};
 
         % call
-        {{call  , SubCall}, #{status:= sleeping         }} -> {noreply, process({call, SubCall}, PCtx, ReqCtx, S)};
-        {{call  , SubCall}, #{status:={waiting, _, _, _}}} -> {noreply, process({call, SubCall}, PCtx, ReqCtx, S)};
+        {{call  , SubCall}, #{status:= sleeping         }} ->
+            {noreply, process({call, SubCall}, PCtx, ReqCtx, Deadline, S)};
+        {{call  , SubCall}, #{status:={waiting, _, _, _}}} ->
+            {noreply, process({call, SubCall}, PCtx, ReqCtx, Deadline, S)};
         {{call  , _      }, #{status:={error  , _, _   }}} -> {{reply, {error, {logic, machine_failed}}}, S};
 
         % repair
-        {{repair, Args}, #{status:={error  , _, _}}} -> {noreply, process({repair, Args}, PCtx, ReqCtx, S)};
+        {{repair, Args}, #{status:={error  , _, _}}} -> {noreply, process({repair, Args}, PCtx, ReqCtx, Deadline, S)};
         {{repair, _   }, #{status:=_              }} -> {{reply, {error, {logic, machine_already_working}}}, S};
 
         % simple_repair
@@ -492,7 +501,7 @@ handle_call(Call, CallContext, ReqCtx, S=#{storage_machine:=StorageMachine}) ->
         % timers
         {{timeout, Ts0}, #{status:={waiting, Ts1, _, _}}}
             when Ts0 =:= Ts1 ->
-            {noreply, process(timeout, PCtx, ReqCtx, S)};
+            {noreply, process(timeout, PCtx, ReqCtx, Deadline, S)};
         {{timeout, _}, #{status:=_}} ->
             {{reply, {ok, ok}}, S}
     end.
@@ -626,10 +635,10 @@ waiting_date_index(_) ->
 %%
 %% processing
 %%
--spec process_start(term(), processing_context(), request_context(), state()) ->
+-spec process_start(term(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
     state().
-process_start(Args, ProcessingCtx, ReqCtx, State) ->
-    process({init, Args}, ProcessingCtx, ReqCtx, State#{storage_machine := new_storage_machine()}).
+process_start(Args, ProcessingCtx, ReqCtx, Deadline, State) ->
+    process({init, Args}, ProcessingCtx, ReqCtx, Deadline, State#{storage_machine := new_storage_machine()}).
 
 -spec process_simple_repair(request_context(), state()) ->
     state().
@@ -640,11 +649,11 @@ process_simple_repair(ReqCtx, State = #{storage_machine := StorageMachine = #{st
         State
     ).
 
--spec process(processor_impact(), processing_context(), request_context(), state()) ->
+-spec process(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
     state().
-process(Impact, ProcessingCtx, ReqCtx, State) ->
+process(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
     try
-        process_unsafe(Impact, ProcessingCtx, ReqCtx, State)
+        process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State)
     catch Class:Reason ->
         ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
         handle_exception({Class, Reason, erlang:get_stacktrace()}, Impact, ReqCtx, State)
@@ -666,11 +675,11 @@ handle_exception(Exception, Impact, ReqCtx, State) ->
             transit_state(ReqCtx, NewStorageMachine, State)
     end.
 
--spec process_unsafe(processor_impact(), processing_context(), request_context(), state()) ->
+-spec process_unsafe(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
     state().
-process_unsafe(Impact, ProcessingCtx, ReqCtx, State = #{storage_machine := StorageMachine}) ->
+process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machine := StorageMachine}) ->
     {ReplyAction, Action, NewMachineState} =
-        call_processor(Impact, ProcessingCtx, ReqCtx, State),
+        call_processor(Impact, ProcessingCtx, ReqCtx, Deadline, State),
     ok = try_suicide(State, ReqCtx),
     NewStorageMachine = StorageMachine#{state := NewMachineState},
     NewState =
@@ -687,28 +696,27 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, State = #{storage_machine := Stora
     ok = do_reply_action(wrap_reply_action(ok, ReplyAction), ProcessingCtx),
     case Action of
         {continue, NewProcessingSubState} ->
-            process(continuation, ProcessingCtx#{state:=NewProcessingSubState}, ReqCtx, NewState);
+            process(continuation, ProcessingCtx#{state:=NewProcessingSubState}, ReqCtx, Deadline, NewState);
         _ ->
             NewState
     end.
 
--spec call_processor(processor_impact(), processing_context(), request_context(), state()) ->
+-spec call_processor(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
     processor_result().
-call_processor(Impact, ProcessingCtx, ReqCtx, State) ->
+call_processor(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
     #{options := Options, id := ID, storage_machine := #{state := MachineState}} = State,
     F = fun() ->
-            processor_process_machine(ID, Impact, ProcessingCtx, ReqCtx, MachineState, Options)
+            processor_process_machine(ID, Impact, ProcessingCtx, ReqCtx, Deadline, MachineState, Options)
         end,
     do_with_retry(Options, ID, F, retry_strategy(processor, Options), ReqCtx).
 
--spec processor_process_machine(mg:id(), processor_impact(), processing_context(), ReqCtx, state(), options()) ->
-    _Result
-when ReqCtx :: request_context().
-processor_process_machine(ID, Impact, ProcessingCtx, ReqCtx, MachineState, Options) ->
+-spec processor_process_machine(mg:id(), processor_impact(), processing_context(), ReqCtx :: request_context(),
+                                mg_utils:deadline(), state(), options()) -> _Result.
+processor_process_machine(ID, Impact, ProcessingCtx, ReqCtx, Deadline, MachineState, Options) ->
     mg_utils:apply_mod_opts(
         get_options(processor, Options),
         process_machine,
-        [ID, Impact, ProcessingCtx, ReqCtx, MachineState]
+        [ID, Impact, ProcessingCtx, ReqCtx, Deadline, MachineState]
     ).
 
 -spec processor_child_spec(options()) ->

@@ -27,7 +27,7 @@
 
 %% mg_machine handler
 -behaviour(mg_machine).
--export([process_machine/6]).
+-export([process_machine/7]).
 
 %%
 %% API
@@ -112,9 +112,16 @@ repair(Options, EventSinkID, ReqCtx, Deadline) ->
     events_range => mg_events:events_range()
 }.
 
--spec process_machine(_, mg:id(), mg_machine:processor_impact(), _, _, mg_machine:machine_state()) ->
-    mg_machine:processor_result().
-process_machine(Options, EventSinkID, Impact, _, _, PackedState) ->
+-spec process_machine(Options, EventSinkID, Impact, PCtx, ReqCtx, Deadline, PackedState) -> Result when
+    Options :: options(),
+    EventSinkID :: mg:id(),
+    Impact :: mg_machine:processor_impact(),
+    PCtx :: mg_machine:processing_context(),
+    ReqCtx :: mg:request_context(),
+    Deadline :: mg_utils:deadline(),
+    PackedState :: mg_machine:machine_state(),
+    Result :: mg_machine:processor_result().
+process_machine(Options, EventSinkID, Impact, _PCtx, _ReqCtx, _Deadline, PackedState) ->
     State =
         case {Impact, PackedState} of
             {{init, _}, null} -> new_state();

@@ -21,6 +21,7 @@
 -export([handle_safe_with_retry /5]).
 -export([opaque_to_woody_context/1]).
 -export([woody_context_to_opaque/1]).
+-export([set_deadline/2]).
 
 %%
 %% API
@@ -111,3 +112,12 @@ woody_rpc_id_to_opaque(#{span_id := SpanID, trace_id := TraceID, parent_id := Pa
     woody:rpc_id().
 opaque_to_woody_rpc_id([SpanID, TraceID, ParentID]) ->
     #{span_id => SpanID, trace_id => TraceID, parent_id => ParentID}.
+
+%%
+%% Woody deadline to HG deadline convertor
+%%
+
+-spec set_deadline(mg_utils:deadline(), woody_context:ctx()) -> woody_context:ctx().
+set_deadline(Deadline, Context) ->
+    WoodyDeadline = woody_deadline:from_timeout(mg_utils:deadline_to_timeout(Deadline)),
+    woody_context:set_deadline(WoodyDeadline, Context).
