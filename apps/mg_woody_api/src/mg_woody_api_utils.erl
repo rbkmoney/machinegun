@@ -21,8 +21,8 @@
 -export([handle_safe_with_retry /5]).
 -export([opaque_to_woody_context/1]).
 -export([woody_context_to_opaque/1]).
--export([check_deadline/1]).
--export([check_deadline/2]).
+-export([get_deadline/1]).
+-export([get_deadline/2]).
 -export([set_deadline/2]).
 
 %%
@@ -118,24 +118,18 @@ opaque_to_woody_rpc_id([SpanID, TraceID, ParentID]) ->
 %%
 %% Woody deadline utils
 %%
--spec check_deadline(woody_context:ctx()) -> mg_utils:deadline() | no_return().
-check_deadline(Context) ->
-    check_deadline(Context, mg_utils:default_deadline()).
+-spec get_deadline(woody_context:ctx()) -> mg_utils:deadline() | no_return().
+get_deadline(Context) ->
+    get_deadline(Context, mg_utils:default_deadline()).
 
--spec check_deadline(woody_context:ctx(), mg_utils:deadline()) -> mg_utils:deadline() | no_return().
-check_deadline(Context, Default) ->
+-spec get_deadline(woody_context:ctx(), mg_utils:deadline()) -> mg_utils:deadline() | no_return().
+get_deadline(Context, Default) ->
     case woody_context:get_deadline(Context) of
         undefined ->
             Default;
         Deadline ->
-            Timeout = try woody_deadline:to_timeout(Deadline)
-            catch
-                error:{deadline_reached, _Details} ->
-                    Description = {timeout, woody_deadline_reached},
-                    BinaryDescription = erlang:list_to_binary(io_lib:format("~9999p", [Description])),
-                    woody_error:raise(system, {internal, result_unknown, BinaryDescription})
-            end,
-            mg_utils:timeout_to_deadline(Timeout)
+            %% MG and woody deadline formats are different
+            mg_utils:unixtime_ms_to_deadline(woody_deadline:to_unixtime_ms(Deadline))
     end.
 
 -spec set_deadline(mg_utils:deadline(), woody_context:ctx()) -> woody_context:ctx().

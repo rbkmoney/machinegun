@@ -446,7 +446,7 @@ call_with_deadline(C) ->
     %% Let's force enlarge client timeout. We expect server timeout only. 
     Options1 = Options0#{transport_opts => [{recv_timeout, ?DEADLINE_TIMEOUT * 10}]},
     {'EXIT', {Reason, _Stack}} = (catch mg_automaton_client:call(Options1, {id, ?ID}, <<"sleep">>, Deadline)),
-    {woody_error, {external, result_unknown, _Description}} = Reason.
+    {woody_error, {external, result_unknown, <<"{timeout,", _Rest/binary>>}} = Reason.
 
 -spec signal_with_deadline(config()) ->
     _.
@@ -456,7 +456,7 @@ signal_with_deadline(C) ->
     %% Let's force enlarge client timeout. We expect server timeout only. 
     Options1 = Options0#{transport_opts => [{recv_timeout, ?DEADLINE_TIMEOUT * 10}]},
     {'EXIT', {Reason, _Stack}} = (catch mg_automaton_client:repair(Options1, {id, ?ID}, <<"sleep">>, Deadline)),
-    {woody_error, {external, result_unknown, _Description}} = Reason.
+    {woody_error, {external, result_unknown, <<"{timeout,", _Rest/binary>>}} = Reason.
 
 %%
 %% event_sink group test

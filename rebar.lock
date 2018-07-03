@@ -63,7 +63,7 @@
   1},
  {<<"woody">>,
   {git,"git@github.com:rbkmoney/woody_erlang.git",
-       {ref,"d9362a5f8128c031300958da09c237ca27076cc5"}},
+       {ref,"b6bb676b3bc4e1c72202614f06b6e8b5891703c5"}},
   0},
  {<<"yamerl">>,
   {git,"git@github.com:rbkmoney/yamerl.git",

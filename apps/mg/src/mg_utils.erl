@@ -51,6 +51,8 @@
 -export_type([deadline/0]).
 -export([timeout_to_deadline/1]).
 -export([deadline_to_timeout/1]).
+-export([unixtime_ms_to_deadline/1]).
+-export([deadline_to_unixtime_ms/1]).
 -export([is_deadline_reached/1]).
 -export([default_deadline   /0]).
 
@@ -247,6 +249,16 @@ deadline_to_timeout(undefined) ->
     infinity;
 deadline_to_timeout(Deadline) ->
     erlang:max(Deadline - now_ms(), 0).
+
+-spec unixtime_ms_to_deadline(non_neg_integer()) ->
+    deadline().
+unixtime_ms_to_deadline(Deadline) ->
+    Deadline.
+
+-spec deadline_to_unixtime_ms(deadline()) ->
+    non_neg_integer().
+deadline_to_unixtime_ms(Deadline) when is_integer(Deadline) ->
+    Deadline.
 
 -spec is_deadline_reached(deadline()) ->
     boolean().
