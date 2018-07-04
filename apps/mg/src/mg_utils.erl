@@ -258,7 +258,9 @@ unixtime_ms_to_deadline(Deadline) ->
 -spec deadline_to_unixtime_ms(deadline()) ->
     non_neg_integer().
 deadline_to_unixtime_ms(Deadline) when is_integer(Deadline) ->
-    Deadline.
+    Deadline;
+deadline_to_unixtime_ms(Deadline) ->
+    erlang:error(badarg, [Deadline]).
 
 -spec is_deadline_reached(deadline()) ->
     boolean().
