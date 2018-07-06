@@ -270,9 +270,9 @@ mg_woody_api_config(C) ->
                 storage    => ?config(storage, C),
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
-                    recv_timeout   => 5000,
                     transport_opts => [{pool, ns}, {max_connections, 100}]
                 },
+                default_processing_timeout => 5000,
                 scheduled_tasks => #{
                     timers   => #{ interval => 100, limit => 10 },
                     overseer => #{ interval => 100, limit => 10 }
@@ -295,7 +295,8 @@ mg_woody_api_config(C) ->
             }
         }},
         {event_sink_ns, #{
-            storage => mg_storage_memory
+            storage => mg_storage_memory,
+            default_processing_timeout => 5000
         }}
     ].
 
@@ -542,6 +543,7 @@ config_with_multiple_event_sinks(_C) ->
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => [{pool, pool1}, {max_connections, 100}]
                 },
+                default_processing_timeout => 30000,
                 scheduled_tasks => #{
                     timers   => #{ interval => 100, limit => 10 },
                     overseer => #{ interval => 100, limit => 10 }
@@ -555,6 +557,7 @@ config_with_multiple_event_sinks(_C) ->
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => [{pool, pool2}, {max_connections, 100}]
                 },
+                default_processing_timeout => 5000,
                 scheduled_tasks => #{
                     timers   => #{ interval => 100, limit => 10 },
                     overseer => #{ interval => 100, limit => 10 }
@@ -563,7 +566,10 @@ config_with_multiple_event_sinks(_C) ->
                 event_sink => <<"SingleES">>
             }
         }},
-        {event_sink_ns, #{storage => mg_storage_memory}},
+        {event_sink_ns, #{
+            storage => mg_storage_memory,
+            default_processing_timeout => 5000
+        }},
         {event_sinks, [<<"SingleES">>]}
     ],
     Apps = genlib_app:start_application_with(mg_woody_api, Config),

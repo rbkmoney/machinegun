@@ -39,11 +39,12 @@
 }.
 -type event() :: mg_events:event(event_body()).
 -type options() :: #{
-    namespace              := mg:ns(),
-    storage                := mg_storage:options(),
-    logger                 := mg_machine_logger:handler(),
-    duplicate_search_batch := mg_storage:index_limit(),
-    events_storage         := mg_storage:options()
+    namespace                  := mg:ns(),
+    storage                    := mg_storage:options(),
+    logger                     := mg_machine_logger:handler(),
+    duplicate_search_batch     := mg_storage:index_limit(),
+    events_storage             := mg_storage:options(),
+    default_processing_timeout := timeout()
 }.
 
 -define(default_duplicate_search_batch, 1000).

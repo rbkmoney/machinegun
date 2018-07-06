@@ -21,7 +21,6 @@
 -export([handle_safe_with_retry /5]).
 -export([opaque_to_woody_context/1]).
 -export([woody_context_to_opaque/1]).
--export([get_deadline/1]).
 -export([get_deadline/2]).
 -export([set_deadline/2]).
 
@@ -118,10 +117,6 @@ opaque_to_woody_rpc_id([SpanID, TraceID, ParentID]) ->
 %%
 %% Woody deadline utils
 %%
--spec get_deadline(woody_context:ctx()) -> mg_utils:deadline() | no_return().
-get_deadline(Context) ->
-    get_deadline(Context, mg_utils:default_deadline()).
-
 -spec get_deadline(woody_context:ctx(), mg_utils:deadline()) -> mg_utils:deadline() | no_return().
 get_deadline(Context, Default) ->
     case woody_context:get_deadline(Context) of

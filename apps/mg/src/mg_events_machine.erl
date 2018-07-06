@@ -101,12 +101,13 @@
 
 -type ref() :: {id, mg:id()} | {tag, mg_machine_tags:tag()}.
 -type options() :: #{
-    namespace       => mg:ns(),
-    events_storage  => mg_storage:options(),
-    processor       => mg_utils:mod_opts(),
-    tagging         => mg_machine_tags:options(),
-    machines        => mg_machine:options(),
-    event_sink      => {mg:id(), mg_events_sink:options()}
+    namespace                  => mg:ns(),
+    events_storage             => mg_storage:options(),
+    processor                  => mg_utils:mod_opts(),
+    tagging                    => mg_machine_tags:options(),
+    machines                   => mg_machine:options(),
+    event_sink                 => {mg:id(), mg_events_sink:options()},
+    default_processing_timeout => timeout()
 }.
 
 
