@@ -258,7 +258,7 @@ is_deadline_reached(Deadline) ->
 -spec default_deadline() ->
     deadline().
 default_deadline() ->
-    timeout_to_deadline(5000).
+    timeout_to_deadline(30000).
 
 %%
 
