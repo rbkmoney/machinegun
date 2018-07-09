@@ -159,6 +159,7 @@ logger(NS, Options) ->
 -spec get_deadline(mg:ns(), woody_context:ctx(), options()) ->
     mg_utils:deadline().
 get_deadline(NS, WoodyContext, Options) ->
-    NSOptions = maps:get(NS, Options, #{}),
-    DefaultDeadline = maps:get(default_processing_timeout, NSOptions, mg_utils:default_deadline()),
+    %% Unexisting NS will cause exception later. So just return zero timeout.
+    NSOptions = maps:get(NS, Options, #{default_processing_timeout => 0}),
+    DefaultDeadline = maps:get(default_processing_timeout, NSOptions),
     mg_woody_api_utils:get_deadline(WoodyContext, DefaultDeadline).
