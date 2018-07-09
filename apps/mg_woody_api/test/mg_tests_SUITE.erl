@@ -54,6 +54,10 @@
 -export([handle_timer/1]).
 -export([abort_timer /1]).
 
+%% deadline group tests
+-export([call_with_deadline/1]).
+-export([signal_with_deadline/1]).
+
 %% event_sink group tests
 -export([event_sink_get_empty_history    /1]).
 -export([event_sink_get_not_empty_history/1]).
@@ -77,6 +81,7 @@
 -define(Ref, {tag, ?Tag}).
 -define(ES_ID, <<"test_event_sink">>).
 
+-define(DEADLINE_TIMEOUT, 1000).
 
 %%
 %% tests descriptions
@@ -95,6 +100,7 @@ all() ->
         {group, timers    },
         {group, event_sink},
         {group, mwc       },
+        {group, deadline  },
         config_with_multiple_event_sinks
     ].
 
@@ -144,6 +150,12 @@ groups() ->
             handle_timer
             % handle_timer % был прецендент, что таймер срабатывал только один раз
             % abort_timer
+        ]},
+
+        {deadline, [sequence], [
+            machine_start,
+            call_with_deadline,
+            signal_with_deadline
         ]},
 
         {event_sink, [sequence], [
@@ -217,6 +229,7 @@ init_per_group(C) ->
                 <<"set_timer"  >> -> {Args, {<<>>, [<<"timer_body">>]}, #{timer => SetTimer   }};
                 <<"unset_timer">> -> {Args, {<<>>, [<<"timer_body">>]}, #{timer => unset_timer}};
                 <<"fail"  >> -> erlang:error(fail);
+                <<"sleep">> -> timer:sleep(?DEADLINE_TIMEOUT * 2), {Args, {<<>>, [<<"sleep">>]}, #{}};
                 <<"remove">> -> {Args, {<<>>, [<<"removed">>]}, #{remove => remove}}
             end
         end
@@ -226,6 +239,7 @@ init_per_group(C) ->
             case Args of
                 {init  , <<"fail" >>} -> erlang:error(fail);
                 {repair, <<"error">>} -> erlang:error(error);
+                {repair, <<"sleep">>}  -> timer:sleep(?DEADLINE_TIMEOUT * 2), {Args, {<<>>, []}, #{}};
                  timeout              -> {{<<>>, [<<"handle_timer_body">>]}, #{timer => undefined, tag => undefined}};
                 _ -> mg_test_processor:default_result(signal)
             end
@@ -256,9 +270,9 @@ mg_woody_api_config(C) ->
                 storage    => ?config(storage, C),
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
-                    recv_timeout   => 5000,
                     transport_opts => [{pool, ns}, {max_connections, 100}]
                 },
+                default_processing_timeout => 5000,
                 scheduled_tasks => #{
                     timers   => #{ interval => 100, limit => 10 },
                     overseer => #{ interval => 100, limit => 10 }
@@ -281,7 +295,8 @@ mg_woody_api_config(C) ->
             }
         }},
         {event_sink_ns, #{
-            storage => mg_storage_memory
+            storage => mg_storage_memory,
+            default_processing_timeout => 5000
         }}
     ].
 
@@ -422,6 +437,29 @@ abort_timer(C) ->
     [_] = History1 -- InitialEvents.
 
 %%
+%% deadline
+%%
+-spec call_with_deadline(config()) ->
+    _.
+call_with_deadline(C) ->
+    Deadline = mg_utils:timeout_to_deadline(?DEADLINE_TIMEOUT),
+    Options0 = automaton_options(C),
+    %% Let's force enlarge client timeout. We expect server timeout only. 
+    Options1 = Options0#{transport_opts => [{recv_timeout, ?DEADLINE_TIMEOUT * 10}]},
+    {'EXIT', {Reason, _Stack}} = (catch mg_automaton_client:call(Options1, {id, ?ID}, <<"sleep">>, Deadline)),
+    {woody_error, {external, result_unknown, <<"{timeout,", _Rest/binary>>}} = Reason.
+
+-spec signal_with_deadline(config()) ->
+    _.
+signal_with_deadline(C) ->
+    Deadline = mg_utils:timeout_to_deadline(?DEADLINE_TIMEOUT),
+    Options0 = automaton_options(C),
+    %% Let's force enlarge client timeout. We expect server timeout only. 
+    Options1 = Options0#{transport_opts => [{recv_timeout, ?DEADLINE_TIMEOUT * 10}]},
+    {'EXIT', {Reason, _Stack}} = (catch mg_automaton_client:repair(Options1, {id, ?ID}, <<"sleep">>, Deadline)),
+    {woody_error, {external, result_unknown, <<"{timeout,", _Rest/binary>>}} = Reason.
+
+%%
 %% event_sink group test
 %%
 -spec event_sink_get_empty_history(config()) ->
@@ -505,6 +543,7 @@ config_with_multiple_event_sinks(_C) ->
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => [{pool, pool1}, {max_connections, 100}]
                 },
+                default_processing_timeout => 30000,
                 scheduled_tasks => #{
                     timers   => #{ interval => 100, limit => 10 },
                     overseer => #{ interval => 100, limit => 10 }
@@ -518,6 +557,7 @@ config_with_multiple_event_sinks(_C) ->
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => [{pool, pool2}, {max_connections, 100}]
                 },
+                default_processing_timeout => 5000,
                 scheduled_tasks => #{
                     timers   => #{ interval => 100, limit => 10 },
                     overseer => #{ interval => 100, limit => 10 }
@@ -526,7 +566,10 @@ config_with_multiple_event_sinks(_C) ->
                 event_sink => <<"SingleES">>
             }
         }},
-        {event_sink_ns, #{storage => mg_storage_memory}},
+        {event_sink_ns, #{
+            storage => mg_storage_memory,
+            default_processing_timeout => 5000
+        }},
         {event_sinks, [<<"SingleES">>]}
     ],
     Apps = genlib_app:start_application_with(mg_woody_api, Config),

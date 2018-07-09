@@ -41,7 +41,7 @@
 -callback handle_unload(_State) ->
     ok.
 
--callback handle_call(_Call, call_context(), _ReqCtx, _State) ->
+-callback handle_call(_Call, call_context(), _ReqCtx, mg_utils:deadline(), _State) ->
     {{reply, _Reply} | noreply, _State}.
 
 
@@ -158,7 +158,7 @@ handle_call(Call={call, _, _, _}, From, State=#{id:=ID, mod:=Mod, status:={loadi
 handle_call({call, Deadline, Call, ReqCtx}, From, State=#{mod:=Mod, status:={working, ModState}}) ->
     case mg_utils:is_deadline_reached(Deadline) of
         false ->
-            {ReplyAction, NewModState} = Mod:handle_call(Call, From, ReqCtx, ModState),
+            {ReplyAction, NewModState} = Mod:handle_call(Call, From, ReqCtx, Deadline, ModState),
             NewState = State#{status:={working, NewModState}},
             case ReplyAction of
                 {reply, Reply} -> {reply, Reply, schedule_unload_timer(NewState), hibernate_timeout(NewState)};

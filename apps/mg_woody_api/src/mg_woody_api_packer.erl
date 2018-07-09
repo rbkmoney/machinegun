@@ -377,13 +377,10 @@ unpack_opaque({arr, Array}) ->
 unpack_opaque(Arg) ->
     erlang:error(badarg, [Arg]).
 
-
-% rfc3339:parse имеет некорретный спек, поэтому диалайзер всегда ругается
--dialyzer({nowarn_function, parse_datetime/1}).
 -spec parse_datetime(binary()) ->
     calendar:datetime().
 parse_datetime(Datetime) ->
-    {ok, {Date, Time, _, undefined}} = rfc3339:parse(Datetime),
+    {ok, {Date, Time, _, 0}} = rfc3339:parse(Datetime),
     {Date, Time}.
 
 -spec format_datetime(calendar:datetime()) ->

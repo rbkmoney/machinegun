@@ -168,16 +168,20 @@ namespaces(YamlConfig) ->
 
 namespace({NameStr, NSYamlConfig}, YamlConfig) ->
     Name = ?C:utf_bin(NameStr),
+    ProcessingTimeout = ?C:time_interval(
+        ?C:conf([woody_server, default_processing_timeout], NSYamlConfig, "30S"),
+        ms
+    ),
     NS0 = #{
             storage   => storage(Name, YamlConfig),
             processor => #{
                 url            => ?C:utf_bin(?C:conf([processor, url], NSYamlConfig)),
                 transport_opts => [
                     {pool, erlang:list_to_atom(NameStr)},
-                    {max_connections, ?C:conf([processor, pool_size], NSYamlConfig, 50)},
-                    {recv_timeout, ?C:time_interval(?C:conf([processor, recv_timeout], NSYamlConfig, "5S"), ms)}
+                    {max_connections, ?C:conf([processor, pool_size], NSYamlConfig, 50)}
                 ]
             },
+            default_processing_timeout => ProcessingTimeout,
             retries => #{
                 storage   => {exponential, infinity           , 2, 10, 60 * 1000},
                 processor => {exponential, 24 * 60 * 60 * 1000, 2, 10, 60 * 1000}
@@ -197,8 +201,9 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
 
 event_sink_ns(YamlConfig) ->
     #{
-        storage                => storage(<<"_event_sinks">>, YamlConfig),
-        duplicate_search_batch => 1000
+        storage                    => storage(<<"_event_sinks">>, YamlConfig),
+        duplicate_search_batch     => 1000,
+        default_processing_timeout => ?C:time_interval("30S")
     }.
 
 %%

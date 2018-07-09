@@ -26,7 +26,7 @@
 
 %% mg_machine handler
 -behaviour(mg_machine).
--export([process_machine/6]).
+-export([process_machine/7]).
 
 -type options() :: #{
     namespace => mg:ns(),
@@ -65,13 +65,13 @@ resolve(Options, Tag) ->
 %%
 -type state() :: mg:id() | undefined.
 
--spec process_machine(_, mg:id(), mg_machine:processor_impact(), _, _, mg_machine:machine_state()) ->
+-spec process_machine(_, mg:id(), mg_machine:processor_impact(), _, _, _, mg_machine:machine_state()) ->
     mg_machine:processor_result().
-process_machine(_, _, {init, undefined}, _, _, _) ->
+process_machine(_, _, {init, undefined}, _, _, _, _) ->
     {{reply, ok}, sleep, state_to_opaque(undefined)};
-process_machine(_, _, {repair, undefined}, _, _, State) ->
+process_machine(_, _, {repair, undefined}, _, _, _, State) ->
     {{reply, ok}, sleep, State};
-process_machine(_, _, {call, {add, ID}}, _, _, PackedState) ->
+process_machine(_, _, {call, {add, ID}}, _, _, _, PackedState) ->
     case opaque_to_state(PackedState) of
         undefined ->
             {{reply, ok}, sleep, state_to_opaque(ID)};
@@ -80,7 +80,7 @@ process_machine(_, _, {call, {add, ID}}, _, _, PackedState) ->
         OtherID ->
             {{reply, {already_exists, OtherID}}, sleep, PackedState}
     end;
-process_machine(_, _, {call, {replace, ID}}, _, _, _) ->
+process_machine(_, _, {call, {replace, ID}}, _, _, _, _) ->
     {{reply, ok}, sleep, state_to_opaque(ID)}.
 
 %%

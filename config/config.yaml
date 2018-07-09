@@ -41,10 +41,10 @@ namespaces:
         # only for testing, default 0
         # suicide_probability: 0.1
         event_sink: main_event_sink
+        default_processing_timeout: 30s
         processor:
             url: http://localhost:8022/processor
             pool_size: 50
-            recv_timeout: 60s
 snowflake_machine_id: 1
 # memory storage backend
 storage:
@@ -62,12 +62,12 @@ storage:
 ##
 ## a short example for HG
 ##
+# service_name: machinegun
 # namespaces:
 #     invoice:
 #         event_sink: payproc
 #         processor:
 #             url: http://hellgate:8022/v1/stateproc/invoice
-#             recv_timeout: 60s
 #     party:
 #         event_sink: payproc
 #         processor:
@@ -81,6 +81,7 @@ storage:
 ##
 ## a minimal config
 ##
+# service_name: machinegun
 # namespaces:
 #     mg_test_ns:
 #         processor:

@@ -41,7 +41,7 @@
 
 %% mg_worker
 -behaviour(mg_worker).
--export([handle_load/3, handle_call/4, handle_unload/1]).
+-export([handle_load/3, handle_call/5, handle_unload/1]).
 
 %%
 %% tests descriptions
@@ -210,9 +210,9 @@ handle_load(_, Params, ?req_ctx) ->
     ok = try_exit(load, Params),
     {ok, Params}.
 
--spec handle_call(_Call, _From, _, worker_state()) ->
+-spec handle_call(_Call, _From, _, _, worker_state()) ->
     {{reply, _Resp}, worker_state()}.
-handle_call(Call, _From, ?req_ctx, State) ->
+handle_call(Call, _From, ?req_ctx, _Deadline, State) ->
     ok = try_exit(call, State),
     {{reply, Call}, State}.
 

@@ -47,16 +47,18 @@
     limits   => woody_server_thrift_http_handler:handler_limits()
 }.
 -type events_machines() :: #{
-    processor           := processor(),
-    storage             := mg_storage:options(),
-    event_sink          => mg:id(),
-    retries             := mg_machine:retry_opt(),
-    scheduled_tasks     := mg_machine:scheduled_tasks_opt(),
-    suicide_probability => mg_machine:suicide_probability()
+    processor                  := processor(),
+    storage                    := mg_storage:options(),
+    event_sink                 => mg:id(),
+    retries                    := mg_machine:retry_opt(),
+    scheduled_tasks            := mg_machine:scheduled_tasks_opt(),
+    default_processing_timeout := timeout(),
+    suicide_probability        => mg_machine:suicide_probability()
 }.
 -type event_sink_ns() :: #{
-    storage                => mg_storage:options(),
-    duplicate_search_batch => mg_storage:index_limit()
+    default_processing_timeout := timeout(),
+    storage                    => mg_storage:options(),
+    duplicate_search_batch     => mg_storage:index_limit()
 }.
 -type config_element() ::
       {woody_server   , woody_server()                 }
@@ -144,7 +146,7 @@ woody_server_child_spec(Config, ChildID) ->
 -spec api_automaton_options(config()) ->
     mg_woody_api_automaton:options().
 api_automaton_options(Config) ->
-    NSs         = proplists:get_value(namespaces   , Config),
+    NSs         = proplists:get_value(namespaces, Config),
     EventSinkNS = proplists:get_value(event_sink_ns, Config),
     maps:fold(
         fun(NS, ConfigNS, Options) ->
@@ -162,11 +164,12 @@ events_machine_options(NS, Config = #{processor := ProcessorConfig, storage := S
         maps:get(event_sink, Config, undefined),
         EventSinkOptions,
         #{
-            namespace        => NS,
-            processor        => processor(ProcessorConfig),
-            tagging          => tags_options(NS, Config),
-            machines         => machine_options(NS, Config),
-            events_storage   => add_bucket_postfix(<<"events">>, Storage)
+            namespace                  => NS,
+            processor                  => processor(ProcessorConfig),
+            tagging                    => tags_options(NS, Config),
+            machines                   => machine_options(NS, Config),
+            events_storage             => add_bucket_postfix(<<"events">>, Storage),
+            default_processing_timeout => maps:get(default_processing_timeout, Config)
         }
     ).
 
@@ -217,12 +220,13 @@ api_event_sink_options(Config) ->
 
 -spec event_sink_options(event_sink_ns()) ->
     mg_events_sink:options().
-event_sink_options(EventSinkNS = #{storage := Storage}) ->
+event_sink_options(EventSinkNS = #{storage := Storage, default_processing_timeout := Timeout}) ->
     EventSinkNS#{
-        namespace      => <<"_event_sinks">>,
-        logger         => logger(event_sink),
-        storage        => add_bucket_postfix(<<"machines">>, Storage),
-        events_storage => add_bucket_postfix(<<"events"  >>, Storage)
+        namespace        => <<"_event_sinks">>,
+        logger           => logger(event_sink),
+        storage          => add_bucket_postfix(<<"machines">>, Storage),
+        events_storage   => add_bucket_postfix(<<"events"  >>, Storage),
+        default_processing_timeout => Timeout
     }.
 
 -spec collect_event_sinks(config()) ->

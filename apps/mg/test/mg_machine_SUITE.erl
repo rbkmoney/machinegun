@@ -27,7 +27,7 @@
 
 %% mg_machine
 -behaviour(mg_machine).
--export([pool_child_spec/2, process_machine/6]).
+-export([pool_child_spec/2, process_machine/7]).
 
 -export([start/0]).
 
@@ -127,24 +127,24 @@ pool_child_spec(_Options, Name) ->
         start => {?MODULE, start, []}
     }.
 
--spec process_machine(_Options, mg:id(), mg_machine:processor_impact(), _, _, mg_machine:machine_state()) ->
+-spec process_machine(_Options, mg:id(), mg_machine:processor_impact(), _, _, _, mg_machine:machine_state()) ->
     mg_machine:processor_result() | no_return().
-process_machine(_, _, {_, fail}, _, ?req_ctx, _) ->
+process_machine(_, _, {_, fail}, _, ?req_ctx, _, _) ->
     _ = exit(1),
     {noreply, sleep, []};
-process_machine(_, _, {init, {TestKey, TestValue}}, _, ?req_ctx, null) ->
+process_machine(_, _, {init, {TestKey, TestValue}}, _, ?req_ctx, _, null) ->
     {{reply, ok}, sleep, [TestKey, TestValue]};
-process_machine(_, _, {call, get}, _, ?req_ctx, [TestKey, TestValue]) ->
+process_machine(_, _, {call, get}, _, ?req_ctx, _, [TestKey, TestValue]) ->
     {{reply, TestValue}, sleep, [TestKey, TestValue]};
-process_machine(_, _, {call, increment}, _, ?req_ctx, [TestKey, TestValue]) ->
+process_machine(_, _, {call, increment}, _, ?req_ctx, _, [TestKey, TestValue]) ->
     {{reply, ok}, sleep, [TestKey, TestValue + 1]};
-process_machine(_, _, {call, delayed_increment}, _, ?req_ctx, State) ->
+process_machine(_, _, {call, delayed_increment}, _, ?req_ctx, _, State) ->
     {{reply, ok}, {wait, genlib_time:now() + 1, ?req_ctx, 5000}, State};
-process_machine(_, _, {call, remove}, _, ?req_ctx, State) ->
+process_machine(_, _, {call, remove}, _, ?req_ctx, _, State) ->
     {{reply, ok}, remove, State};
-process_machine(_, _, timeout, _, ?req_ctx, [TestKey, TestValue]) ->
+process_machine(_, _, timeout, _, ?req_ctx, _, [TestKey, TestValue]) ->
     {noreply, sleep, [TestKey, TestValue + 1]};
-process_machine(_, _, {repair, repair_arg}, _, ?req_ctx, [TestKey, TestValue]) ->
+process_machine(_, _, {repair, repair_arg}, _, ?req_ctx, _, [TestKey, TestValue]) ->
     {{reply, repaired}, sleep, [TestKey, TestValue]}.
 
 %%

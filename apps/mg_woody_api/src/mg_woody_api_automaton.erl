@@ -46,7 +46,7 @@ handler(Options) ->
 handle_function('Start', [NS, ID_, Args], WoodyContext, Options) ->
     ID = unpack(id, ID_),
     ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
-    Deadline = mg_utils:default_deadline(),
+    Deadline = get_deadline(NS, WoodyContext, Options),
     ok = mg_woody_api_utils:handle_safe_with_retry(
             {id, ID}, ReqCtx,
             fun() ->
@@ -59,9 +59,9 @@ handle_function('Start', [NS, ID_, Args], WoodyContext, Options) ->
     {ok, ok};
 
 handle_function('Repair', [MachineDesc, Args], WoodyContext, Options) ->
-    Deadline = mg_utils:default_deadline(),
     ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
     {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
+    Deadline = get_deadline(NS, WoodyContext, Options),
     ok = mg_woody_api_utils:handle_safe_with_retry(
             Ref, ReqCtx,
             fun() ->
@@ -74,7 +74,7 @@ handle_function('Repair', [MachineDesc, Args], WoodyContext, Options) ->
     {ok, ok};
 
 handle_function('SimpleRepair', [NS, Ref_], WoodyContext, Options) ->
-    Deadline = mg_utils:default_deadline(),
+    Deadline = get_deadline(NS, WoodyContext, Options),
     ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
     Ref = unpack(ref, Ref_),
     ok = mg_woody_api_utils:handle_safe_with_retry(
@@ -89,9 +89,9 @@ handle_function('SimpleRepair', [NS, Ref_], WoodyContext, Options) ->
     {ok, ok};
 
 handle_function('Call', [MachineDesc, Args], WoodyContext, Options) ->
-    Deadline = mg_utils:default_deadline(),
     ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
     {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
+    Deadline = get_deadline(NS, WoodyContext, Options),
     Response =
         mg_woody_api_utils:handle_safe_with_retry(
             Ref, ReqCtx,
@@ -106,8 +106,8 @@ handle_function('Call', [MachineDesc, Args], WoodyContext, Options) ->
     {ok, pack(call_response, Response)};
 
 handle_function('GetMachine', [MachineDesc], WoodyContext, Options) ->
-    Deadline = mg_utils:default_deadline(),
     {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
+    Deadline = get_deadline(NS, WoodyContext, Options),
     History =
         mg_woody_api_utils:handle_safe_with_retry(
             Ref, mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
@@ -122,7 +122,7 @@ handle_function('GetMachine', [MachineDesc], WoodyContext, Options) ->
 
 handle_function('Remove', [NS, ID_], WoodyContext, Options) ->
     ID = unpack(id, ID_),
-    Deadline = mg_utils:default_deadline(),
+    Deadline = get_deadline(NS, WoodyContext, Options),
     ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
     ok = mg_woody_api_utils:handle_safe_with_retry(
             ID, ReqCtx,
@@ -155,3 +155,11 @@ logger(NS, Options) ->
         undefined                          -> undefined;
         #{machines := #{logger := Logger}} -> Logger
     end.
+
+-spec get_deadline(mg:ns(), woody_context:ctx(), options()) ->
+    mg_utils:deadline().
+get_deadline(NS, WoodyContext, Options) ->
+    %% Unexisting NS will cause exception later. So just return zero timeout.
+    NSOptions = maps:get(NS, Options, #{default_processing_timeout => 0}),
+    DefaultDeadline = maps:get(default_processing_timeout, NSOptions),
+    mg_woody_api_utils:get_deadline(WoodyContext, DefaultDeadline).
