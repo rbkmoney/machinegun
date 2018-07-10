@@ -240,20 +240,26 @@ supervisor_old_child_spec(ChildSpec = #{id := ChildID, start := Start = {M, _, _
     deadline().
 timeout_to_deadline(infinity) ->
     undefined;
+timeout_to_deadline(Timeout) when is_integer(Timeout) ->
+    now_ms() + Timeout;
 timeout_to_deadline(Timeout) ->
-    now_ms() + Timeout.
+    erlang:error(badarg, [Timeout]).
 
 -spec deadline_to_timeout(deadline()) ->
     timeout().
 deadline_to_timeout(undefined) ->
     infinity;
+deadline_to_timeout(Deadline) when is_integer(Deadline) ->
+    erlang:max(Deadline - now_ms(), 0);
 deadline_to_timeout(Deadline) ->
-    erlang:max(Deadline - now_ms(), 0).
+    erlang:error(badarg, [Deadline]).
 
 -spec unixtime_ms_to_deadline(non_neg_integer()) ->
     deadline().
+unixtime_ms_to_deadline(Deadline) when is_integer(Deadline) ->
+    Deadline;
 unixtime_ms_to_deadline(Deadline) ->
-    Deadline.
+    erlang:error(badarg, [Deadline]).
 
 -spec deadline_to_unixtime_ms(deadline()) ->
     non_neg_integer().
