@@ -117,7 +117,8 @@ opaque_to_woody_rpc_id([SpanID, TraceID, ParentID]) ->
 %%
 %% Woody deadline utils
 %%
--spec get_deadline(woody_context:ctx(), mg_utils:deadline()) -> mg_utils:deadline() | no_return().
+-spec get_deadline(woody_context:ctx(), mg_utils:deadline()) ->
+    mg_utils:deadline() | no_return().
 get_deadline(Context, Default) ->
     case woody_context:get_deadline(Context) of
         undefined ->
@@ -127,7 +128,10 @@ get_deadline(Context, Default) ->
             mg_utils:unixtime_ms_to_deadline(woody_deadline:to_unixtime_ms(Deadline))
     end.
 
--spec set_deadline(mg_utils:deadline(), woody_context:ctx()) -> woody_context:ctx().
+-spec set_deadline(mg_utils:deadline(), woody_context:ctx()) ->
+    woody_context:ctx().
+set_deadline(undefined, Context) ->
+    Context;
 set_deadline(Deadline, Context) ->
-    WoodyDeadline = woody_deadline:from_timeout(mg_utils:deadline_to_timeout(Deadline)),
+    WoodyDeadline = woody_deadline:from_unixtime_ms(mg_utils:deadline_to_unixtime_ms(Deadline)),
     woody_context:set_deadline(WoodyDeadline, Context).
