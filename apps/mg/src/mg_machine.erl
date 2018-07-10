@@ -791,6 +791,13 @@ remove_from_storage(ReqCtx, Deadline, State = #{id := ID, options := Options, st
 retry_strategy(Subj, Options, Deadline) ->
     Retries = maps:get(retries, Options, #{}),
     Policy = maps:get(Subj, Retries, ?DEFAULT_RETRY_POLICY),
+    retry_strategy_(Subj, Policy, Deadline).
+
+-spec retry_strategy_(storage | processor, mg_utils:genlib_retry_policy(), mg_utils:deadline()) ->
+    genlib_retry:strategy().
+retry_strategy_(storage, Policy, _Deadline) ->
+    mg_utils:genlib_retry_new(Policy);
+retry_strategy_(_Subj, Policy, Deadline) ->
     Timeout = mg_utils:deadline_to_timeout(Deadline),
     mg_utils:genlib_retry_new({timecap, Timeout, Policy}).
 
