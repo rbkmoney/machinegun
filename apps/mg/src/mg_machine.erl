@@ -472,7 +472,7 @@ handle_call(Call, CallContext, ReqCtx, Deadline, S=#{storage_machine:=StorageMac
         {{start, _   }, #{status:=_}} -> {{reply, {error, {logic, machine_already_exist}}}, S};
 
         % fail
-        {{fail, Exception}, _} -> {{reply, ok}, handle_exception(Exception, undefined, ReqCtx, S)};
+        {{fail, Exception}, _} -> {{reply, ok}, handle_exception(Exception, undefined, ReqCtx, Deadline, S)};
 
         % сюда мы не должны попадать если машина не падала во время обработки запроса
         % (когда мы переходили в стейт processing)
@@ -495,7 +495,7 @@ handle_call(Call, CallContext, ReqCtx, Deadline, S=#{storage_machine:=StorageMac
         {{repair, _   }, #{status:=_              }} -> {{reply, {error, {logic, machine_already_working}}}, S};
 
         % simple_repair
-        {simple_repair, #{status:={error  , _, _}}} -> {{reply, ok}, process_simple_repair(ReqCtx, S)};
+        {simple_repair, #{status:={error  , _, _}}} -> {{reply, ok}, process_simple_repair(ReqCtx, Deadline, S)};
         {simple_repair, #{status:=_              }} -> {{reply, {error, {logic, machine_already_working}}}, S};
 
         % timers
@@ -640,11 +640,13 @@ waiting_date_index(_) ->
 process_start(Args, ProcessingCtx, ReqCtx, Deadline, State) ->
     process({init, Args}, ProcessingCtx, ReqCtx, Deadline, State#{storage_machine := new_storage_machine()}).
 
--spec process_simple_repair(request_context(), state()) ->
+-spec process_simple_repair(request_context(), mg_utils:deadline(), state()) ->
     state().
-process_simple_repair(ReqCtx, State = #{storage_machine := StorageMachine = #{status := {error, _, OldStatus}}}) ->
+process_simple_repair(ReqCtx, Deadline, State) ->
+    #{storage_machine := StorageMachine = #{status := {error, _, OldStatus}}} = State,
     transit_state(
         ReqCtx,
+        Deadline,
         StorageMachine#{status => OldStatus},
         State
     ).
@@ -656,12 +658,15 @@ process(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
         process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State)
     catch Class:Reason ->
         ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
-        handle_exception({Class, Reason, erlang:get_stacktrace()}, Impact, ReqCtx, State)
+        handle_exception({Class, Reason, erlang:get_stacktrace()}, Impact, ReqCtx, Deadline, State)
     end.
 
--spec handle_exception(mg_utils:exception(), processor_impact() | undefined, request_context(), state()) ->
-    state().
-handle_exception(Exception, Impact, ReqCtx, State) ->
+-spec handle_exception(Exception, Impact, ReqCtx, Deadline, state()) -> state() when
+    Exception :: mg_utils:exception(),
+    Impact :: processor_impact() | undefined,
+    ReqCtx :: request_context(),
+    Deadline :: mg_utils:deadline().
+handle_exception(Exception, Impact, ReqCtx, Deadline, State) ->
     #{options := Options, id := ID, storage_machine := StorageMachine} = State,
     ok = emit_log_machine_event(Options, ID, ReqCtx, {machine_failed, Exception}),
     #{status := OldStatus} = StorageMachine,
@@ -672,7 +677,7 @@ handle_exception(Exception, Impact, ReqCtx, State) ->
             State;
         {_, _} ->
             NewStorageMachine = StorageMachine#{status => {error, Exception, OldStatus}},
-            transit_state(ReqCtx, NewStorageMachine, State)
+            transit_state(ReqCtx, Deadline, NewStorageMachine, State)
     end.
 
 -spec process_unsafe(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
@@ -681,17 +686,20 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
     {ReplyAction, Action, NewMachineState} =
         call_processor(Impact, ProcessingCtx, ReqCtx, Deadline, State),
     ok = try_suicide(State, ReqCtx),
-    NewStorageMachine = StorageMachine#{state := NewMachineState},
+    NewStorageMachine0 = StorageMachine#{state := NewMachineState},
     NewState =
         case Action of
             {continue, _} ->
-                transit_state(ReqCtx, NewStorageMachine#{status := {processing, ReqCtx}}, State);
+                NewStorageMachine = NewStorageMachine0#{status := {processing, ReqCtx}},
+                transit_state(ReqCtx, Deadline, NewStorageMachine, State);
             sleep ->
-                transit_state(ReqCtx, NewStorageMachine#{status := sleeping}, State);
+                NewStorageMachine = NewStorageMachine0#{status := sleeping},
+                transit_state(ReqCtx, Deadline, NewStorageMachine, State);
             {wait, Timestamp, HdlReqCtx, HdlTo} ->
-                transit_state(ReqCtx, NewStorageMachine#{status := {waiting, Timestamp, HdlReqCtx, HdlTo}}, State);
+                NewStorageMachine = NewStorageMachine0#{status := {waiting, Timestamp, HdlReqCtx, HdlTo}},
+                transit_state(ReqCtx, Deadline, NewStorageMachine, State);
             remove ->
-                remove_from_storage(ReqCtx, State)
+                remove_from_storage(ReqCtx, Deadline, State)
         end,
     ok = do_reply_action(wrap_reply_action(ok, ReplyAction), ProcessingCtx),
     case Action of
@@ -708,7 +716,7 @@ call_processor(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
     F = fun() ->
             processor_process_machine(ID, Impact, ProcessingCtx, ReqCtx, Deadline, MachineState, Options)
         end,
-    do_with_retry(Options, ID, F, retry_strategy(processor, Options), ReqCtx).
+    do_with_retry(Options, ID, F, retry_strategy(processor, Options, Deadline), ReqCtx).
 
 -spec processor_process_machine(mg:id(), processor_impact(), processing_context(), ReqCtx :: request_context(),
                                 mg_utils:deadline(), state(), options()) -> _Result.
@@ -740,13 +748,14 @@ wrap_reply_action(Wrapper, {reply, R}) ->
     {reply, {Wrapper, R}}.
 
 
--spec transit_state(request_context(), storage_machine(), state()) ->
+-spec transit_state(request_context(), mg_utils:deadline(), storage_machine(), state()) ->
     state().
-transit_state(_ReqCtx, NewStorageMachine, State=#{storage_machine := OldStorageMachine})
+transit_state(_ReqCtx, _Deadline, NewStorageMachine, State=#{storage_machine := OldStorageMachine})
     when NewStorageMachine =:= OldStorageMachine
 ->
     State;
-transit_state(ReqCtx, NewStorageMachine, State=#{id:=ID, options:=Options, storage_context := StorageContext}) ->
+transit_state(ReqCtx, Deadline, NewStorageMachine, State) ->
+    #{id:=ID, options:=Options, storage_context := StorageContext} = State,
     F = fun() ->
             mg_storage:put(
                 storage_options(Options),
@@ -757,15 +766,15 @@ transit_state(ReqCtx, NewStorageMachine, State=#{id:=ID, options:=Options, stora
                 storage_machine_to_indexes(NewStorageMachine)
             )
         end,
-    NewStorageContext  = do_with_retry(Options, ID, F, retry_strategy(storage, Options), ReqCtx),
+    NewStorageContext  = do_with_retry(Options, ID, F, retry_strategy(storage, Options, Deadline), ReqCtx),
     State#{
         storage_machine := NewStorageMachine,
         storage_context := NewStorageContext
     }.
 
--spec remove_from_storage(request_context(), state()) ->
+-spec remove_from_storage(request_context(), mg_utils:deadline(), state()) ->
     state().
-remove_from_storage(ReqCtx, State = #{id := ID, options := Options, storage_context := StorageContext}) ->
+remove_from_storage(ReqCtx, Deadline, State = #{id := ID, options := Options, storage_context := StorageContext}) ->
     F = fun() ->
             mg_storage:delete(
                 storage_options(Options),
@@ -774,13 +783,16 @@ remove_from_storage(ReqCtx, State = #{id := ID, options := Options, storage_cont
                 StorageContext
             )
         end,
-    ok = do_with_retry(Options, ID, F, retry_strategy(storage, Options), ReqCtx),
+    ok = do_with_retry(Options, ID, F, retry_strategy(storage, Options, Deadline), ReqCtx),
     State#{storage_machine := undefined, storage_context := undefined}.
 
--spec retry_strategy(storage | processor, options()) ->
+-spec retry_strategy(storage | processor, options(), mg_utils:deadline()) ->
     genlib_retry:strategy().
-retry_strategy(Subj, Options) ->
-    mg_utils:genlib_retry_new(maps:get(Subj, maps:get(retries, Options, #{}), ?DEFAULT_RETRY_POLICY)).
+retry_strategy(Subj, Options, Deadline) ->
+    Retries = maps:get(retries, Options, #{}),
+    Policy = maps:get(Subj, Retries, ?DEFAULT_RETRY_POLICY),
+    Timeout = mg_utils:deadline_to_timeout(Deadline),
+    mg_utils:genlib_retry_new({timecap, Timeout, Policy}).
 
 %%
 
