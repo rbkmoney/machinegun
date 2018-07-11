@@ -203,7 +203,7 @@ event_sink_ns(YamlConfig) ->
     #{
         storage                    => storage(<<"_event_sinks">>, YamlConfig),
         duplicate_search_batch     => 1000,
-        default_processing_timeout => ?C:time_interval("30S")
+        default_processing_timeout => ?C:time_interval("30S", ms)
     }.
 
 %%
