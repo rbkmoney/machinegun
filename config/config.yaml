@@ -42,6 +42,8 @@ namespaces:
         # suicide_probability: 0.1
         event_sink: main_event_sink
         default_processing_timeout: 30s
+        timer_processing_timeout: 60s
+        reshedule_timeout: 60s
         processor:
             url: http://localhost:8022/processor
             pool_size: 50

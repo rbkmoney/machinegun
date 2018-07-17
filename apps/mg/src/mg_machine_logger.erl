@@ -31,8 +31,9 @@
     | {machine_event, mg:id(), mg:request_context(), machine_event()}
 .
 -type request_event() ::
-      {request_failed             , mg_utils:exception()}  % ошибка при обработки внешнего запроса
-    | {timer_handling_failed      , mg_utils:exception()}  % ошибка при обработки таймера
+      {request_failed             , mg_utils:exception()}  % ошибка при обработке внешнего запроса
+    | {timer_handling_failed      , mg_utils:exception()}  % ошибка при обработке таймера
+    | {timer_retry_handling_failed, mg_utils:exception()}  % ошибка при повторной обработке таймера
     | {resuming_interrupted_failed, mg_utils:exception()}  % ошибка при переподнятии машины
     | {retrying                   , Delay::pos_integer()}
 .

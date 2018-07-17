@@ -273,8 +273,9 @@ mg_woody_api_config(C) ->
                 },
                 default_processing_timeout => 5000,
                 scheduled_tasks => #{
-                    timers   => #{ interval => 100, limit => 10 },
-                    overseer => #{ interval => 100, limit => 10 }
+                    timers         => #{ interval => 100, limit => 10 },
+                    timers_retries => #{ interval => 100, limit => 10 },
+                    overseer       => #{ interval => 100, limit => 10 }
                 },
                 retries => #{
                     % вообще этого тут быть не должно,
@@ -283,7 +284,8 @@ mg_woody_api_config(C) ->
                     % что срабатывают именно эти ретраи
                     % TODO это нужно исправить
                     processor => {exponential, infinity, 1, 10},
-                    storage   => {exponential, infinity, 1, 10}
+                    storage   => {exponential, infinity, 1, 10},
+                    timers    => {exponential, infinity, 1, 10}
                 },
                 % сейчас существуют проблемы, которые не дают включить на постоянной основе эту опцию
                 % (а очень хочется, чтобы проверять работоспособность идемпотентных ретраев)
@@ -441,11 +443,11 @@ abort_timer(C) ->
 -spec timeout_call_with_deadline(config()) ->
     _.
 timeout_call_with_deadline(C) ->
-    Deadline = mg_utils:timeout_to_deadline(?DEADLINE_TIMEOUT),
+    DeadlineFn = fun() -> mg_utils:timeout_to_deadline(?DEADLINE_TIMEOUT) end,
     Options = no_timeout_automaton_options(C),
-    {'EXIT', {Reason, _Stack}} = (catch mg_automaton_client:call(Options, {id, ?ID}, <<"sleep">>, Deadline)),
+    {'EXIT', {Reason, _Stack}} = (catch mg_automaton_client:call(Options, {id, ?ID}, <<"sleep">>, DeadlineFn())),
     {woody_error, {external, result_unknown, <<"{timeout,", _Rest/binary>>}} = Reason,
-    ok = mg_automaton_client:repair(Options, {id, ?ID}, <<"ok">>, mg_utils:timeout_to_deadline(?DEADLINE_TIMEOUT)).
+    #'MachineAlreadyWorking'{} = (catch mg_automaton_client:repair(Options, {id, ?ID}, <<"ok">>, DeadlineFn())).
 
 -spec success_call_with_deadline(config()) ->
     _.

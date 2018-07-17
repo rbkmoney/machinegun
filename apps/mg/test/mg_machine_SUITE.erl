@@ -169,8 +169,9 @@ automaton_options() ->
         storage   => mg_storage_memory,
         logger    => ?MODULE,
         scheduled_tasks => #{
-            timers   => #{ interval => 1000, limit => 10 },
-            overseer => #{ interval => 1000, limit => 10 }
+            timers         => #{ interval => 1000, limit => 10 },
+            timers_retries => #{ interval => 1000, limit => 10 },
+            overseer       => #{ interval => 1000, limit => 10 }
         }
     }.
 

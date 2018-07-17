@@ -71,7 +71,7 @@ init_per_suite(C) ->
         {automaton_options , #{
             url => "http://localhost:8022",
             ns => ?NS,
-            retry_strategy => mg_utils:genlib_retry_new({exponential, 5, 2, 1000})
+            retry_strategy => mg_retry:new_strategy({exponential, 5, 2, 1000})
         }},
         {event_sink_options, "http://localhost:8022"          },
         {processor_pid     , ProcessorPid                     }
@@ -100,8 +100,9 @@ mg_woody_api_config(_C) ->
                 },
                 default_processing_timeout => 5000,
                 scheduled_tasks => #{
-                    timers   => #{ interval => 100, limit => 10 },
-                    overseer => #{ interval => 100, limit => 10 }
+                    timers         => #{ interval => 100, limit => 10 },
+                    timers_retries => #{ interval => 100, limit => 10 },
+                    overseer       => #{ interval => 100, limit => 10 }
                 },
                 retries => #{},
                 event_sink => ?ES_ID

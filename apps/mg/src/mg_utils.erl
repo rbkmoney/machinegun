@@ -80,9 +80,6 @@
 
 -export([join/2]).
 
--export_type([genlib_retry_policy/0]).
--export([genlib_retry_new/1]).
-
 -export([lists_compact/1]).
 -export([stop_wait_all/3]).
 
@@ -391,29 +388,6 @@ format_exception({Class, Reason, Stacktrace}) ->
 join(_    , []   ) -> [];
 join(_    , [H]  ) ->  H;
 join(Delim, [H|T]) -> [H, Delim, join(Delim, T)].
-
--type retries_num() :: pos_integer() | infinity.
--type genlib_retry_policy() ::
-      {linear, retries_num() | {max_total_timeout, pos_integer()}, pos_integer()}
-    | {exponential, retries_num() | {max_total_timeout, pos_integer()}, number(), pos_integer()}
-    | {exponential, retries_num() | {max_total_timeout, pos_integer()}, number(), pos_integer(), timeout()}
-    | {intervals, [pos_integer(), ...]}
-    | {timecap, timeout(), genlib_retry_policy()}
-.
--spec genlib_retry_new(genlib_retry_policy()) ->
-    genlib_retry:strategy().
-genlib_retry_new({linear, Retries, Timeout}) ->
-    genlib_retry:linear(Retries, Timeout);
-genlib_retry_new({exponential, Retries, Factor, Timeout}) ->
-    genlib_retry:exponential(Retries, Factor, Timeout);
-genlib_retry_new({exponential, Retries, Factor, Timeout, MaxTimeout}) ->
-    genlib_retry:exponential(Retries, Factor, Timeout, MaxTimeout);
-genlib_retry_new({intervals, Array}) ->
-    genlib_retry:intervals(Array);
-genlib_retry_new({timecap, Timeout, Policy}) ->
-    genlib_retry:timecap(Timeout, genlib_retry_new(Policy));
-genlib_retry_new(BadPolicy) ->
-    erlang:error(badarg, [BadPolicy]).
 
 -spec lists_compact(list(T)) ->
     list(T).
