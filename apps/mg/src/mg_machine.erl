@@ -310,7 +310,7 @@ reply(#{call_context := CallContext}, Reply) ->
 %%
 -define(DEFAULT_SCHEDULED_TASK, disable). % {1000, 10}
 -define(DEFAULT_RETRY_POLICY, {exponential, infinity, 2, 10, 60 * 1000}).
--define(DEFAULT_TIMER_TIMEOUT, 60000).
+-define(DEFAULT_TIMER_PROCESSING_TIMEOUT, 60000).
 -define(DEFAULT_RESCHEDULING_TIMEOUT, 60000).
 
 -define(safe_request(Options, ID, ReqCtx, EventTag, Expr),
@@ -351,7 +351,7 @@ handle_timer(Options, ID, TimerTs) ->
                 % Важный момент, что если не проверить соответствие таймстемпов, то будет рейс
                 % когда по старому индексу вычитается новый таймер и сработает не вовремя!
                 #{status := {waiting, Timestamp, ReqCtx, _Timeout}} when Timestamp =:= TimerTs ->
-                    Timeout = maps:get(timer_processing_timeout, Options, ?DEFAULT_TIMER_TIMEOUT),
+                    Timeout = maps:get(timer_processing_timeout, Options, ?DEFAULT_TIMER_PROCESSING_TIMEOUT),
                     handle_timer(Options, ID, Timestamp, ReqCtx, mg_utils:timeout_to_deadline(Timeout));
                 #{status := _} ->
                     ok
@@ -405,7 +405,7 @@ handle_timer_retry(Options, ID, TimerTs) ->
                 % Важный момент, что если не проверить соответствие таймстемпов, то будет рейс
                 % когда по старому индексу вычитается новый таймер и сработает не вовремя!
                 #{status := {retrying, Timestamp, _Start, _Attempt, ReqCtx}} when Timestamp =:= TimerTs ->
-                    Timeout = maps:get(timer_processing_timeout, Options, ?DEFAULT_TIMER_TIMEOUT),
+                    Timeout = maps:get(timer_processing_timeout, Options, ?DEFAULT_TIMER_PROCESSING_TIMEOUT),
                     handle_timer_retry(Options, ID, Timestamp, ReqCtx, mg_utils:timeout_to_deadline(Timeout));
                 #{status := _} ->
                     ok
