@@ -168,10 +168,9 @@ namespaces(YamlConfig) ->
 
 namespace({NameStr, NSYamlConfig}, YamlConfig) ->
     Name = ?C:utf_bin(NameStr),
-    ProcessingTimeout = ?C:time_interval(
-        ?C:conf([woody_server, default_processing_timeout], NSYamlConfig, "30S"),
-        ms
-    ),
+    Timeout = fun(Name, Default) ->
+        ?C:time_interval(?C:conf([Name], NSYamlConfig, Default), ms)
+    end,
     NS0 = #{
             storage   => storage(Name, YamlConfig),
             processor => #{
@@ -181,14 +180,19 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
                     {max_connections, ?C:conf([processor, pool_size], NSYamlConfig, 50)}
                 ]
             },
-            default_processing_timeout => ProcessingTimeout,
+            default_processing_timeout => Timeout(default_processing_timeout, "30S"),
+            timer_processing_timeout => Timeout(timer_processing_timeout, "60S"),
+            reshedule_timeout => Timeout(reshedule_timeout, "60S"),
             retries => #{
-                storage   => {exponential, infinity           , 2, 10, 60 * 1000},
-                processor => {exponential, 24 * 60 * 60 * 1000, 2, 10, 60 * 1000}
+                storage   => {exponential, infinity, 2, 10, 60 * 1000},
+                %% max_total_timeout not supported for timers yet, see mg_retry:new_strategy/2 comments
+                timers    => {exponential, 100, 2, 10, 30 * 60 * 1000},
+                processor => {exponential, {max_total_timeout, 24 * 60 * 60 * 1000}, 2, 10, 60 * 1000}
             },
             scheduled_tasks => #{
-                timers   => #{ interval => 1000, limit => 10 }, % | disable
-                overseer => #{ interval => 1000, limit => 10 } % | disable
+                timers         => #{ interval => 1000, limit => 10 }, % | disable
+                timers_retries => #{ interval => 1000, limit => 10 }, % | disable
+                overseer       => #{ interval => 1000, limit => 10 } % | disable
             },
             suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0))
         },

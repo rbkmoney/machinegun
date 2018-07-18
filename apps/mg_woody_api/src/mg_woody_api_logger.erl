@@ -59,6 +59,8 @@ format_request_event({request_failed, Exception}) ->
     {warning, {"request handling failed ~p", [Exception]}, []};
 format_request_event({timer_handling_failed, Exception}) ->
     {warning, {"timer handling failed ~p", [Exception]}, []};
+format_request_event({timer_retry_handling_failed, Exception}) ->
+    {warning, {"timer retry handling failed ~p", [Exception]}, []};
 format_request_event({resuming_interrupted_failed, Exception}) ->
     {warning, {"resuming interrupted failed ~p", [Exception]}, []};
 format_request_event({retrying, RetryTimeout}) ->

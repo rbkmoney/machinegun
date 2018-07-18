@@ -186,13 +186,20 @@ tags_options(NS, #{retries := Retries, storage := Storage}) ->
 -spec machine_options(mg:ns(), events_machines()) ->
     mg_machine:options().
 machine_options(NS, Config) ->
-    #{retries := Retries, scheduled_tasks := STasks, storage := Storage} = Config,
-    #{
+    #{storage := Storage} = Config,
+    Options = maps:with(
+        [
+            retries,
+            scheduled_tasks,
+            reshedule_timeout,
+            timer_processing_timeout
+        ],
+        Config
+    ),
+    Options#{
         namespace           => NS,
         storage             => add_bucket_postfix(<<"machines">>, Storage),
         logger              => logger({machine, NS}),
-        retries             => Retries,
-        scheduled_tasks     => STasks,
         % TODO сделать аналогично в event_sink'е и тэгах
         suicide_probability => maps:get(suicide_probability, Config, undefined)
     }.
