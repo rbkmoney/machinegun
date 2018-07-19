@@ -82,9 +82,7 @@ format_machine_event({machine_resheduled, TS, Attempt}) ->
 format_machine_event({machine_resheduling_failed, Exception}) ->
     {warning, {"machine resheduling failed ~p", [Exception]}, []};
 format_machine_event(committed_suicide) ->
-    {warning, {"machine has committed suicide", []}, []};
-format_machine_event(UnknownLogEvent) ->
-    {warning, {"unknown log event ~p", [UnknownLogEvent]}, []}.
+    {warning, {"machine has committed suicide", []}, []}.
 
 %%
 %% machine logging API
