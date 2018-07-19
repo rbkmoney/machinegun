@@ -57,4 +57,10 @@ handle_event(undefined, _Event) ->
     ok;
 handle_event(Handler, Event) ->
     {Mod, Options} = mg_utils:separate_mod_opts(Handler),
-    ok = Mod:handle_machine_logging_event(Options, Event).
+    try
+        ok = Mod:handle_machine_logging_event(Options, Event)
+    catch
+        Class:Reason ->
+            Msg = "Event handler ~p failed at event ~p: ~p:~p ~p",
+            error_logger:error_msg(Msg, [{Mod, Options}, Event, Class, Reason, erlang:get_stacktrace()])
+    end.

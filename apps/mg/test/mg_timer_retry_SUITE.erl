@@ -56,7 +56,7 @@ all() ->
     [group()].
 groups() ->
     [
-       {all, [], [%[parallel, shuffle], [
+       {all, [parallel, shuffle], [
            transient_fail,
            permament_fail
        ]}
