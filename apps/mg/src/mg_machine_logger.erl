@@ -61,7 +61,7 @@ handle_event(Handler, Event) ->
         ok = Mod:handle_machine_logging_event(Options, Event)
     catch
         Class:Reason ->
-            Msg = "Event handler ~p failed at event ~p: ~p:~p ~p",
+            Msg = "Event handler ~p failed at event ~p: ~p:~p ~s",
             Stacktrace = genlib_format:format_stacktrace(erlang:get_stacktrace()),
             error_logger:error_msg(Msg, [{Mod, Options}, Event, Class, Reason, Stacktrace])
     end.
