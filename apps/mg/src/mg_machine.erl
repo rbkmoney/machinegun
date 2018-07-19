@@ -848,10 +848,16 @@ processor_child_spec(Options) ->
     ReqCtx :: request_context(),
     Deadline :: mg_utils:deadline().
 reshedule(ProcessingCtx, ReqCtx, Deadline, State) ->
+    #{id:= ID, options := Options} = State,
     try
-        reshedule_unsafe(ReqCtx, Deadline, State)
+        {ok, NewState, Target, Attempt} = reshedule_unsafe(ReqCtx, Deadline, State),
+        ok = emit_log_machine_event(Options, ID, ReqCtx, {machine_resheduled, Target, Attempt}),
+        ok = do_reply_action({reply, ok}, ProcessingCtx),
+        NewState
     catch
         throw:(Reason=({ErrorType, _Details})) when ?can_be_retried(ErrorType) ->
+            Exception = {throw, Reason, erlang:get_stacktrace()},
+            ok = emit_log_machine_event(Options, ID, ReqCtx, {machine_resheduling_failed, Exception}),
             ok = do_reply_action({reply, {error, Reason}}, ProcessingCtx),
             State;
         Class:Reason ->
@@ -859,26 +865,29 @@ reshedule(ProcessingCtx, ReqCtx, Deadline, State) ->
             handle_exception({Class, Reason, erlang:get_stacktrace()}, undefined, ReqCtx, Deadline, State)
     end.
 
--spec reshedule_unsafe(ReqCtx, Deadline, state()) -> state() when
+-spec reshedule_unsafe(ReqCtx, Deadline, state()) -> Result when
     ReqCtx :: request_context(),
-    Deadline :: mg_utils:deadline().
+    Deadline :: mg_utils:deadline(),
+    Result :: {ok, state(), genlib_time:ts(), non_neg_integer()}.
 reshedule_unsafe(ReqCtx, Deadline, State) ->
     #{storage_machine := #{status := MachineStatus}} = State,
     reshedule_unsafe(MachineStatus, ReqCtx, Deadline, State).
 
--spec reshedule_unsafe(MachineStatus, ReqCtx, Deadline, state()) -> state() when
+-spec reshedule_unsafe(MachineStatus, ReqCtx, Deadline, state()) -> Result when
     ReqCtx :: request_context(),
     Deadline :: mg_utils:deadline(),
-    MachineStatus :: machine_regular_status().
+    MachineStatus :: machine_regular_status(),
+    Result :: {ok, state(), genlib_time:ts(), non_neg_integer()}.
 reshedule_unsafe({waiting, _, _, _}, ReqCtx, Deadline, State) ->
     #{storage_machine := StorageMachine, options := Options} = State,
     RetryStrategy = retry_strategy(timers, Options, undefined),
     case genlib_retry:next_step(RetryStrategy) of
         {wait, Timeout, _NewRetryStrategy} ->
             Now = genlib_time:now(),
-            NewStatus = {retrying, Now + Timeout, Now, 0, ReqCtx},
+            Target = Now + Timeout,
+            NewStatus = {retrying, Target, Now, NewAttempt = 0, ReqCtx},
             NewStorageMachine = StorageMachine#{status => NewStatus},
-            transit_state(ReqCtx, Deadline, NewStorageMachine, State);
+            {ok, transit_state(ReqCtx, Deadline, NewStorageMachine, State), Target, NewAttempt};
         finish ->
             throw({permanent, timer_retries_exhausted})
     end;
@@ -888,9 +897,10 @@ reshedule_unsafe({retrying, _, Start, Attempt, _}, ReqCtx, Deadline, State) ->
     case genlib_retry:next_step(RetryStrategy) of
         {wait, Timeout, _NewRetryStrategy} ->
             Now = genlib_time:now(),
-            NewStatus = {retrying, Now + Timeout, Start, Attempt + 1, ReqCtx},
+            Target = Now + Timeout,
+            NewStatus = {retrying, Target, Start, NewAttempt = Attempt + 1, ReqCtx},
             NewStorageMachine = StorageMachine#{status => NewStatus},
-            transit_state(ReqCtx, Deadline, NewStorageMachine, State);
+            {ok, transit_state(ReqCtx, Deadline, NewStorageMachine, State), Target, NewAttempt};
         finish ->
             throw({permanent, timer_retries_exhausted})
     end.
