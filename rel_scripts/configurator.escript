@@ -186,7 +186,8 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             retries => #{
                 storage   => {exponential, infinity, 2, 10, 60 * 1000},
                 %% max_total_timeout not supported for timers yet, see mg_retry:new_strategy/2 comments
-                timers    => {exponential, 100, 2, 10, 30 * 60 * 1000},
+                %% actual timers sheduling resolution is one second
+                timers    => {exponential, 100, 2, 1000, 30 * 60 * 1000},
                 processor => {exponential, {max_total_timeout, 24 * 60 * 60 * 1000}, 2, 10, 60 * 1000}
             },
             scheduled_tasks => #{

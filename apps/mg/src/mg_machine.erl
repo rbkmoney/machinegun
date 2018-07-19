@@ -884,7 +884,7 @@ reshedule_unsafe({waiting, _, _, _}, ReqCtx, Deadline, State) ->
     case genlib_retry:next_step(RetryStrategy) of
         {wait, Timeout, _NewRetryStrategy} ->
             Now = genlib_time:now(),
-            Target = Now + Timeout,
+            Target = get_shedule_target(Timeout),
             NewStatus = {retrying, Target, Now, NewAttempt = 0, ReqCtx},
             NewStorageMachine = StorageMachine#{status => NewStatus},
             {ok, transit_state(ReqCtx, Deadline, NewStorageMachine, State), Target, NewAttempt};
@@ -896,8 +896,7 @@ reshedule_unsafe({retrying, _, Start, Attempt, _}, ReqCtx, Deadline, State) ->
     RetryStrategy = retry_strategy(timers, Options, undefined, Start, Attempt),
     case genlib_retry:next_step(RetryStrategy) of
         {wait, Timeout, _NewRetryStrategy} ->
-            Now = genlib_time:now(),
-            Target = Now + Timeout,
+            Target = get_shedule_target(Timeout),
             NewStatus = {retrying, Target, Start, NewAttempt = Attempt + 1, ReqCtx},
             NewStorageMachine = StorageMachine#{status => NewStatus},
             {ok, transit_state(ReqCtx, Deadline, NewStorageMachine, State), Target, NewAttempt};
@@ -905,6 +904,11 @@ reshedule_unsafe({retrying, _, Start, Attempt, _}, ReqCtx, Deadline, State) ->
             throw({permanent, timer_retries_exhausted})
     end.
 
+-spec get_shedule_target(timeout()) ->
+    genlib_time:ts().
+get_shedule_target(TimeoutMS) ->
+    Now = genlib_time:now(),
+    Now + (TimeoutMS div 1000).
 
 -spec do_reply_action(processor_reply_action(), undefined | processing_context()) ->
     ok.
