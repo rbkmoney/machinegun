@@ -99,7 +99,7 @@ transient_fail(_C) ->
     BinTestName = genlib:to_binary(transient_fail),
     NS = BinTestName,
     ID = BinTestName,
-    Options = automaton_options(NS, {intervals, [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]}),
+    Options = automaton_options(NS, {intervals, [1000, 1000, 1000, 1000, 1000, 1000, 1000]}),
     _  = start_automaton(Options),
 
     ok = mg_machine:start(Options, ID, <<"normal">>, ?req_ctx, mg_utils:default_deadline()),
@@ -119,7 +119,7 @@ permament_fail(_C) ->
     BinTestName = genlib:to_binary(permament_fail),
     NS = BinTestName,
     ID = BinTestName,
-    Options = automaton_options(NS, {timecap, 0, {intervals, [1]}}),  % without retries
+    Options = automaton_options(NS, {intervals, [1000]}),
     _  = start_automaton(Options),
 
     ok = mg_machine:start(Options, ID, <<"normal">>, ?req_ctx, mg_utils:default_deadline()),
