@@ -56,7 +56,7 @@ all() ->
     [group()].
 groups() ->
     [
-       {all, [], [%[parallel, shuffle], [
+       {all, [parallel, shuffle], [
            transient_fail,
            permament_fail
        ]}
@@ -99,7 +99,7 @@ transient_fail(_C) ->
     BinTestName = genlib:to_binary(transient_fail),
     NS = BinTestName,
     ID = BinTestName,
-    Options = automaton_options(NS, {intervals, [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]}),
+    Options = automaton_options(NS, {intervals, [1000, 1000, 1000, 1000, 1000, 1000, 1000]}),
     _  = start_automaton(Options),
 
     ok = mg_machine:start(Options, ID, <<"normal">>, ?req_ctx, mg_utils:default_deadline()),
@@ -119,7 +119,7 @@ permament_fail(_C) ->
     BinTestName = genlib:to_binary(permament_fail),
     NS = BinTestName,
     ID = BinTestName,
-    Options = automaton_options(NS, {timecap, 0, {intervals, [1]}}),  % without retries
+    Options = automaton_options(NS, {intervals, [1000]}),
     _  = start_automaton(Options),
 
     ok = mg_machine:start(Options, ID, <<"normal">>, ?req_ctx, mg_utils:default_deadline()),
@@ -195,4 +195,4 @@ handle_machine_logging_event(_, {NS, ID, ReqCtx, SubEvent}) ->
 -spec build_timer() ->
     mg_machine:processor_flow_action().
 build_timer() ->
-    {wait, genlib_time:now() + 1, ?req_ctx, 5000}.
+    {wait, genlib_time:unow() + 1, ?req_ctx, 5000}.

@@ -76,10 +76,13 @@ format_machine_event({transient_error, Exception}) ->
     {warning, {"transient error ~p", [Exception]}, []};
 format_machine_event({retrying, RetryTimeout}) ->
     {warning, {"retrying in ~p msec", [RetryTimeout]}, []};
+format_machine_event({machine_resheduled, TS, Attempt}) ->
+    PrettyTimestamp = genlib_format:format_timestamp_iso8601(TS),
+    {warning, {"machine resheduled to ~s, attempt ~p", [PrettyTimestamp, Attempt]}, []};
+format_machine_event({machine_resheduling_failed, Exception}) ->
+    {warning, {"machine resheduling failed ~p", [Exception]}, []};
 format_machine_event(committed_suicide) ->
-    {warning, {"machine has has committed suicide", []}, []};
-format_machine_event(UnknownLogEvent) ->
-    {warning, {"unknown log event ~p", [UnknownLogEvent]}, []}.
+    {warning, {"machine has committed suicide", []}, []}.
 
 %%
 %% machine logging API

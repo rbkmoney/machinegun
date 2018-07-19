@@ -446,7 +446,7 @@ get_timer_action({set_timer, Timer, HRange, HandlingTimeout}, ReqCtx) ->
     TimerDateTime =
         case Timer of
             {timeout, Timeout} ->
-                genlib_time:now() + Timeout;
+                genlib_time:unow() + Timeout;
             {deadline, Deadline} ->
                 genlib_time:daytime_to_unixtime(Deadline)
         end,

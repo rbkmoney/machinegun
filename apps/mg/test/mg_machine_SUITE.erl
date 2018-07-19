@@ -139,7 +139,7 @@ process_machine(_, _, {call, get}, _, ?req_ctx, _, [TestKey, TestValue]) ->
 process_machine(_, _, {call, increment}, _, ?req_ctx, _, [TestKey, TestValue]) ->
     {{reply, ok}, sleep, [TestKey, TestValue + 1]};
 process_machine(_, _, {call, delayed_increment}, _, ?req_ctx, _, State) ->
-    {{reply, ok}, {wait, genlib_time:now() + 1, ?req_ctx, 5000}, State};
+    {{reply, ok}, {wait, genlib_time:unow() + 1, ?req_ctx, 5000}, State};
 process_machine(_, _, {call, remove}, _, ?req_ctx, _, State) ->
     {{reply, ok}, remove, State};
 process_machine(_, _, timeout, _, ?req_ctx, _, [TestKey, TestValue]) ->

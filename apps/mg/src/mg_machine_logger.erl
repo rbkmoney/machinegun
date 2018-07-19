@@ -42,7 +42,9 @@
     | {machine_failed , mg_utils:exception()}  % в работе машины произошла неожиданная ошибка
     | {transient_error, mg_utils:exception()}  % в работе машины произошла временная ошибка
     | {retrying       , Delay::pos_integer()}  % повтор предыдущей операции после временной ошибки
-    |  committed_suicide                       % машина совершила преднамеренное самоубийство
+    | {machine_resheduled, TS::genlib_time:ts(), Attempt::non_neg_integer()}  % обработка таймера отложена на будущее
+    | {machine_resheduling_failed, mg_utils:exception()}  % ошибка при планировании повторной обработки
+    |  committed_suicide  % машина совершила преднамеренное самоубийство
 .
 -type handler() :: mg_utils:mod_opts() | undefined.
 
@@ -55,4 +57,11 @@ handle_event(undefined, _Event) ->
     ok;
 handle_event(Handler, Event) ->
     {Mod, Options} = mg_utils:separate_mod_opts(Handler),
-    ok = Mod:handle_machine_logging_event(Options, Event).
+    try
+        ok = Mod:handle_machine_logging_event(Options, Event)
+    catch
+        Class:Reason ->
+            Msg = "Event handler ~p failed at event ~p: ~p:~p ~s",
+            Stacktrace = genlib_format:format_stacktrace(erlang:get_stacktrace()),
+            error_logger:error_msg(Msg, [{Mod, Options}, Event, Class, Reason, Stacktrace])
+    end.
