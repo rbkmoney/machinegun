@@ -195,4 +195,4 @@ handle_machine_logging_event(_, {NS, ID, ReqCtx, SubEvent}) ->
 -spec build_timer() ->
     mg_machine:processor_flow_action().
 build_timer() ->
-    {wait, genlib_time:now() + 1, ?req_ctx, 5000}.
+    {wait, genlib_time:unow() + 1, ?req_ctx, 5000}.

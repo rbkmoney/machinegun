@@ -329,7 +329,7 @@ handle_timers(Options, Limit) ->
     ?safe_request(
         Options, undefined, null, timer_handling_failed,
         begin
-            {Timers, _} = search(Options, {waiting, 1, genlib_time:now()}, Limit),
+            {Timers, _} = search(Options, {waiting, 1, genlib_time:unow()}, Limit),
             lists:foreach(
                 % такая схема потенциально опасная, но надо попробовать как она себя будет вести
                 fun({Ts, ID}) ->
@@ -384,7 +384,7 @@ handle_timers_retries(Options, Limit) ->
     ?safe_request(
         Options, undefined, null, timer_retry_handling_failed,
         begin
-            {Timers, _} = search(Options, {retrying, 1, genlib_time:now()}, Limit),
+            {Timers, _} = search(Options, {retrying, 1, genlib_time:unow()}, Limit),
             lists:foreach(
                 fun({Ts, ID}) ->
                     erlang:spawn_link(fun() -> handle_timer_retry(Options, ID, Ts) end)
@@ -883,7 +883,7 @@ reshedule_unsafe({waiting, _, _, _}, ReqCtx, Deadline, State) ->
     RetryStrategy = retry_strategy(timers, Options, undefined),
     case genlib_retry:next_step(RetryStrategy) of
         {wait, Timeout, _NewRetryStrategy} ->
-            Now = genlib_time:now(),
+            Now = genlib_time:unow(),
             Target = get_shedule_target(Timeout),
             NewStatus = {retrying, Target, Now, NewAttempt = 0, ReqCtx},
             NewStorageMachine = StorageMachine#{status => NewStatus},
@@ -907,7 +907,7 @@ reshedule_unsafe({retrying, _, Start, Attempt, _}, ReqCtx, Deadline, State) ->
 -spec get_shedule_target(timeout()) ->
     genlib_time:ts().
 get_shedule_target(TimeoutMS) ->
-    Now = genlib_time:now(),
+    Now = genlib_time:unow(),
     Now + (TimeoutMS div 1000).
 
 -spec do_reply_action(processor_reply_action(), undefined | processing_context()) ->
