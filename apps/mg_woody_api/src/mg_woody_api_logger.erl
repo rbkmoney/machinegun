@@ -77,7 +77,7 @@ format_machine_event({transient_error, Exception}) ->
 format_machine_event({retrying, RetryTimeout}) ->
     {warning, {"retrying in ~p msec", [RetryTimeout]}, []};
 format_machine_event({machine_resheduled, TS, Attempt}) ->
-    PrettyTimestamp = rfc3339:format(erlang:convert_time_unit(TS, second, native)),
+    PrettyTimestamp = genlib_format:format_timestamp_iso8601(TS),
     {warning, {"machine resheduled to ~p, attempt ~p", [PrettyTimestamp, Attempt]}, []};
 format_machine_event({machine_resheduling_failed, Exception}) ->
     {warning, {"machine resheduling failed ~p", [Exception]}, []};
