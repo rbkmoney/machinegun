@@ -78,7 +78,7 @@ format_machine_event({retrying, RetryTimeout}) ->
     {warning, {"retrying in ~p msec", [RetryTimeout]}, []};
 format_machine_event({machine_resheduled, TS, Attempt}) ->
     PrettyTimestamp = genlib_format:format_timestamp_iso8601(TS),
-    {warning, {"machine resheduled to ~p, attempt ~p", [PrettyTimestamp, Attempt]}, []};
+    {warning, {"machine resheduled to ~s, attempt ~p", [PrettyTimestamp, Attempt]}, []};
 format_machine_event({machine_resheduling_failed, Exception}) ->
     {warning, {"machine resheduling failed ~p", [Exception]}, []};
 format_machine_event(committed_suicide) ->
