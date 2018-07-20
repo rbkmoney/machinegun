@@ -191,7 +191,7 @@ machine_options(NS, Config) ->
         [
             retries,
             scheduled_tasks,
-            reshedule_timeout,
+            reschedule_timeout,
             timer_processing_timeout
         ],
         Config

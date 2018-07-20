@@ -42,8 +42,8 @@
     | {machine_failed , mg_utils:exception()}  % в работе машины произошла неожиданная ошибка
     | {transient_error, mg_utils:exception()}  % в работе машины произошла временная ошибка
     | {retrying       , Delay::pos_integer()}  % повтор предыдущей операции после временной ошибки
-    | {machine_resheduled, TS::genlib_time:ts(), Attempt::non_neg_integer()}  % обработка таймера отложена на будущее
-    | {machine_resheduling_failed, mg_utils:exception()}  % ошибка при планировании повторной обработки
+    | {machine_rescheduled, TS::genlib_time:ts(), Attempt::non_neg_integer()}  % обработка таймера отложена на будущее
+    | {machine_rescheduling_failed, mg_utils:exception()}  % ошибка при планировании повторной обработки
     |  committed_suicide  % машина совершила преднамеренное самоубийство
 .
 -type handler() :: mg_utils:mod_opts() | undefined.
