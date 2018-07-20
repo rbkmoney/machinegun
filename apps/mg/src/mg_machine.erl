@@ -32,7 +32,7 @@
 %%    - машина не найдена -- machine_not_found
 %%    - машина уже существует -- machine_already_exist
 %%    - машина находится в упавшем состоянии -- machine_failed
-%%    - некорректная попытка повторно запланировать обработку события -- invalid_reshedule_request
+%%    - некорректная попытка повторно запланировать обработку события -- invalid_reschedule_request
 %%    - что-то ещё?
 %%   - временные -- transient
 %%    - сервис перегружен —- overload
@@ -126,7 +126,7 @@
     retries                  => retry_opt(),
     scheduled_tasks          => scheduled_tasks_opt(),
     suicide_probability      => suicide_probability(),
-    reshedule_timeout        => timeout(),
+    reschedule_timeout       => timeout(),
     timer_processing_timeout => timeout()
 }.
 
@@ -369,7 +369,7 @@ handle_timer(Options, ID, Timestamp, ReqCtx, Deadline) ->
             CallQueue = mg_workers_manager:get_call_queue(manager_options(Options), ID),
             case lists:member(Call, CallQueue) of
                 false ->
-                    RescheduleTimeout = maps:get(reshedule_timeout, Options, ?DEFAULT_RESCHEDULING_TIMEOUT),
+                    RescheduleTimeout = maps:get(reschedule_timeout, Options, ?DEFAULT_RESCHEDULING_TIMEOUT),
                     RescheduleCall = {retry_wait, {waiting, Timestamp}},
                     call_with_reschedule(Options, ID, Call, ReqCtx, Deadline, RescheduleCall, RescheduleTimeout);
                 true ->
@@ -424,7 +424,7 @@ handle_timer_retry(Options, ID, Timestamp, ReqCtx, Deadline) ->
             CallQueue = mg_workers_manager:get_call_queue(manager_options(Options), ID),
             case lists:member(Call, CallQueue) of
                 false ->
-                    RescheduleTimeout = maps:get(reshedule_timeout, Options, ?DEFAULT_RESCHEDULING_TIMEOUT),
+                    RescheduleTimeout = maps:get(reschedule_timeout, Options, ?DEFAULT_RESCHEDULING_TIMEOUT),
                     RescheduleCall = {retry_wait, {retrying, Timestamp}},
                     call_with_reschedule(Options, ID, Call, ReqCtx, Deadline, RescheduleCall, RescheduleTimeout);
                 true ->
@@ -595,12 +595,12 @@ handle_call(Call, CallContext, ReqCtx, Deadline, S=#{storage_machine:=StorageMac
 
         {{retry_wait, {waiting, Ts0}}, #{status:={waiting, Ts1, _, _}}}
             when Ts0 =:= Ts1 ->
-            {noreply, reshedule(PCtx, ReqCtx, Deadline, S)};
+            {noreply, reschedule(PCtx, ReqCtx, Deadline, S)};
         {{retry_wait, {retrying, Ts0}}, #{status:={retrying, Ts1, _, _, _}}}
             when Ts0 =:= Ts1 ->
-            {noreply, reshedule(PCtx, ReqCtx, Deadline, S)};
+            {noreply, reschedule(PCtx, ReqCtx, Deadline, S)};
         {{retry_wait, _}, #{status:=_}} ->
-            {{reply, {error, {logic, invalid_reshedule_request}}}, S}
+            {{reply, {error, {logic, invalid_reschedule_request}}}, S}
     end.
 
 -spec handle_unload(state()) ->
@@ -843,21 +843,21 @@ processor_process_machine(ID, Impact, ProcessingCtx, ReqCtx, Deadline, MachineSt
 processor_child_spec(Options) ->
     mg_utils:apply_mod_opts_if_defined(get_options(processor, Options), processor_child_spec, undefined).
 
--spec reshedule(ProcessingCtx, ReqCtx, Deadline, state()) -> state() when
+-spec reschedule(ProcessingCtx, ReqCtx, Deadline, state()) -> state() when
     ProcessingCtx :: processing_context(),
     ReqCtx :: request_context(),
     Deadline :: mg_utils:deadline().
-reshedule(ProcessingCtx, ReqCtx, Deadline, State) ->
+reschedule(ProcessingCtx, ReqCtx, Deadline, State) ->
     #{id:= ID, options := Options} = State,
     try
-        {ok, NewState, Target, Attempt} = reshedule_unsafe(ReqCtx, Deadline, State),
-        ok = emit_log_machine_event(Options, ID, ReqCtx, {machine_resheduled, Target, Attempt}),
+        {ok, NewState, Target, Attempt} = reschedule_unsafe(ReqCtx, Deadline, State),
+        ok = emit_log_machine_event(Options, ID, ReqCtx, {machine_rescheduled, Target, Attempt}),
         ok = do_reply_action({reply, ok}, ProcessingCtx),
         NewState
     catch
         throw:(Reason=({ErrorType, _Details})) when ?can_be_retried(ErrorType) ->
             Exception = {throw, Reason, erlang:get_stacktrace()},
-            ok = emit_log_machine_event(Options, ID, ReqCtx, {machine_resheduling_failed, Exception}),
+            ok = emit_log_machine_event(Options, ID, ReqCtx, {machine_rescheduling_failed, Exception}),
             ok = do_reply_action({reply, {error, Reason}}, ProcessingCtx),
             State;
         Class:Reason ->
@@ -865,38 +865,38 @@ reshedule(ProcessingCtx, ReqCtx, Deadline, State) ->
             handle_exception({Class, Reason, erlang:get_stacktrace()}, undefined, ReqCtx, Deadline, State)
     end.
 
--spec reshedule_unsafe(ReqCtx, Deadline, state()) -> Result when
+-spec reschedule_unsafe(ReqCtx, Deadline, state()) -> Result when
     ReqCtx :: request_context(),
     Deadline :: mg_utils:deadline(),
     Result :: {ok, state(), genlib_time:ts(), non_neg_integer()}.
-reshedule_unsafe(ReqCtx, Deadline, State) ->
+reschedule_unsafe(ReqCtx, Deadline, State) ->
     #{storage_machine := #{status := MachineStatus}} = State,
-    reshedule_unsafe(MachineStatus, ReqCtx, Deadline, State).
+    reschedule_unsafe(MachineStatus, ReqCtx, Deadline, State).
 
--spec reshedule_unsafe(MachineStatus, ReqCtx, Deadline, state()) -> Result when
+-spec reschedule_unsafe(MachineStatus, ReqCtx, Deadline, state()) -> Result when
     ReqCtx :: request_context(),
     Deadline :: mg_utils:deadline(),
     MachineStatus :: machine_regular_status(),
     Result :: {ok, state(), genlib_time:ts(), non_neg_integer()}.
-reshedule_unsafe({waiting, _, _, _}, ReqCtx, Deadline, State) ->
+reschedule_unsafe({waiting, _, _, _}, ReqCtx, Deadline, State) ->
     #{storage_machine := StorageMachine, options := Options} = State,
     RetryStrategy = retry_strategy(timers, Options, undefined),
     case genlib_retry:next_step(RetryStrategy) of
         {wait, Timeout, _NewRetryStrategy} ->
             Now = genlib_time:unow(),
-            Target = get_shedule_target(Timeout),
+            Target = get_schedule_target(Timeout),
             NewStatus = {retrying, Target, Now, NewAttempt = 0, ReqCtx},
             NewStorageMachine = StorageMachine#{status => NewStatus},
             {ok, transit_state(ReqCtx, Deadline, NewStorageMachine, State), Target, NewAttempt};
         finish ->
             throw({permanent, timer_retries_exhausted})
     end;
-reshedule_unsafe({retrying, _, Start, Attempt, _}, ReqCtx, Deadline, State) ->
+reschedule_unsafe({retrying, _, Start, Attempt, _}, ReqCtx, Deadline, State) ->
     #{storage_machine := StorageMachine, options := Options} = State,
     RetryStrategy = retry_strategy(timers, Options, undefined, Start, Attempt),
     case genlib_retry:next_step(RetryStrategy) of
         {wait, Timeout, _NewRetryStrategy} ->
-            Target = get_shedule_target(Timeout),
+            Target = get_schedule_target(Timeout),
             NewStatus = {retrying, Target, Start, NewAttempt = Attempt + 1, ReqCtx},
             NewStorageMachine = StorageMachine#{status => NewStatus},
             {ok, transit_state(ReqCtx, Deadline, NewStorageMachine, State), Target, NewAttempt};
@@ -904,9 +904,9 @@ reshedule_unsafe({retrying, _, Start, Attempt, _}, ReqCtx, Deadline, State) ->
             throw({permanent, timer_retries_exhausted})
     end.
 
--spec get_shedule_target(timeout()) ->
+-spec get_schedule_target(timeout()) ->
     genlib_time:ts().
-get_shedule_target(TimeoutMS) ->
+get_schedule_target(TimeoutMS) ->
     Now = genlib_time:unow(),
     Now + (TimeoutMS div 1000).
 
