@@ -457,7 +457,7 @@ resume_interrupted_one(Options, ID) ->
         begin
             case mg_workers_manager:is_alive(manager_options(Options), ID) of
                 false ->
-                    Deadline = mg_utils:timeout_to_deadline(30000),
+                    Deadline = mg_utils:timeout_to_deadline(infinity),
                     {_, StorageMachine} = get_storage_machine(Options, ID),
                     case StorageMachine of
                         #{status := {processing, ReqCtx}} ->
@@ -560,7 +560,9 @@ handle_call(Call, CallContext, ReqCtx, Deadline, S=#{storage_machine:=StorageMac
         % сюда мы не должны попадать если машина не падала во время обработки запроса
         % (когда мы переходили в стейт processing)
         {_, #{status := {processing, ProcessingReqCtx}}} ->
-            S1 = process(continuation, undefined, ProcessingReqCtx, Deadline, S),
+            % обработка машин в стейте processing идёт без дедлайна
+            % машина должна либо упасть, либо перейти в другое состояние
+            S1 = process(continuation, undefined, ProcessingReqCtx, undefined, S),
             handle_call(Call, CallContext, ReqCtx, Deadline, S1);
 
         % ничего не просходит, просто убеждаемся, что машина загружена
@@ -815,7 +817,9 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
     ok = do_reply_action(wrap_reply_action(ok, ReplyAction), ProcessingCtx),
     case Action of
         {continue, NewProcessingSubState} ->
-            process(continuation, ProcessingCtx#{state:=NewProcessingSubState}, ReqCtx, Deadline, NewState);
+            % продолжение обработки машины делается без дедлайна
+            % предполагается, что машина должна рано или поздно завершить свои дела или упасть
+            process(continuation, ProcessingCtx#{state:=NewProcessingSubState}, ReqCtx, undefined, NewState);
         _ ->
             NewState
     end.
