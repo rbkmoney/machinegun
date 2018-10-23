@@ -65,31 +65,50 @@ pack(ref, {tag, Tag}) ->
     {tag, pack(tag, Tag)};
 pack(direction, Direction) ->
     Direction;
+pack(content, {Metadata, Data}) ->
+    #mg_stateproc_Content{
+        format_version = pack(integer , maps:get(format_version, Metadata, undefined)),
+        data           = pack(opaque  , Data)
+    };
 
 %% events and history
 pack(aux_state, AuxState) ->
-    pack(opaque, AuxState);
+    pack(content, AuxState);
+pack(aux_state_legacy, AuxState) ->
+    #mg_stateproc_Content{
+        data = Data
+    } = pack(aux_state, AuxState),
+    Data;
 pack(event_id, ID) ->
     pack(integer, ID);
 pack(event_body, Body) ->
-    pack(opaque, Body);
+    pack(content, Body);
 pack(event, #{id := ID, created_at := CreatedAt, body := Body}) ->
-    #'Event'{
-        id            = pack(event_id  , ID       ),
-        created_at    = pack(datetime  , CreatedAt),
-        event_payload = pack(event_body, Body     )
+    #mg_stateproc_Content{
+        format_version = FormatVersion,
+        data           = Data
+    } = pack(event_body, Body),
+    #mg_stateproc_Event{
+        id             = pack(event_id  , ID       ),
+        created_at     = pack(datetime  , CreatedAt),
+        format_version = FormatVersion,
+        data           = Data
     };
 pack(history, History) ->
     pack({list, event}, History);
 pack(machine, Machine) ->
     #{ns:=NS, id:=ID, history_range:=HRange, history:=History, aux_state:=AuxState, timer:=Timer} = Machine,
-    #'Machine'{
-        ns            = pack(ns           , NS      ),
-        id            = pack(id           , ID      ),
-        history       = pack(history      , History ),
-        history_range = pack(history_range, HRange  ),
-        aux_state     = pack(aux_state    , AuxState),
-        timer         = pack(int_timer     , Timer   )
+    #mg_stateproc_Machine{
+        ns               = pack(ns            , NS      ),
+        id               = pack(id            , ID      ),
+        history          = pack(history       , History ),
+        history_range    = pack(history_range , HRange  ),
+        aux_state        = pack(aux_state     , AuxState),
+        timer            = pack(int_timer     , Timer   ),
+        % DEPRECATED
+        % Нужно удалить сразу, как только процессоры переедут на актуальный протокол, чтобы мы могли
+        % избавиться от необходимости носить потенциально объёмный `aux_state_legacy` по сети.
+        aux_state_legacy = pack(aux_state_legacy , AuxState)
     };
 pack(int_timer, {Timestamp, _, _, _}) ->
     % TODO сделать нормально
@@ -98,85 +117,85 @@ pack(int_timer, {Timestamp, _, _, _}) ->
 
 %% actions
 pack(complex_action, ComplexAction) ->
-    #'ComplexAction'{
+    #mg_stateproc_ComplexAction{
         timer  = pack(timer_action , maps:get(timer , ComplexAction, undefined)),
         tag    = pack(tag_action   , maps:get(tag   , ComplexAction, undefined)),
         remove = pack(remove_action, maps:get(remove, ComplexAction, undefined))
     };
 pack(timer_action, {set_timer, Timer, HRange, HandlingTimeout}) ->
     {set_timer,
-        #'SetTimerAction'{
+        #mg_stateproc_SetTimerAction{
             timer   = pack(timer        , Timer          ),
             range   = pack(history_range, HRange         ),
             timeout = pack(integer      , HandlingTimeout)
         }
     };
 pack(timer_action, unset_timer) ->
-    {unset_timer, #'UnsetTimerAction'{}};
+    {unset_timer, #mg_stateproc_UnsetTimerAction{}};
 pack(tag_action, Tag) ->
-    #'TagAction'{tag = pack(tag, Tag)};
+    #mg_stateproc_TagAction{tag = pack(tag, Tag)};
 pack(remove_action, remove) ->
-    #'RemoveAction'{};
+    #mg_stateproc_RemoveAction{};
 
 %% calls, signals, get_gistory
 pack(state_change, {AuxState, EventBodies}) ->
-    #'MachineStateChange'{
+    #mg_stateproc_MachineStateChange{
         aux_state = pack( aux_state        , AuxState   ),
         events    = pack({list, event_body}, EventBodies)
     };
 pack(signal, timeout) ->
-    {timeout, #'TimeoutSignal'{}};
+    {timeout, #mg_stateproc_TimeoutSignal{}};
 pack(signal, {init, Args}) ->
     {init,
-        #'InitSignal'{ arg = pack(args, Args) }
+        #mg_stateproc_InitSignal{ arg = pack(args, Args) }
     };
 pack(signal, {repair, Args}) ->
     {repair,
-        #'RepairSignal'{
+        #mg_stateproc_RepairSignal{
             arg = pack(args, Args)
         }
     };
 pack(call_response, CallResponse) ->
     pack(opaque, CallResponse);
 pack(signal_args, {Signal, Machine}) ->
-    #'SignalArgs'{
+    #mg_stateproc_SignalArgs{
         signal  = pack(signal , Signal ),
         machine = pack(machine, Machine)
     };
 pack(call_args, {Args, Machine}) ->
-    #'CallArgs'{
+    #mg_stateproc_CallArgs{
         arg     = pack(args   , Args   ),
         machine = pack(machine, Machine)
     };
 pack(signal_result, {StateChange, ComplexAction}) ->
-    #'SignalResult'{
+    #mg_stateproc_SignalResult{
         change = pack(state_change  , StateChange  ),
         action = pack(complex_action, ComplexAction)
     };
 
 pack(call_result, {Response, StateChange, ComplexAction}) ->
-    #'CallResult'{
+    #mg_stateproc_CallResult{
         response = pack(call_response , Response     ),
         change   = pack(state_change  , StateChange  ),
         action   = pack(complex_action, ComplexAction)
     };
 
 pack(history_range, {After, Limit, Direction}) ->
-    #'HistoryRange'{
+    #mg_stateproc_HistoryRange{
         'after'    = pack(event_id , After    ),
          limit     = pack(integer  , Limit    ),
          direction = pack(direction, Direction)
     };
 
 pack(machine_descriptor, {NS, Ref, Range}) ->
-    #'MachineDescriptor'{
+    #mg_stateproc_MachineDescriptor{
         ns    = pack(ns           , NS   ),
         ref   = pack(ref          , Ref  ),
         range = pack(history_range, Range)
     };
 
-pack(sink_event, #{id := ID, body := #{ source_ns := SourceNS, source_id := SourceID, event := Event}}) ->
-    #'SinkEvent'{
+pack(sink_event, #{id := ID, body := #{source_ns := SourceNS, source_id := SourceID, event := Event}}) ->
+    #mg_stateproc_SinkEvent{
         id        = pack(event_id, ID      ),
         source_id = pack(id      , SourceID),
         source_ns = pack(ns      , SourceNS),
@@ -230,15 +249,36 @@ unpack(ref, {tag, Tag}) ->
     {tag, unpack(tag, Tag)};
 unpack(direction, Direction) ->
     Direction;
+unpack(content, #mg_stateproc_Content{format_version = FormatVersion, data = Data}) ->
+    {
+        genlib_map:compact(#{
+            format_version => unpack(integer, FormatVersion)
+        }),
+        unpack(opaque, Data)
+    };
 
 %% events and history
 unpack(aux_state, AuxState) ->
-    unpack(opaque, AuxState);
+    unpack(content, AuxState);
+unpack(aux_state_legacy, AuxStateLegacy) ->
+    unpack(content, #mg_stateproc_Content{data = AuxStateLegacy});
 unpack(event_id, ID) ->
     unpack(integer, ID);
 unpack(event_body, Body) ->
-    unpack(opaque, Body);
-unpack(event, #'Event'{id = ID, created_at = CreatedAt, event_payload = Body}) ->
+    unpack(content, Body);
+unpack(event_body_legacy, BodyLegacy) ->
+    unpack(content, #mg_stateproc_Content{data = BodyLegacy});
+unpack(event, Event) ->
+    #mg_stateproc_Event{
+        id             = ID,
+        created_at     = CreatedAt,
+        format_version = FormatVersion,
+        data           = Data
+    }              = Event,
+    Body = #mg_stateproc_Content{
+        format_version = FormatVersion,
+        data           = Data
+    },
     #{
         id         => unpack(event_id  , ID       ),
         created_at => unpack(datetime  , CreatedAt),
@@ -246,8 +286,15 @@ unpack(event, #'Event'{id = ID, created_at = CreatedAt, event_payload = Body}) -
     };
 unpack(history, History) ->
     unpack({list, event}, History);
-unpack(machine, Machine=#'Machine'{}) ->
-    #'Machine'{ns=NS, id=ID, history_range=HRange, history=History, aux_state=AuxState, timer=Timer} = Machine,
+unpack(machine, Machine=#mg_stateproc_Machine{}) ->
+    #mg_stateproc_Machine{
+        ns            = NS,
+        id            = ID,
+        history_range = HRange,
+        history       = History,
+        aux_state     = AuxState,
+        timer         = Timer
+    } = Machine,
     #{
         ns            => unpack(ns           , NS          ),
         id            => unpack(id           , ID          ),
@@ -261,62 +308,84 @@ unpack(int_timer, Timestamp) ->
     {unpack(timestamp, Timestamp), undefined, undefined, undefined};
 
 %% actions
-unpack(complex_action, #'ComplexAction'{timer = TimerAction, tag = TagAction, remove = RemoveAction}) ->
+unpack(complex_action, ComplexAction) ->
+    #mg_stateproc_ComplexAction{
+        timer  = TimerAction,
+        tag    = TagAction,
+        remove = RemoveAction
+    } = ComplexAction,
     #{
         timer  => unpack(timer_action , TimerAction ),
         tag    => unpack(tag_action   , TagAction   ),
         remove => unpack(remove_action, RemoveAction)
     };
-unpack(timer_action, {set_timer, #'SetTimerAction'{timer = Timer, range = HRange, timeout = HandlingTimeout}}) ->
+unpack(timer_action, {set_timer, SetTimerAction}) ->
+    #mg_stateproc_SetTimerAction{timer = Timer, range = HRange, timeout = HandlingTimeout} = SetTimerAction,
     {set_timer,
         unpack(timer        , Timer          ),
         unpack(history_range, HRange         ),
         unpack(integer      , HandlingTimeout)
     };
-unpack(timer_action, {unset_timer, #'UnsetTimerAction'{}}) ->
+unpack(timer_action, {unset_timer, #mg_stateproc_UnsetTimerAction{}}) ->
     unset_timer;
-unpack(tag_action, #'TagAction'{tag = Tag}) ->
+unpack(tag_action, #mg_stateproc_TagAction{tag = Tag}) ->
     unpack(tag, Tag);
-unpack(remove_action, #'RemoveAction'{}) ->
+unpack(remove_action, #mg_stateproc_RemoveAction{}) ->
     remove;
 
-%% calls, signals, get_gistory
-unpack(state_change, #'MachineStateChange'{aux_state=AuxState, events=EventBodies}) ->
+%% calls, signals, get_history
+unpack(state_change, MachineStateChange) ->
+    #mg_stateproc_MachineStateChange{
+        aux_state        = AuxState,
+        events           = EventBodies,
+        % DEPRECATED
+        % Удалить поскорее.
+        aux_state_legacy = AuxStateLegacy,
+        events_legacy    = EventBodiesLegacy
+    } = MachineStateChange,
     {
-        unpack( aux_state        , AuxState   ),
-        unpack({list, event_body}, EventBodies)
+        mg_utils:take_defined([
+            unpack(aux_state                 , AuxState),
+            unpack(aux_state_legacy          , AuxStateLegacy)
+        ]),
+        mg_utils:take_defined([
+            unpack({list, event_body}        , EventBodies),
+            unpack({list, event_body_legacy} , EventBodiesLegacy),
+            unpack({list, event_body}        , [])
+        ])
     };
-unpack(signal, {timeout, #'TimeoutSignal'{}}) ->
+unpack(signal, {timeout, #mg_stateproc_TimeoutSignal{}}) ->
     timeout;
-unpack(signal, {init, #'InitSignal'{arg = Args}}) ->
+unpack(signal, {init, #mg_stateproc_InitSignal{arg = Args}}) ->
     {init, unpack(args, Args)};
-unpack(signal, {repair, #'RepairSignal'{arg = Args}}) ->
+unpack(signal, {repair, #mg_stateproc_RepairSignal{arg = Args}}) ->
     {repair, unpack(args, Args)};
 unpack(call_response, CallResponse) ->
     unpack(opaque, CallResponse);
-unpack(signal_args, #'SignalArgs'{signal = Signal, machine = Machine}) ->
+unpack(signal_args, #mg_stateproc_SignalArgs{signal = Signal, machine = Machine}) ->
     {unpack(signal , Signal), unpack(machine, Machine)};
-unpack(call_args, #'CallArgs'{arg = Args, machine = Machine}) ->
+unpack(call_args, #mg_stateproc_CallArgs{arg = Args, machine = Machine}) ->
     {unpack(args, Args), unpack(machine, Machine)};
-unpack(signal_result, #'SignalResult'{change = StateChange, action = ComplexAction}) ->
+unpack(signal_result, #mg_stateproc_SignalResult{change = StateChange, action = ComplexAction}) ->
     {
         unpack(state_change  , StateChange  ),
         unpack(complex_action, ComplexAction)
     };
-unpack(call_result, #'CallResult'{response=Response, change = StateChange, action=ComplexAction}) ->
+unpack(call_result, #mg_stateproc_CallResult{response=Response, change = StateChange, action=ComplexAction}) ->
     {
         unpack(call_response , Response     ),
         unpack(state_change  , StateChange  ),
         unpack(complex_action, ComplexAction)
     };
 
-unpack(history_range, #'HistoryRange'{'after' = After, limit = Limit, direction = Direction}) ->
+unpack(history_range, #mg_stateproc_HistoryRange{'after' = After, limit = Limit, direction = Direction}) ->
     {unpack(event_id, After), unpack(integer , Limit), unpack(direction, Direction)};
 
-unpack(machine_descriptor, #'MachineDescriptor'{ns=NS, ref=Ref, range=Range}) ->
+unpack(machine_descriptor, #mg_stateproc_MachineDescriptor{ns=NS, ref=Ref, range=Range}) ->
     {unpack(ns, NS), unpack(ref, Ref), unpack(history_range, Range)};
 
-unpack(sink_event, #'SinkEvent'{id = ID, source_ns = SourceNS, source_id = SourceID, event = Event}) ->
+unpack(sink_event, SinkEvent) ->
+    #mg_stateproc_SinkEvent{id = ID, source_ns = SourceNS, source_id = SourceID, event = Event} = SinkEvent,
     #{
         id   => unpack(id, ID),
         body =>
@@ -338,7 +407,7 @@ unpack(Type, Value) ->
 -spec pack_opaque(mg_storage:opaque()) ->
     mg_proto_msgpack_thrift:'Value'().
 pack_opaque(null) ->
-    {nl, #msgpack_Nil{}};
+    {nl, #mg_msgpack_Nil{}};
 pack_opaque(Boolean) when is_boolean(Boolean) ->
     {b, Boolean};
 pack_opaque(Integer) when is_integer(Integer) ->
@@ -358,7 +427,7 @@ pack_opaque(Arg) ->
 
 -spec unpack_opaque(mg_proto_msgpack_thrift:'Value'()) ->
     mg_storage:opaque().
-unpack_opaque({nl, #msgpack_Nil{}}) ->
+unpack_opaque({nl, #mg_msgpack_Nil{}}) ->
     null;
 unpack_opaque({b, Boolean}) ->
     Boolean;

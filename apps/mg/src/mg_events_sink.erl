@@ -328,14 +328,14 @@ opaque_to_state([1, EventsRange]) ->
         events_range => mg_events:opaque_to_events_range(EventsRange)
     }.
 
--spec sink_event_body_to_opaque(event_body()) ->
-    mg_events:body().
-sink_event_body_to_opaque(#{source_ns := SourceNS, source_id := SourceMachineID, event := Event}) ->
+-spec sink_event_body_to_opaque(Vsn :: integer(), event_body()) ->
+    mg_storage:opaque().
+sink_event_body_to_opaque(_Vsn, #{source_ns := SourceNS, source_id := SourceMachineID, event := Event}) ->
     [1, SourceNS, SourceMachineID, mg_events:event_to_opaque(Event)].
 
--spec opaque_to_sink_event_body(mg_events:body()) ->
+-spec opaque_to_sink_event_body(Vsn :: integer(), mg_storage:opaque()) ->
     event_body().
-opaque_to_sink_event_body([1, SourceNS, SourceMachineID, Event]) ->
+opaque_to_sink_event_body(_Vsn, [1, SourceNS, SourceMachineID, Event]) ->
     #{
         source_ns => SourceNS,
         source_id => SourceMachineID,
@@ -345,9 +345,9 @@ opaque_to_sink_event_body([1, SourceNS, SourceMachineID, Event]) ->
 -spec sink_event_to_kv(mg:id(), event()) ->
     mg_storage:kv().
 sink_event_to_kv(EventSinkID, Event) ->
-    mg_events:add_machine_id(EventSinkID, mg_events:event_to_kv(Event, fun sink_event_body_to_opaque/1)).
+    mg_events:add_machine_id(EventSinkID, mg_events:event_to_kv(Event, fun sink_event_body_to_opaque/2)).
 
 -spec kvs_to_sink_events(mg:id(), [mg_storage:kv()]) ->
     [event()].
 kvs_to_sink_events(EventSinkID, Kvs) ->
-    mg_events:kvs_to_events(mg_events:remove_machine_id(EventSinkID, Kvs), fun opaque_to_sink_event_body/1).
+    mg_events:kvs_to_events(mg_events:remove_machine_id(EventSinkID, Kvs), fun opaque_to_sink_event_body/2).

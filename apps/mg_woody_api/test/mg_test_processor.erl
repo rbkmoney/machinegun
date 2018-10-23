@@ -78,6 +78,10 @@ invoke_function(_Type, Func, Args) ->
 -spec default_result(signal) -> mg:signal_result()
                   ; (call  ) -> mg:call_result().
 default_result(signal) ->
-    {{<<>>, []}, #{timer => undefined, tag => undefined}};
+    {{default_content(), []}, #{timer => undefined, tag => undefined}};
 default_result(call) ->
-    {<<>>, {<<>>, []}, #{timer => undefined, tag => undefined}}.
+    {<<>>, {default_content(), []}, #{timer => undefined, tag => undefined}}.
+
+-spec default_content() -> mg_events:content().
+default_content() ->
+    {#{}, <<>>}.
