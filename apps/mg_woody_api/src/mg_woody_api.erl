@@ -150,7 +150,9 @@ api_automaton_options(Config) ->
     EventSinkNS = proplists:get_value(event_sink_ns, Config),
     maps:fold(
         fun(NS, ConfigNS, Options) ->
-            Options#{NS => events_machine_options(NS, ConfigNS, EventSinkNS)}
+            Options#{NS => #{
+                machine => events_machine_options(NS, ConfigNS, EventSinkNS)
+            }}
         end,
         #{},
         NSs

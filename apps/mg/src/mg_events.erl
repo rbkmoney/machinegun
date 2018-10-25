@@ -22,10 +22,13 @@
 %% API
 -export_type([id           /0]).
 -export_type([body         /0]).
+-export_type([content      /0]).
 -export_type([event        /0]).
 -export_type([event        /1]).
 -export_type([history_range/0]).
 -export_type([events_range /0]).
+
+-export_type([format_version/0]).
 
 %% events ranges intersection
 -export([get_event_ids/2]).
@@ -80,8 +83,10 @@
     %
     % Задаётся процессором и должна только _расти_ в процессе эволюции процессора. По умолчанию не задана,
     % что равноценно _минимально возможной_ версии.
-    format_version => integer()
+    format_version => format_version()
 }.
+
+-type format_version() :: integer().
 
 -type direction() :: forward | backward.
 -type history_range() :: {After::id() | undefined, Limit::non_neg_integer() | undefined, direction()}.

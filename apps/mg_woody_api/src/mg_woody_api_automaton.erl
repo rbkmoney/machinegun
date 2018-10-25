@@ -30,7 +30,11 @@
 %%
 %% API
 %%
--type options() :: #{mg:ns() => mg_events_machine:options()}.
+-type options() :: #{mg:ns() => ns_options()}.
+-type ns_options() :: #{
+    machine    := mg_events_machine:options(),
+    modernizer => mg_events_modernizer:options()
+}.
 
 -spec handler(options()) ->
     mg_utils:woody_handler().
@@ -51,7 +55,7 @@ handle_function('Start', [NS, ID_, Args], WoodyContext, Options) ->
             {id, ID}, ReqCtx,
             fun() ->
                 mg_events_machine:start(
-                    get_ns_options(NS, Options), ID, unpack(args, Args), ReqCtx, Deadline
+                    get_machine_options(NS, Options), ID, unpack(args, Args), ReqCtx, Deadline
                 )
             end,
             Deadline, logger(NS, Options)
@@ -66,7 +70,7 @@ handle_function('Repair', [MachineDesc, Args], WoodyContext, Options) ->
             Ref, ReqCtx,
             fun() ->
                 mg_events_machine:repair(
-                    get_ns_options(NS, Options), Ref, unpack(args, Args), Range, ReqCtx, Deadline
+                    get_machine_options(NS, Options), Ref, unpack(args, Args), Range, ReqCtx, Deadline
                 )
             end,
             Deadline, logger(NS, Options)
@@ -81,7 +85,7 @@ handle_function('SimpleRepair', [NS, Ref_], WoodyContext, Options) ->
             Ref, ReqCtx,
             fun() ->
                 mg_events_machine:simple_repair(
-                    get_ns_options(NS, Options), Ref, ReqCtx, Deadline
+                    get_machine_options(NS, Options), Ref, ReqCtx, Deadline
                 )
             end,
             Deadline, logger(NS, Options)
@@ -98,7 +102,7 @@ handle_function('Call', [MachineDesc, Args], WoodyContext, Options) ->
             % блин, как же в эрланге не хватает каррирования... :-\
             fun() ->
                 mg_events_machine:call(
-                    get_ns_options(NS, Options), Ref, unpack(args, Args), Range, ReqCtx, Deadline
+                    get_machine_options(NS, Options), Ref, unpack(args, Args), Range, ReqCtx, Deadline
                 )
             end,
             Deadline, logger(NS, Options)
@@ -113,7 +117,7 @@ handle_function('GetMachine', [MachineDesc], WoodyContext, Options) ->
             Ref, mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
             fun() ->
                 mg_events_machine:get_machine(
-                    get_ns_options(NS, Options), Ref, Range
+                    get_machine_options(NS, Options), Ref, Range
                 )
             end,
             Deadline, logger(NS, Options)
@@ -128,18 +132,45 @@ handle_function('Remove', [NS, ID_], WoodyContext, Options) ->
             ID, ReqCtx,
             fun() ->
                 mg_events_machine:remove(
-                    get_ns_options(NS, Options), ID, ReqCtx, Deadline
+                    get_machine_options(NS, Options), ID, ReqCtx, Deadline
                 )
             end,
             Deadline, logger(NS, Options)
         ),
-    {ok, ok}.
+    {ok, ok};
+
+handle_function('Modernize', [MachineDesc], WoodyContext, Options) ->
+    {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
+    ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
+    mg_woody_api_utils:handle_safe_with_retry(
+        Ref,
+        ReqCtx,
+        fun () ->
+            case get_ns_options(NS, Options) of
+                #{modernizer := ModernizerOptions, machine := MachineOptions} ->
+                    {ok, mg_events_modernizer:modernize_machine(
+                        ModernizerOptions, MachineOptions, WoodyContext, Ref, Range
+                    )};
+                #{} ->
+                    % TODO
+                    % Тут нужно отдельное исключение конечно.
+                    erlang:throw({logic, namespace_not_found})
+            end
+        end,
+        get_deadline(NS, WoodyContext, Options),
+        logger(NS, Options)
+    ).
 
 %%
 %% local
 %%
--spec get_ns_options(mg:ns(), options()) ->
+-spec get_machine_options(mg:ns(), options()) ->
     mg_events_machine:options().
+get_machine_options(Namespace, Options) ->
+    maps:get(machine, get_ns_options(Namespace, Options)).
+
+-spec get_ns_options(mg:ns(), options()) ->
+    ns_options().
 get_ns_options(Namespace, Options) ->
     try
         maps:get(Namespace, Options)
@@ -150,17 +181,24 @@ get_ns_options(Namespace, Options) ->
 
 -spec logger(mg:ns(), options()) ->
     mg_machine_logger:handler().
-logger(NS, Options) ->
-    case maps:get(NS, Options, undefined) of
-        undefined                          -> undefined;
+logger(Namespace, Options) ->
+    try get_machine_options(Namespace, Options) of
         #{machines := #{logger := Logger}} -> Logger
+    catch throw:{logic, namespace_not_found} ->
+        undefined
     end.
 
 -spec get_deadline(mg:ns(), woody_context:ctx(), options()) ->
     mg_utils:deadline().
-get_deadline(NS, WoodyContext, Options) ->
-    %% Unexisting NS will cause exception later. So just return zero timeout.
-    NSOptions = maps:get(NS, Options, #{default_processing_timeout => 0}),
-    DefaultTimeout = maps:get(default_processing_timeout, NSOptions),
-    DefaultDeadline = mg_utils:timeout_to_deadline(DefaultTimeout),
-    mg_woody_api_utils:get_deadline(WoodyContext, DefaultDeadline).
+get_deadline(Namespace, WoodyContext, Options) ->
+    DefaultTimeout = default_processing_timeout(Namespace, Options),
+    mg_woody_api_utils:get_deadline(WoodyContext, mg_utils:timeout_to_deadline(DefaultTimeout)).
+
+-spec default_processing_timeout(mg:ns(), options()) ->
+    timeout().
+default_processing_timeout(Namespace, Options) ->
+    try get_machine_options(Namespace, Options) of
+        #{default_processing_timeout := V} -> V
+    catch
+        throw:{logic, namespace_not_found} -> 0
+    end.
