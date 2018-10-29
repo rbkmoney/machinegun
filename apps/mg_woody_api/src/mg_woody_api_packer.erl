@@ -110,6 +110,12 @@ pack(machine, Machine) ->
         % избавиться от необходимости носить потенциально объёмный `aux_state_legacy` по сети.
         aux_state_legacy = pack(aux_state_legacy , AuxState)
     };
+pack(machine_event, #{ns := NS, id := ID, event := Event}) ->
+    #mg_stateproc_MachineEvent{
+        ns    = pack(ns, NS),
+        id    = pack(id, ID),
+        event = pack(event, Event)
+    };
 pack(int_timer, {Timestamp, _, _, _}) ->
     % TODO сделать нормально
     pack(timestamp, Timestamp);
@@ -178,6 +184,10 @@ pack(call_result, {Response, StateChange, ComplexAction}) ->
         response = pack(call_response , Response     ),
         change   = pack(state_change  , StateChange  ),
         action   = pack(complex_action, ComplexAction)
+    };
+pack(modernize_result, EventBody) ->
+    #mg_stateproc_ModernizeEventResult{
+        event_payload = pack(event_body, EventBody)
     };
 
 pack(history_range, {After, Limit, Direction}) ->
@@ -303,6 +313,12 @@ unpack(machine, Machine=#mg_stateproc_Machine{}) ->
         aux_state     => unpack(aux_state    , AuxState    ),
         timer         => unpack(int_timer    , Timer       )
     };
+unpack(machine_event, #mg_stateproc_MachineEvent{ns = NS, id = ID, event = Event}) ->
+    #{
+        ns    => unpack(ns, NS),
+        id    => unpack(id, ID),
+        event => unpack(event, Event)
+    };
 unpack(int_timer, Timestamp) ->
     % TODO сделать нормально
     {unpack(timestamp, Timestamp), undefined, undefined, undefined};
@@ -377,6 +393,8 @@ unpack(call_result, #mg_stateproc_CallResult{response=Response, change = StateCh
         unpack(state_change  , StateChange  ),
         unpack(complex_action, ComplexAction)
     };
+unpack(modernize_result, #mg_stateproc_ModernizeEventResult{event_payload = EventBody}) ->
+    unpack(event_body, EventBody);
 
 unpack(history_range, #mg_stateproc_HistoryRange{'after' = After, limit = Limit, direction = Direction}) ->
     {unpack(event_id, After), unpack(integer , Limit), unpack(direction, Direction)};

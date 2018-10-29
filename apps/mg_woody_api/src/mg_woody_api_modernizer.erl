@@ -34,24 +34,6 @@ modernizer_child_spec(Options) ->
     mg_events_modernizer:modernized_event_body().
 modernize_event(Options, WoodyContext, MachineEvent) ->
     Service = {mg_proto_state_processing_thrift, 'Modernizer'},
-    Args = [pack(machine_event, MachineEvent)],
+    Args = [mg_woody_api_packer:pack(machine_event, MachineEvent)],
     {ok, Result} = woody_client:call({Service, 'ModernizeEvent', Args}, Options, WoodyContext),
-    unpack(modernize_result, Result).
-
-%%
-%% packer / unpacker
-%%
-
--spec pack(_, _) ->
-    _.
-pack(machine_event, #{ns := NS, id := ID, event := Event}) ->
-    #mg_stateproc_MachineEvent{
-        ns    = mg_woody_api_packer:pack(ns, NS),
-        id    = mg_woody_api_packer:pack(id, ID),
-        event = mg_woody_api_packer:pack(event, Event)
-    }.
-
--spec unpack(_, _) ->
-    _.
-unpack(modernize_result, #mg_stateproc_ModernizeEventResult{event_payload = Body}) ->
-    mg_woody_api_packer:unpack(event_body, Body).
+    mg_woody_api_packer:unpack(modernize_result, Result).
