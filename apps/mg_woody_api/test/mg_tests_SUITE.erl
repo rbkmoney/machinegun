@@ -198,7 +198,7 @@ end_per_suite(_C) ->
 init_per_group(mwc, C) ->
     init_per_group([{storage, mg_storage_memory} | C]);
 init_per_group(_, C) ->
-    init_per_group([{storage, {mg_storage_memory, #{random_transient_fail => 0.1 }}} | C]).
+    init_per_group([{storage, {mg_storage_memory, #{random_transient_fail => 0.1}}} | C]).
 
 -spec init_per_group(config()) ->
     config().
@@ -218,33 +218,12 @@ init_per_group(C) ->
         genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(C))
     ,
 
-    SetTimer = {set_timer, {timeout, 1}, {undefined, undefined, forward}, 30},
-
-    CallFunc =
-        fun({Args, _Machine}) ->
-            case Args of
-                <<"tag"  >>       -> {Args, {null(), [content(<<"tag_body"  >>)]}, #{tag => Args}};
-                <<"event">>       -> {Args, {null(), [content(<<"event_body">>)]}, #{}};
-                <<"nop"  >>       -> {Args, {null(), [                ]}, #{}};
-                <<"set_timer"  >> -> {Args, {null(), [content(<<"timer_body">>)]}, #{timer => SetTimer   }};
-                <<"unset_timer">> -> {Args, {null(), [content(<<"timer_body">>)]}, #{timer => unset_timer}};
-                <<"fail"  >>      -> erlang:error(fail);
-                <<"sleep">>       -> timer:sleep(?DEADLINE_TIMEOUT * 2), {Args, {null(), [content(<<"sleep">>)]}, #{}};
-                <<"remove">>      -> {Args, {null(), [content(<<"removed">>)]}, #{remove => remove}}
-            end
-        end
-    ,
-    SignalFunc =
-        fun({Args, _Machine}) ->
-            case Args of
-                {init  , <<"fail" >>} -> erlang:error(fail);
-                {repair, <<"error">>} -> erlang:error(error);
-                 timeout              -> {{null(), [content(<<"handle_timer_body">>)]}, #{timer => undefined, tag => undefined}};
-                _ -> mg_test_processor:default_result(signal)
-            end
-        end
-    ,
-    {ok, ProcessorPid} = start_processor({0, 0, 0, 0}, 8023, "/processor", {SignalFunc, CallFunc}),
+    {ok, ProcessorPid} = mg_test_processor:start(
+        {0, 0, 0, 0}, 8023,
+        genlib_map:compact(#{
+            processor  => {"/processor", {fun default_signal_handler/1, fun default_call_handler/1}}
+        })
+    ),
 
     [
         {apps              , Apps                             },
@@ -258,6 +237,29 @@ init_per_group(C) ->
     |
         C
     ].
+
+-spec default_signal_handler(mg:signal_args()) -> mg:signal_result().
+default_signal_handler({Args, _Machine}) ->
+    case Args of
+        {init  , <<"fail" >>} -> erlang:error(fail);
+        {repair, <<"error">>} -> erlang:error(error);
+         timeout              -> {{null(), [content(<<"handle_timer_body">>)]}, #{timer => undefined, tag => undefined}};
+        _ -> mg_test_processor:default_result(signal, Args)
+    end.
+
+-spec default_call_handler(mg:call_args()) -> mg:call_result().
+default_call_handler({Args, _Machine}) ->
+    SetTimer = {set_timer, {timeout, 1}, {undefined, undefined, forward}, 30},
+    case Args of
+        <<"tag"  >>       -> {Args, {null(), [content(<<"tag_body"  >>)]}, #{tag => Args}};
+        <<"event">>       -> {Args, {null(), [content(<<"event_body">>)]}, #{}};
+        <<"nop"  >>       -> {Args, {null(), [                ]}, #{}};
+        <<"set_timer"  >> -> {Args, {null(), [content(<<"timer_body">>)]}, #{timer => SetTimer   }};
+        <<"unset_timer">> -> {Args, {null(), [content(<<"timer_body">>)]}, #{timer => unset_timer}};
+        <<"fail"  >>      -> erlang:error(fail);
+        <<"sleep">>       -> timer:sleep(?DEADLINE_TIMEOUT * 2), {Args, {null(), [content(<<"sleep">>)]}, #{}};
+        <<"remove">>      -> {Args, {null(), [content(<<"removed">>)]}, #{remove => remove}}
+    end.
 
 -spec null() -> mg_events:content().
 null() ->
@@ -311,23 +313,9 @@ mg_woody_api_config(C) ->
 
 -spec end_per_group(group_name(), config()) ->
     ok.
-end_per_group(memory, _) ->
-    ok;
 end_per_group(_, C) ->
     true = erlang:exit(?config(processor_pid, C), kill),
-    [application_stop(App) || App <- proplists:get_value(apps, C)].
-
--spec application_stop(atom()) ->
-    _.
-application_stop(App=sasl) ->
-    %% hack for preventing sasl deadlock
-    %% http://erlang.org/pipermail/erlang-questions/2014-May/079012.html
-    error_logger:delete_report_handler(cth_log_redirect),
-    application:stop(App),
-    error_logger:add_report_handler(cth_log_redirect),
-    ok;
-application_stop(App) ->
-    application:stop(App).
+    [application:stop(App) || App <- proplists:get_value(apps, C)].
 
 %%
 %% base group tests
@@ -586,7 +574,7 @@ config_with_multiple_event_sinks(_C) ->
         {event_sinks, [<<"SingleES">>]}
     ],
     Apps = genlib_app:start_application_with(mg_woody_api, Config),
-    [application_stop(App) || App <- Apps].
+    [application:stop(App) || App <- Apps].
 
 %%
 %% utils
@@ -615,16 +603,6 @@ create_events(N, C, ID) ->
             end,
             lists:seq(1, N)
     ).
-
--spec start_processor(Address, Port, Path, Functions) -> {ok, pid()} when
-    Address   :: mg_test_processor:host_address(),
-    Port      :: integer(),
-    Path      :: string(),
-    Functions :: {mg_test_processor:processor_function(), mg_test_processor:processor_function()}.
-start_processor(Address, Port, Path, {SignalFunc, CallFunc}) ->
-    {ok, ProcessorPid} = mg_test_processor:start_link({Address, Port, Path, {SignalFunc, CallFunc}}),
-    true = erlang:unlink(ProcessorPid),
-    {ok, ProcessorPid}.
 
 -spec automaton_options(config()) -> _.
 automaton_options(C) -> ?config(automaton_options, C).

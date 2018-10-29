@@ -20,6 +20,8 @@
 %%%
 -module(mg_woody_api).
 
+-export_type([config/0]).
+
 %% API
 -export([start/0]).
 -export([stop /0]).
@@ -37,6 +39,10 @@
 %% API
 %%
 -type processor() :: mg_woody_api_processor:options().
+-type modernizer() :: #{
+    current_format_version := mg_events:format_version(),
+    handler                := mg_woody_api_modernizer:options()
+}.
 % упс, а вот и протечка абстракции.
 % в woody этот тип не экспортируется, а хочется
 -type woody_server_net_opts() :: cowboy_protocol:opts().
@@ -48,6 +54,7 @@
 }.
 -type events_machines() :: #{
     processor                  := processor(),
+    modernizer                 => modernizer(),
     storage                    := mg_storage:options(),
     event_sink                 => mg:id(),
     retries                    := mg_machine:retry_opt(),
@@ -150,9 +157,12 @@ api_automaton_options(Config) ->
     EventSinkNS = proplists:get_value(event_sink_ns, Config),
     maps:fold(
         fun(NS, ConfigNS, Options) ->
-            Options#{NS => #{
-                machine => events_machine_options(NS, ConfigNS, EventSinkNS)
-            }}
+            Options#{NS => maps:merge(
+                #{
+                    machine => events_machine_options(NS, ConfigNS, EventSinkNS)
+                },
+                modernizer_options(maps:get(modernizer, ConfigNS, undefined))
+            )}
         end,
         #{},
         NSs
@@ -219,6 +229,16 @@ events_machine_options_event_sink(EventSinkID, EventSinkOptions, Options) ->
     mg_utils:mod_opts().
 processor(Processor) ->
     {mg_woody_api_processor, Processor#{event_handler => mg_woody_api_event_handler}}.
+
+-spec modernizer_options(modernizer() | undefined) ->
+    #{modernizer => mg_events_modernizer:options()}.
+modernizer_options(#{current_format_version := CurrentFormatVersion, handler := WoodyClient}) ->
+    #{modernizer => #{
+        current_format_version => CurrentFormatVersion,
+        handler => {mg_woody_api_modernizer, WoodyClient#{event_handler => mg_woody_api_event_handler}}
+    }};
+modernizer_options(undefined) ->
+    #{}.
 
 -spec api_event_sink_options(config()) ->
     mg_woody_api_event_sink:options().
