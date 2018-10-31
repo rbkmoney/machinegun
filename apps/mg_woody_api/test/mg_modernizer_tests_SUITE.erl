@@ -35,11 +35,6 @@
 -export([store_fixed_element/1]).
 -export([lookup_fixed_element/1]).
 
-%% memory storage bound to the suite lifetime
-% -behaviour(mg_storage).
-% -export([child_spec/3]).
-% -export([do_request/3]).
-
 %%
 
 -define(NS, <<"NS">>).
@@ -360,17 +355,3 @@ lookup_fixed_element(C) ->
     Options = ?config(automaton_options, C),
     Machine = mg_automaton_client:get_machine(Options, {id, ?ID}, {undefined, undefined, forward}),
     true = lookup(?FIXED_ELEMENT, collapse(Machine, C)).
-
-%% mg_storage
-
-% -type storage_options() :: pid().
-
-% -spec child_spec(storage_options(), atom(), mg_utils:gen_reg_name()) ->
-%     supervisor:child_spec() | undefined.
-% child_spec(_Options, _ChildID, _RegName) ->
-%     undefined.
-
-% -spec do_request(storage_options(), mg_utils:gen_ref(), mg_storage:request()) ->
-%     mg_storage:response().
-% do_request(Pid, _Ref, Request) ->
-%     mg_storage_memory:do_request(undefined, Pid, Request).
