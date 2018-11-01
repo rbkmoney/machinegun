@@ -133,7 +133,7 @@ put(Options, SelfRef, Key, Context, Value, Indexes) ->
 
 -spec get(options(), mg_utils:gen_ref(), key()) ->
     {context(), value()} | undefined.
-get(_Options, _SelfRef, <<"">>) -> %fix for riak timeouts
+get(_Options, _SelfRef, <<"">>) ->
     undefined;
 get(Options, SelfRef, Key) ->
     do_request(Options, SelfRef, {get, Key}).

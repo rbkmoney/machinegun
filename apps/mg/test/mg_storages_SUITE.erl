@@ -34,7 +34,7 @@
 %% base group tests
 -export([base_test               /1]).
 -export([indexes_test            /1]).
--export([empty_index             /1]).
+-export([zero_length_key_test    /1]).
 -export([indexes_test_with_limits/1]).
 -export([stress_test             /1]).
 
@@ -70,7 +70,7 @@ tests() ->
         base_test,
         % incorrect_context_test,
         indexes_test,
-        empty_index,
+        zero_length_key_test,
         indexes_test_with_limits,
         stress_test
     ].
@@ -174,9 +174,9 @@ indexes_test(C) ->
 
     ok.
 
--spec empty_index(config()) ->
+-spec zero_length_key_test(config()) ->
     _.
-empty_index(C) ->
+zero_length_key_test(C) ->
     Options = storage_options(?config(storage_type, C), <<"empty_index">>),
     _ = start_storage(Options),
 
