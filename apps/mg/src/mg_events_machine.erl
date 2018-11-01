@@ -566,13 +566,14 @@ opaque_to_state([1, EventsRange, AuxState, DelayedActions]) ->
 opaque_to_state([2, EventsRange, AuxState, DelayedActions, Timer]) ->
     State = opaque_to_state([1, EventsRange, AuxState, DelayedActions]),
     State#{
-        timer           := mg_events:maybe_from_opaque(Timer, fun opaque_to_int_timer/1),
-        aux_state       := mg_events:opaque_to_content(AuxState)
+        timer           := mg_events:maybe_from_opaque(Timer, fun opaque_to_int_timer/1)
     };
 opaque_to_state([3, EventsRange, AuxState, DelayedActions, Timer]) ->
-    State = opaque_to_state([2, EventsRange, AuxState, DelayedActions, Timer]),
-    State#{
-        aux_state       := mg_events:opaque_to_content(AuxState)
+    #{
+        events_range    => mg_events:opaque_to_events_range(EventsRange),
+        aux_state       => mg_events:opaque_to_content(AuxState),
+        delayed_actions => mg_events:maybe_from_opaque(DelayedActions, fun opaque_to_delayed_actions/1),
+        timer           => mg_events:maybe_from_opaque(Timer, fun opaque_to_int_timer/1)
     }.
 
 
