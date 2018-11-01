@@ -197,8 +197,6 @@ remove(Options, ID, ReqCtx, Deadline) ->
 
 -spec ref2id(options(), ref()) ->
     mg:id() | no_return().
-ref2id(_, {id, <<"">>}) ->
-    throw({logic, machine_not_found});
 ref2id(_, {id, ID}) ->
     ID;
 ref2id(Options, {tag, Tag}) ->
