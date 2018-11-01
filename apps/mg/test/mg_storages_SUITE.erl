@@ -34,6 +34,7 @@
 %% base group tests
 -export([base_test               /1]).
 -export([indexes_test            /1]).
+-export([empty_index             /1]).
 -export([indexes_test_with_limits/1]).
 -export([stress_test             /1]).
 
@@ -69,6 +70,7 @@ tests() ->
         base_test,
         % incorrect_context_test,
         indexes_test,
+        empty_index,
         indexes_test_with_limits,
         stress_test
     ].
@@ -169,6 +171,19 @@ indexes_test(C) ->
 
     [] = mg_storage:search(Options, storage, {I1, {IV1, IV2}}),
     [] = mg_storage:search(Options, storage, {I2, {IV1, IV2}}),
+
+    ok.
+
+-spec empty_index(config()) ->
+    _.
+empty_index(C) ->
+    Options = storage_options(?config(storage_type, C), <<"empty_index">>),
+    _ = start_storage(Options),
+
+    undefined = mg_storage:get(Options, storage, <<"">>),
+
+    {logic, zero_length_key} =
+        (catch mg_storage:put(Options, storage, <<"">>, undefined, <<"test">>, [])),
 
     ok.
 

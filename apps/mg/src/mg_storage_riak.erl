@@ -169,8 +169,6 @@ put(Options = #{bucket := Bucket}, SelfRef, Key, Context, Value, IndexesUpdates)
 
 -spec get(options(), self_ref(), mg_storage:key()) ->
     {context(), mg_storage:value()} | undefined.
-get(_Options, _SelfRef, <<"">>) ->
-    undefined;
 get(Options = #{bucket := Bucket}, SelfRef, Key) ->
     Timeout = get_option(request_timeout, Options),
     case ?SAFE(riakc_pb_socket:get(SelfRef, Bucket, Key, get_option(r_options, Options), Timeout)) of

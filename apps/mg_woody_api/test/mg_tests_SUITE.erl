@@ -30,16 +30,18 @@
 -export([end_per_group   /2]).
 
 %% base group tests
--export([namespace_not_found     /1]).
--export([machine_start           /1]).
--export([machine_already_exists  /1]).
--export([machine_call_by_id      /1]).
--export([machine_id_not_found    /1]).
--export([machine_set_tag         /1]).
--export([machine_call_by_tag     /1]).
--export([machine_tag_not_found   /1]).
--export([machine_remove          /1]).
--export([machine_remove_by_action/1]).
+-export([namespace_not_found        /1]).
+-export([machine_start_empty_id     /1]).
+-export([machine_start              /1]).
+-export([machine_already_exists     /1]).
+-export([machine_call_by_id         /1]).
+-export([machine_id_not_found       /1]).
+-export([machine_empty_id_not_found /1]).
+-export([machine_set_tag            /1]).
+-export([machine_call_by_tag        /1]).
+-export([machine_tag_not_found      /1]).
+-export([machine_remove             /1]).
+-export([machine_remove_by_action   /1]).
 
 %% repair group tests
 -export([failed_machine_start        /1]).
@@ -113,6 +115,8 @@ groups() ->
         {base, [sequence], [
             namespace_not_found,
             machine_id_not_found,
+            machine_empty_id_not_found,
+            machine_start_empty_id,
             machine_start,
             machine_already_exists,
             machine_id_not_found,
@@ -329,6 +333,11 @@ namespace_not_found(C) ->
     Opts = maps:update(ns, <<"incorrect_NS">>, automaton_options(C)),
     #'NamespaceNotFound'{} = (catch mg_automaton_client:start(Opts, ?ID, ?Tag)).
 
+-spec machine_start_empty_id(config()) -> _.
+machine_start_empty_id(C) ->
+    #'MachineFailed'{} =
+        (catch mg_automaton_client:start(automaton_options(C), <<"">>, ?Tag)).
+
 -spec machine_start(config()) -> _.
 machine_start(C) ->
     ok = start_machine(C, ?ID).
@@ -342,6 +351,11 @@ machine_id_not_found(C) ->
     IncorrectID = <<"incorrect_ID">>,
     #'MachineNotFound'{} =
         (catch mg_automaton_client:call(automaton_options(C), {id, IncorrectID}, <<"nop">>)).
+
+-spec machine_empty_id_not_found(config()) -> _.
+machine_empty_id_not_found(C) ->
+    #'MachineNotFound'{} =
+        (catch mg_automaton_client:call(automaton_options(C), {id, <<"">>}, <<"nop">>)).
 
 -spec machine_call_by_id(config()) -> _.
 machine_call_by_id(C) ->

@@ -126,11 +126,15 @@ child_spec(Options, ChildID, RegName) ->
 
 -spec put(options(), mg_utils:gen_ref(), key(), context() | undefined, value(), [index_update()]) ->
     context().
+put(_Options, _SelfRef, <<"">>, _Context, _Value, _Indexes) ->
+    throw({logic, zero_length_key});
 put(Options, SelfRef, Key, Context, Value, Indexes) ->
     do_request(Options, SelfRef, {put, Key, Context, Value, Indexes}).
 
 -spec get(options(), mg_utils:gen_ref(), key()) ->
     {context(), value()} | undefined.
+get(_Options, _SelfRef, <<"">>) -> %fix for riak timeouts
+    undefined;
 get(Options, SelfRef, Key) ->
     do_request(Options, SelfRef, {get, Key}).
 
