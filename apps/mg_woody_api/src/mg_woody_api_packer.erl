@@ -284,7 +284,7 @@ unpack(event, Event) ->
         created_at     = CreatedAt,
         format_version = FormatVersion,
         data           = Data
-    }              = Event,
+    } = Event,
     Body = #mg_stateproc_Content{
         format_version = FormatVersion,
         data           = Data
