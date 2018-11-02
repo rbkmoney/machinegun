@@ -126,18 +126,18 @@ child_spec(Options, ChildID, RegName) ->
 
 -spec put(options(), mg_utils:gen_ref(), key(), context() | undefined, value(), [index_update()]) ->
     context().
-put(_Options, _SelfRef, Key, _Context, _Value, _Indexes) when byte_size(Key) =< 0 ->
+put(_Options, _SelfRef, Key, _Context, _Value, _Indexes) when byte_size(Key) == 0 ->
     throw({logic, {invalid_key, {too_small, Key}}});
-put(_Options, _SelfRef, Key, _Context, _Value, _Indexes) when byte_size(Key) >= 64 ->
+put(_Options, _SelfRef, Key, _Context, _Value, _Indexes) when byte_size(Key) > 64 ->
     throw({logic, {invalid_key, {too_big, Key}}});
 put(Options, SelfRef, Key, Context, Value, Indexes) ->
     do_request(Options, SelfRef, {put, Key, Context, Value, Indexes}).
 
 -spec get(options(), mg_utils:gen_ref(), key()) ->
     {context(), value()} | undefined.
-get(_Options, _SelfRef, Key) when byte_size(Key) =< 0 ->
+get(_Options, _SelfRef, Key) when byte_size(Key) == 0 ->
     throw({logic, {invalid_key, {too_small, Key}}});
-get(_Options, _SelfRef, Key) when byte_size(Key) >= 64 ->
+get(_Options, _SelfRef, Key) when byte_size(Key) > 64 ->
     throw({logic, {invalid_key, {too_big, Key}}});
 get(Options, SelfRef, Key) ->
     do_request(Options, SelfRef, {get, Key}).

@@ -193,7 +193,7 @@ key_length_limit_test(C) ->
     undefined = mg_storage:get(
         Options,
         storage,
-        <<"TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTES">>
+        <<"TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTEST">>
     ),
 
     {logic, {invalid_key, {too_big, _}}} = 
@@ -201,14 +201,14 @@ key_length_limit_test(C) ->
             mg_storage:get(
                 Options,
                 storage,
-                <<"TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTEST">>
+                <<"TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTT">>
             )
         ),
 
     _ = mg_storage:put(
         Options,
         storage,
-        <<"TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTES">>,
+        <<"TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTEST">>,
         undefined,
         <<"test">>,
         []
@@ -219,7 +219,7 @@ key_length_limit_test(C) ->
             mg_storage:put(
                 Options,
                 storage,
-                <<"TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTEST">>,
+                <<"TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTT">>,
                 undefined,
                 <<"test">>,
                 []
