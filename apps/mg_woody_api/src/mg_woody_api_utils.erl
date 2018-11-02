@@ -71,8 +71,8 @@ handle_error({logic, machine_failed         }, _) -> {rethrow, #'MachineFailed' 
 handle_error({logic, machine_already_working}, _) -> {rethrow, #'MachineAlreadyWorking'{}};
 handle_error({logic, namespace_not_found    }, _) -> {rethrow, #'NamespaceNotFound'    {}};
 handle_error({logic, event_sink_not_found   }, _) -> {rethrow, #'EventSinkNotFound'    {}};
-% TODO отдельный business exception для zero_length_key
-handle_error({logic, zero_length_key        }, _) -> {rethrow, #'MachineFailed'        {}};
+% TODO обработать случай создания машины c некорректным ID в рамках thrift
+handle_error({logic, invalid_machine_id     }, _) -> {rethrow, #'MachineNotFound'      {}};
 
 % может Reason не прокидывать дальше?
 % TODO logs

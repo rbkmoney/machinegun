@@ -34,7 +34,7 @@
 %% base group tests
 -export([base_test               /1]).
 -export([indexes_test            /1]).
--export([zero_length_key_test    /1]).
+-export([key_length_limit_test    /1]).
 -export([indexes_test_with_limits/1]).
 -export([stress_test             /1]).
 
@@ -70,7 +70,7 @@ tests() ->
         base_test,
         % incorrect_context_test,
         indexes_test,
-        zero_length_key_test,
+        key_length_limit_test,
         indexes_test_with_limits,
         stress_test
     ].
@@ -174,16 +174,57 @@ indexes_test(C) ->
 
     ok.
 
--spec zero_length_key_test(config()) ->
+-spec key_length_limit_test(config()) ->
     _.
-zero_length_key_test(C) ->
-    Options = storage_options(?config(storage_type, C), <<"empty_index">>),
+key_length_limit_test(C) ->
+    Options = storage_options(?config(storage_type, C), <<"key_length_limit">>),
     _ = start_storage(Options),
 
-    undefined = mg_storage:get(Options, storage, <<"">>),
+    undefined = mg_storage:get(Options, storage, <<"K">>),
 
-    {logic, zero_length_key} =
+    {logic, {invalid_key, {too_small, _}}} = 
+        (catch mg_storage:get(Options, storage, <<"">>)),
+
+    _ = mg_storage:put(Options, storage, <<"K">>, undefined, <<"test">>, []),
+
+    {logic, {invalid_key, {too_small, _}}} =
         (catch mg_storage:put(Options, storage, <<"">>, undefined, <<"test">>, [])),
+
+    undefined = mg_storage:get(
+        Options,
+        storage,
+        <<"TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTES">>
+    ),
+
+    {logic, {invalid_key, {too_big, _}}} = 
+        (catch 
+            mg_storage:get(
+                Options,
+                storage,
+                <<"TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTEST">>
+            )
+        ),
+
+    _ = mg_storage:put(
+        Options,
+        storage,
+        <<"TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTES">>,
+        undefined,
+        <<"test">>,
+        []
+    ),
+
+    {logic, {invalid_key, {too_big, _}}} =
+        (catch 
+            mg_storage:put(
+                Options,
+                storage,
+                <<"TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTEST">>,
+                undefined,
+                <<"test">>,
+                []
+            )
+        ),
 
     ok.
 

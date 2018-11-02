@@ -335,8 +335,9 @@ namespace_not_found(C) ->
 
 -spec machine_start_empty_id(config()) -> _.
 machine_start_empty_id(C) ->
-    #'MachineFailed'{} =
-        (catch mg_automaton_client:start(automaton_options(C), <<"">>, ?Tag)).
+    {'EXIT', {{woody_error, _}, _}} = % создание машины с невалидным ID не обрабатывается, you're on your own
+        (catch mg_automaton_client:start(automaton_options(C), <<"">>, ?Tag)),
+    ok.
 
 -spec machine_start(config()) -> _.
 machine_start(C) ->
