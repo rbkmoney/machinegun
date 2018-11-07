@@ -268,7 +268,7 @@ init_per_group(C) ->
     list().
 mg_woody_api_config(C) ->
     [
-        {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, net_opts => [], limits => #{}}},
+        {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, limits => #{}}},
         {namespaces, #{
             ?NS => #{
                 storage    => ?config(storage, C),
@@ -548,7 +548,7 @@ mwc_get_events_machine(_C) ->
     _.
 config_with_multiple_event_sinks(_C) ->
     Config = [
-        {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, net_opts => [], limits => #{}}},
+        {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, limits => #{}}},
         {namespaces, #{
             <<"1">> => #{
                 storage    => mg_storage_memory,
