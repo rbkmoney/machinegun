@@ -635,11 +635,14 @@ new_storage_machine() ->
 -spec get_storage_machine(options(), mg:id()) ->
     {mg_storage:context(), storage_machine()} | undefined.
 get_storage_machine(Options, ID) ->
-    case mg_storage:get(storage_options(Options), storage_ref(Options), ID) of
+    try mg_storage:get(storage_options(Options), storage_ref(Options), ID) of
         undefined ->
             undefined;
         {Context, PackedMachine} ->
             {Context, opaque_to_storage_machine(PackedMachine)}
+    catch
+        throw:{logic, {invalid_key, _StorageDetails} = Details} ->
+            throw({logic, {invalid_machine_id, Details}})
     end.
 
 %%

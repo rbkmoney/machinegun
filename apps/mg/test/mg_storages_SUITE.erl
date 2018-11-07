@@ -34,6 +34,7 @@
 %% base group tests
 -export([base_test               /1]).
 -export([indexes_test            /1]).
+-export([key_length_limit_test    /1]).
 -export([indexes_test_with_limits/1]).
 -export([stress_test             /1]).
 
@@ -69,6 +70,7 @@ tests() ->
         base_test,
         % incorrect_context_test,
         indexes_test,
+        key_length_limit_test,
         indexes_test_with_limits,
         stress_test
     ].
@@ -169,6 +171,60 @@ indexes_test(C) ->
 
     [] = mg_storage:search(Options, storage, {I1, {IV1, IV2}}),
     [] = mg_storage:search(Options, storage, {I2, {IV1, IV2}}),
+
+    ok.
+
+-spec key_length_limit_test(config()) ->
+    _.
+key_length_limit_test(C) ->
+    Options = storage_options(?config(storage_type, C), <<"key_length_limit">>),
+    _ = start_storage(Options),
+
+    undefined = mg_storage:get(Options, storage, <<"K">>),
+
+    {logic, {invalid_key, {too_small, _}}} = 
+        (catch mg_storage:get(Options, storage, <<"">>)),
+
+    _ = mg_storage:put(Options, storage, <<"K">>, undefined, <<"test">>, []),
+
+    {logic, {invalid_key, {too_small, _}}} =
+        (catch mg_storage:put(Options, storage, <<"">>, undefined, <<"test">>, [])),
+
+    undefined = mg_storage:get(
+        Options,
+        storage,
+        binary:copy(<<"K">>, 1024)
+    ),
+
+    {logic, {invalid_key, {too_big, _}}} = 
+        (catch 
+            mg_storage:get(
+                Options,
+                storage,
+                binary:copy(<<"K">>, 1025)
+            )
+        ),
+
+    _ = mg_storage:put(
+        Options,
+        storage,
+        binary:copy(<<"K">>, 1024),
+        undefined,
+        <<"test">>,
+        []
+    ),
+
+    {logic, {invalid_key, {too_big, _}}} =
+        (catch 
+            mg_storage:put(
+                Options,
+                storage,
+                binary:copy(<<"K">>, 1025),
+                undefined,
+                <<"test">>,
+                []
+            )
+        ),
 
     ok.
 
