@@ -90,7 +90,7 @@ end_per_suite(C) ->
     list().
 mg_woody_api_config(_C) ->
     [
-        {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, net_opts => [], limits => #{}}},
+        {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, limits => #{}}},
         {namespaces, #{
             ?NS => #{
                 storage    => mg_storage_memory,

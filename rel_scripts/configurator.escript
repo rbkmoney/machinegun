@@ -72,7 +72,11 @@ woody_server(YamlConfig) ->
     #{
         ip       => ?C:ip(?C:conf([woody_server, ip], YamlConfig, "::")),
         port     => ?C:conf([woody_server, port], YamlConfig, 8022),
-        net_opts => [
+        transport_opts => [
+            % same as ranch defaults
+            {max_connections, ?C:conf([woody_server, max_concurrent_connections], YamlConfig, 1024)}
+        ],
+        protocol_opts => [
             {timeout, ?C:time_interval(?C:conf([woody_server, keep_alive_timeout], YamlConfig, "5S"), 'ms')}
         ],
         limits   => genlib_map:compact(#{
