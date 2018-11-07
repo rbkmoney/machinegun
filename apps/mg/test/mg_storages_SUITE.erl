@@ -193,7 +193,7 @@ key_length_limit_test(C) ->
     undefined = mg_storage:get(
         Options,
         storage,
-        <<"TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTEST">>
+        binary:copy(<<"K">>, 1024)
     ),
 
     {logic, {invalid_key, {too_big, _}}} = 
@@ -201,14 +201,14 @@ key_length_limit_test(C) ->
             mg_storage:get(
                 Options,
                 storage,
-                <<"TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTT">>
+                binary:copy(<<"K">>, 1025)
             )
         ),
 
     _ = mg_storage:put(
         Options,
         storage,
-        <<"TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTEST">>,
+        binary:copy(<<"K">>, 1024),
         undefined,
         <<"test">>,
         []
@@ -219,7 +219,7 @@ key_length_limit_test(C) ->
             mg_storage:put(
                 Options,
                 storage,
-                <<"TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTT">>,
+                binary:copy(<<"K">>, 1025),
                 undefined,
                 <<"test">>,
                 []
