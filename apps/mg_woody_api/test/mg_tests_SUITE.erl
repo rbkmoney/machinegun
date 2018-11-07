@@ -79,6 +79,7 @@
 
 -define(NS, <<"NS">>).
 -define(ID, <<"ID">>).
+-define(EMPTY_ID, <<"">>).
 -define(Tag, <<"tag">>).
 -define(Ref, {tag, ?Tag}).
 -define(ES_ID, <<"test_event_sink">>).
@@ -335,8 +336,8 @@ namespace_not_found(C) ->
 
 -spec machine_start_empty_id(config()) -> _.
 machine_start_empty_id(C) ->
-    {'EXIT', {{woody_error, _}, _}} = % создание машины с невалидным ID не обрабатывается, you're on your own
-        (catch mg_automaton_client:start(automaton_options(C), <<"">>, ?Tag)),
+    {'EXIT', {{woody_error, _}, _}} = % создание машины с невалидным ID не обрабатывается по протоколу
+        (catch mg_automaton_client:start(automaton_options(C), ?EMPTY_ID, ?Tag)),
     ok.
 
 -spec machine_start(config()) -> _.
@@ -356,7 +357,7 @@ machine_id_not_found(C) ->
 -spec machine_empty_id_not_found(config()) -> _.
 machine_empty_id_not_found(C) ->
     #'MachineNotFound'{} =
-        (catch mg_automaton_client:call(automaton_options(C), {id, <<"">>}, <<"nop">>)).
+        (catch mg_automaton_client:call(automaton_options(C), {id, ?EMPTY_ID}, <<"nop">>)).
 
 -spec machine_call_by_id(config()) -> _.
 machine_call_by_id(C) ->
