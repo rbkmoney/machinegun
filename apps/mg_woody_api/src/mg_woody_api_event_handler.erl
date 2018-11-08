@@ -30,4 +30,4 @@
         EventMeta :: woody_event_handler:event_meta().
 handle_event(Event, RpcID, EventMeta, _) ->
     {Level, Msg} = woody_event_handler:format_event(Event, EventMeta, RpcID),
-    mg_woody_api_logger:log({Level, Msg, mg_woody_api_logger:woody_rpc_id_to_meta(RpcID)}).
+    mg_woody_api_pulse:log({Level, Msg, maps:to_list(RpcID)}).

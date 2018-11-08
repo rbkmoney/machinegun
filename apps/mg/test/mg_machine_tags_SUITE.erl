@@ -30,8 +30,8 @@
 -export([replace       /1]).
 -export([resolve       /1]).
 
-%% logger
--export([handle_machine_logging_event/2]).
+%% Pulse
+-export([handle_beat/2]).
 
 %%
 %% tests descriptions
@@ -132,11 +132,11 @@ automaton_options() ->
     #{
         namespace => <<"test_tags">>,
         storage   => mg_storage_memory,
-        logger    => ?MODULE,
+        pulse     => ?MODULE,
         retries   => #{}
     }.
 
--spec handle_machine_logging_event(_, mg_machine_logger:event()) ->
+-spec handle_beat(_, mg_pulse:beat()) ->
     ok.
-handle_machine_logging_event(_, {NS, ID, ReqCtx, SubEvent}) ->
-    ct:pal("[~s:~s:~s] ~p", [NS, ID, ReqCtx, SubEvent]).
+handle_beat(_, Beat) ->
+    ct:pal("~p", [Beat]).

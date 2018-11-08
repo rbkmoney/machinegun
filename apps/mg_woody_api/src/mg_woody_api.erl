@@ -181,7 +181,7 @@ tags_options(NS, #{retries := Retries, storage := Storage}) ->
     #{
         namespace => mg_utils:concatenate_namespaces(NS, <<"tags">>),
         storage   => Storage, % по логике тут должен быть sub namespace, но его по историческим причинам нет
-        logger    => logger({machine_tags, NS}),
+        pulse     => pulse(),
         retries   => Retries
     }.
 
@@ -201,7 +201,7 @@ machine_options(NS, Config) ->
     Options#{
         namespace           => NS,
         storage             => add_bucket_postfix(<<"machines">>, Storage),
-        logger              => logger({machine, NS}),
+        pulse               => pulse(),
         % TODO сделать аналогично в event_sink'е и тэгах
         suicide_probability => maps:get(suicide_probability, Config, undefined)
     }.
@@ -232,7 +232,7 @@ api_event_sink_options(Config) ->
 event_sink_options(EventSinkNS = #{storage := Storage, default_processing_timeout := Timeout}) ->
     EventSinkNS#{
         namespace        => <<"_event_sinks">>,
-        logger           => logger(event_sink),
+        pulse            => pulse(),
         storage          => add_bucket_postfix(<<"machines">>, Storage),
         events_storage   => add_bucket_postfix(<<"events"  >>, Storage),
         default_processing_timeout => Timeout
@@ -263,7 +263,7 @@ add_bucket_postfix(SubNS, {mg_storage_pool, Options = #{worker := Worker}}) ->
 add_bucket_postfix(SubNS, {mg_storage_riak, Options = #{bucket := Bucket}}) ->
     {mg_storage_riak, Options#{bucket := mg_utils:concatenate_namespaces(Bucket, SubNS)}}.
 
--spec logger(mg_woody_api_logger:subj()) ->
-    mg_machine_logger:handler().
-logger(Subj) ->
-    {mg_woody_api_logger, Subj}.
+-spec pulse() ->
+    mg_pulse:handler().
+pulse() ->
+    mg_woody_api_pulse.

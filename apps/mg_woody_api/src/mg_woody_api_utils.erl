@@ -15,10 +15,11 @@
 %%%
 
 -module(mg_woody_api_utils).
+-include_lib("mg_woody_api/include/pulse.hrl").
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 %% API
--export([handle_safe_with_retry /5]).
+-export([handle_safe_with_retry /3]).
 -export([opaque_to_woody_context/1]).
 -export([woody_context_to_opaque/1]).
 -export([get_deadline/2]).
@@ -27,27 +28,39 @@
 %%
 %% API
 %%
--type ctx() :: mg:request_context().
--type logger() :: mg_machine_logger:handler().
+-type ctx() :: #{
+    namespace := mg:ns() | undefined,
+    machine_ref := mg_events_machine:ref(),
+    deadline := mg_utils:deadline(),
+    request_context := mg:request_context()
+}.
+-type pulse() :: mg_pulse:handler().
 
--spec handle_safe_with_retry(mg_events_machine:ref(), ctx(), fun(() -> R), mg_utils:deadline(), logger()) ->
+-spec handle_safe_with_retry(ctx(), fun(() -> R), pulse()) ->
     R.
-handle_safe_with_retry(Ref, ReqCtx, F, Deadline, Logger) ->
+handle_safe_with_retry(#{deadline := Deadline} = Ctx, F, Pulse) ->
     handle_safe_with_retry_(
-        Ref, ReqCtx, F,
+        Ctx, F,
         genlib_retry:exponential({max_total_timeout, mg_utils:deadline_to_timeout(Deadline)}, 2, 10),
-        Logger
+        Pulse
     ).
 
--spec handle_safe_with_retry_(mg_events_machine:ref(), ctx(), fun(() -> R), genlib_retry:strategy(), logger()) ->
+-spec handle_safe_with_retry_(ctx(), fun(() -> R), genlib_retry:strategy(), pulse()) ->
     R.
-handle_safe_with_retry_(Ref, ReqCtx, F, Retry, Logger) ->
+handle_safe_with_retry_(Ctx, F, Retry, Pulse) ->
     try
         F()
     catch throw:Error ->
-        ok = mg_machine_logger:handle_event(
-                Logger, {request_event, Ref, ReqCtx, {request_failed, {throw, Error, erlang:get_stacktrace()}}}
-            ),
+        Exception = {throw, Error, erlang:get_stacktrace()},
+        #{namespace := NS, machine_ref := Ref, request_context := ReqCtx, deadline := Deadline} = Ctx,
+        ok = mg_pulse:handle_beat(Pulse, #woody_request_handle_error{
+            namespace = NS,
+            machine_ref = Ref,
+            request_context = ReqCtx,
+            deadline = Deadline,
+            exception = Exception,
+            retry_strategy = Retry
+        }),
         case handle_error(Error, genlib_retry:next_step(Retry))  of
             {rethrow, NewError} ->
                 erlang:throw(NewError);
@@ -55,11 +68,17 @@ handle_safe_with_retry_(Ref, ReqCtx, F, Retry, Logger) ->
                 BinaryDescription = erlang:list_to_binary(io_lib:format("~9999p", [Description])),
                 woody_error:raise(system, {internal, WoodyErrorClass, BinaryDescription});
             {retry_in, Timeout, NewRetry} ->
-                ok = mg_machine_logger:handle_event(
-                        Logger, {request_event, Ref, ReqCtx, {retrying, Timeout}}
-                    ),
+                ok = mg_pulse:handle_beat(Pulse, #woody_request_handle_retry{
+                    namespace = NS,
+                    machine_ref = Ref,
+                    request_context = ReqCtx,
+                    deadline = Deadline,
+                    exception = Exception,
+                    retry_strategy = Retry,
+                    wait_timeout = Timeout
+                }),
                 ok = timer:sleep(Timeout),
-                handle_safe_with_retry_(Ref, ReqCtx, F, NewRetry, Logger)
+                handle_safe_with_retry_(Ctx, F, NewRetry, Pulse)
         end
     end.
 
