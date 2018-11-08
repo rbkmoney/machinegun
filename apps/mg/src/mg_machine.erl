@@ -771,11 +771,22 @@ process(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
     catch
         throw:(Reason=({ErrorType, _Details})) when ?can_be_retried(ErrorType) ->
             ok = do_reply_action({reply, {error, Reason}}, ProcessingCtx),
-            State;
+            handle_transient_error(Impact, ProcessingCtx, ReqCtx, Deadline, State);
         Class:Reason ->
             ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
             handle_exception({Class, Reason, erlang:get_stacktrace()}, Impact, ReqCtx, Deadline, State)
     end.
+
+-spec handle_transient_error(Impact, ProcessingCtx, ReqCtx, Deadline, state()) -> state() when
+    Impact :: processor_impact() | undefined,
+    ProcessingCtx :: processing_context(),
+    ReqCtx :: request_context(),
+    Deadline :: mg_utils:deadline().
+handle_transient_error({init, _}, _ProcessingCtx, _ReqCtx, _Deadline, State) ->
+    State#{storage_machine := undefined};
+% TODO обработка таймаутов
+handle_transient_error(_Impact, _ProcessingCtx, _ReqCtx, _Deadline, State) ->
+    State.
 
 -spec handle_exception(Exception, Impact, ReqCtx, Deadline, state()) -> state() when
     Exception :: mg_utils:exception(),
