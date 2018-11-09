@@ -401,7 +401,7 @@ failed_machine_start(C) ->
     _.
 machine_start_timeout(C) ->
     {'EXIT', {{woody_error, _}, _}} =
-        (catch mg_automaton_client:start(automaton_options(C), ?ID, <<"timeout">>)),
+        (catch mg_automaton_client:start(automaton_options(C), ?ID, <<"timeout">>, mg_utils:timeout_to_deadline(1000))),
     #'MachineNotFound'{} =
         (catch mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"nop">>)).
 
