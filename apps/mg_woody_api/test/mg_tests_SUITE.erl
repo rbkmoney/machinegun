@@ -45,6 +45,7 @@
 
 %% repair group tests
 -export([failed_machine_start        /1]).
+-export([machine_start_timeout       /1]).
 -export([machine_processor_error     /1]).
 -export([failed_machine_call         /1]).
 -export([failed_machine_repair_error /1]).
@@ -134,6 +135,7 @@ groups() ->
 
         {repair, [sequence], [
             failed_machine_start,
+            machine_start_timeout,
             machine_id_not_found,
             machine_start,
             machine_processor_error,
@@ -242,9 +244,10 @@ init_per_group(C) ->
     SignalFunc =
         fun({Args, _Machine}) ->
             case Args of
-                {init  , <<"fail" >>} -> erlang:error(fail);
-                {repair, <<"error">>} -> erlang:error(error);
-                 timeout              -> {{<<>>, [<<"handle_timer_body">>]}, #{timer => undefined, tag => undefined}};
+                {init  , <<"fail" >>  } -> erlang:error(fail);
+                {init  , <<"timeout">>} -> timer:sleep(infinity);
+                {repair, <<"error">>  } -> erlang:error(error);
+                 timeout                -> {{<<>>, [<<"handle_timer_body">>]}, #{timer => undefined, tag => undefined}};
                 _ -> mg_test_processor:default_result(signal)
             end
         end
@@ -393,6 +396,14 @@ machine_remove_by_action(C) ->
     _.
 failed_machine_start(C) ->
     #'MachineFailed'{} = (catch mg_automaton_client:start(automaton_options(C), ?ID, <<"fail">>)).
+
+-spec machine_start_timeout(config()) ->
+    _.
+machine_start_timeout(C) ->
+    {'EXIT', {{woody_error, _}, _}} =
+        (catch mg_automaton_client:start(automaton_options(C), ?ID, <<"timeout">>, mg_utils:timeout_to_deadline(1000))),
+    #'MachineNotFound'{} =
+        (catch mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"nop">>)).
 
 -spec machine_processor_error(config()) ->
     _.
