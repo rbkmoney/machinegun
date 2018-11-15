@@ -130,6 +130,8 @@ extract_meta(machine_ref, {id, MachineID}) ->
     {machine_id, MachineID};
 extract_meta(machine_ref, {tag, MachineTag}) ->
     {machine_tag, MachineTag};
+extract_meta(namespace, NS) ->
+    {machine_ns, NS};
 extract_meta(Name, Value) when is_integer(Value) orelse is_binary(Value) ->
     {Name, Value};
 extract_meta(Name, Value) when is_atom(Value) orelse is_float(Value) ->
