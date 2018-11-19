@@ -546,6 +546,7 @@ handle_load(ID, Options, ReqCtx) ->
                 storage_machine => StorageMachine,
                 storage_context => StorageContext
             },
+        ok = emit_machine_load_beat(Options, Namespace, ID, ReqCtx, StorageMachine),
         {ok, State}
     catch throw:Reason ->
         Exception = {throw, Reason, erlang:get_stacktrace()},
@@ -623,8 +624,12 @@ handle_call(Call, CallContext, ReqCtx, Deadline, S=#{storage_machine:=StorageMac
 
 -spec handle_unload(state()) ->
     ok.
-handle_unload(_) ->
-    ok.
+handle_unload(State) ->
+    #{id := ID, options := #{namespace := NS} = Options} = State,
+    ok = emit_beat(Options, #mg_machine_lifecycle_unloaded{
+        namespace = NS,
+        machine_id = ID
+    }).
 
 %%
 %% processing context
@@ -1053,11 +1058,11 @@ retry_strategy_(_Subj, Policy, Deadline, InitialTs, Attempt) ->
 emit_pre_process_beats(timeout, ReqCtx, Deadline, State) ->
     #{
         id := ID,
-        options := #{namespace := NS, pulse := Pulse},
+        options := #{namespace := NS} = Options,
         storage_machine := #{status := Status}
     } = State,
     {ok, QueueName, TargetTimestamp} = extract_timer_queue_info(Status),
-    mg_pulse:handle_beat(Pulse, #mg_timer_process_started{
+    emit_beat(Options, #mg_timer_process_started{
         queue = QueueName,
         namespace = NS,
         machine_id = ID,
@@ -1066,8 +1071,8 @@ emit_pre_process_beats(timeout, ReqCtx, Deadline, State) ->
         deadline = Deadline
     });
 emit_pre_process_beats(continuation, ReqCtx, Deadline, State) ->
-    #{id := ID, options := #{namespace := NS, pulse := Pulse}} = State,
-    mg_pulse:handle_beat(Pulse, #mg_machine_process_continuation_started{
+    #{id := ID, options := #{namespace := NS} = Options} = State,
+    emit_beat(Options, #mg_machine_process_continuation_started{
         namespace = NS,
         machine_id = ID,
         request_context = ReqCtx,
@@ -1081,11 +1086,11 @@ emit_pre_process_beats(_Impact, _ReqCtx, _Deadline, _State) ->
 emit_post_process_beats(timeout, ReqCtx, Deadline, Duration, State) ->
     #{
         id := ID,
-        options := #{namespace := NS, pulse := Pulse},
+        options := #{namespace := NS} = Options,
         storage_machine := #{status := Status}
     } = State,
     {ok, QueueName, TargetTimestamp} = extract_timer_queue_info(Status),
-    mg_pulse:handle_beat(Pulse, #mg_timer_process_finished{
+    emit_beat(Options, #mg_timer_process_finished{
         queue = QueueName,
         namespace = NS,
         machine_id = ID,
@@ -1095,8 +1100,8 @@ emit_post_process_beats(timeout, ReqCtx, Deadline, Duration, State) ->
         duration = Duration
     });
 emit_post_process_beats(continuation, ReqCtx, Deadline, Duration, State) ->
-    #{id := ID, options := #{namespace := NS, pulse := Pulse}} = State,
-    mg_pulse:handle_beat(Pulse, #mg_machine_process_continuation_finished{
+    #{id := ID, options := #{namespace := NS} = Options} = State,
+    emit_beat(Options, #mg_machine_process_continuation_finished{
         namespace = NS,
         machine_id = ID,
         request_context = ReqCtx,
@@ -1114,6 +1119,21 @@ extract_timer_queue_info({retrying, Timestamp, _, _, _}) ->
     {ok, retries, Timestamp};
 extract_timer_queue_info(_Other) ->
     {error, not_timer}.
+
+-spec emit_machine_load_beat(options(), mg:ns(), mg:id(), request_context(), storage_machine() | undefined) ->
+    ok.
+emit_machine_load_beat(Options, Namespace, ID, ReqCtx, undefined) ->
+    ok = emit_beat(Options, #mg_machine_lifecycle_created{
+        namespace = Namespace,
+        machine_id = ID,
+        request_context = ReqCtx
+    });
+emit_machine_load_beat(Options, Namespace, ID, ReqCtx, _StorageMachine) ->
+    ok = emit_beat(Options, #mg_machine_lifecycle_loaded{
+        namespace = Namespace,
+        machine_id = ID,
+        request_context = ReqCtx
+    }).
 
 %%
 

@@ -40,6 +40,9 @@
     | #mg_timer_process_started{}
     | #mg_timer_process_finished{}
     % Состояние процесса машины
+    | #mg_machine_lifecycle_created{}
+    | #mg_machine_lifecycle_loaded{}
+    | #mg_machine_lifecycle_unloaded{}
     | #mg_machine_lifecycle_committed_suicide{}
     | #mg_machine_lifecycle_failed{}
     | #mg_machine_lifecycle_loading_error{}

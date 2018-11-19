@@ -106,6 +106,23 @@
 
 %% Machines state
 
+-record(mg_machine_lifecycle_loaded, {
+    namespace :: mg:ns(),
+    machine_id :: mg:id(),
+    request_context :: mg:request_context()
+}).
+
+-record(mg_machine_lifecycle_created, {
+    namespace :: mg:ns(),
+    machine_id :: mg:id(),
+    request_context :: mg:request_context()
+}).
+
+-record(mg_machine_lifecycle_unloaded, {
+    namespace :: mg:ns(),
+    machine_id :: mg:id()
+}).
+
 -record(mg_machine_lifecycle_committed_suicide, {
     namespace :: mg:ns(),
     machine_id :: mg:id(),
@@ -125,6 +142,5 @@
     namespace :: mg:ns(),
     machine_id :: mg:id(),
     request_context :: mg:request_context(),
-    deadline :: mg_utils:deadline(),
     exception :: mg_utils:exception()
 }).
