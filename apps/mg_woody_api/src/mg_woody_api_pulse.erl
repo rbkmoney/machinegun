@@ -120,11 +120,13 @@ extract_meta(request_context, ReqCtx) ->
     maps:to_list(RPCID);
 extract_meta(deadline, Deadline) ->
     {deadline, format_timestamp(Deadline div 1000)};  % Deadline measured in millisecond
+extract_meta(target_timestamp, Timestamp) ->
+    {target_timestamp, format_timestamp(Timestamp)};
 extract_meta(exception, {Class, Reason, StackStrace}) ->
     [
-        {class, genlib:to_binary(Class)},
-        {reason, genlib:format(Reason)},
-        {stack_trace, genlib_format:format_stacktrace(StackStrace)}
+        {error_class, genlib:to_binary(Class)},
+        {error_reason, genlib:format(Reason)},
+        {error_stack_trace, genlib_format:format_stacktrace(StackStrace)}
     ];
 extract_meta(machine_ref, {id, MachineID}) ->
     {machine_id, MachineID};

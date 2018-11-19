@@ -171,6 +171,7 @@ events_machine_options(NS, Config = #{processor := ProcessorConfig, storage := S
             tagging                    => tags_options(NS, Config),
             machines                   => machine_options(NS, Config),
             events_storage             => add_bucket_postfix(<<"events">>, Storage),
+            pulse                      => pulse(),
             default_processing_timeout => maps:get(default_processing_timeout, Config)
         }
     ).

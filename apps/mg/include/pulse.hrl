@@ -1,5 +1,18 @@
 
-%% Timer
+%% Timer operations
+
+-record(mg_timer_lifecycle_created, {
+    namespace :: mg:ns(),
+    machine_id :: mg:id(),
+    request_context :: mg:request_context(),
+    target_timestamp :: genlib_time:ts()
+}).
+
+-record(mg_timer_lifecycle_removed, {
+    namespace :: mg:ns(),
+    machine_id :: mg:id(),
+    request_context :: mg:request_context()
+}).
 
 -record(mg_timer_lifecycle_rescheduled, {
     namespace :: mg:ns(),
@@ -16,6 +29,27 @@
     request_context :: mg:request_context(),
     deadline :: mg_utils:deadline(),
     exception :: mg_utils:exception()
+}).
+
+%% Timer processing
+
+-record(mg_timer_process_started, {
+    queue :: normal | retries,
+    namespace :: mg:ns(),
+    machine_id :: mg:id(),
+    request_context :: mg:request_context(),
+    target_timestamp :: genlib_time:ts(),
+    deadline :: mg_utils:deadline()
+}).
+
+-record(mg_timer_process_finished, {
+    queue :: normal | retries,
+    namespace :: mg:ns(),
+    machine_id :: mg:id(),
+    request_context :: mg:request_context(),
+    target_timestamp :: genlib_time:ts(),
+    deadline :: mg_utils:deadline(),
+    duration :: non_neg_integer()  % in native units
 }).
 
 %% Scheduler
@@ -53,6 +87,21 @@
     exception :: mg_utils:exception(),
     request_context :: mg:request_context(),
     retry_strategy :: mg_retry:strategy()
+}).
+
+-record(mg_machine_process_continuation_started, {
+    namespace :: mg:ns(),
+    machine_id :: mg:id(),
+    request_context :: mg:request_context(),
+    deadline :: mg_utils:deadline()
+}).
+
+-record(mg_machine_process_continuation_finished, {
+    namespace :: mg:ns(),
+    machine_id :: mg:id(),
+    request_context :: mg:request_context(),
+    deadline :: mg_utils:deadline(),
+    duration :: non_neg_integer()  % in native units
 }).
 
 %% Machines state

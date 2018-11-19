@@ -30,15 +30,22 @@
 %%
 -type beat() ::
     % Таймер
-      #mg_timer_lifecycle_rescheduled{}
+      #mg_timer_lifecycle_created{}
+    | #mg_timer_lifecycle_rescheduled{}
     | #mg_timer_lifecycle_rescheduling_error{}
+    | #mg_timer_lifecycle_removed{}
     % Планировщик
     | #mg_scheduler_error{}
+    % Обработка таймера
+    | #mg_timer_process_started{}
+    | #mg_timer_process_finished{}
     % Состояние процесса машины
     | #mg_machine_lifecycle_committed_suicide{}
     | #mg_machine_lifecycle_failed{}
     | #mg_machine_lifecycle_loading_error{}
     % Обработка запроса машиной
+    | #mg_machine_process_continuation_started{}
+    | #mg_machine_process_continuation_finished{}
     | #mg_machine_process_transient_error{}
     | #mg_machine_process_retry{}
     | #mg_machine_process_retries_exhausted{}.
