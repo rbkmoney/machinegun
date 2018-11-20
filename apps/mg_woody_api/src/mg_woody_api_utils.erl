@@ -71,6 +71,8 @@ handle_error({logic, machine_failed         }, _) -> {rethrow, #mg_stateproc_Mac
 handle_error({logic, machine_already_working}, _) -> {rethrow, #mg_stateproc_MachineAlreadyWorking{}};
 handle_error({logic, namespace_not_found    }, _) -> {rethrow, #mg_stateproc_NamespaceNotFound    {}};
 handle_error({logic, event_sink_not_found   }, _) -> {rethrow, #mg_stateproc_EventSinkNotFound    {}};
+% TODO обработать случай создания машины c некорректным ID в рамках thrift
+handle_error({logic, {invalid_machine_id, _}}, _) -> {rethrow, #mg_stateproc_MachineNotFound      {}};
 
 % может Reason не прокидывать дальше?
 % TODO logs

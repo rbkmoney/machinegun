@@ -69,7 +69,6 @@ start_link(Host, Port, Options) ->
             #{
                 ip            => Host,
                 port          => Port,
-                net_opts      => [],
                 event_handler => {mg_woody_api_event_handler, undefined},
                 handlers      => maps:values(maps:map(
                     fun

@@ -550,7 +550,7 @@ handle_call(Call, CallContext, ReqCtx, Deadline, S=#{storage_machine:=StorageMac
     % довольно сложное место, тут определяется приоритет реакции на внешние раздражители, нужно быть аккуратнее
     case {Call, StorageMachine} of
         % start
-        {{start, Args}, undefined   } -> {noreply, process_start(Args, PCtx, ReqCtx, Deadline, S)};
+        {{start, Args}, undefined   } -> {noreply, process({init, Args}, PCtx, ReqCtx, Deadline, S)};
         { _           , undefined   } -> {{reply, {error, {logic, machine_not_found    }}}, S};
         {{start, _   }, #{status:=_}} -> {{reply, {error, {logic, machine_already_exist}}}, S};
 
@@ -635,11 +635,14 @@ new_storage_machine() ->
 -spec get_storage_machine(options(), mg:id()) ->
     {mg_storage:context(), storage_machine()} | undefined.
 get_storage_machine(Options, ID) ->
-    case mg_storage:get(storage_options(Options), storage_ref(Options), ID) of
+    try mg_storage:get(storage_options(Options), storage_ref(Options), ID) of
         undefined ->
             undefined;
         {Context, PackedMachine} ->
             {Context, opaque_to_storage_machine(PackedMachine)}
+    catch
+        throw:{logic, {invalid_key, _StorageDetails} = Details} ->
+            throw({logic, {invalid_machine_id, Details}})
     end.
 
 %%
@@ -744,10 +747,6 @@ status_range_index(_) ->
 %%
 %% processing
 %%
--spec process_start(term(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
-    state().
-process_start(Args, ProcessingCtx, ReqCtx, Deadline, State) ->
-    process({init, Args}, ProcessingCtx, ReqCtx, Deadline, State#{storage_machine := new_storage_machine()}).
 
 -spec process_simple_repair(request_context(), mg_utils:deadline(), state()) ->
     state().
@@ -764,7 +763,7 @@ process_simple_repair(ReqCtx, Deadline, State) ->
     state().
 process(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
     try
-        process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State)
+        process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, try_init_state(Impact, State))
     catch
         throw:(Reason=({ErrorType, _Details})) when ?can_be_retried(ErrorType) ->
             ok = do_reply_action({reply, {error, Reason}}, ProcessingCtx),
@@ -774,6 +773,13 @@ process(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
             handle_exception({Class, Reason, erlang:get_stacktrace()}, Impact, ReqCtx, Deadline, State)
     end.
 
+-spec try_init_state(processor_impact(), state()) ->
+    state().
+try_init_state({init, _}, State) ->
+    State#{storage_machine := new_storage_machine()};
+try_init_state(_Impact, State) ->
+    State.
+
 -spec handle_exception(Exception, Impact, ReqCtx, Deadline, state()) -> state() when
     Exception :: mg_utils:exception(),
     Impact :: processor_impact() | undefined,
@@ -782,13 +788,12 @@ process(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
 handle_exception(Exception, Impact, ReqCtx, Deadline, State) ->
     #{options := Options, id := ID, storage_machine := StorageMachine} = State,
     ok = emit_log_machine_event(Options, ID, ReqCtx, {machine_failed, Exception}),
-    #{status := OldStatus} = StorageMachine,
-    case {Impact, OldStatus} of
-        {{init, _}, _} ->
-            State#{storage_machine := undefined};
-        {_, {error, _, _}} ->
+    case {Impact, StorageMachine} of
+        {_, undefined} ->
             State;
-        {_, _} ->
+        {_, #{status := {error, _, _}}} ->
+            State;
+        {_, #{status := OldStatus}} ->
             NewStorageMachine = StorageMachine#{status => {error, Exception, OldStatus}},
             transit_state(ReqCtx, Deadline, NewStorageMachine, State)
     end.

@@ -45,12 +45,13 @@
 }.
 % упс, а вот и протечка абстракции.
 % в woody этот тип не экспортируется, а хочется
--type woody_server_net_opts() :: cowboy_protocol:opts().
+-type woody_server_protocol_opts() :: cowboy_protocol:opts().
 -type woody_server() :: #{
-    ip       => tuple(),
-    port     => inet:port_number(),
-    net_opts => woody_server_net_opts(),
-    limits   => woody_server_thrift_http_handler:handler_limits()
+    ip             := tuple(),
+    port           := inet:port_number(),
+    transport_opts => woody_server_thrift_http_handler:transport_opts(),
+    protocol_opts  => woody_server_protocol_opts(),
+    limits         => woody_server_thrift_http_handler:handler_limits()
 }.
 -type events_machines() :: #{
     processor                  := processor(),
@@ -135,11 +136,12 @@ woody_server_child_spec(Config, ChildID) ->
         #{
             protocol       => thrift,
             transport      => http,
-            ip             => maps:get(ip      , WoodyConfig),
-            port           => maps:get(port    , WoodyConfig),
-            net_opts       => maps:get(net_opts, WoodyConfig),
+            ip             => maps:get(ip             , WoodyConfig),
+            port           => maps:get(port           , WoodyConfig),
+            transport_opts => maps:get(transport_opts , WoodyConfig, []),
+            protocol_opts  => maps:get(protocol_opts  , WoodyConfig, []),
             event_handler  => {mg_woody_api_event_handler, server},
-            handler_limits => maps:get(limits  , WoodyConfig),
+            handler_limits => maps:get(limits         , WoodyConfig, #{}),
             handlers       => [
                 mg_woody_api_automaton :handler(api_automaton_options (Config)),
                 mg_woody_api_event_sink:handler(api_event_sink_options(Config))

@@ -30,19 +30,22 @@
 -export([end_per_group   /2]).
 
 %% base group tests
--export([namespace_not_found     /1]).
--export([machine_start           /1]).
--export([machine_already_exists  /1]).
--export([machine_call_by_id      /1]).
--export([machine_id_not_found    /1]).
--export([machine_set_tag         /1]).
--export([machine_call_by_tag     /1]).
--export([machine_tag_not_found   /1]).
--export([machine_remove          /1]).
--export([machine_remove_by_action/1]).
+-export([namespace_not_found        /1]).
+-export([machine_start_empty_id     /1]).
+-export([machine_start              /1]).
+-export([machine_already_exists     /1]).
+-export([machine_call_by_id         /1]).
+-export([machine_id_not_found       /1]).
+-export([machine_empty_id_not_found /1]).
+-export([machine_set_tag            /1]).
+-export([machine_call_by_tag        /1]).
+-export([machine_tag_not_found      /1]).
+-export([machine_remove             /1]).
+-export([machine_remove_by_action   /1]).
 
 %% repair group tests
 -export([failed_machine_start        /1]).
+-export([machine_start_timeout       /1]).
 -export([machine_processor_error     /1]).
 -export([failed_machine_call         /1]).
 -export([failed_machine_repair_error /1]).
@@ -77,6 +80,7 @@
 
 -define(NS, <<"NS">>).
 -define(ID, <<"ID">>).
+-define(EMPTY_ID, <<"">>).
 -define(Tag, <<"tag">>).
 -define(Ref, {tag, ?Tag}).
 -define(ES_ID, <<"test_event_sink">>).
@@ -113,6 +117,8 @@ groups() ->
         {base, [sequence], [
             namespace_not_found,
             machine_id_not_found,
+            machine_empty_id_not_found,
+            machine_start_empty_id,
             machine_start,
             machine_already_exists,
             machine_id_not_found,
@@ -129,6 +135,7 @@ groups() ->
 
         {repair, [sequence], [
             failed_machine_start,
+            machine_start_timeout,
             machine_id_not_found,
             machine_start,
             machine_processor_error,
@@ -241,9 +248,10 @@ init_per_group(C) ->
 -spec default_signal_handler(mg:signal_args()) -> mg:signal_result().
 default_signal_handler({Args, _Machine}) ->
     case Args of
-        {init  , <<"fail" >>} -> erlang:error(fail);
-        {repair, <<"error">>} -> erlang:error(error);
-         timeout              -> {{null(), [content(<<"handle_timer_body">>)]}, #{timer => undefined, tag => undefined}};
+        {init  , <<"fail" >>}   -> erlang:error(fail);
+        {init  , <<"timeout">>} -> timer:sleep(infinity);
+        {repair, <<"error">>}   -> erlang:error(error);
+         timeout                -> {{null(), [content(<<"handle_timer_body">>)]}, #{timer => undefined, tag => undefined}};
         _ -> mg_test_processor:default_result(signal, Args)
     end.
 
@@ -273,7 +281,7 @@ content(Body) ->
     list().
 mg_woody_api_config(C) ->
     [
-        {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, net_opts => [], limits => #{}}},
+        {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, limits => #{}}},
         {namespaces, #{
             ?NS => #{
                 storage    => ?config(storage, C),
@@ -325,6 +333,12 @@ namespace_not_found(C) ->
     Opts = maps:update(ns, <<"incorrect_NS">>, automaton_options(C)),
     #mg_stateproc_NamespaceNotFound{} = (catch mg_automaton_client:start(Opts, ?ID, ?Tag)).
 
+-spec machine_start_empty_id(config()) -> _.
+machine_start_empty_id(C) ->
+    {'EXIT', {{woody_error, _}, _}} = % создание машины с невалидным ID не обрабатывается по протоколу
+        (catch mg_automaton_client:start(automaton_options(C), ?EMPTY_ID, ?Tag)),
+    ok.
+
 -spec machine_start(config()) -> _.
 machine_start(C) ->
     ok = start_machine(C, ?ID).
@@ -338,6 +352,11 @@ machine_id_not_found(C) ->
     IncorrectID = <<"incorrect_ID">>,
     #mg_stateproc_MachineNotFound{} =
         (catch mg_automaton_client:call(automaton_options(C), {id, IncorrectID}, <<"nop">>)).
+
+-spec machine_empty_id_not_found(config()) -> _.
+machine_empty_id_not_found(C) ->
+    #mg_stateproc_MachineNotFound{} =
+        (catch mg_automaton_client:call(automaton_options(C), {id, ?EMPTY_ID}, <<"nop">>)).
 
 -spec machine_call_by_id(config()) -> _.
 machine_call_by_id(C) ->
@@ -374,6 +393,14 @@ machine_remove_by_action(C) ->
 failed_machine_start(C) ->
     #mg_stateproc_MachineFailed{} =
         (catch mg_automaton_client:start(automaton_options(C), ?ID, <<"fail">>)).
+
+-spec machine_start_timeout(config()) ->
+    _.
+machine_start_timeout(C) ->
+    {'EXIT', {{woody_error, _}, _}} =
+        (catch mg_automaton_client:start(automaton_options(C), ?ID, <<"timeout">>, mg_utils:timeout_to_deadline(1000))),
+    #mg_stateproc_MachineNotFound{} =
+        (catch mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"nop">>)).
 
 -spec machine_processor_error(config()) ->
     _.
@@ -536,7 +563,7 @@ mwc_get_events_machine(_C) ->
     _.
 config_with_multiple_event_sinks(_C) ->
     Config = [
-        {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, net_opts => [], limits => #{}}},
+        {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, limits => #{}}},
         {namespaces, #{
             <<"1">> => #{
                 storage    => mg_storage_memory,
