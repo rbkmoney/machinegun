@@ -75,7 +75,7 @@ do_request(Options, SelfRef, Req) ->
 -spec get_ref(options(), self_ref()) -> self_ref().
 get_ref(#{existing_storage_ref := SelfRef}, _) ->
     SelfRef;
-get_ref(#{}, SelfRef) ->
+get_ref(_Options, SelfRef) ->
     SelfRef.
 
 %%
