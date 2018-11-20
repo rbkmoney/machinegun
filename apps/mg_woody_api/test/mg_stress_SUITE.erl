@@ -64,7 +64,11 @@ init_per_suite(C) ->
             end
         end
     ,
-    {ok, ProcessorPid} = mg_test_processor:start({0, 0, 0, 0}, 8023, "/processor", {SignalFunc, CallFunc}),
+    {ok, ProcessorPid} = mg_test_processor:start(
+        {0, 0, 0, 0},
+        8023,
+        #{processor => {"/processor", {SignalFunc, CallFunc}}}
+    ),
 
     [
         {apps              , Apps                             },
