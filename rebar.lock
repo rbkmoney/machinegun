@@ -31,7 +31,7 @@
   2},
  {<<"how_are_you">>,
   {git,"https://github.com/rbkmoney/how_are_you.git",
-       {ref,"b199bb3e912af05b23c69fe6901956a1bfc6ca5a"}},
+       {ref,"73f137a0d2c68fe62d8c23969638d624b798f4e1"}},
   0},
  {<<"idna">>,{pkg,<<"idna">>,<<"5.1.2">>},2},
  {<<"jsx">>,{pkg,<<"jsx">>,<<"2.8.0">>},1},
