@@ -86,6 +86,7 @@ stop() ->
     {ok, pid()} | {error, any()}.
 start(_StartType, _StartArgs) ->
     Config = application:get_all_env(?MODULE),
+    ok = metrics_init(Config),
     mg_utils_supervisor_wrapper:start_link(
         {local, ?MODULE},
         #{strategy => rest_for_one},
@@ -104,6 +105,7 @@ stop(_State) ->
 %%
 %% local
 %%
+
 -spec events_machines_child_specs(config()) ->
     [supervisor:child_spec()].
 events_machines_child_specs(Config) ->
@@ -263,6 +265,28 @@ add_bucket_postfix(SubNS, {mg_storage_pool, Options = #{worker := Worker}}) ->
     {mg_storage_pool, Options#{worker := add_bucket_postfix(SubNS, Worker)}};
 add_bucket_postfix(SubNS, {mg_storage_riak, Options = #{bucket := Bucket}}) ->
     {mg_storage_riak, Options#{bucket := mg_utils:concatenate_namespaces(Bucket, SubNS)}}.
+
+-spec metrics_init(config()) ->
+    ok | {error, _Details}.
+metrics_init(Config) ->
+    ConfigNSs = proplists:get_value(namespaces, Config),
+    MachineNSs =  maps:keys(ConfigNSs),
+    TagNSs = [mg_utils:concatenate_namespaces(NS, <<"tags">>) || NS <- MachineNSs],
+    AllNS = [<<"_event_sinks_machines">>] ++ MachineNSs ++ TagNSs,
+    Metrics = mg_woody_api_pulse_metric:get_all_metrics(AllNS),
+    register_metrics(Metrics).
+
+-spec register_metrics([how_are_you:metric()]) ->
+    ok | {error, _Details}.
+register_metrics([]) ->
+    ok;
+register_metrics([M | Metrics]) ->
+    case how_are_you:metric_register(M) of
+        ok ->
+            register_metrics(Metrics);
+        {error, _Reason} = Error ->
+            Error
+    end.
 
 -spec pulse() ->
     mg_pulse:handler().
