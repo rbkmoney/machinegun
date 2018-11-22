@@ -1216,33 +1216,20 @@ do_with_retry(Options, ID, Fun, RetryStrategy, ReqCtx) ->
     catch throw:(Reason={transient, _}) ->
         Exception = {throw, Reason, erlang:get_stacktrace()},
         NS = maps:get(namespace, Options),
+        NextStep = genlib_retry:next_step(RetryStrategy),
         ok = emit_beat(Options, #mg_machine_process_transient_error{
             namespace = NS,
             machine_id = ID,
             exception = Exception,
             request_context = ReqCtx,
-            retry_strategy = RetryStrategy
+            retry_strategy = RetryStrategy,
+            retry_action = NextStep
         }),
-        case genlib_retry:next_step(RetryStrategy) of
+        case NextStep of
             {wait, Timeout, NewRetryStrategy} ->
-                ok = emit_beat(Options, #mg_machine_process_retry{
-                    namespace = NS,
-                    machine_id = ID,
-                    exception = Exception,
-                    request_context = ReqCtx,
-                    retry_strategy = RetryStrategy,
-                    wait_timeout = Timeout
-                }),
                 ok = timer:sleep(Timeout),
                 do_with_retry(Options, ID, Fun, NewRetryStrategy, ReqCtx);
             finish ->
-                ok = emit_beat(Options, #mg_machine_process_retries_exhausted{
-                    namespace = NS,
-                    machine_id = ID,
-                    exception = Exception,
-                    request_context = ReqCtx,
-                    retry_strategy = RetryStrategy
-                }),
                 throw({transient, {retries_exhausted, Reason}})
         end
     end.

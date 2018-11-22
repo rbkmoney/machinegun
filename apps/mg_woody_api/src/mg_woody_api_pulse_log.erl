@@ -66,10 +66,12 @@ format_beat(#mg_scheduler_error{tag = Tag, exception = {_, Reason, _}} = Beat) -
     {warning, {"sheduler task ~p failed ~p", [Tag, Reason]}, Context};
 format_beat(#mg_machine_process_transient_error{exception = {_, Reason, _}} = Beat) ->
     Context = ?beat_to_meta(mg_machine_process_transient_error, Beat),
-    {warning, {"transient error ~p", [Reason]}, Context};
-format_beat(#mg_machine_process_retry{wait_timeout = Timeout} = Beat) ->
-    Context = ?beat_to_meta(mg_machine_process_retry, Beat),
-    {warning, {"retrying in ~p msec", [Timeout]}, Context};
+    case Beat of
+        #mg_machine_process_transient_error{retry_action = {wait, Timeout, _}} ->
+            {warning, {"transient error ~p, retrying in ~p msec", [Reason, Timeout]}, Context};
+        #mg_machine_process_transient_error{retry_action = finish} ->
+            {warning, {"transient error ~p, retires exhausted", [Reason]}, Context}
+    end;
 format_beat(#mg_machine_lifecycle_failed{exception = {_, Reason, _}} = Beat) ->
     Context = ?beat_to_meta(mg_machine_lifecycle_failed, Beat),
     {error, {"machine failed ~p", [Reason]}, Context};

@@ -69,24 +69,8 @@
     machine_id :: mg:id(),
     exception :: mg_utils:exception(),
     request_context :: mg:request_context(),
-    retry_strategy :: mg_retry:strategy()
-}).
-
--record(mg_machine_process_retry, {
-    namespace :: mg:ns(),
-    machine_id :: mg:id(),
-    exception :: mg_utils:exception(),
-    request_context :: mg:request_context(),
     retry_strategy :: mg_retry:strategy(),
-    wait_timeout :: timeout()
-}).
-
--record(mg_machine_process_retries_exhausted, {
-    namespace :: mg:ns(),
-    machine_id :: mg:id(),
-    exception :: mg_utils:exception(),
-    request_context :: mg:request_context(),
-    retry_strategy :: mg_retry:strategy()
+    retry_action :: {wait, timeout(), mg_retry:strategy()} | finish
 }).
 
 -record(mg_machine_process_continuation_started, {

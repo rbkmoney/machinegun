@@ -49,9 +49,7 @@
     % Обработка запроса машиной
     | #mg_machine_process_continuation_started{}
     | #mg_machine_process_continuation_finished{}
-    | #mg_machine_process_transient_error{}
-    | #mg_machine_process_retry{}
-    | #mg_machine_process_retries_exhausted{}.
+    | #mg_machine_process_transient_error{}.
 
 -type handler() :: mg_utils:mod_opts() | undefined.
 
