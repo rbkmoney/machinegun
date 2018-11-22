@@ -40,7 +40,7 @@ call_service(BaseURL, Function, Args) ->
             {{mg_proto_state_processing_thrift, 'EventSink'}, Function, Args},
             #{
                 url           => BaseURL ++ "/v1/event_sink",
-                event_handler => {mg_woody_api_event_handler, undefined}
+                event_handler => {mg_woody_api_event_handler, mg_woody_api_pulse}
             },
             woody_context:new()
         ),

@@ -17,3 +17,9 @@
     retry_strategy :: mg_retry:strategy(),
     wait_timeout :: timeout()
 }).
+
+-record(woody_internal_event, {
+    event :: woody_event_handler:event(),
+    rpc_id :: woody:rpc_id(),
+    event_meta :: woody_event_handler:event_meta()
+}).

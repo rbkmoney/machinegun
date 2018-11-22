@@ -135,7 +135,7 @@ woody_server_child_spec(Config, ChildID) ->
             port           => maps:get(port           , WoodyConfig),
             transport_opts => maps:get(transport_opts , WoodyConfig, []),
             protocol_opts  => maps:get(protocol_opts  , WoodyConfig, []),
-            event_handler  => {mg_woody_api_event_handler, server},
+            event_handler  => {mg_woody_api_event_handler, mg_woody_api_pulse},
             handler_limits => maps:get(limits         , WoodyConfig, #{}),
             handlers       => [
                 mg_woody_api_automaton :handler(api_automaton_options (Config)),

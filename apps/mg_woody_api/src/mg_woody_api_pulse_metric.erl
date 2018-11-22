@@ -30,10 +30,7 @@
 -type nested_metrics() :: metrics() | [nested_metrics()].
 -type metric_key() :: how_are_you:metric_key().
 -type bin_type() :: duration | offset.
--type beat() ::
-      mg_pulse:beat()
-    | #woody_request_handle_error{}
-    | #woody_request_handle_retry{}.
+-type beat() :: mg_woody_api_pulse:beat().
 
 %%
 %% mg_pulse handler

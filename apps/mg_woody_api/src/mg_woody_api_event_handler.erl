@@ -16,6 +16,8 @@
 
 -module(mg_woody_api_event_handler).
 
+-include_lib("mg_woody_api/include/pulse.hrl").
+
 %% woody_event_handler callbacks
 -behaviour(woody_event_handler).
 -export([handle_event/4]).
@@ -23,11 +25,14 @@
 %%
 %% woody_event_handler callbacks
 %%
--spec handle_event(Event, RpcID, EventMeta, _)
-    -> _ when
-        Event     :: woody_event_handler:event     (),
-        RpcID     :: woody              :rpc_id    (),
-        EventMeta :: woody_event_handler:event_meta().
-handle_event(Event, RpcID, EventMeta, _) ->
-    {Level, Msg} = woody_event_handler:format_event(Event, EventMeta, RpcID),
-    mg_woody_api_log:log({Level, Msg, maps:to_list(RpcID)}).
+-spec handle_event(Event, RpcID, EventMeta, PulseHandler) -> ok when
+    Event :: woody_event_handler:event(),
+    RpcID :: woody:rpc_id(),
+    EventMeta :: woody_event_handler:event_meta(),
+    PulseHandler :: mg_pulse:handler().
+handle_event(Event, RpcID, EventMeta, PulseHandler) ->
+    mg_pulse:handle_beat(PulseHandler, #woody_internal_event{
+        event = Event,
+        rpc_id = RpcID,
+        event_meta = EventMeta
+    }).

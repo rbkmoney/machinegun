@@ -26,10 +26,7 @@
 %% internal types
 -type log_msg() :: mg_woody_api_log:log_msg().
 -type meta() :: mg_woody_api_log:meta().
--type beat() ::
-      mg_pulse:beat()
-    | #woody_request_handle_error{}
-    | #woody_request_handle_retry{}.
+-type beat() :: mg_woody_api_pulse:beat().
 
 %%
 %% mg_pulse handler
@@ -61,6 +58,10 @@ format_beat(#woody_request_handle_error{exception = {_, {logic, _} = Reason, _}}
 format_beat(#woody_request_handle_error{exception = {_, Reason, _}} = Beat) ->
     Context = ?beat_to_meta(woody_request_handle_error, Beat),
     {warning, {"request handling failed ~p", [Reason]}, Context};
+format_beat(#woody_internal_event{event = Event, rpc_id = RPCID, event_meta = EventMeta}) ->
+    WoodyMetaFields = [event, service, function, type, metadata, url, deadline],
+    {Level, Msg, Meta} = woody_event_handler:format_event_and_meta(Event, EventMeta, RPCID, WoodyMetaFields),
+    {Level, Msg, maps:to_list(Meta)};
 format_beat(#mg_scheduler_error{tag = Tag, exception = {_, Reason, _}} = Beat) ->
     Context = ?beat_to_meta(mg_scheduler_error, Beat),
     {warning, {"sheduler task ~p failed ~p", [Tag, Reason]}, Context};
@@ -99,7 +100,7 @@ extract_meta(request_context, null) ->
 extract_meta(request_context, ReqCtx) ->
     #{rpc_id := RPCID} = mg_woody_api_utils:opaque_to_woody_context(ReqCtx),
     maps:to_list(RPCID);
-extract_meta(deadline, Deadline) ->
+extract_meta(deadline, Deadline) when is_integer(Deadline) ->
     {deadline, format_timestamp(Deadline div 1000)};  % Deadline measured in millisecond
 extract_meta(target_timestamp, Timestamp) ->
     {target_timestamp, format_timestamp(Timestamp)};

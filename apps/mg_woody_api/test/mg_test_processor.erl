@@ -43,7 +43,7 @@ start_link({Host, Port, Path, Fun}) ->
             #{
                 ip            => Host,
                 port          => Port,
-                event_handler => {mg_woody_api_event_handler, undefined},
+                event_handler => {mg_woody_api_event_handler, mg_woody_api_pulse},
                 handlers      => [{Path, {{mg_proto_state_processing_thrift, 'Processor'}, {?MODULE, Fun}}}]
             }
         )
