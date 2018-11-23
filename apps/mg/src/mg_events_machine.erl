@@ -619,14 +619,14 @@ opaque_to_delayed_actions([1, Tag, Timer, Events, AuxState, EventsRange]) ->
         new_timer        => mg_events:maybe_from_opaque(Timer, fun opaque_to_delayed_timer_actions/1),
         remove           => undefined,
         add_events       => mg_events:opaques_to_events(Events),
-        new_aux_state    => AuxState,
+        new_aux_state    => {#{}, AuxState},
         new_events_range => mg_events:opaque_to_events_range(EventsRange)
     };
 opaque_to_delayed_actions([2, Tag, Timer, Remove, Events, AuxState, EventsRange]) ->
     DelayedActions = opaque_to_delayed_actions([1, Tag, Timer, Events, AuxState, EventsRange]),
     DelayedActions#{
         remove           := mg_events:maybe_from_opaque(Remove, fun opaque_to_remove/1),
-        new_aux_state    := mg_events:opaque_to_content(AuxState)
+        new_aux_state    := {#{}, AuxState}
     };
 opaque_to_delayed_actions([3, Tag, Timer, Remove, Events, AuxState, EventsRange]) ->
     DelayedActions = opaque_to_delayed_actions([2, Tag, Timer, Remove, Events, AuxState, EventsRange]),
