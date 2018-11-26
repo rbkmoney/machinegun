@@ -40,13 +40,13 @@ handle_beat(undefined, Beat) ->
 %% Internals
 
 -define(beat_to_meta(RecordName, Record),
-    lists:flatten([
+    [{beat_id, RecordName} | lists:flatten([
         extract_meta(FiledName, Value) ||
         {FiledName, Value} <- lists:zip(
             record_info(fields, RecordName),
             erlang:tl(erlang:tuple_to_list(Record))
         )
-    ])
+    ])]
 ).
 
 -spec format_beat(beat()) ->
