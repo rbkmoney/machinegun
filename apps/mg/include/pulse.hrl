@@ -73,14 +73,16 @@
     retry_action :: {wait, timeout(), mg_retry:strategy()} | finish
 }).
 
--record(mg_machine_process_continuation_started, {
+-record(mg_machine_process_started, {
+    processor_impact :: mg_machine:processor_impact(),
     namespace :: mg:ns(),
     machine_id :: mg:id(),
     request_context :: mg:request_context(),
     deadline :: mg_utils:deadline()
 }).
 
--record(mg_machine_process_continuation_finished, {
+-record(mg_machine_process_finished, {
+    processor_impact :: mg_machine:processor_impact(),
     namespace :: mg:ns(),
     machine_id :: mg:id(),
     request_context :: mg:request_context(),

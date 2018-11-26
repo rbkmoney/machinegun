@@ -26,8 +26,7 @@
 -type beat() ::
       mg_pulse:beat()
     | #woody_internal_event{}
-    | #woody_request_handle_error{}
-    | #woody_request_handle_retry{}.
+    | #woody_request_handle_error{}.
 
 -export_type([beat   /0]).
 

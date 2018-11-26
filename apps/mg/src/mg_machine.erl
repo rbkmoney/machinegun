@@ -915,13 +915,6 @@ reschedule(ProcessingCtx, ReqCtx, Deadline, State) ->
             State;
         Class:Reason ->
             Exception = {Class, Reason, erlang:get_stacktrace()},
-            ok = emit_beat(Options, #mg_machine_lifecycle_failed{
-                namespace = NS,
-                machine_id = ID,
-                request_context = ReqCtx,
-                deadline = Deadline,
-                exception = Exception
-            }),
             ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
             handle_exception(Exception, undefined, ReqCtx, Deadline, State)
     end.
@@ -1055,7 +1048,20 @@ retry_strategy_(_Subj, Policy, Deadline, InitialTs, Attempt) ->
 
 -spec emit_pre_process_beats(processor_impact(), request_context(), mg_utils:deadline(), state()) ->
     ok.
-emit_pre_process_beats(timeout, ReqCtx, Deadline, State) ->
+emit_pre_process_beats(Impact, ReqCtx, Deadline, State) ->
+    #{id := ID, options := #{namespace := NS} = Options} = State,
+    ok = emit_beat(Options, #mg_machine_process_started{
+        processor_impact = Impact,
+        namespace = NS,
+        machine_id = ID,
+        request_context = ReqCtx,
+        deadline = Deadline
+    }),
+    emit_pre_process_timer_beats(Impact, ReqCtx, Deadline, State).
+
+-spec emit_pre_process_timer_beats(processor_impact(), request_context(), mg_utils:deadline(), state()) ->
+    ok.
+emit_pre_process_timer_beats(timeout, ReqCtx, Deadline, State) ->
     #{
         id := ID,
         options := #{namespace := NS} = Options,
@@ -1070,20 +1076,26 @@ emit_pre_process_beats(timeout, ReqCtx, Deadline, State) ->
         target_timestamp = TargetTimestamp,
         deadline = Deadline
     });
-emit_pre_process_beats(continuation, ReqCtx, Deadline, State) ->
-    #{id := ID, options := #{namespace := NS} = Options} = State,
-    emit_beat(Options, #mg_machine_process_continuation_started{
-        namespace = NS,
-        machine_id = ID,
-        request_context = ReqCtx,
-        deadline = Deadline
-    });
-emit_pre_process_beats(_Impact, _ReqCtx, _Deadline, _State) ->
+emit_pre_process_timer_beats(_Impact, _ReqCtx, _Deadline, _State) ->
     ok.
 
 -spec emit_post_process_beats(processor_impact(), request_context(), mg_utils:deadline(), integer(), state()) ->
     ok.
-emit_post_process_beats(timeout, ReqCtx, Deadline, Duration, State) ->
+emit_post_process_beats(Impact, ReqCtx, Deadline, Duration, State) ->
+    #{id := ID, options := #{namespace := NS} = Options} = State,
+    ok = emit_beat(Options, #mg_machine_process_finished{
+        processor_impact = Impact,
+        namespace = NS,
+        machine_id = ID,
+        request_context = ReqCtx,
+        deadline = Deadline,
+        duration = Duration
+    }),
+    emit_post_process_timer_beats(Impact, ReqCtx, Deadline, Duration, State).
+
+-spec emit_post_process_timer_beats(processor_impact(), request_context(), mg_utils:deadline(), integer(), state()) ->
+    ok.
+emit_post_process_timer_beats(timeout, ReqCtx, Deadline, Duration, State) ->
     #{
         id := ID,
         options := #{namespace := NS} = Options,
@@ -1099,16 +1111,7 @@ emit_post_process_beats(timeout, ReqCtx, Deadline, Duration, State) ->
         deadline = Deadline,
         duration = Duration
     });
-emit_post_process_beats(continuation, ReqCtx, Deadline, Duration, State) ->
-    #{id := ID, options := #{namespace := NS} = Options} = State,
-    emit_beat(Options, #mg_machine_process_continuation_finished{
-        namespace = NS,
-        machine_id = ID,
-        request_context = ReqCtx,
-        deadline = Deadline,
-        duration = Duration
-    });
-emit_post_process_beats(_Impact, _ReqCtx, _Deadline, _Duration, _State) ->
+emit_post_process_timer_beats(_Impact, _ReqCtx, _Deadline, _Duration, _State) ->
     ok.
 
 -spec extract_timer_queue_info(machine_status()) ->

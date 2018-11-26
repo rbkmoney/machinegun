@@ -31,6 +31,7 @@
 -type metric_key() :: how_are_you:metric_key().
 -type bin_type() :: duration | offset.
 -type beat() :: mg_woody_api_pulse:beat().
+-type impact_tag() :: atom().
 
 %%
 %% mg_pulse handler
@@ -75,12 +76,14 @@ create_metric(#mg_machine_lifecycle_committed_suicide{namespace = NS}) ->
 create_metric(#mg_machine_lifecycle_loading_error{namespace = NS}) ->
     [create_inc([mg, machine, lifecycle, NS, loading_error])];
 % Machine processing
-create_metric(#mg_machine_process_continuation_started{namespace = NS}) ->
-    [create_inc([mg, machine, process, NS, continuation, started])];
-create_metric(#mg_machine_process_continuation_finished{namespace = NS, duration = Duration}) ->
+create_metric(#mg_machine_process_started{processor_impact = Impact, namespace = NS}) ->
+    ImpactTag = decode_impact(Impact),
+    [create_inc([mg, machine, process, NS, ImpactTag, started])];
+create_metric(#mg_machine_process_finished{processor_impact = Impact, namespace = NS, duration = Duration}) ->
+    ImpactTag = decode_impact(Impact),
     [
-        create_inc([mg, machine, process, NS, continuation, finished]),
-        create_bin_inc([mg, machine, process, NS, continuation, duration], duration, Duration)
+        create_inc([mg, machine, process, NS, ImpactTag, finished]),
+        create_bin_inc([mg, machine, process, NS, ImpactTag, duration], duration, Duration)
     ];
 % Timer lifecycle
 create_metric(#mg_timer_lifecycle_created{namespace = NS, target_timestamp = Timestamp}) ->
@@ -145,15 +148,15 @@ get_sheduler_metrics(NS) ->
 
 -spec get_machine_processing_metrics(mg:ns()) -> nested_metrics().
 get_machine_processing_metrics(NS) ->
-    Impact = [continuation],
+    Impacts = all_impact_tags(),
     Events = [started, finished],
     Counters = [
         create_inc([mg, machine, process, NS, I, E])
-        || E <- Events, I <- Impact
+        || E <- Events, I <- Impacts
     ],
     Bins = [
         list_bin_metric([mg, machine, process, NS, I, duration], duration)
-        || I <- Impact
+        || I <- Impacts
     ],
     [Counters, Bins].
 
@@ -186,6 +189,24 @@ get_timer_process_metrics(NS) ->
     [Counters, Bins].
 
 %% Utils
+
+-spec decode_impact(mg_machine:processor_impact()) ->
+    impact_tag().
+decode_impact({init, _Args}) ->
+    init;
+decode_impact({repair, _Args}) ->
+    repair;
+decode_impact({call, _Args}) ->
+    call;
+decode_impact(timeout) ->
+    timeout;
+decode_impact(continuation) ->
+    continuation.
+
+-spec all_impact_tags() ->
+    [impact_tag()].
+all_impact_tags() ->
+    [init, repair, call, timeout, continuation].
 
 -spec push(metrics()) ->
     ok.

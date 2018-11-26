@@ -25,6 +25,14 @@
 -export([get_deadline/2]).
 -export([set_deadline/2]).
 
+%% Types
+-type error_reaction() ::
+      {rethrow, any()}
+    | {woody_error, {woody_error:class(), Details :: any()}}
+    | {retry_in, Timeout :: non_neg_integer(), genlib_retry:strategy()}.
+
+-export_type([error_reaction/0]).
+
 %%
 %% API
 %%
@@ -53,37 +61,30 @@ handle_safe_with_retry_(Ctx, F, Retry, Pulse) ->
     catch throw:Error ->
         Exception = {throw, Error, erlang:get_stacktrace()},
         #{namespace := NS, machine_ref := Ref, request_context := ReqCtx, deadline := Deadline} = Ctx,
+        ErrorReaction = handle_error(Error, genlib_retry:next_step(Retry)),
         ok = mg_pulse:handle_beat(Pulse, #woody_request_handle_error{
             namespace = NS,
             machine_ref = Ref,
             request_context = ReqCtx,
             deadline = Deadline,
             exception = Exception,
-            retry_strategy = Retry
+            retry_strategy = Retry,
+            error_reaction = ErrorReaction
         }),
-        case handle_error(Error, genlib_retry:next_step(Retry))  of
+        case ErrorReaction  of
             {rethrow, NewError} ->
                 erlang:throw(NewError);
             {woody_error, {WoodyErrorClass, Description}} ->
                 BinaryDescription = erlang:list_to_binary(io_lib:format("~9999p", [Description])),
                 woody_error:raise(system, {internal, WoodyErrorClass, BinaryDescription});
             {retry_in, Timeout, NewRetry} ->
-                ok = mg_pulse:handle_beat(Pulse, #woody_request_handle_retry{
-                    namespace = NS,
-                    machine_ref = Ref,
-                    request_context = ReqCtx,
-                    deadline = Deadline,
-                    exception = Exception,
-                    retry_strategy = Retry,
-                    wait_timeout = Timeout
-                }),
                 ok = timer:sleep(Timeout),
                 handle_safe_with_retry_(Ctx, F, NewRetry, Pulse)
         end
     end.
 
 -spec handle_error(mg_machine:thrown_error() | {logic, namespace_not_found}, {wait, _, _} | finish) ->
-    {rethrow, _} | {woody_error, {woody_error:class(), _Details}} | {retry_in, pos_integer(), genlib_retry:strategy()}.
+    error_reaction().
 handle_error({logic, machine_not_found      }, _) -> {rethrow, #'MachineNotFound'      {}};
 handle_error({logic, machine_already_exist  }, _) -> {rethrow, #'MachineAlreadyExists' {}};
 handle_error({logic, machine_failed         }, _) -> {rethrow, #'MachineFailed'        {}};

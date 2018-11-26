@@ -51,13 +51,21 @@ handle_beat(undefined, Beat) ->
 
 -spec format_beat(beat()) ->
     log_msg() | undefined.
-format_beat(#woody_request_handle_error{exception = {_, {logic, _} = Reason, _}} = Beat) ->
-    % бизнес ошибки это не warning
+format_beat(#woody_request_handle_error{exception = {_, Reason, _}, error_reaction = Reaction} = Beat) ->
     Context = ?beat_to_meta(woody_request_handle_error, Beat),
-    {info, {"request handling failed ~p", [Reason]}, Context};
-format_beat(#woody_request_handle_error{exception = {_, Reason, _}} = Beat) ->
-    Context = ?beat_to_meta(woody_request_handle_error, Beat),
-    {warning, {"request handling failed ~p", [Reason]}, Context};
+    LogLevel = case Reason of
+        {logic, _Details} ->
+            % бизнес ошибки это не warning
+            info;
+        _OtherReason ->
+            warning
+    end,
+    case Reaction of
+        {retry_in, Timeout, _NextStrategy} ->
+            {LogLevel, {"request handling failed ~p, retrying in ~p msec", [Reason, Timeout]}, Context};
+        _OtherReaction ->
+            {LogLevel, {"request handling failed ~p", [Reason]}, Context}
+    end;
 format_beat(#woody_internal_event{event = Event, rpc_id = RPCID, event_meta = EventMeta}) ->
     WoodyMetaFields = [event, service, function, type, metadata, url, deadline],
     {Level, Msg, Meta} = woody_event_handler:format_event_and_meta(Event, EventMeta, RPCID, WoodyMetaFields),
@@ -110,16 +118,28 @@ extract_meta(exception, {Class, Reason, StackStrace}) ->
         {error_reason, genlib:format(Reason)},
         {error_stack_trace, genlib_format:format_stacktrace(StackStrace)}
     ];
+extract_meta(retry_action, {wait, Timeout, NextStrategy}) ->
+    [
+        {wait_timeout, Timeout},
+        {next_retry_strategy, genlib:format(NextStrategy)}
+    ];
+extract_meta(retry_action, _Other) ->
+    [];
+extract_meta(error_reaction, {retry_in, Timeout, NextStrategy}) ->
+    [
+        {wait_timeout, Timeout},
+        {next_retry_strategy, genlib:format(NextStrategy)}
+    ];
+extract_meta(error_reaction, _Other) ->
+    [];
 extract_meta(machine_ref, {id, MachineID}) ->
     {machine_id, MachineID};
 extract_meta(machine_ref, {tag, MachineTag}) ->
     {machine_tag, MachineTag};
 extract_meta(namespace, NS) ->
     {machine_ns, NS};
-extract_meta(Name, Value) when is_integer(Value) orelse is_binary(Value) ->
+extract_meta(Name, Value) when is_number(Value) orelse is_binary(Value) ->
     {Name, Value};
-extract_meta(Name, Value) when is_atom(Value) orelse is_float(Value) ->
-    {Name, genlib:to_binary(Value)};
 extract_meta(Name, Value) ->
     {Name, genlib:format(Value)}.
 
