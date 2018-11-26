@@ -180,24 +180,20 @@ key_length_limit_test(C) ->
     Options = storage_options(?config(storage_type, C), <<"key_length_limit">>),
     _ = start_storage(Options),
 
-    undefined = mg_storage:get(Options, storage, <<"K">>),
-
-    {logic, {invalid_key, {too_small, _}}} = 
+    {logic, {invalid_key, {too_small, _}}} =
         (catch mg_storage:get(Options, storage, <<"">>)),
-
-    _ = mg_storage:put(Options, storage, <<"K">>, undefined, <<"test">>, []),
 
     {logic, {invalid_key, {too_small, _}}} =
         (catch mg_storage:put(Options, storage, <<"">>, undefined, <<"test">>, [])),
 
-    undefined = mg_storage:get(
+    _ = mg_storage:get(
         Options,
         storage,
         binary:copy(<<"K">>, 1024)
     ),
 
-    {logic, {invalid_key, {too_big, _}}} = 
-        (catch 
+    {logic, {invalid_key, {too_big, _}}} =
+        (catch
             mg_storage:get(
                 Options,
                 storage,
@@ -215,7 +211,7 @@ key_length_limit_test(C) ->
     ),
 
     {logic, {invalid_key, {too_big, _}}} =
-        (catch 
+        (catch
             mg_storage:put(
                 Options,
                 storage,

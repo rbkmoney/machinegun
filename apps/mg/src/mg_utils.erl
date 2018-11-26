@@ -85,6 +85,8 @@
 
 -export([concatenate_namespaces/2]).
 
+-export([take_defined/1]).
+
 %%
 %% API
 %% OTP
@@ -431,3 +433,12 @@ stop_wait(Pid, Reason, Timeout) ->
     mg:ns().
 concatenate_namespaces(NamespaceA, NamespaceB) ->
     <<NamespaceA/binary, "_", NamespaceB/binary>>.
+
+-spec take_defined([T | undefined]) ->
+    T | undefined.
+take_defined([]) ->
+    undefined;
+take_defined([undefined | Rest]) ->
+    take_defined(Rest);
+take_defined([V | _]) ->
+    V.
