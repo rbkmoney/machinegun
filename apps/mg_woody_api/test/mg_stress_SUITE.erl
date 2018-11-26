@@ -64,7 +64,11 @@ init_per_suite(C) ->
             end
         end
     ,
-    {ok, ProcessorPid} = start_processor({0, 0, 0, 0}, 8023, "/processor", {SignalFunc, CallFunc}),
+    {ok, ProcessorPid} = mg_test_processor:start(
+        {0, 0, 0, 0},
+        8023,
+        #{processor => {"/processor", {SignalFunc, CallFunc}}}
+    ),
 
     [
         {apps              , Apps                             },
@@ -157,16 +161,6 @@ create(C, ID) ->
     _.
 create_event(Event, C, ID) ->
     Event = mg_automaton_client:call(automaton_options(C), {id, ID}, Event).
-
--spec start_processor(Address, Port, Path, Functions) -> {ok, pid()} when
-    Address   :: mg_test_processor:host_address(),
-    Port      :: integer(),
-    Path      :: string(),
-    Functions :: {mg_test_processor:processor_function(), mg_test_processor:processor_function()}.
-start_processor(Address, Port, Path, {SignalFunc, CallFunc}) ->
-    {ok, ProcessorPid} = mg_test_processor:start_link({Address, Port, Path, {SignalFunc, CallFunc}}),
-    true = erlang:unlink(ProcessorPid),
-    {ok, ProcessorPid}.
 
 -spec automaton_options(config()) -> _.
 automaton_options(C) -> ?config(automaton_options, C).

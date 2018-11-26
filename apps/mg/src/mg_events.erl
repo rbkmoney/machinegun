@@ -22,10 +22,13 @@
 %% API
 -export_type([id           /0]).
 -export_type([body         /0]).
+-export_type([content      /0]).
 -export_type([event        /0]).
 -export_type([event        /1]).
 -export_type([history_range/0]).
 -export_type([events_range /0]).
+
+-export_type([format_version/0]).
 
 %% events ranges intersection
 -export([get_event_ids/2]).
@@ -52,8 +55,8 @@
 -export([opaque_to_event       /2]).
 -export([events_to_opaques     /1]).
 -export([opaques_to_events     /1]).
--export([body_to_opaque        /1]).
--export([opaque_to_body        /1]).
+-export([content_to_opaque     /1]).
+-export([opaque_to_content     /1]).
 -export([history_range_to_opaque/1]).
 -export([opaque_to_history_range/1]).
 -export([maybe_to_opaque        /2]).
@@ -66,13 +69,25 @@
 %% API
 %%
 -type id   () :: pos_integer().
--type body () :: mg_storage:opaque().
+-type body () :: content().
 -type event() :: event(body()).
 -type event(T) :: #{
     id         => id(),
     created_at => genlib_time:ts(),
     body       => T
 }.
+
+-type content()  :: {metadata(), mg_storage:opaque()}.
+-type metadata() :: #{
+    % Версия формата данных
+    %
+    % Задаётся процессором и должна только _расти_ в процессе эволюции процессора. По умолчанию не задана,
+    % что равноценно _минимально возможной_ версии.
+    format_version => format_version()
+}.
+
+-type format_version() :: integer().
+
 -type direction() :: forward | backward.
 -type history_range() :: {After::id() | undefined, Limit::non_neg_integer() | undefined, direction()}.
 
@@ -206,12 +221,12 @@ key_to_event_id(Key) ->
 -spec event_to_kv(event()) ->
     mg_storage:kv().
 event_to_kv(Event) ->
-    event_to_kv(Event, fun body_to_opaque/1).
+    event_to_kv(Event, fun body_to_opaque/2).
 
 -spec kv_to_event(mg_storage:kv()) ->
     event().
 kv_to_event(Event) ->
-    kv_to_event(Event, fun body_to_opaque/1).
+    kv_to_event(Event, fun opaque_to_body/2).
 
 -spec events_to_kvs([event()]) ->
     [mg_storage:kv()].
@@ -223,29 +238,33 @@ events_to_kvs(Events) ->
 kvs_to_events(Kvs) ->
     [mg_events:kv_to_event(Attr) || Attr <- Kvs].
 
--spec event_to_kv(event(T), fun((T) -> mg_storage:opaque())) ->
+-spec event_to_kv(event(T), fun((Vsn :: 1..2, T) -> mg_storage:opaque())) ->
     mg_storage:kv().
 event_to_kv(#{id := EventID, created_at := Date, body := Body}, BodyToOpaque) ->
+    Vsn = 2,
     {
         event_id_to_key(EventID),
-        [1, Date, BodyToOpaque(Body)]
+        [Vsn, Date, BodyToOpaque(Vsn, Body)]
     }.
 
--spec kv_to_event(mg_storage:kv(), fun((mg_storage:opaque()) -> T)) ->
+-spec kv_to_event(mg_storage:kv(), fun((Vsn :: 1..2, mg_storage:opaque()) -> T)) ->
     event(T).
-kv_to_event({EventID, [1, Date, OpaqueBody]}, OpaqueToBody) ->
+kv_to_event({EventID, [Vsn, Date, OpaqueBody]}, OpaqueToBody) when
+    Vsn =:= 1;
+    Vsn =:= 2
+->
     #{
         id         => key_to_event_id(EventID),
         created_at => Date,
-        body       => OpaqueToBody(OpaqueBody)
+        body       => OpaqueToBody(Vsn, OpaqueBody)
     }.
 
--spec events_to_kvs([event(T)], fun((T) -> mg_storage:opaque())) ->
+-spec events_to_kvs([event(T)], fun((Vsn :: 1..2, T) -> mg_storage:opaque())) ->
     [mg_storage:kv()].
 events_to_kvs(Events, BodyToOpaque) ->
     [mg_events:event_to_kv(Event, BodyToOpaque) || Event <- Events].
 
--spec kvs_to_events([mg_storage:kv()], fun((mg_storage:opaque()) -> T)) ->
+-spec kvs_to_events([mg_storage:kv()], fun((Vsn :: 1..2, mg_storage:opaque()) -> T)) ->
     [event(T)].
 kvs_to_events(Kvs, OpaqueToBody) ->
     [mg_events:kv_to_event(Attr, OpaqueToBody) || Attr <- Kvs].
@@ -253,25 +272,29 @@ kvs_to_events(Kvs, OpaqueToBody) ->
 -spec event_to_opaque(event()) ->
     mg_storage:opaque().
 event_to_opaque(Event) ->
-    event_to_opaque(Event, fun body_to_opaque/1).
+    event_to_opaque(Event, fun body_to_opaque/2).
 
 -spec opaque_to_event(mg_storage:opaque()) ->
     event().
 opaque_to_event(Event) ->
-    opaque_to_event(Event, fun opaque_to_body/1).
+    opaque_to_event(Event, fun opaque_to_body/2).
 
--spec event_to_opaque(event(T), fun((T) -> mg_storage:opaque())) ->
+-spec event_to_opaque(event(T), fun((Vsn :: 1..2, T) -> mg_storage:opaque())) ->
     mg_storage:opaque().
 event_to_opaque(#{id := EventID, created_at := Date, body := Body}, BodyPacker) ->
-    [1, EventID, Date, BodyPacker(Body)].
+    Vsn = 2,
+    [Vsn, EventID, Date, BodyPacker(Vsn, Body)].
 
--spec opaque_to_event(mg_storage:opaque(), fun((mg_storage:opaque()) -> T)) ->
+-spec opaque_to_event(mg_storage:opaque(), fun((Vsn :: 1..2, mg_storage:opaque()) -> T)) ->
     event(T).
-opaque_to_event([1, EventID, Date, Body], BodyUnpacker) ->
+opaque_to_event([Vsn, EventID, Date, Body], BodyUnpacker) when
+    Vsn =:= 1;
+    Vsn =:= 2
+->
     #{
         id         => EventID,
         created_at => Date,
-        body       => BodyUnpacker(Body)
+        body       => BodyUnpacker(Vsn, Body)
     }.
 
 -spec events_to_opaques([event()]) ->
@@ -284,15 +307,53 @@ events_to_opaques(Events) ->
 opaques_to_events(Opaques) ->
     [opaque_to_event(Opaque) || Opaque <- Opaques].
 
--spec body_to_opaque(body()) ->
+-spec body_to_opaque(2, body()) ->
     mg_storage:opaque().
-body_to_opaque(Body) ->
-    Body.
+body_to_opaque(2, Body) ->
+    content_to_opaque(Body).
 
--spec opaque_to_body(mg_storage:opaque()) ->
+-spec opaque_to_body(1..2, mg_storage:opaque()) ->
     body().
-opaque_to_body(Body) ->
-    Body.
+opaque_to_body(2, Body) ->
+    opaque_to_content(Body);
+opaque_to_body(1, Body) ->
+    {
+        #{}, % пустая метадата
+        Body
+    }.
+
+-spec content_to_opaque(content()) ->
+    mg_storage:opaque().
+content_to_opaque({Metadata, Body}) ->
+    [1, metadata_to_opaque(Metadata), Body].
+
+-spec opaque_to_content(mg_storage:opaque()) ->
+    content().
+opaque_to_content([1, Metadata, Body]) ->
+    {opaque_to_metadata(Metadata), Body}.
+
+-spec metadata_to_opaque(metadata()) ->
+    mg_storage:opaque().
+metadata_to_opaque(Metadata) ->
+    maps:fold(
+        fun
+            (format_version, Vsn, Acc) -> [<<"fv">>, Vsn] ++ Acc
+        end,
+        [],
+        Metadata
+    ).
+
+-spec opaque_to_metadata(mg_storage:opaque()) ->
+    metadata().
+opaque_to_metadata(Metadata) ->
+    opaque_to_metadata(Metadata, #{}).
+
+-spec opaque_to_metadata([mg_storage:opaque()], metadata()) ->
+    metadata().
+opaque_to_metadata([<<"fv">>, Vsn | Rest], Metadata) ->
+    opaque_to_metadata(Rest, Metadata#{format_version => Vsn});
+opaque_to_metadata([], Metadata) ->
+    Metadata.
 
 -spec history_range_to_opaque(history_range()) ->
     mg_storage:opaque().

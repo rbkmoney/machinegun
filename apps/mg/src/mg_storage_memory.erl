@@ -46,6 +46,7 @@ start_link(Options, RegName) ->
 %%
 -type context      () :: {pos_integer(), non_neg_integer()} | undefined.
 -type options      () :: undefined | #{
+    existing_storage_ref  => self_ref(),
     random_transient_fail => float()
 }.
 -type continuation () :: binary() | undefined.
@@ -53,7 +54,9 @@ start_link(Options, RegName) ->
 
 
 -spec child_spec(options(), atom(), mg_utils:gen_reg_name()) ->
-    supervisor:child_spec().
+    supervisor:child_spec() | undefined.
+child_spec(#{existing_storage_ref := _}, _ChildID, _RegName) ->
+    undefined;
 child_spec(Options, ChildID, RegName) ->
     #{
         id       => ChildID,
@@ -66,7 +69,14 @@ child_spec(Options, ChildID, RegName) ->
     mg_storage:response().
 do_request(Options, SelfRef, Req) ->
     ok = random_fail(Options),
-    gen_server:call(SelfRef, Req).
+    Ref = get_ref(Options, SelfRef),
+    gen_server:call(Ref, Req).
+
+-spec get_ref(options(), self_ref()) -> self_ref().
+get_ref(#{existing_storage_ref := SelfRef}, _) ->
+    SelfRef;
+get_ref(_Options, SelfRef) ->
+    SelfRef.
 
 %%
 %% gen_server callbacks
@@ -339,15 +349,15 @@ do_cleanup_index(Key, Index) ->
 
 -spec random_fail(options()) ->
     ok | no_return().
-random_fail(undefined) ->
-    ok;
 random_fail(#{random_transient_fail := Prob}) ->
     case rand:uniform() < Prob of
         true ->
             erlang:throw({transient, {storage_unavailable, random_fail}});
         false ->
             ok
-    end.
+    end;
+random_fail(_) ->
+    ok.
 
 %% utils
 -spec start_from_elem(any(), list()) ->

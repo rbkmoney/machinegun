@@ -70,7 +70,7 @@ init_per_suite(C) ->
     Apps = genlib_app:start_application(mg),
     Pid = start_event_sink(event_sink_options()),
     true = erlang:unlink(Pid),
-    Events = element(1, mg_events:generate_events_with_range([1, 2, 3], undefined)),
+    {Events, _} = mg_events:generate_events_with_range([{#{}, Body} || Body <- [1, 2, 3]], undefined),
     [{apps, Apps}, {pid, Pid}, {events, Events}| C].
 
 -spec end_per_suite(config()) ->

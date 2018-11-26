@@ -65,14 +65,14 @@ handle_safe_with_retry_(Ref, ReqCtx, F, Retry, Logger) ->
 
 -spec handle_error(mg_machine:thrown_error() | {logic, namespace_not_found}, {wait, _, _} | finish) ->
     {rethrow, _} | {woody_error, {woody_error:class(), _Details}} | {retry_in, pos_integer(), genlib_retry:strategy()}.
-handle_error({logic, machine_not_found      }, _) -> {rethrow, #'MachineNotFound'      {}};
-handle_error({logic, machine_already_exist  }, _) -> {rethrow, #'MachineAlreadyExists' {}};
-handle_error({logic, machine_failed         }, _) -> {rethrow, #'MachineFailed'        {}};
-handle_error({logic, machine_already_working}, _) -> {rethrow, #'MachineAlreadyWorking'{}};
-handle_error({logic, namespace_not_found    }, _) -> {rethrow, #'NamespaceNotFound'    {}};
-handle_error({logic, event_sink_not_found   }, _) -> {rethrow, #'EventSinkNotFound'    {}};
+handle_error({logic, machine_not_found      }, _) -> {rethrow, #mg_stateproc_MachineNotFound      {}};
+handle_error({logic, machine_already_exist  }, _) -> {rethrow, #mg_stateproc_MachineAlreadyExists {}};
+handle_error({logic, machine_failed         }, _) -> {rethrow, #mg_stateproc_MachineFailed        {}};
+handle_error({logic, machine_already_working}, _) -> {rethrow, #mg_stateproc_MachineAlreadyWorking{}};
+handle_error({logic, namespace_not_found    }, _) -> {rethrow, #mg_stateproc_NamespaceNotFound    {}};
+handle_error({logic, event_sink_not_found   }, _) -> {rethrow, #mg_stateproc_EventSinkNotFound    {}};
 % TODO обработать случай создания машины c некорректным ID в рамках thrift
-handle_error({logic, {invalid_machine_id, _}}, _) -> {rethrow, #'MachineNotFound'      {}};
+handle_error({logic, {invalid_machine_id, _}}, _) -> {rethrow, #mg_stateproc_MachineNotFound      {}};
 
 % может Reason не прокидывать дальше?
 % TODO logs

@@ -205,7 +205,7 @@ end_per_suite(_C) ->
 init_per_group(mwc, C) ->
     init_per_group([{storage, mg_storage_memory} | C]);
 init_per_group(_, C) ->
-    init_per_group([{storage, {mg_storage_memory, #{random_transient_fail => 0.1 }}} | C]).
+    init_per_group([{storage, {mg_storage_memory, #{random_transient_fail => 0.1}}} | C]).
 
 -spec init_per_group(config()) ->
     config().
@@ -225,34 +225,12 @@ init_per_group(C) ->
         genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(C))
     ,
 
-    SetTimer = {set_timer, {timeout, 1}, {undefined, undefined, forward}, 30},
-
-    CallFunc =
-        fun({Args, _Machine}) ->
-            case Args of
-                <<"tag"  >> -> {Args, {<<>>, [<<"tag_body"  >>]}, #{tag => Args}};
-                <<"event">> -> {Args, {<<>>, [<<"event_body">>]}, #{}};
-                <<"nop"  >> -> {Args, {<<>>, [                ]}, #{}};
-                <<"set_timer"  >> -> {Args, {<<>>, [<<"timer_body">>]}, #{timer => SetTimer   }};
-                <<"unset_timer">> -> {Args, {<<>>, [<<"timer_body">>]}, #{timer => unset_timer}};
-                <<"fail"  >> -> erlang:error(fail);
-                <<"sleep">> -> timer:sleep(?DEADLINE_TIMEOUT * 2), {Args, {<<>>, [<<"sleep">>]}, #{}};
-                <<"remove">> -> {Args, {<<>>, [<<"removed">>]}, #{remove => remove}}
-            end
-        end
-    ,
-    SignalFunc =
-        fun({Args, _Machine}) ->
-            case Args of
-                {init  , <<"fail" >>  } -> erlang:error(fail);
-                {init  , <<"timeout">>} -> timer:sleep(infinity);
-                {repair, <<"error">>  } -> erlang:error(error);
-                 timeout                -> {{<<>>, [<<"handle_timer_body">>]}, #{timer => undefined, tag => undefined}};
-                _ -> mg_test_processor:default_result(signal)
-            end
-        end
-    ,
-    {ok, ProcessorPid} = start_processor({0, 0, 0, 0}, 8023, "/processor", {SignalFunc, CallFunc}),
+    {ok, ProcessorPid} = mg_test_processor:start(
+        {0, 0, 0, 0}, 8023,
+        genlib_map:compact(#{
+            processor  => {"/processor", {fun default_signal_handler/1, fun default_call_handler/1}}
+        })
+    ),
 
     [
         {apps              , Apps                             },
@@ -266,6 +244,38 @@ init_per_group(C) ->
     |
         C
     ].
+
+-spec default_signal_handler(mg:signal_args()) -> mg:signal_result().
+default_signal_handler({Args, _Machine}) ->
+    case Args of
+        {init  , <<"fail" >>}   -> erlang:error(fail);
+        {init  , <<"timeout">>} -> timer:sleep(infinity);
+        {repair, <<"error">>}   -> erlang:error(error);
+         timeout                -> {{null(), [content(<<"handle_timer_body">>)]}, #{timer => undefined, tag => undefined}};
+        _ -> mg_test_processor:default_result(signal, Args)
+    end.
+
+-spec default_call_handler(mg:call_args()) -> mg:call_result().
+default_call_handler({Args, _Machine}) ->
+    SetTimer = {set_timer, {timeout, 1}, {undefined, undefined, forward}, 30},
+    case Args of
+        <<"tag"  >>       -> {Args, {null(), [content(<<"tag_body"  >>)]}, #{tag => Args}};
+        <<"event">>       -> {Args, {null(), [content(<<"event_body">>)]}, #{}};
+        <<"nop"  >>       -> {Args, {null(), [                ]}, #{}};
+        <<"set_timer"  >> -> {Args, {null(), [content(<<"timer_body">>)]}, #{timer => SetTimer   }};
+        <<"unset_timer">> -> {Args, {null(), [content(<<"timer_body">>)]}, #{timer => unset_timer}};
+        <<"fail"  >>      -> erlang:error(fail);
+        <<"sleep">>       -> timer:sleep(?DEADLINE_TIMEOUT * 2), {Args, {null(), [content(<<"sleep">>)]}, #{}};
+        <<"remove">>      -> {Args, {null(), [content(<<"removed">>)]}, #{remove => remove}}
+    end.
+
+-spec null() -> mg_events:content().
+null() ->
+    content(null).
+
+-spec content(binary()) -> mg_events:content().
+content(Body) ->
+    {#{format_version => 42}, Body}.
 
 -spec mg_woody_api_config(config()) ->
     list().
@@ -311,23 +321,9 @@ mg_woody_api_config(C) ->
 
 -spec end_per_group(group_name(), config()) ->
     ok.
-end_per_group(memory, _) ->
-    ok;
 end_per_group(_, C) ->
     true = erlang:exit(?config(processor_pid, C), kill),
-    [application_stop(App) || App <- proplists:get_value(apps, C)].
-
--spec application_stop(atom()) ->
-    _.
-application_stop(App=sasl) ->
-    %% hack for preventing sasl deadlock
-    %% http://erlang.org/pipermail/erlang-questions/2014-May/079012.html
-    error_logger:delete_report_handler(cth_log_redirect),
-    application:stop(App),
-    error_logger:add_report_handler(cth_log_redirect),
-    ok;
-application_stop(App) ->
-    application:stop(App).
+    [application:stop(App) || App <- proplists:get_value(apps, C)].
 
 %%
 %% base group tests
@@ -335,7 +331,7 @@ application_stop(App) ->
 -spec namespace_not_found(config()) -> _.
 namespace_not_found(C) ->
     Opts = maps:update(ns, <<"incorrect_NS">>, automaton_options(C)),
-    #'NamespaceNotFound'{} = (catch mg_automaton_client:start(Opts, ?ID, ?Tag)).
+    #mg_stateproc_NamespaceNotFound{} = (catch mg_automaton_client:start(Opts, ?ID, ?Tag)).
 
 -spec machine_start_empty_id(config()) -> _.
 machine_start_empty_id(C) ->
@@ -349,17 +345,17 @@ machine_start(C) ->
 
 -spec machine_already_exists(config()) -> _.
 machine_already_exists(C) ->
-    #'MachineAlreadyExists'{} = (catch mg_automaton_client:start(automaton_options(C), ?ID, ?Tag)).
+    #mg_stateproc_MachineAlreadyExists{} = (catch mg_automaton_client:start(automaton_options(C), ?ID, ?Tag)).
 
 -spec machine_id_not_found(config()) -> _.
 machine_id_not_found(C) ->
     IncorrectID = <<"incorrect_ID">>,
-    #'MachineNotFound'{} =
+    #mg_stateproc_MachineNotFound{} =
         (catch mg_automaton_client:call(automaton_options(C), {id, IncorrectID}, <<"nop">>)).
 
 -spec machine_empty_id_not_found(config()) -> _.
 machine_empty_id_not_found(C) ->
-    #'MachineNotFound'{} =
+    #mg_stateproc_MachineNotFound{} =
         (catch mg_automaton_client:call(automaton_options(C), {id, ?EMPTY_ID}, <<"nop">>)).
 
 -spec machine_call_by_id(config()) -> _.
@@ -373,7 +369,7 @@ machine_set_tag(C) ->
 -spec machine_tag_not_found(config()) -> _.
 machine_tag_not_found(C) ->
     IncorrectTag = <<"incorrect_Tag">>,
-    #'MachineNotFound'{} =
+    #mg_stateproc_MachineNotFound{} =
         (catch mg_automaton_client:call(automaton_options(C), {tag, IncorrectTag}, <<"nop">>)).
 
 -spec machine_call_by_tag(config()) -> _.
@@ -395,30 +391,34 @@ machine_remove_by_action(C) ->
 -spec failed_machine_start(config()) ->
     _.
 failed_machine_start(C) ->
-    #'MachineFailed'{} = (catch mg_automaton_client:start(automaton_options(C), ?ID, <<"fail">>)).
+    #mg_stateproc_MachineFailed{} =
+        (catch mg_automaton_client:start(automaton_options(C), ?ID, <<"fail">>)).
 
 -spec machine_start_timeout(config()) ->
     _.
 machine_start_timeout(C) ->
     {'EXIT', {{woody_error, _}, _}} =
         (catch mg_automaton_client:start(automaton_options(C), ?ID, <<"timeout">>, mg_utils:timeout_to_deadline(1000))),
-    #'MachineNotFound'{} =
+    #mg_stateproc_MachineNotFound{} =
         (catch mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"nop">>)).
 
 -spec machine_processor_error(config()) ->
     _.
 machine_processor_error(C) ->
-    #'MachineFailed'{} = (catch mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"fail">>)).
+    #mg_stateproc_MachineFailed{} =
+        (catch mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"fail">>)).
 
 -spec failed_machine_call(config()) ->
     _.
 failed_machine_call(C) ->
-    #'MachineFailed'{} = (catch mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"ok">>)).
+    #mg_stateproc_MachineFailed{} =
+        (catch mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"ok">>)).
 
 -spec failed_machine_repair_error(config()) ->
     _.
 failed_machine_repair_error(C) ->
-    #'MachineFailed'{} = (catch mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"error">>)).
+    #mg_stateproc_MachineFailed{} =
+        (catch mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"error">>)).
 
 -spec failed_machine_repair(config()) ->
     _.
@@ -433,7 +433,8 @@ failed_machine_simple_repair(C) ->
 -spec working_machine_repair(config()) ->
     _.
 working_machine_repair(C) ->
-    #'MachineAlreadyWorking'{} = (catch mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"ok">>)).
+    #mg_stateproc_MachineAlreadyWorking{} =
+        (catch mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"ok">>)).
 
 %%
 %% timer
@@ -474,7 +475,7 @@ timeout_call_with_deadline(C) ->
     Options = no_timeout_automaton_options(C),
     {'EXIT', {Reason, _Stack}} = (catch mg_automaton_client:call(Options, {id, ?ID}, <<"sleep">>, DeadlineFn())),
     {woody_error, {external, result_unknown, <<"{timeout,", _Rest/binary>>}} = Reason,
-    #'MachineAlreadyWorking'{} = (catch mg_automaton_client:repair(Options, {id, ?ID}, <<"ok">>, DeadlineFn())).
+    #mg_stateproc_MachineAlreadyWorking{} = (catch mg_automaton_client:repair(Options, {id, ?ID}, <<"ok">>, DeadlineFn())).
 
 -spec success_call_with_deadline(config()) ->
     _.
@@ -489,7 +490,7 @@ success_call_with_deadline(C) ->
 -spec event_sink_get_empty_history(config()) ->
     _.
 event_sink_get_empty_history(C) ->
-    [] = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}).
+    [] = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #mg_stateproc_HistoryRange{direction=forward}).
 
 -spec event_sink_get_not_empty_history(config()) ->
     _.
@@ -499,40 +500,43 @@ event_sink_get_not_empty_history(C) ->
     _ = create_events(3, C, ?ID),
 
     [
-        #'SinkEvent'{id = 1, source_id = ?ID, source_ns = ?NS, event = #'Event'{}},
-        #'SinkEvent'{id = 2, source_id = ?ID, source_ns = ?NS, event = #'Event'{}},
-        #'SinkEvent'{id = 3, source_id = ?ID, source_ns = ?NS, event = #'Event'{}}
-    ] = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}).
+        #mg_stateproc_SinkEvent{id = 1, source_id = ?ID, source_ns = ?NS, event = #mg_stateproc_Event{}},
+        #mg_stateproc_SinkEvent{id = 2, source_id = ?ID, source_ns = ?NS, event = #mg_stateproc_Event{}},
+        #mg_stateproc_SinkEvent{id = 3, source_id = ?ID, source_ns = ?NS, event = #mg_stateproc_Event{}}
+    ] = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #mg_stateproc_HistoryRange{direction=forward}).
 
 -spec event_sink_get_last_event(config()) ->
     _.
 event_sink_get_last_event(C) ->
-    [#'SinkEvent'{id = 3, source_id = _ID, source_ns = _NS, event = #'Event'{}}] =
-        mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=backward, limit=1}).
+    [#mg_stateproc_SinkEvent{id = 3, source_id = _ID, source_ns = _NS, event = #mg_stateproc_Event{}}] =
+        mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #mg_stateproc_HistoryRange{direction=backward, limit=1}).
 
 -spec event_sink_incorrect_event_id(config()) ->
     _.
 event_sink_incorrect_event_id(C) ->
-    #'EventNotFound'{}
-        = (catch mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{'after'=42})).
+    #mg_stateproc_EventNotFound{}
+        = (catch mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #mg_stateproc_HistoryRange{'after'=42})).
 
 -spec event_sink_incorrect_sink_id(config()) ->
     _.
 event_sink_incorrect_sink_id(C) ->
-    #'EventSinkNotFound'{}
-        = (catch mg_event_sink_client:get_history(es_opts(C), <<"incorrect_event_sink_id">>, #'HistoryRange'{})).
+    HRange = #mg_stateproc_HistoryRange{},
+    #mg_stateproc_EventSinkNotFound{}
+        = (catch mg_event_sink_client:get_history(es_opts(C), <<"incorrect_event_sink_id">>, HRange)).
 
 -spec event_sink_lots_events_ordering(config()) ->
     _.
 event_sink_lots_events_ordering(C) ->
-    [#'SinkEvent'{id = LastEventID}] =
-        mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=backward, limit=1}),
+    HRange1 = #mg_stateproc_HistoryRange{direction=backward, limit=1},
+    [#mg_stateproc_SinkEvent{id = LastEventID}] =
+        mg_event_sink_client:get_history(es_opts(C), ?ES_ID, HRange1),
     N = 20,
     _ = create_events(N, C, ?ID),
 
-    Events = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #'HistoryRange'{direction=forward}),
+    HRange2 = #mg_stateproc_HistoryRange{direction=forward},
+    Events = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, HRange2),
     EventsIDs = lists:seq(1, N + LastEventID),
-    EventsIDs = [ID0 || #'SinkEvent'{id=ID0} <- Events].
+    EventsIDs = [ID0 || #mg_stateproc_SinkEvent{id=ID0} <- Events].
 
 % проверяем, что просто ничего не падает, для начала этого хватит
 -spec mwc_get_statuses_distrib(config()) ->
@@ -597,7 +601,7 @@ config_with_multiple_event_sinks(_C) ->
         {event_sinks, [<<"SingleES">>]}
     ],
     Apps = genlib_app:start_application_with(mg_woody_api, Config),
-    [application_stop(App) || App <- Apps].
+    [application:stop(App) || App <- Apps].
 
 %%
 %% utils
@@ -626,16 +630,6 @@ create_events(N, C, ID) ->
             end,
             lists:seq(1, N)
     ).
-
--spec start_processor(Address, Port, Path, Functions) -> {ok, pid()} when
-    Address   :: mg_test_processor:host_address(),
-    Port      :: integer(),
-    Path      :: string(),
-    Functions :: {mg_test_processor:processor_function(), mg_test_processor:processor_function()}.
-start_processor(Address, Port, Path, {SignalFunc, CallFunc}) ->
-    {ok, ProcessorPid} = mg_test_processor:start_link({Address, Port, Path, {SignalFunc, CallFunc}}),
-    true = erlang:unlink(ProcessorPid),
-    {ok, ProcessorPid}.
 
 -spec automaton_options(config()) -> _.
 automaton_options(C) -> ?config(automaton_options, C).

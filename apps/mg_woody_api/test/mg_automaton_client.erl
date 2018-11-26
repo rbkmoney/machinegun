@@ -30,6 +30,7 @@
 -export([call         /4]).
 -export([get_machine  /3]).
 -export([get_machine  /4]).
+-export([modernize    /3]).
 
 %% уменьшаем писанину
 -import(mg_woody_api_packer, [pack/2, unpack/2]).
@@ -100,6 +101,11 @@ get_machine(#{ns := NS} = Options, Ref, Range, Deadline) ->
         machine,
         call_service(Options, 'GetMachine', [machine_desc(NS, Ref, Range)], Deadline)
     ).
+
+-spec modernize(options(), mg_events_machine:ref(), mg_events:history_range()) ->
+    ok.
+modernize(#{ns := NS} = Options, Ref, Range) ->
+    ok = call_service(Options, 'Modernize', [machine_desc(NS, Ref, Range)], undefined).
 
 %%
 %% local
