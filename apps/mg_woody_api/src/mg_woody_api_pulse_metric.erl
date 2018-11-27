@@ -246,10 +246,10 @@ all_impact_tags() ->
 
 -spec calc_queue_usage(non_neg_integer(), mg_workers_manager:queue_limit()) ->
     float().
-calc_queue_usage(_Any, 0) ->
-    1.0;
+calc_queue_usage(Len, 0) ->
+    erlang:float(Len);
 calc_queue_usage(Len, Limit) ->
-    erlang:max(Len / Limit, 1.0).
+    Len / Limit.
 
 -spec push(metrics()) ->
     ok.
@@ -283,7 +283,7 @@ list_exp_bin_metric(KeyPrefix, MaxBin, Unit) ->
 -spec list_fraction_bin_metric(metric_key(), MaxBin :: pos_integer(), Unit :: binary()) ->
     [metric()].
 list_fraction_bin_metric(KeyPrefix, MaxBin, Unit) ->
-    do_list_fraction_bin_metric(KeyPrefix, MaxBin, Unit, MaxBin, []).
+    do_list_fraction_bin_metric(KeyPrefix, MaxBin, Unit, MaxBin + 1, []).
 
 -spec do_list_exp_bin_metric(metric_key(), pos_integer(), binary(), non_neg_integer(), [metric()]) ->
     [metric()].
@@ -297,7 +297,7 @@ do_list_exp_bin_metric(KeyPrefix, MaxBin, Unit, Bin, Acc) ->
 
 -spec do_list_fraction_bin_metric(metric_key(), pos_integer(), binary(), non_neg_integer(), [metric()]) ->
     [metric()].
-do_list_fraction_bin_metric(_KeyPrefix, _MaxBin, _Unit, Bin, Acc) when Bin < 1 ->
+do_list_fraction_bin_metric(_KeyPrefix, _MaxBin, _Unit, Bin, Acc) when Bin < 0 ->
     Acc;
 do_list_fraction_bin_metric(KeyPrefix, MaxBin, Unit, Bin, Acc) ->
     BinSampleValue = (Bin + 0.1) / MaxBin,
@@ -324,7 +324,7 @@ create_bin_inc(KeyPrefix, fraction, Fraction0) ->
     BinKey = create_fraction_bin_key(Fraction, ?FRACTION_BINS, ?FRACTION_UNIT),
     how_are_you:metric_construct(meter, [KeyPrefix, BinKey], 1).
 
--spec create_exp_bin_key(Value :: number(), BinNumber :: pos_integer(), Unit :: binary()) ->
+-spec create_exp_bin_key(Value :: number(), MaxBin :: pos_integer(), Unit :: binary()) ->
     metric_key().
 create_exp_bin_key(Value, MaxBin, Unit) ->
     BinNumber = calc_exp_bin(Value, MaxBin),
@@ -339,8 +339,8 @@ create_exp_bin_key(Value, MaxBin, Unit) ->
             <<"from_1e", Bin/binary, Unit/binary, "_to_1e", NexBin/binary, Unit/binary>>
     end.
 
--spec calc_exp_bin(Value :: number(), BinNumber :: pos_integer()) ->
-    pos_integer().
+-spec calc_exp_bin(Value :: number(), MaxBin :: pos_integer()) ->
+    non_neg_integer().
 calc_exp_bin(Value, _MaxBin) when Value < 1 ->
     0;
 calc_exp_bin(Value, MaxBin) ->
@@ -349,9 +349,13 @@ calc_exp_bin(Value, MaxBin) ->
 -spec create_fraction_bin_key(Value :: number(), BinNumber :: pos_integer(), Unit :: binary()) ->
     metric_key().
 create_fraction_bin_key(Value, MaxBin, Unit) ->
-    BinNumber = erlang:min(erlang:trunc(Value * MaxBin), MaxBin),
-    BinStart = BinNumber / MaxBin,
-    BinStartPercent = erlang:integer_to_binary(erlang:trunc(BinStart * 100)),
-    BinEnd = (BinNumber + 1) / MaxBin,
-    BinEndPercent = erlang:integer_to_binary(erlang:trunc(BinEnd * 100)),
-    <<"from_", BinStartPercent/binary, Unit/binary, "_to_", BinEndPercent/binary, Unit/binary>>.
+    case erlang:trunc(Value * MaxBin) of
+        BinNumber when BinNumber =< MaxBin ->
+            BinStart = BinNumber / MaxBin,
+            BinStartPercent = erlang:integer_to_binary(erlang:trunc(BinStart * 100)),
+            BinEnd = (BinNumber + 1) / MaxBin,
+            BinEndPercent = erlang:integer_to_binary(erlang:trunc(BinEnd * 100)),
+            <<"from_", BinStartPercent/binary, Unit/binary, "_to_", BinEndPercent/binary, Unit/binary>>;
+        BinNumber when BinNumber > MaxBin ->
+            <<"overflow">>
+    end.
