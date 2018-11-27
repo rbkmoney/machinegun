@@ -49,7 +49,10 @@
     % Обработка запроса машиной
     | #mg_machine_process_started{}
     | #mg_machine_process_finished{}
-    | #mg_machine_process_transient_error{}.
+    | #mg_machine_process_transient_error{}
+    % Обслуживание обработчиков машин
+    | #mg_worker_call_attempt{}
+    | #mg_worker_start_attempt{}.
 
 -type handler() :: mg_utils:mod_opts() | undefined.
 

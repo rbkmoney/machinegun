@@ -26,8 +26,11 @@
 %%%
 -module(mg_workers_manager).
 
+-include_lib("mg/include/pulse.hrl").
+
 %% API
 -export_type([options/0]).
+-export_type([queue_limit/0]).
 
 -export([child_spec    /2]).
 -export([start_link    /1]).
@@ -36,16 +39,27 @@
 -export([brutal_kill   /2]).
 -export([is_alive      /2]).
 
+%% Types
+-type options() :: #{
+    name                    => name(),
+    message_queue_len_limit => queue_limit(),
+    worker_options          => mg_worker:options(),
+    pulse                   => mg_pulse:handler()
+}.
+-type queue_limit() :: non_neg_integer().
+
+%% Internal types
+-type id() :: mg:id().
+-type name() :: mg:ns().
+-type req_ctx() :: mg:request_context().
+-type gen_ref() :: mg_utils:gen_ref().
+
+%% Constants
+-define(default_message_queue_len_limit, 50).
+
 %%
 %% API
 %%
--type options() :: #{
-    name                    => _,
-    message_queue_len_limit => pos_integer(),
-    worker_options          => mg_worker:options()
-}.
-
--define(default_message_queue_len_limit, 50).
 
 -spec child_spec(options(), atom()) ->
     supervisor:child_spec().
@@ -69,14 +83,15 @@ start_link(Options) ->
     ).
 
 % sync
--spec call(options(), _ID, _Call, _ReqCtx, mg_utils:deadline()) ->
+-spec call(options(), id(), _Call, req_ctx(), mg_utils:deadline()) ->
     _Reply | {error, _}.
 call(Options, ID, Call, ReqCtx, Deadline) ->
     case mg_utils:is_deadline_reached(Deadline) of
         false ->
-            Name = maps:get(name, Options),
+            #{name := Name, pulse := Pulse} = Options,
+            MsgQueueLimit = message_queue_len_limit(Options),
             try
-                mg_worker:call(Name, ID, Call, ReqCtx, Deadline, message_queue_len_limit(Options))
+                mg_worker:call(Name, ID, Call, ReqCtx, Deadline, MsgQueueLimit, Pulse)
             catch
                 exit:Reason ->
                     handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason)
@@ -85,7 +100,7 @@ call(Options, ID, Call, ReqCtx, Deadline) ->
             {error, {timeout, worker_call_deadline_reached}}
     end.
 
--spec handle_worker_exit(options(), _ID, _Call, _ReqCtx, mg_utils:deadline(), _Reason) ->
+-spec handle_worker_exit(options(), id(), _Call, req_ctx(), mg_utils:deadline(), _Reason) ->
     _Reply | {error, _}.
 handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason) ->
     case Reason of
@@ -98,7 +113,7 @@ handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason) ->
          Unknown        -> {error, {unexpected_exit, Unknown}}
     end.
 
--spec start_and_retry_call(options(), _ID, _Call, _ReqCtx, mg_utils:deadline()) ->
+-spec start_and_retry_call(options(), id(), _Call, req_ctx(), mg_utils:deadline()) ->
     _Reply | {error, _}.
 start_and_retry_call(Options, ID, Call, ReqCtx, Deadline) ->
     %
@@ -116,7 +131,7 @@ start_and_retry_call(Options, ID, Call, ReqCtx, Deadline) ->
             Error
     end.
 
--spec get_call_queue(options(), _ID) ->
+-spec get_call_queue(options(), id()) ->
     [_Call].
 get_call_queue(Options, ID) ->
     try
@@ -125,7 +140,7 @@ get_call_queue(Options, ID) ->
         []
     end.
 
--spec brutal_kill(options(), _ID) ->
+-spec brutal_kill(options(), id()) ->
     ok.
 brutal_kill(Options, ID) ->
     try
@@ -134,7 +149,7 @@ brutal_kill(Options, ID) ->
         ok
     end.
 
--spec is_alive(options(), _ID) ->
+-spec is_alive(options(), id()) ->
     boolean().
 is_alive(Options, ID) ->
     mg_worker:is_alive(maps:get(name, Options), ID).
@@ -143,27 +158,44 @@ is_alive(Options, ID) ->
 %%
 %% local
 %%
--spec start_child(options(), _ID, _ReqCtx) ->
+-spec start_child(options(), id(), req_ctx()) ->
     {ok, pid()} | {error, term()}.
 start_child(Options, ID, ReqCtx) ->
     SelfRef = self_ref(Options),
-    try
-        ok = mg_utils:check_overload(SelfRef, message_queue_len_limit(Options)),
-        supervisor:start_child(SelfRef, [maps:get(name, Options), ID, ReqCtx])
-    catch
-        exit:{timeout, Reason} ->
-            {error, {timeout, Reason}};
-        exit:overload ->
+    #{name := Name, pulse := Pulse} = Options,
+    MsgQueueLimit = message_queue_len_limit(Options),
+    MsgQueueLen = mg_utils:msg_queue_len(SelfRef),
+    ok = mg_pulse:handle_beat(Pulse, #mg_worker_start_attempt{
+        namespace = Name,
+        machine_id = ID,
+        request_context = ReqCtx,
+        msg_queue_len = MsgQueueLen,
+        msg_queue_limit = MsgQueueLimit
+    }),
+    case MsgQueueLen < MsgQueueLimit of
+        true ->
+            do_start_child(SelfRef, Name, ID, ReqCtx);
+        false ->
             {error, {transient, overload}}
     end.
 
+-spec do_start_child(gen_ref(), name(), id(), req_ctx()) ->
+    {ok, pid()} | {error, term()}.
+do_start_child(SelfRef, Name, ID, ReqCtx) ->
+    try
+        supervisor:start_child(SelfRef, [Name, ID, ReqCtx])
+    catch
+        exit:{timeout, Reason} ->
+            {error, {timeout, Reason}}
+    end.
+
 -spec message_queue_len_limit(options()) ->
-    pos_integer().
+    queue_limit().
 message_queue_len_limit(Options) ->
     maps:get(message_queue_len_limit, Options, ?default_message_queue_len_limit).
 
 -spec self_ref(options()) ->
-    mg_utils:gen_ref().
+    gen_ref().
 self_ref(Options) ->
     {via, gproc, gproc_key(Options)}.
 

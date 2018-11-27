@@ -1145,6 +1145,7 @@ emit_machine_load_beat(Options, Namespace, ID, ReqCtx, _StorageMachine) ->
 manager_options(Options) ->
     #{
         name           => maps:get(namespace, Options),
+        pulse          => maps:get(pulse, Options),
         worker_options => #{
             worker => {?MODULE, Options}
         }

@@ -130,3 +130,22 @@
     request_context :: mg:request_context(),
     exception :: mg_utils:exception()
 }).
+
+%% Workers management
+
+-record(mg_worker_call_attempt, {
+    namespace :: mg:ns(),
+    machine_id :: mg:id(),
+    request_context :: mg:request_context(),
+    deadline :: mg_utils:deadline(),
+    msg_queue_len :: non_neg_integer(),
+    msg_queue_limit :: mg_workers_manager:queue_limit()
+}).
+
+-record(mg_worker_start_attempt, {
+    namespace :: mg:ns(),
+    machine_id :: mg:id(),
+    request_context :: mg:request_context(),
+    msg_queue_len :: non_neg_integer(),
+    msg_queue_limit :: mg_workers_manager:queue_limit()
+}).
