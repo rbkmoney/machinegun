@@ -36,6 +36,10 @@ logging:
     crash_log: crash.log
     json_log: log.json
     level: info
+metrics:
+    host: "127.0.0.1"
+    port: 8125
+    pool_size: 4
 namespaces:
     mg_test_ns:
         # only for testing, default 0
