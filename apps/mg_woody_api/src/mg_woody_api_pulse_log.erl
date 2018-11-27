@@ -66,7 +66,7 @@ format_beat(#woody_request_handle_error{exception = {_, Reason, _}, error_reacti
         _OtherReaction ->
             {LogLevel, {"request handling failed ~p", [Reason]}, Context}
     end;
-format_beat(#woody_internal_event{event = Event, rpc_id = RPCID, event_meta = EventMeta}) ->
+format_beat(#woody_event{event = Event, rpc_id = RPCID, event_meta = EventMeta}) ->
     WoodyMetaFields = [event, service, function, type, metadata, url, deadline],
     {Level, Msg, Meta} = woody_event_handler:format_event_and_meta(Event, EventMeta, RPCID, WoodyMetaFields),
     {Level, Msg, maps:to_list(Meta)};
@@ -114,9 +114,11 @@ extract_meta(target_timestamp, Timestamp) ->
     {target_timestamp, format_timestamp(Timestamp)};
 extract_meta(exception, {Class, Reason, StackStrace}) ->
     [
-        {error_class, genlib:to_binary(Class)},
-        {error_reason, genlib:format(Reason)},
-        {error_stack_trace, genlib_format:format_stacktrace(StackStrace)}
+        {error, [
+            {class, genlib:to_binary(Class)},
+            {reason, genlib:format(Reason)},
+            {stack_trace, genlib_format:format_stacktrace(StackStrace)}
+        ]}
     ];
 extract_meta(retry_action, {wait, Timeout, NextStrategy}) ->
     [

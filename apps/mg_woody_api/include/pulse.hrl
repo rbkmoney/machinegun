@@ -9,7 +9,7 @@
     error_reaction :: mg_woody_api_utils:error_reaction()
 }).
 
--record(woody_internal_event, {
+-record(woody_event, {
     event :: woody_event_handler:event(),
     rpc_id :: woody:rpc_id(),
     event_meta :: woody_event_handler:event_meta()
