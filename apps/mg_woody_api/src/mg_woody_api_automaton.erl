@@ -52,13 +52,13 @@ handle_function('Start', [NS, ID_, Args], WoodyContext, Options) ->
     ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
     Deadline = get_deadline(NS, WoodyContext, Options),
     ok = mg_woody_api_utils:handle_safe_with_retry(
-            {id, ID}, ReqCtx,
+            #{namespace => NS, machine_ref => {id, ID}, request_context => ReqCtx, deadline => Deadline},
             fun() ->
                 mg_events_machine:start(
                     get_machine_options(NS, Options), ID, unpack(args, Args), ReqCtx, Deadline
                 )
             end,
-            Deadline, logger(NS, Options)
+            pulse(NS, Options)
         ),
     {ok, ok};
 
@@ -67,13 +67,13 @@ handle_function('Repair', [MachineDesc, Args], WoodyContext, Options) ->
     {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
     Deadline = get_deadline(NS, WoodyContext, Options),
     ok = mg_woody_api_utils:handle_safe_with_retry(
-            Ref, ReqCtx,
+            #{namespace => NS, machine_ref => Ref, request_context => ReqCtx, deadline => Deadline},
             fun() ->
                 mg_events_machine:repair(
                     get_machine_options(NS, Options), Ref, unpack(args, Args), Range, ReqCtx, Deadline
                 )
             end,
-            Deadline, logger(NS, Options)
+            pulse(NS, Options)
         ),
     {ok, ok};
 
@@ -82,13 +82,13 @@ handle_function('SimpleRepair', [NS, Ref_], WoodyContext, Options) ->
     ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
     Ref = unpack(ref, Ref_),
     ok = mg_woody_api_utils:handle_safe_with_retry(
-            Ref, ReqCtx,
+            #{namespace => NS, machine_ref => Ref, request_context => ReqCtx, deadline => Deadline},
             fun() ->
                 mg_events_machine:simple_repair(
                     get_machine_options(NS, Options), Ref, ReqCtx, Deadline
                 )
             end,
-            Deadline, logger(NS, Options)
+            pulse(NS, Options)
         ),
     {ok, ok};
 
@@ -98,29 +98,29 @@ handle_function('Call', [MachineDesc, Args], WoodyContext, Options) ->
     Deadline = get_deadline(NS, WoodyContext, Options),
     Response =
         mg_woody_api_utils:handle_safe_with_retry(
-            Ref, ReqCtx,
-            % блин, как же в эрланге не хватает каррирования... :-\
+            #{namespace => NS, machine_ref => Ref, request_context => ReqCtx, deadline => Deadline},
             fun() ->
                 mg_events_machine:call(
                     get_machine_options(NS, Options), Ref, unpack(args, Args), Range, ReqCtx, Deadline
                 )
             end,
-            Deadline, logger(NS, Options)
+            pulse(NS, Options)
         ),
     {ok, pack(call_response, Response)};
 
 handle_function('GetMachine', [MachineDesc], WoodyContext, Options) ->
+    ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
     {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
     Deadline = get_deadline(NS, WoodyContext, Options),
     History =
         mg_woody_api_utils:handle_safe_with_retry(
-            Ref, mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
+            #{namespace => NS, machine_ref => Ref, request_context => ReqCtx, deadline => Deadline},
             fun() ->
                 mg_events_machine:get_machine(
                     get_machine_options(NS, Options), Ref, Range
                 )
             end,
-            Deadline, logger(NS, Options)
+            pulse(NS, Options)
         ),
     {ok, pack(machine, History)};
 
@@ -129,22 +129,22 @@ handle_function('Remove', [NS, ID_], WoodyContext, Options) ->
     Deadline = get_deadline(NS, WoodyContext, Options),
     ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
     ok = mg_woody_api_utils:handle_safe_with_retry(
-            ID, ReqCtx,
+            #{namespace => NS, machine_ref => ID, request_context => ReqCtx, deadline => Deadline},
             fun() ->
                 mg_events_machine:remove(
                     get_machine_options(NS, Options), ID, ReqCtx, Deadline
                 )
             end,
-            Deadline, logger(NS, Options)
+            pulse(NS, Options)
         ),
     {ok, ok};
 
 handle_function('Modernize', [MachineDesc], WoodyContext, Options) ->
     {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
+    Deadline = get_deadline(NS, WoodyContext, Options),
     ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
     mg_woody_api_utils:handle_safe_with_retry(
-        Ref,
-        ReqCtx,
+        #{namespace => NS, machine_ref => Ref, request_context => ReqCtx, deadline => Deadline},
         fun () ->
             case get_ns_options(NS, Options) of
                 #{modernizer := ModernizerOptions, machine := MachineOptions} ->
@@ -157,8 +157,7 @@ handle_function('Modernize', [MachineDesc], WoodyContext, Options) ->
                     erlang:throw({logic, namespace_not_found})
             end
         end,
-        get_deadline(NS, WoodyContext, Options),
-        logger(NS, Options)
+        pulse(NS, Options)
     ).
 
 %%
@@ -179,11 +178,12 @@ get_ns_options(Namespace, Options) ->
             throw({logic, namespace_not_found})
     end.
 
--spec logger(mg:ns(), options()) ->
-    mg_machine_logger:handler().
-logger(Namespace, Options) ->
+-spec pulse(mg:ns(), options()) ->
+    mg_pulse:handler().
+pulse(Namespace, Options) ->
     try get_machine_options(Namespace, Options) of
-        #{machines := #{logger := Logger}} -> Logger
+        #{machines := #{pulse := Pulse}} ->
+            Pulse
     catch throw:{logic, namespace_not_found} ->
         undefined
     end.

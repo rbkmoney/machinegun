@@ -31,8 +31,8 @@
 
 -export([start/0]).
 
-%% logger
--export([handle_machine_logging_event/2]).
+%% Pulse
+-export([handle_beat/2]).
 
 %%
 %% tests descriptions
@@ -120,7 +120,7 @@ automaton_options(NS) ->
         namespace => NS,
         processor => ?MODULE,
         storage   => mg_storage_memory,
-        logger    => ?MODULE,
+        pulse     => ?MODULE,
         retries   => #{
             timers         => {intervals, [1000, 1000, 1000, 1000, 1000]},
             processor      => {intervals, [1]}
@@ -132,9 +132,9 @@ automaton_options(NS) ->
         }
     }.
 
--spec handle_machine_logging_event(_, mg_machine_logger:event()) ->
+-spec handle_beat(_, mg_pulse:beat()) ->
     ok.
-handle_machine_logging_event(_, _Event) ->
+handle_beat(_, _Event) ->
     erlang:error(logging_oops).
 
 -spec build_timer() ->

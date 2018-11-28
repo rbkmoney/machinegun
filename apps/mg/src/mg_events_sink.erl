@@ -41,7 +41,7 @@
 -type options() :: #{
     namespace                  := mg:ns(),
     storage                    := mg_storage:options(),
-    logger                     := mg_machine_logger:handler(),
+    pulse                      := mg_pulse:handler(),
     duplicate_search_batch     := mg_storage:index_limit(),
     events_storage             := mg_storage:options(),
     default_processing_timeout := timeout()
@@ -266,12 +266,12 @@ new_state() ->
 
 -spec machine_options(options()) ->
     mg_machine:options().
-machine_options(Options = #{namespace := Namespace, storage := Storage, logger := Logger}) ->
+machine_options(Options = #{namespace := Namespace, storage := Storage, pulse := Pulse}) ->
     #{
         namespace       => mg_utils:concatenate_namespaces(Namespace, <<"machines">>),
         processor       => {?MODULE, Options},
         storage         => Storage,
-        logger          => Logger
+        pulse           => Pulse
     }.
 
 -spec events_storage_options(options()) ->

@@ -180,6 +180,7 @@ stress_test_do_test_call(Options, WorkersCount) ->
 workers_options(UnloadTimeout, WorkerParams) ->
     #{
         name => base_test_workers,
+        pulse => undefined,
         message_queue_len_limit => 10000,
         worker_options => #{
             worker            => {?MODULE, WorkerParams},

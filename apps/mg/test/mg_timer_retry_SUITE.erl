@@ -35,8 +35,8 @@
 
 -export([start/0]).
 
-%% logger
--export([handle_machine_logging_event/2]).
+%% Pulse
+-export([handle_beat/2]).
 
 %%
 %% tests descriptions
@@ -175,7 +175,7 @@ automaton_options(NS, RetryPolicy) ->
         namespace => NS,
         processor => ?MODULE,
         storage   => mg_storage_memory,
-        logger    => ?MODULE,
+        pulse     => ?MODULE,
         retries   => #{
             timers         => RetryPolicy,
             processor      => {timecap, 0, {intervals, [1]}}  % without retries
@@ -187,10 +187,10 @@ automaton_options(NS, RetryPolicy) ->
         }
     }.
 
--spec handle_machine_logging_event(_, mg_machine_logger:event()) ->
+-spec handle_beat(_, mg_pulse:beat()) ->
     ok.
-handle_machine_logging_event(_, {NS, ID, ReqCtx, SubEvent}) ->
-    ct:pal("[~s:~s:~s] ~p", [NS, ID, ReqCtx, SubEvent]).
+handle_beat(_, Beat) ->
+    ct:pal("~p", [Beat]).
 
 -spec build_timer() ->
     mg_machine:processor_flow_action().

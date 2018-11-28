@@ -1,5 +1,5 @@
 %%%
-%%% Copyright 2017 RBKmoney
+%%% Copyright 2018 RBKmoney
 %%%
 %%% Licensed under the Apache License, Version 2.0 (the "License");
 %%% you may not use this file except in compliance with the License.
@@ -14,25 +14,28 @@
 %%% limitations under the License.
 %%%
 
--module(mg_woody_api_event_handler).
+-module(mg_woody_api_pulse).
 
 -include_lib("mg_woody_api/include/pulse.hrl").
 
-%% woody_event_handler callbacks
--behaviour(woody_event_handler).
--export([handle_event/4]).
+%% mg_pulse handler
+-behaviour(mg_pulse).
+-export([handle_beat/2]).
+
+%% pulse types
+-type beat() ::
+      mg_pulse:beat()
+    | #woody_event{}
+    | #woody_request_handle_error{}.
+
+-export_type([beat   /0]).
 
 %%
-%% woody_event_handler callbacks
+%% mg_pulse handler
 %%
--spec handle_event(Event, RpcID, EventMeta, PulseHandler) -> ok when
-    Event :: woody_event_handler:event(),
-    RpcID :: woody:rpc_id(),
-    EventMeta :: woody_event_handler:event_meta(),
-    PulseHandler :: mg_pulse:handler().
-handle_event(Event, RpcID, EventMeta, PulseHandler) ->
-    mg_pulse:handle_beat(PulseHandler, #woody_event{
-        event = Event,
-        rpc_id = RpcID,
-        event_meta = EventMeta
-    }).
+
+-spec handle_beat(undefined, beat()) ->
+    ok.
+handle_beat(Options, Beat) ->
+    ok = mg_woody_api_pulse_log:handle_beat(Options, Beat),
+    ok = mg_woody_api_pulse_metric:handle_beat(Options, Beat).

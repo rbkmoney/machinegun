@@ -56,6 +56,8 @@
 %% Хранилище и процессор кидают либо ошибку о недоступности, либо падают.
 %%
 
+-include_lib("mg/include/pulse.hrl").
+
 %% API
 -export_type([retry_opt             /0]).
 -export_type([scheduled_tasks_opt   /0]).
@@ -122,7 +124,7 @@
     namespace                => mg:ns(),
     storage                  => mg_storage:options(),
     processor                => mg_utils:mod_opts(),
-    logger                   => mg_machine_logger:handler(),
+    pulse                    => mg_pulse:handler(),
     retries                  => retry_opt(),
     scheduled_tasks          => scheduled_tasks_opt(),
     suicide_probability      => suicide_probability(),
@@ -317,8 +319,14 @@ reply(#{call_context := CallContext}, Reply) ->
     try
         Expr
     catch Class:Reason ->
-        Event = {EventTag, {Class, Reason, erlang:get_stacktrace()}},
-        ok = emit_log_request_event(Options, ID, ReqCtx, Event)
+        Exception = {Class, Reason, erlang:get_stacktrace()},
+        ok = emit_beat(Options, #mg_scheduler_error{
+            tag = EventTag,
+            namespace = maps:get(namespace, Options),
+            exception = Exception,
+            machine_id = ID,
+            request_context = ReqCtx
+        })
     end
 ).
 -define(can_be_retried(ErrorType), ErrorType =:= transient orelse ErrorType =:= timeout).
@@ -508,6 +516,7 @@ call_with_reschedule(Options, ID, Call, ReqCtx, CallDeadline, RescheduleCall, Re
 %%
 -type state() :: #{
     id              => mg:id(),
+    namespace       => mg:ns(),
     options         => options(),
     storage_machine => storage_machine() | undefined,
     storage_context => mg_storage:context() | undefined
@@ -521,6 +530,7 @@ call_with_reschedule(Options, ID, Call, ReqCtx, CallDeadline, RescheduleCall, Re
 -spec handle_load(_ID, options(), request_context()) ->
     {ok, state()}.
 handle_load(ID, Options, ReqCtx) ->
+    Namespace = maps:get(namespace, Options),
     try
         {StorageContext, StorageMachine} =
             case get_storage_machine(Options, ID) of
@@ -531,14 +541,21 @@ handle_load(ID, Options, ReqCtx) ->
         State =
             #{
                 id              => ID,
+                namespace       => Namespace,
                 options         => Options,
                 storage_machine => StorageMachine,
                 storage_context => StorageContext
             },
+        ok = emit_machine_load_beat(Options, Namespace, ID, ReqCtx, StorageMachine),
         {ok, State}
     catch throw:Reason ->
         Exception = {throw, Reason, erlang:get_stacktrace()},
-        ok = emit_log_machine_event(Options, ID, ReqCtx, {loading_failed, Exception}),
+        ok = emit_beat(Options, #mg_machine_lifecycle_loading_error{
+            namespace = Namespace,
+            machine_id = ID,
+            request_context = ReqCtx,
+            exception = Exception
+        }),
         {error, Reason}
     end.
 
@@ -607,8 +624,12 @@ handle_call(Call, CallContext, ReqCtx, Deadline, S=#{storage_machine:=StorageMac
 
 -spec handle_unload(state()) ->
     ok.
-handle_unload(_) ->
-    ok.
+handle_unload(State) ->
+    #{id := ID, options := #{namespace := NS} = Options} = State,
+    ok = emit_beat(Options, #mg_machine_lifecycle_unloaded{
+        namespace = NS,
+        machine_id = ID
+    }).
 
 %%
 %% processing context
@@ -786,8 +807,14 @@ try_init_state(_Impact, State) ->
     ReqCtx :: request_context(),
     Deadline :: mg_utils:deadline().
 handle_exception(Exception, Impact, ReqCtx, Deadline, State) ->
-    #{options := Options, id := ID, storage_machine := StorageMachine} = State,
-    ok = emit_log_machine_event(Options, ID, ReqCtx, {machine_failed, Exception}),
+    #{options := Options, id := ID, namespace := NS, storage_machine := StorageMachine} = State,
+    ok = emit_beat(Options, #mg_machine_lifecycle_failed{
+        namespace = NS,
+        machine_id = ID,
+        request_context = ReqCtx,
+        deadline = Deadline,
+        exception = Exception
+    }),
     case {Impact, StorageMachine} of
         {_, undefined} ->
             State;
@@ -801,8 +828,12 @@ handle_exception(Exception, Impact, ReqCtx, Deadline, State) ->
 -spec process_unsafe(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
     state().
 process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machine := StorageMachine}) ->
+    ok = emit_pre_process_beats(Impact, ReqCtx, Deadline, State),
+    ProcessStart = erlang:monotonic_time(),
     {ReplyAction, Action, NewMachineState} =
         call_processor(Impact, ProcessingCtx, ReqCtx, Deadline, State),
+    ProcessDuration = erlang:monotonic_time() - ProcessStart,
+    ok = emit_post_process_beats(Impact, ReqCtx, Deadline, ProcessDuration, State),
     ok = try_suicide(State, ReqCtx),
     NewStorageMachine0 = StorageMachine#{state := NewMachineState},
     NewState =
@@ -857,21 +888,35 @@ processor_child_spec(Options) ->
     ReqCtx :: request_context(),
     Deadline :: mg_utils:deadline().
 reschedule(ProcessingCtx, ReqCtx, Deadline, State) ->
-    #{id:= ID, options := Options} = State,
+    #{id:= ID, options := Options, namespace := NS} = State,
     try
         {ok, NewState, Target, Attempt} = reschedule_unsafe(ReqCtx, Deadline, State),
-        ok = emit_log_machine_event(Options, ID, ReqCtx, {machine_rescheduled, Target, Attempt}),
+        ok = emit_beat(Options, #mg_timer_lifecycle_rescheduled{
+            namespace = NS,
+            machine_id = ID,
+            request_context = ReqCtx,
+            deadline = Deadline,
+            target_timestamp = Target,
+            attempt = Attempt
+        }),
         ok = do_reply_action({reply, ok}, ProcessingCtx),
         NewState
     catch
         throw:(Reason=({ErrorType, _Details})) when ?can_be_retried(ErrorType) ->
             Exception = {throw, Reason, erlang:get_stacktrace()},
-            ok = emit_log_machine_event(Options, ID, ReqCtx, {machine_rescheduling_failed, Exception}),
+            ok = emit_beat(Options, #mg_timer_lifecycle_rescheduling_error{
+                namespace = NS,
+                machine_id = ID,
+                request_context = ReqCtx,
+                deadline = Deadline,
+                exception = Exception
+            }),
             ok = do_reply_action({reply, {error, Reason}}, ProcessingCtx),
             State;
         Class:Reason ->
+            Exception = {Class, Reason, erlang:get_stacktrace()},
             ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
-            handle_exception({Class, Reason, erlang:get_stacktrace()}, undefined, ReqCtx, Deadline, State)
+            handle_exception(Exception, undefined, ReqCtx, Deadline, State)
     end.
 
 -spec reschedule_unsafe(ReqCtx, Deadline, state()) -> Result when
@@ -1001,6 +1046,98 @@ retry_strategy_(_Subj, Policy, Deadline, InitialTs, Attempt) ->
     Timeout = mg_utils:deadline_to_timeout(Deadline),
     mg_retry:new_strategy({timecap, Timeout, Policy}, InitialTs, Attempt).
 
+-spec emit_pre_process_beats(processor_impact(), request_context(), mg_utils:deadline(), state()) ->
+    ok.
+emit_pre_process_beats(Impact, ReqCtx, Deadline, State) ->
+    #{id := ID, options := #{namespace := NS} = Options} = State,
+    ok = emit_beat(Options, #mg_machine_process_started{
+        processor_impact = Impact,
+        namespace = NS,
+        machine_id = ID,
+        request_context = ReqCtx,
+        deadline = Deadline
+    }),
+    emit_pre_process_timer_beats(Impact, ReqCtx, Deadline, State).
+
+-spec emit_pre_process_timer_beats(processor_impact(), request_context(), mg_utils:deadline(), state()) ->
+    ok.
+emit_pre_process_timer_beats(timeout, ReqCtx, Deadline, State) ->
+    #{
+        id := ID,
+        options := #{namespace := NS} = Options,
+        storage_machine := #{status := Status}
+    } = State,
+    {ok, QueueName, TargetTimestamp} = extract_timer_queue_info(Status),
+    emit_beat(Options, #mg_timer_process_started{
+        queue = QueueName,
+        namespace = NS,
+        machine_id = ID,
+        request_context = ReqCtx,
+        target_timestamp = TargetTimestamp,
+        deadline = Deadline
+    });
+emit_pre_process_timer_beats(_Impact, _ReqCtx, _Deadline, _State) ->
+    ok.
+
+-spec emit_post_process_beats(processor_impact(), request_context(), mg_utils:deadline(), integer(), state()) ->
+    ok.
+emit_post_process_beats(Impact, ReqCtx, Deadline, Duration, State) ->
+    #{id := ID, options := #{namespace := NS} = Options} = State,
+    ok = emit_beat(Options, #mg_machine_process_finished{
+        processor_impact = Impact,
+        namespace = NS,
+        machine_id = ID,
+        request_context = ReqCtx,
+        deadline = Deadline,
+        duration = Duration
+    }),
+    emit_post_process_timer_beats(Impact, ReqCtx, Deadline, Duration, State).
+
+-spec emit_post_process_timer_beats(processor_impact(), request_context(), mg_utils:deadline(), integer(), state()) ->
+    ok.
+emit_post_process_timer_beats(timeout, ReqCtx, Deadline, Duration, State) ->
+    #{
+        id := ID,
+        options := #{namespace := NS} = Options,
+        storage_machine := #{status := Status}
+    } = State,
+    {ok, QueueName, TargetTimestamp} = extract_timer_queue_info(Status),
+    emit_beat(Options, #mg_timer_process_finished{
+        queue = QueueName,
+        namespace = NS,
+        machine_id = ID,
+        request_context = ReqCtx,
+        target_timestamp = TargetTimestamp,
+        deadline = Deadline,
+        duration = Duration
+    });
+emit_post_process_timer_beats(_Impact, _ReqCtx, _Deadline, _Duration, _State) ->
+    ok.
+
+-spec extract_timer_queue_info(machine_status()) ->
+    {ok, normal | retries, genlib_time:ts()} | {error, not_timer}.
+extract_timer_queue_info({waiting, Timestamp, _, _}) ->
+    {ok, normal, Timestamp};
+extract_timer_queue_info({retrying, Timestamp, _, _, _}) ->
+    {ok, retries, Timestamp};
+extract_timer_queue_info(_Other) ->
+    {error, not_timer}.
+
+-spec emit_machine_load_beat(options(), mg:ns(), mg:id(), request_context(), storage_machine() | undefined) ->
+    ok.
+emit_machine_load_beat(Options, Namespace, ID, ReqCtx, undefined) ->
+    ok = emit_beat(Options, #mg_machine_lifecycle_created{
+        namespace = Namespace,
+        machine_id = ID,
+        request_context = ReqCtx
+    });
+emit_machine_load_beat(Options, Namespace, ID, ReqCtx, _StorageMachine) ->
+    ok = emit_beat(Options, #mg_machine_lifecycle_loaded{
+        namespace = Namespace,
+        machine_id = ID,
+        request_context = ReqCtx
+    }).
+
 %%
 
 -spec manager_options(options()) ->
@@ -1008,6 +1145,7 @@ retry_strategy_(_Subj, Policy, Deadline, InitialTs, Attempt) ->
 manager_options(Options) ->
     #{
         name           => maps:get(namespace, Options),
+        pulse          => maps:get(pulse, Options),
         worker_options => #{
             worker => {?MODULE, Options}
         }
@@ -1055,10 +1193,15 @@ get_options(Subj, Options) ->
 
 -spec try_suicide(state(), request_context()) ->
     ok | no_return().
-try_suicide(#{options := Options = #{suicide_probability := Prob}, id := ID}, ReqCtx) ->
+try_suicide(#{options := Options = #{suicide_probability := Prob}, id := ID, namespace := NS}, ReqCtx) ->
     case (Prob =/= undefined) andalso (rand:uniform() < Prob) of
         true ->
-            ok = emit_log_machine_event(Options, ID, ReqCtx, committed_suicide),
+            ok = emit_beat(Options, #mg_machine_lifecycle_committed_suicide{
+                namespace = NS,
+                machine_id = ID,
+                request_context = ReqCtx,
+                suicide_probability = Prob
+            }),
             erlang:exit(self(), kill);
         false ->
             ok
@@ -1075,10 +1218,19 @@ do_with_retry(Options, ID, Fun, RetryStrategy, ReqCtx) ->
     try
         Fun()
     catch throw:(Reason={transient, _}) ->
-        ok = emit_log_machine_event(Options, ID, ReqCtx, {transient_error, {throw, Reason, erlang:get_stacktrace()}}),
-        case genlib_retry:next_step(RetryStrategy) of
+        Exception = {throw, Reason, erlang:get_stacktrace()},
+        NS = maps:get(namespace, Options),
+        NextStep = genlib_retry:next_step(RetryStrategy),
+        ok = emit_beat(Options, #mg_machine_process_transient_error{
+            namespace = NS,
+            machine_id = ID,
+            exception = Exception,
+            request_context = ReqCtx,
+            retry_strategy = RetryStrategy,
+            retry_action = NextStep
+        }),
+        case NextStep of
             {wait, Timeout, NewRetryStrategy} ->
-                ok = emit_log_machine_event(Options, ID, ReqCtx, {retrying, Timeout}),
                 ok = timer:sleep(Timeout),
                 do_with_retry(Options, ID, Fun, NewRetryStrategy, ReqCtx);
             finish ->
@@ -1089,12 +1241,7 @@ do_with_retry(Options, ID, Fun, RetryStrategy, ReqCtx) ->
 %%
 %% logging
 %%
--spec emit_log_request_event(options(), mg:id() | undefined, request_context(), mg_machine_logger:request_event()) ->
-    ok.
-emit_log_request_event(#{logger := Handler}, ID, ReqCtx, RequestEvent) ->
-    ok = mg_machine_logger:handle_event(Handler, {request_event, ID, ReqCtx, RequestEvent}).
 
--spec emit_log_machine_event(options(), mg:id(), request_context(), mg_machine_logger:machine_event()) ->
-    ok.
-emit_log_machine_event(#{logger := Handler}, ID, ReqCtx, MachineEvent) ->
-    ok = mg_machine_logger:handle_event(Handler, {machine_event, ID, ReqCtx, MachineEvent}).
+-spec emit_beat(options(), mg_pulse:beat()) -> ok.
+emit_beat(#{pulse := Handler}, Beat) ->
+    ok = mg_pulse:handle_beat(Handler, Beat).

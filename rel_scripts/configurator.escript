@@ -36,6 +36,7 @@ main([YamlConfigFilename, ConfigsPath]) ->
 sys_config(YamlConfig) ->
     [
         {lager       , lager       (YamlConfig)},
+        {statsderl   , statsderl   (YamlConfig)},
         {snowflake   , snowflake   (YamlConfig)},
         {mg_woody_api, mg_woody_api(YamlConfig)}
     ].
@@ -55,6 +56,13 @@ lager(YamlConfig) ->
                 {date, ""}
             ]}
         ]}
+    ].
+
+statsderl(YamlConfig) ->
+    [
+        {hostname, ?C:utf_bin(?C:conf([metrics, host], YamlConfig, "localhost"))},
+        {port, ?C:conf([metrics, port], YamlConfig, "8125")},
+        {pool_size, ?C:conf([metrics, pool_size], YamlConfig, 4)}
     ].
 
 snowflake(YamlConfig) ->

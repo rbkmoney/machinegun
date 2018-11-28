@@ -36,8 +36,8 @@
 
 -export([start/0]).
 
-%% logger
--export([handle_machine_logging_event/2]).
+%% Pulse
+-export([handle_beat/2]).
 
 %%
 %% tests descriptions
@@ -237,7 +237,7 @@ automaton_options() ->
         namespace => <<"test">>,
         processor => ?MODULE,
         storage   => mg_storage_memory,
-        logger    => ?MODULE
+        pulse     => ?MODULE
     }.
 
 -spec lists_random(list(T)) ->
@@ -245,10 +245,10 @@ automaton_options() ->
 lists_random(List) ->
     lists:nth(rand:uniform(length(List)), List).
 
--spec handle_machine_logging_event(_, mg_machine_logger:event()) ->
+-spec handle_beat(_, mg_pulse:beat()) ->
     ok.
 % для отладки может понадобится
-% handle_machine_logging_event(_, {_, _, [ID, Seq], SubEvent}) ->
-%     ct:pal("[~p:~p] ~p", [ID, Seq, SubEvent]).
-handle_machine_logging_event(_, {_, _, [_, _], _}) ->
+% handle_beat(_, Beat) ->
+%     ct:pal("~p", [Beat]).
+handle_beat(_Options, _Beat) ->
     ok.

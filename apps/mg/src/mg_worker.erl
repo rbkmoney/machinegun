@@ -16,13 +16,15 @@
 
 -module(mg_worker).
 
+-include_lib("mg/include/pulse.hrl").
+
 %% API
 -export_type([options     /0]).
 -export_type([call_context/0]).
 
 -export([child_spec    /2]).
 -export([start_link    /4]).
--export([call          /6]).
+-export([call          /7]).
 -export([brutal_kill   /2]).
 -export([reply         /2]).
 -export([get_call_queue/2]).
@@ -52,6 +54,11 @@
 }.
 -type call_context() :: _. % в OTP он не описан, а нужно бы :(
 
+%% Internal types
+
+-type pulse() :: mg_pulse:handler().
+-type queue_limit() :: mg_workers_manager:queue_limit().
+
 -spec child_spec(atom(), options()) ->
     supervisor:child_spec().
 child_spec(ChildID, Options) ->
@@ -67,10 +74,19 @@ child_spec(ChildID, Options) ->
 start_link(Options, NS, ID, ReqCtx) ->
     gen_server:start_link(self_reg_name({NS, ID}), ?MODULE, {ID, Options, ReqCtx}, []).
 
--spec call(_NS, _ID, _Call, _ReqCtx, mg_utils:deadline(), pos_integer()) ->
+-spec call(_NS, _ID, _Call, _ReqCtx, mg_utils:deadline(), queue_limit(), pulse()) ->
     _Result | {error, _}.
-call(NS, ID, Call, ReqCtx, Deadline, MaxQueueLength) ->
-    case mg_utils:msg_queue_len(self_ref({NS, ID})) < MaxQueueLength of
+call(NS, ID, Call, ReqCtx, Deadline, MaxQueueLength, Pulse) ->
+    QueueLength = mg_utils:msg_queue_len(self_ref({NS, ID})),
+    ok = mg_pulse:handle_beat(Pulse, #mg_worker_call_attempt{
+        namespace = NS,
+        machine_id = ID,
+        request_context = ReqCtx,
+        deadline = Deadline,
+        msg_queue_len = QueueLength,
+        msg_queue_limit = MaxQueueLength
+    }),
+    case QueueLength < MaxQueueLength of
         true ->
             gen_server:call(
                 self_ref({NS, ID}),

@@ -93,6 +93,7 @@ stop() ->
     {ok, pid()} | {error, any()}.
 start(_StartType, _StartArgs) ->
     Config = application:get_all_env(?MODULE),
+    ok = metrics_init(Config),
     mg_utils_supervisor_wrapper:start_link(
         {local, ?MODULE},
         #{strategy => rest_for_one},
@@ -111,6 +112,7 @@ stop(_State) ->
 %%
 %% local
 %%
+
 -spec events_machines_child_specs(config()) ->
     [supervisor:child_spec()].
 events_machines_child_specs(Config) ->
@@ -140,7 +142,7 @@ woody_server_child_spec(Config, ChildID) ->
             port           => maps:get(port           , WoodyConfig),
             transport_opts => maps:get(transport_opts , WoodyConfig, []),
             protocol_opts  => maps:get(protocol_opts  , WoodyConfig, []),
-            event_handler  => {mg_woody_api_event_handler, server},
+            event_handler  => {mg_woody_api_event_handler, mg_woody_api_pulse},
             handler_limits => maps:get(limits         , WoodyConfig, #{}),
             handlers       => [
                 mg_woody_api_automaton :handler(api_automaton_options (Config)),
@@ -183,6 +185,7 @@ events_machine_options(NS, Config = #{processor := ProcessorConfig, storage := S
             tagging                    => tags_options(NS, Config),
             machines                   => machine_options(NS, Config),
             events_storage             => add_bucket_postfix(<<"events">>, Storage),
+            pulse                      => pulse(),
             default_processing_timeout => maps:get(default_processing_timeout, Config)
         }
     ).
@@ -193,7 +196,7 @@ tags_options(NS, #{retries := Retries, storage := Storage}) ->
     #{
         namespace => mg_utils:concatenate_namespaces(NS, <<"tags">>),
         storage   => Storage, % по логике тут должен быть sub namespace, но его по историческим причинам нет
-        logger    => logger({machine_tags, NS}),
+        pulse     => pulse(),
         retries   => Retries
     }.
 
@@ -213,7 +216,7 @@ machine_options(NS, Config) ->
     Options#{
         namespace           => NS,
         storage             => add_bucket_postfix(<<"machines">>, Storage),
-        logger              => logger({machine, NS}),
+        pulse               => pulse(),
         % TODO сделать аналогично в event_sink'е и тэгах
         suicide_probability => maps:get(suicide_probability, Config, undefined)
     }.
@@ -254,7 +257,7 @@ api_event_sink_options(Config) ->
 event_sink_options(EventSinkNS = #{storage := Storage, default_processing_timeout := Timeout}) ->
     EventSinkNS#{
         namespace        => <<"_event_sinks">>,
-        logger           => logger(event_sink),
+        pulse            => pulse(),
         storage          => add_bucket_postfix(<<"machines">>, Storage),
         events_storage   => add_bucket_postfix(<<"events"  >>, Storage),
         default_processing_timeout => Timeout
@@ -285,7 +288,29 @@ add_bucket_postfix(SubNS, {mg_storage_pool, Options = #{worker := Worker}}) ->
 add_bucket_postfix(SubNS, {mg_storage_riak, Options = #{bucket := Bucket}}) ->
     {mg_storage_riak, Options#{bucket := mg_utils:concatenate_namespaces(Bucket, SubNS)}}.
 
--spec logger(mg_woody_api_logger:subj()) ->
-    mg_machine_logger:handler().
-logger(Subj) ->
-    {mg_woody_api_logger, Subj}.
+-spec metrics_init(config()) ->
+    ok | {error, _Details}.
+metrics_init(Config) ->
+    ConfigNSs = proplists:get_value(namespaces, Config),
+    MachineNSs =  maps:keys(ConfigNSs),
+    TagNSs = [mg_utils:concatenate_namespaces(NS, <<"tags">>) || NS <- MachineNSs],
+    AllNS = [<<"_event_sinks_machines">>] ++ MachineNSs ++ TagNSs,
+    Metrics = mg_woody_api_pulse_metric:get_all_metrics(AllNS),
+    register_metrics(Metrics).
+
+-spec register_metrics([how_are_you:metric()]) ->
+    ok | {error, _Details}.
+register_metrics([]) ->
+    ok;
+register_metrics([M | Metrics]) ->
+    case how_are_you:metric_register(M) of
+        ok ->
+            register_metrics(Metrics);
+        {error, _Reason} = Error ->
+            Error
+    end.
+
+-spec pulse() ->
+    mg_pulse:handler().
+pulse() ->
+    mg_woody_api_pulse.

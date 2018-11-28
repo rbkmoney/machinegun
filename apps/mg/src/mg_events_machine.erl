@@ -23,6 +23,8 @@
 %%%
 -module(mg_events_machine).
 
+-include_lib("mg/include/pulse.hrl").
+
 %% API
 -export_type([options         /0]).
 -export_type([ref             /0]).
@@ -106,6 +108,7 @@
     processor                  => mg_utils:mod_opts(),
     tagging                    => mg_machine_tags:options(),
     machines                   => mg_machine:options(),
+    pulse                      => mg_pulse:handler(),
     event_sink                 => {mg:id(), mg_events_sink:options()},
     default_processing_timeout => timeout()
 }.
@@ -311,6 +314,7 @@ process_machine_(Options, ID, continuation, PCtx, ReqCtx, Deadline, State = #{de
             NewState_ ->
                 {state_to_flow_action(NewState_), NewState_}
         end,
+    ok = emit_action_beats(Options, ID, ReqCtx, DelayedActions),
     {ReplyAction, FlowAction, NewState}.
 
 -spec add_tag(options(), mg:id(), request_context(), deadline(), undefined | mg_machine_tags:tag()) ->
@@ -391,6 +395,33 @@ apply_delayed_timer_actions_to_state(#{new_timer := unchanged}, State) ->
     State;
 apply_delayed_timer_actions_to_state(#{new_timer := Timer}, State) ->
     State#{timer := Timer}.
+
+-spec emit_action_beats(options(), mg:id(), request_context(), delayed_actions()) ->
+    ok.
+emit_action_beats(Options, ID, ReqCtx, DelayedActions) ->
+    ok = emit_timer_action_beats(Options, ID, ReqCtx, DelayedActions),
+    ok.
+
+-spec emit_timer_action_beats(options(), mg:id(), request_context(), delayed_actions()) ->
+    ok.
+emit_timer_action_beats(_Options, _ID, _ReqCtx, #{new_timer := unchanged}) ->
+    ok;
+emit_timer_action_beats(Options, ID, ReqCtx, #{new_timer := undefined}) ->
+    #{namespace := NS, pulse := Pulse} = Options,
+    mg_pulse:handle_beat(Pulse, #mg_timer_lifecycle_removed{
+        namespace = NS,
+        machine_id = ID,
+        request_context = ReqCtx
+    });
+emit_timer_action_beats(Options, ID, ReqCtx, #{new_timer := Timer}) ->
+    #{namespace := NS, pulse := Pulse} = Options,
+    {Timestamp, _TimerReqCtx, _TimerDeadline, _TimerHistory} = Timer,
+    mg_pulse:handle_beat(Pulse, #mg_timer_lifecycle_created{
+        namespace = NS,
+        machine_id = ID,
+        request_context = ReqCtx,
+        target_timestamp = Timestamp
+    }).
 
 %%
 
