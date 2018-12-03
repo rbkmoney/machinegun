@@ -37,7 +37,7 @@ build('machinegun', 'docker-host', finalHook) {
   pipeDefault() {
     runStage('compile') {
       withGithubPrivkey{
-        sh 'make wc_compile'
+          sh 'make wc_compile'
       }
     }
     runStage('lint') {
