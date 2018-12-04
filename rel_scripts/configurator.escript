@@ -36,7 +36,7 @@ main([YamlConfigFilename, ConfigsPath]) ->
 sys_config(YamlConfig) ->
     [
         {lager       , lager       (YamlConfig)},
-        {statsderl   , statsderl   (YamlConfig)},
+        {how_are_you , how_are_you (YamlConfig)},
         {snowflake   , snowflake   (YamlConfig)},
         {mg_woody_api, mg_woody_api(YamlConfig)}
     ].
@@ -58,11 +58,20 @@ lager(YamlConfig) ->
         ]}
     ].
 
-statsderl(YamlConfig) ->
+how_are_you(YamlConfig) ->
     [
-        {hostname, ?C:utf_bin(?C:conf([metrics, host], YamlConfig, "localhost"))},
-        {port, ?C:conf([metrics, port], YamlConfig, "8125")},
-        {pool_size, ?C:conf([metrics, pool_size], YamlConfig, 4)}
+        {metrics_publishers, [
+            {hay_statsd_publisher, #{
+                host => ?C:utf_bin(?C:conf([metrics, exporter, statsd, host], YamlConfig, "localhost")),
+                port => ?C:conf([metrics, exporter, statsd, port], YamlConfig, 8125)
+            }}
+        ]},
+        {metrics_handlers, [
+            hay_vm_handler,
+            {mg_woody_api_hay, #{
+                namespaces => namespaces_list(YamlConfig)
+            }}
+        ]}
     ].
 
 snowflake(YamlConfig) ->
@@ -177,6 +186,16 @@ namespaces(YamlConfig) ->
         #{},
         ?C:conf([namespaces], YamlConfig)
     ).
+
+namespaces_list(YamlConfig) ->
+    NsNames = [
+        erlang:list_to_binary(NameStr)
+        || {NameStr, _NSYamlConfig} <- ?C:conf([namespaces], YamlConfig)
+    ],
+    lists:flatten([<<"_event_sinks_machines">>] ++ [
+        [NS, <<NS/binary, "_tags">>]
+        || NS <- NsNames
+    ]).
 
 namespace({NameStr, NSYamlConfig}, YamlConfig) ->
     Name = ?C:utf_bin(NameStr),
