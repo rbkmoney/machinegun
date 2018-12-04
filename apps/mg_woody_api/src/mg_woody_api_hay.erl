@@ -51,8 +51,8 @@
 -type worker_key() :: {mg:ns(), mg:id(), pid()}.
 -type metric() :: how_are_you:metric().
 -type metrics() :: [metric()].
--type metric_key() :: how_are_you:metrics_key().
--type metric_value() :: how_are_you:metrics_value().
+-type metric_key() :: how_are_you:metric_key().
+-type metric_value() :: how_are_you:metric_value().
 -type nested_metrics() :: metrics() | [nested_metrics()].
 
 %% API
@@ -170,7 +170,7 @@ bear_metric(KeyPrefix, {percentile, Percentiles}) ->
 bear_metric(KeyPrefix, {StatKey, StatValue}) ->
     [gauge([KeyPrefix, StatKey], StatValue)].
 
--spec bear_percentile_metric(metric_key(), [{integer(), number()}]) ->
+-spec bear_percentile_metric(metric_key(), {integer(), number()}) ->
     metric().
 bear_percentile_metric(KeyPrefix, {Percentile, Value}) ->
     gauge([KeyPrefix, <<"p", (erlang:integer_to_binary(Percentile))/binary>>], Value).
