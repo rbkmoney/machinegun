@@ -39,7 +39,7 @@ logging:
 metrics:
     exporter:
         statsd:
-            host: "127.0.0.1"
+            host: "localhost"
             port: 8125
 namespaces:
     mg_test_ns:
