@@ -96,9 +96,11 @@ handle_error({logic, {invalid_machine_id, _}}, _) -> {rethrow, #mg_stateproc_Mac
 
 % может Reason не прокидывать дальше?
 % TODO logs
-handle_error({transient, _     }, {wait, Timeout, NewStrategy}) -> {retry_in, Timeout, NewStrategy};
-handle_error({transient, Reason}, finish                      ) -> {woody_error, {resource_unavailable, Reason}};
-handle_error(Reason={timeout, _}, _                           ) -> {woody_error, {result_unknown      , Reason}};
+% повторы запросов только для стораджа, остальные не заслужили
+handle_error({transient, {storage_unavailable, _Reason}}, {wait, Timeout, NewStrategy}) -> {retry_in, Timeout, NewStrategy};
+
+handle_error({transient, Reason}, _) -> {woody_error, {resource_unavailable, Reason}};
+handle_error(Reason={timeout, _}, _) -> {woody_error, {result_unknown      , Reason}};
 
 handle_error(UnknownError, _) -> erlang:error(badarg, [UnknownError]).
 
