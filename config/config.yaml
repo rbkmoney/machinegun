@@ -32,14 +32,14 @@ limits:
         type: cgroups  # cgroups | total
         value: 90%
 logging:
-    root: /tmp
+    root: /var/log/machinegun
     crash_log: crash.log
     json_log: log.json
     level: info
 metrics:
     exporter:
         statsd:
-            host: "192.168.32.8"
+            host: "127.0.0.1"
             port: 8125
 namespaces:
     mg_test_ns:
