@@ -59,13 +59,11 @@ lager(YamlConfig) ->
     ].
 
 how_are_you(YamlConfig) ->
+    Publishers = lists:flatten([
+        hay_statsd_publisher(YamlConfig)
+    ]),
     [
-        {metrics_publishers, [
-            {hay_statsd_publisher, #{
-                host => ?C:utf_bin(?C:conf([metrics, exporter, statsd, host], YamlConfig, "localhost")),
-                port => ?C:conf([metrics, exporter, statsd, port], YamlConfig, 8125)
-            }}
-        ]},
+        {metrics_publishers, Publishers},
         {metrics_handlers, [
             hay_vm_handler,
             {mg_woody_api_hay, #{
@@ -73,6 +71,19 @@ how_are_you(YamlConfig) ->
             }}
         ]}
     ].
+
+hay_statsd_publisher(YamlConfig) ->
+    case ?C:conf([metrics, exporter, statsd], YamlConfig, undefined) of
+        Config when Config =/= undefined ->
+            [
+                {hay_statsd_publisher, #{
+                    host => ?C:utf_bin(?C:conf([metrics, exporter, statsd, host], YamlConfig, "localhost")),
+                    port => ?C:conf([metrics, exporter, statsd, port], YamlConfig, 8125)
+                }}
+            ];
+        undefined ->
+            []
+    end.
 
 snowflake(YamlConfig) ->
     [{machine_id, ?C:conf([snowflake_machine_id], YamlConfig, 0)}].
