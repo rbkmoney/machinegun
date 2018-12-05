@@ -83,7 +83,11 @@
                            | {index_name(), index_query_value(), index_limit()}
                            | {index_name(), index_query_value(), index_limit(), continuation()}.
 
--type search_result() :: {[{index_value(), key()}], continuation()} | {[key()], continuation()}.
+-type search_result() ::
+    {[{index_value(), key()}], continuation()} |
+    {[key()], continuation()} |
+    [{index_value(), key()}] |
+    [key()].
 
 
 -type storage_options() :: term().
@@ -146,7 +150,7 @@ get(Options, SelfRef, Key) ->
     do_request(Options, SelfRef, {get, Key}).
 
 -spec search(options(), mg_utils:gen_ref(), index_query()) ->
-    [key()] | {[key()], continuation()}.
+    search_result().
 search(Options, SelfRef, Query) ->
     do_request(Options, SelfRef, {search, Query}).
 

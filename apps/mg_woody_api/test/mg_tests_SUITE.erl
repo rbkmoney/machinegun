@@ -290,6 +290,13 @@ content(Body) ->
 mg_woody_api_config(C) ->
     [
         {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, limits => #{}}},
+        {quotas, [
+            #{
+                name => <<"scheduler_tasks_total">>,
+                limit => #{ value => 10 },
+                update_interval => 100
+            }
+        ]},
         {namespaces, #{
             ?NS => #{
                 storage    => ?config(storage, C),
@@ -298,10 +305,10 @@ mg_woody_api_config(C) ->
                     transport_opts => [{pool, ns}, {max_connections, 100}]
                 },
                 default_processing_timeout => 5000,
-                scheduled_tasks => #{
-                    timers         => #{ interval => 100, limit => 10 },
-                    timers_retries => #{ interval => 100, limit => 10 },
-                    overseer       => #{ interval => 100, limit => 10 }
+                schedulers => #{
+                    timers         => #{ interval => 100, limit => <<"scheduler_tasks_total">> },
+                    timers_retries => #{ interval => 100, limit => <<"scheduler_tasks_total">> },
+                    overseer       => #{ interval => 100, limit => <<"scheduler_tasks_total">> }
                 },
                 retries => #{
                     storage   => {exponential, infinity, 1, 10},
@@ -581,9 +588,10 @@ config_with_multiple_event_sinks(_C) ->
                     transport_opts => [{pool, pool1}, {max_connections, 100}]
                 },
                 default_processing_timeout => 30000,
-                scheduled_tasks => #{
-                    timers   => #{ interval => 100, limit => 10 },
-                    overseer => #{ interval => 100, limit => 10 }
+                schedulers => #{
+                    timers         => #{ interval => 100 },
+                    timers_retries => #{ interval => 100 },
+                    overseer       => #{ interval => 100 }
                 },
                 retries => #{},
                 event_sink => <<"SingleES">>
@@ -595,9 +603,10 @@ config_with_multiple_event_sinks(_C) ->
                     transport_opts => [{pool, pool2}, {max_connections, 100}]
                 },
                 default_processing_timeout => 5000,
-                scheduled_tasks => #{
-                    timers   => #{ interval => 100, limit => 10 },
-                    overseer => #{ interval => 100, limit => 10 }
+                schedulers => #{
+                    timers         => #{ interval => 100 },
+                    timers_retries => #{ interval => 100 },
+                    overseer       => #{ interval => 100 }
                 },
                 retries => #{},
                 event_sink => <<"SingleES">>

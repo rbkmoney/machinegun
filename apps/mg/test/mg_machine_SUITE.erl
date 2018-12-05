@@ -168,10 +168,10 @@ automaton_options() ->
         processor => ?MODULE,
         storage   => mg_storage_memory,
         pulse     => ?MODULE,
-        scheduled_tasks => #{
-            timers         => #{ interval => 1000, limit => 10 },
-            timers_retries => #{ interval => 1000, limit => 10 },
-            overseer       => #{ interval => 1000, limit => 10 }
+        schedulers => #{
+            timers         => #{ interval => 1000 },
+            timers_retries => #{ interval => 1000 },
+            overseer       => #{ interval => 1000 }
         }
     }.
 

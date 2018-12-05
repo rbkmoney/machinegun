@@ -117,11 +117,8 @@ create_metric(#mg_timer_process_finished{namespace = NS, queue = Queue, duration
         create_bin_inc([mg, timer, process, NS, Queue, duration], duration, Duration)
     ];
 % Sheduler
-create_metric(#mg_scheduler_error{tag = Tag, namespace = NS}) when
-    Tag =:= timer_handling_failed orelse
-    Tag =:= timer_retry_handling_failed
-->
-    [create_inc([mg, sheduler, error, NS, Tag, error])];
+create_metric(#mg_scheduler_task_error{scheduler_name = Name, namespace = NS}) ->
+    [create_inc([mg, sheduler, NS, Name, task_error])];
 % Workers management
 create_metric(#mg_worker_call_attempt{namespace = NS, msg_queue_len = QLen, msg_queue_limit = QLimit}) ->
     QUsage = calc_queue_usage(QLen, QLimit),
@@ -164,10 +161,10 @@ get_machine_lifecycle_metrics(NS) ->
 
 -spec get_sheduler_metrics(mg:ns()) -> nested_metrics().
 get_sheduler_metrics(NS) ->
-    Tasks = [timer_handling_failed, timer_retry_handling_failed],
+    Names = [timers, timers_retries, overseer],
     [
-        create_inc([mg, sheduler, error, NS, T, error])
-        || T <- Tasks
+        create_inc([mg, sheduler, NS, N, task_error])
+        || N <- Names
     ].
 
 -spec get_machine_processing_metrics(mg:ns()) -> nested_metrics().

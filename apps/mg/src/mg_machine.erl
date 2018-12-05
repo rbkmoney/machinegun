@@ -60,8 +60,9 @@
 
 %% API
 -export_type([retry_opt             /0]).
--export_type([scheduled_tasks_opt   /0]).
 -export_type([suicide_probability   /0]).
+-export_type([scheduler_opt         /0]).
+-export_type([schedulers_opt        /0]).
 -export_type([options               /0]).
 -export_type([thrown_error          /0]).
 -export_type([logic_error           /0]).
@@ -83,20 +84,21 @@
 -export([simple_repair       /4]).
 -export([repair              /5]).
 -export([call                /5]).
+-export([send_timeout        /5]).
+-export([send_retry_wait     /6]).
+-export([resume_interrupted  /4]).
 -export([fail                /4]).
 -export([fail                /5]).
 -export([get                 /2]).
 -export([get_status          /2]).
 -export([is_exist            /2]).
 -export([search              /2]).
+-export([search              /3]).
+-export([search              /4]).
 -export([reply               /2]).
 -export([call_with_lazy_start/6]).
 
 %% Internal API
--export([handle_timers         /2]).
--export([handle_timers_retries /2]).
--export([resume_interrupted    /2]).
--export([resume_interrupted_one/2]).
 -export([all_statuses          /0]).
 -export([manager_options       /1]).
 -export([get_storage_machine   /2]).
@@ -108,15 +110,19 @@
 %%
 %% API
 %%
--type scheduled_task_opt() :: disable | #{interval => pos_integer(), limit => mg_storage:index_limit()}.
+-type scheduler_opt() :: disable | #{
+    interval     => pos_integer(),
+    no_task_wait => pos_integer(),
+    limit        => mg_quota_worker:name()
+}.
 -type retry_subj() :: storage | processor | timers.
 -type retry_opt() :: #{
     retry_subj()   => mg_retry:policy()
 }.
--type scheduled_tasks_opt() :: #{
-    timers           => scheduled_task_opt(),
-    timers_retries   => scheduled_task_opt(),
-    overseer         => scheduled_task_opt()
+-type schedulers_opt() :: #{
+    timers           => scheduler_opt(),
+    timers_retries   => scheduler_opt(),
+    overseer         => scheduler_opt()
 }.
 -type suicide_probability() :: float() | integer() | undefined. % [0, 1]
 
@@ -126,7 +132,7 @@
     processor                => mg_utils:mod_opts(),
     pulse                    => mg_pulse:handler(),
     retries                  => retry_opt(),
-    scheduled_tasks          => scheduled_tasks_opt(),
+    schedulers               => schedulers_opt(),
     suicide_probability      => suicide_probability(),
     reschedule_timeout       => timeout(),
     timer_processing_timeout => timeout()
@@ -213,12 +219,12 @@ start_link(Options) ->
     mg_utils_supervisor_wrapper:start_link(
         #{strategy => one_for_all},
         mg_utils:lists_compact([
+            mg_storage:child_spec(storage_options(Options), storage, storage_reg_name(Options)),
+            processor_child_spec(Options),
             mg_workers_manager:child_spec(manager_options(Options), manager),
-            mg_storage        :child_spec(storage_options(Options), storage, storage_reg_name(Options)),
             scheduler_child_spec(timers        , Options),
             scheduler_child_spec(timers_retries, Options),
-            scheduler_child_spec(overseer      , Options),
-            processor_child_spec(Options)
+            scheduler_child_spec(overseer      , Options)
         ])
     ).
 
@@ -241,6 +247,26 @@ repair(Options, ID, Args, ReqCtx, Deadline) ->
     _Resp | throws().
 call(Options, ID, Call, ReqCtx, Deadline) ->
     call_(Options, ID, {call, Call}, ReqCtx, Deadline).
+
+-spec send_timeout(options(), mg:id(), genlib_time:ts(), request_context(), mg_utils:deadline()) ->
+    _Resp | throws().
+send_timeout(Options, ID, Timestamp, ReqCtx, Deadline) ->
+    call_(Options, ID, {timeout, Timestamp}, ReqCtx, Deadline).
+
+-spec send_retry_wait(Options, ID, Status, Timestamp, ReqCtx, Deadline) -> _Resp | throws() when
+    Options :: options(),
+    ID :: mg:id(),
+    Status :: waiting | retrying,
+    Timestamp :: genlib_time:ts(),
+    ReqCtx :: request_context(),
+    Deadline :: mg_utils:deadline().
+send_retry_wait(Options, ID, Status, Timestamp, ReqCtx, Deadline) ->
+    call_(Options, ID, {retry_wait, {Status, Timestamp}}, ReqCtx, Deadline).
+
+-spec resume_interrupted(options(), mg:id(), request_context(), mg_utils:deadline()) ->
+    _Resp | throws().
+resume_interrupted(Options, ID, ReqCtx, Deadline) ->
+    call_(Options, ID, resume_interrupted_one, ReqCtx, Deadline).
 
 -spec fail(options(), mg:id(), request_context(), mg_utils:deadline()) ->
     ok.
@@ -271,13 +297,19 @@ get_status(Options, ID) ->
 is_exist(Options, ID) ->
     get_storage_machine(Options, ID) =/= undefined.
 
+-spec search(options(), search_query(), mg_storage:index_limit(), mg_storage:continuation()) ->
+    mg_storage:search_result() | throws().
+search(Options, Query, Limit, Continuation) ->
+    StorageQuery = storage_search_query(Query, Limit, Continuation),
+    mg_storage:search(storage_options(Options), storage_ref(Options), StorageQuery).
+
 -spec search(options(), search_query(), mg_storage:index_limit()) ->
-    {[{_TODO, mg:id()}] | [mg:id()], mg_storage:continuation()} | throws().
+    mg_storage:search_result() | throws().
 search(Options, Query, Limit) ->
     mg_storage:search(storage_options(Options), storage_ref(Options), storage_search_query(Query, Limit)).
 
 -spec search(options(), search_query()) ->
-    [{_TODO, mg:id()}] | [mg:id()] | throws().
+    mg_storage:search_result() | throws().
 search(Options, Query) ->
     % TODO deadline
     mg_storage:search(storage_options(Options), storage_ref(Options), storage_search_query(Query)).
@@ -310,184 +342,11 @@ reply(#{call_context := CallContext}, Reply) ->
 %%
 %% Internal API
 %%
--define(DEFAULT_SCHEDULED_TASK, disable). % {1000, 10}
 -define(DEFAULT_RETRY_POLICY, {exponential, infinity, 2, 10, 60 * 1000}).
 -define(DEFAULT_TIMER_PROCESSING_TIMEOUT, 60000).
 -define(DEFAULT_RESCHEDULING_TIMEOUT, 60000).
 
--define(safe_request(Options, ID, ReqCtx, EventTag, Expr),
-    try
-        Expr
-    catch Class:Reason ->
-        Exception = {Class, Reason, erlang:get_stacktrace()},
-        ok = emit_beat(Options, #mg_scheduler_error{
-            tag = EventTag,
-            namespace = maps:get(namespace, Options),
-            exception = Exception,
-            machine_id = ID,
-            request_context = ReqCtx
-        })
-    end
-).
 -define(can_be_retried(ErrorType), ErrorType =:= transient orelse ErrorType =:= timeout).
-
--spec handle_timers(options(), mg_storage:index_limit()) ->
-    ok.
-handle_timers(Options, Limit) ->
-    ?safe_request(
-        Options, undefined, null, timer_handling_failed,
-        begin
-            {Timers, _} = search(Options, {waiting, 1, genlib_time:unow()}, Limit),
-            lists:foreach(
-                % такая схема потенциально опасная, но надо попробовать как она себя будет вести
-                fun({Ts, ID}) ->
-                    erlang:spawn_link(fun() -> handle_timer(Options, ID, Ts) end)
-                end,
-                Timers
-            )
-        end
-    ).
-
--spec handle_timer(options(), mg:id(), genlib_time:ts()) ->
-    ok.
-handle_timer(Options, ID, TimerTs) ->
-    ?safe_request(
-        Options, ID, null, timer_handling_failed,
-        begin
-            {_, StorageMachine} = get_storage_machine(Options, ID),
-            case StorageMachine of
-                % Важный момент, что если не проверить соответствие таймстемпов, то будет рейс
-                % когда по старому индексу вычитается новый таймер и сработает не вовремя!
-                #{status := {waiting, Timestamp, ReqCtx, _Timeout}} when Timestamp =:= TimerTs ->
-                    Timeout = maps:get(timer_processing_timeout, Options, ?DEFAULT_TIMER_PROCESSING_TIMEOUT),
-                    handle_timer(Options, ID, Timestamp, ReqCtx, mg_utils:timeout_to_deadline(Timeout));
-                #{status := _} ->
-                    ok
-            end
-        end
-    ).
-
--spec handle_timer(options(), mg:id(), genlib_time:ts(), request_context(), mg_utils:deadline()) ->
-    ok.
-handle_timer(Options, ID, Timestamp, ReqCtx, Deadline) ->
-    ?safe_request(
-        Options, ID, ReqCtx, timer_handling_failed,
-        begin
-            Call = {timeout, Timestamp},
-            CallQueue = mg_workers_manager:get_call_queue(manager_options(Options), ID),
-            case lists:member(Call, CallQueue) of
-                false ->
-                    RescheduleTimeout = maps:get(reschedule_timeout, Options, ?DEFAULT_RESCHEDULING_TIMEOUT),
-                    RescheduleCall = {retry_wait, {waiting, Timestamp}},
-                    call_with_reschedule(Options, ID, Call, ReqCtx, Deadline, RescheduleCall, RescheduleTimeout);
-                true ->
-                    ok
-            end
-        end
-    ).
-
--spec handle_timers_retries(options(), mg_storage:index_limit()) ->
-    ok.
-handle_timers_retries(Options, Limit) ->
-    ?safe_request(
-        Options, undefined, null, timer_retry_handling_failed,
-        begin
-            {Timers, _} = search(Options, {retrying, 1, genlib_time:unow()}, Limit),
-            lists:foreach(
-                fun({Ts, ID}) ->
-                    erlang:spawn_link(fun() -> handle_timer_retry(Options, ID, Ts) end)
-                end,
-                Timers
-            )
-        end
-    ).
-
--spec handle_timer_retry(options(), mg:id(), genlib_time:ts()) ->
-    ok.
-handle_timer_retry(Options, ID, TimerTs) ->
-    ?safe_request(
-        Options, ID, null, timer_retry_handling_failed,
-        begin
-            {_, StorageMachine} = get_storage_machine(Options, ID),
-            case StorageMachine of
-                % Важный момент, что если не проверить соответствие таймстемпов, то будет рейс
-                % когда по старому индексу вычитается новый таймер и сработает не вовремя!
-                #{status := {retrying, Timestamp, _Start, _Attempt, ReqCtx}} when Timestamp =:= TimerTs ->
-                    Timeout = maps:get(timer_processing_timeout, Options, ?DEFAULT_TIMER_PROCESSING_TIMEOUT),
-                    handle_timer_retry(Options, ID, Timestamp, ReqCtx, mg_utils:timeout_to_deadline(Timeout));
-                #{status := _} ->
-                    ok
-            end
-        end
-    ).
-
-
--spec handle_timer_retry(options(), mg:id(), genlib_time:ts(), request_context(), mg_utils:deadline()) ->
-    ok.
-handle_timer_retry(Options, ID, Timestamp, ReqCtx, Deadline) ->
-    ?safe_request(
-        Options, ID, ReqCtx, timer_retry_handling_failed,
-        begin
-            Call = {timeout, Timestamp},
-            CallQueue = mg_workers_manager:get_call_queue(manager_options(Options), ID),
-            case lists:member(Call, CallQueue) of
-                false ->
-                    RescheduleTimeout = maps:get(reschedule_timeout, Options, ?DEFAULT_RESCHEDULING_TIMEOUT),
-                    RescheduleCall = {retry_wait, {retrying, Timestamp}},
-                    call_with_reschedule(Options, ID, Call, ReqCtx, Deadline, RescheduleCall, RescheduleTimeout);
-                true ->
-                    ok
-            end
-        end
-    ).
-
--spec resume_interrupted(options(), mg_storage:index_limit()) ->
-    ok.
-resume_interrupted(Options, Limit) ->
-    ?safe_request(
-        Options, undefined, null, resuming_interrupted_failed,
-        begin
-            {Interrupted, _} = search(Options, processing, Limit),
-            lists:foreach(
-                fun(ID) ->
-                    erlang:spawn_link(fun() -> resume_interrupted_one(Options, ID) end)
-                end,
-                Interrupted
-            )
-        end
-    ).
-
--spec resume_interrupted_one(options(), mg:id()) ->
-    ok.
-resume_interrupted_one(Options, ID) ->
-    ?safe_request(
-        Options, ID, null, resuming_interrupted_failed,
-        begin
-            case mg_workers_manager:is_alive(manager_options(Options), ID) of
-                false ->
-                    Deadline = mg_utils:timeout_to_deadline(infinity),
-                    {_, StorageMachine} = get_storage_machine(Options, ID),
-                    case StorageMachine of
-                        #{status := {processing, ReqCtx}} ->
-                            resume_interrupted_one(Options, ID, ReqCtx, Deadline);
-                        #{status := _} ->
-                            ok
-                    end;
-                true ->
-                    ok
-            end
-        end
-    ).
-
--spec resume_interrupted_one(options(), mg:id(), request_context(), mg_utils:deadline()) ->
-    ok.
-resume_interrupted_one(Options, ID, ReqCtx, Deadline) ->
-    ?safe_request(
-        Options, ID, ReqCtx, resuming_interrupted_failed,
-        begin
-            call_(Options, ID, resume_interrupted_one, ReqCtx, Deadline)
-        end
-    ).
 
 %%
 
@@ -500,16 +359,6 @@ all_statuses() ->
     _ | no_return().
 call_(Options, ID, Call, ReqCtx, Deadline) ->
     mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, Call, ReqCtx, Deadline)).
-
--spec call_with_reschedule(options(), mg:id(), _, request_context(), mg_utils:deadline(), _, timeout()) ->
-    _ | no_return().
-call_with_reschedule(Options, ID, Call, ReqCtx, CallDeadline, RescheduleCall, RescheduleTimeout) ->
-    case mg_workers_manager:call(manager_options(Options), ID, Call, ReqCtx, CallDeadline) of
-        {error, {ErrorType, _Details}} when ?can_be_retried(ErrorType) ->
-            call_(Options, ID, RescheduleCall, ReqCtx, mg_utils:timeout_to_deadline(RescheduleTimeout));
-        Result ->
-            mg_utils:throw_if_error(Result)
-    end.
 
 %%
 %% mg_worker callbacks
@@ -715,6 +564,11 @@ opaque_to_machine_status(Opaque) ->
 -define(status_idx , {integer, <<"status"      >>}).
 -define(waiting_idx, {integer, <<"waiting_date">>}).
 -define(retrying_idx, {integer, <<"retrying_date">>}).
+
+-spec storage_search_query(search_query(), mg_storage:index_limit(), mg_storage:continuation()) ->
+    mg_storage:index_query().
+storage_search_query(Query, Limit, Continuation) ->
+    erlang:append_element(storage_search_query(Query, Limit), Continuation).
 
 -spec storage_search_query(search_query(), mg_storage:index_limit()) ->
     mg_storage:index_query().
@@ -1176,20 +1030,64 @@ storage_reg_name(Options) ->
 gproc_key(Type, #{namespace := Namespace}) ->
     {n, l, {?MODULE, Type, Namespace}}.
 
--spec scheduler_child_spec(overseer | timers, options()) ->
+-spec scheduler_child_spec(overseer | timers | timers_retries, options()) ->
     supervisor:child_spec() | undefined.
-scheduler_child_spec(Task, Options) ->
-    case maps:get(Task, maps:get(scheduled_tasks, Options, #{}), ?DEFAULT_SCHEDULED_TASK) of
+scheduler_child_spec(SchedulerID, Options) ->
+    case maps:get(SchedulerID, maps:get(schedulers, Options, #{}), disable) of
         disable ->
             undefined;
-        #{interval := Interval, limit := Limit} ->
-            F = case Task of
-                    timers         -> handle_timers;
-                    timers_retries -> handle_timers_retries;
-                    overseer       -> resume_interrupted
-                end,
-            mg_cron:child_spec(#{interval => Interval, job => {?MODULE, F, [Options, Limit]}}, Task)
+        Config ->
+            mg_scheduler:child_spec(scheduler_options(SchedulerID, Options, Config), SchedulerID)
     end.
+
+-spec scheduler_options(overseer | timers | timers_retries, options(), scheduler_opt()) ->
+    mg_scheduler:options().
+scheduler_options(timers, Options, Config) ->
+    HandlerOptions = #{
+        processing_timeout => maps:get(timer_processing_timeout, Options, undefined),
+        reschedule_timeout => maps:get(reschedule_timeout, Options, undefined),
+        timer_queue => waiting
+    },
+    scheduler_options(<<"timers">>, mg_queue_timer, Options, HandlerOptions, Config);
+scheduler_options(timers_retries, Options, Config) ->
+    HandlerOptions = #{
+        processing_timeout => maps:get(timer_processing_timeout, Options, undefined),
+        reschedule_timeout => maps:get(reschedule_timeout, Options, undefined),
+        timer_queue => retrying
+    },
+    scheduler_options(<<"timers_retries">>, mg_queue_timer, Options, HandlerOptions, Config);
+scheduler_options(overseer, Options, Config) ->
+    scheduler_options(<<"overseer">>, mg_queue_interrupted, Options, #{}, Config).
+
+-spec scheduler_options(mg_scheduler:name(), module(), options(), map(), scheduler_opt()) ->
+    mg_scheduler:options().
+scheduler_options(Name, HandlerMod, Options, HandlerOptions, Config) ->
+    #{
+        namespace := NS,
+        pulse := Pulse
+    } = Options,
+    FullHandlerOptions = genlib_map:compact(maps:merge(
+        #{
+            namespace => NS,
+            scheduler_name => Name,
+            pulse => Pulse,
+            machine => Options
+        },
+        HandlerOptions
+    )),
+    Handler = {HandlerMod, FullHandlerOptions},
+    SearchInterval = maps:get(interval, Config, undefined),
+    NoTaskWait = maps:get(no_task_wait, Config, SearchInterval),
+    genlib_map:compact(#{
+        namespace => NS,
+        name => Name,
+        queue_handler => Handler,
+        task_handler => Handler,
+        pulse => Pulse,
+        quota_name => maps:get(limit, Config, unlimited),
+        no_task_wait => NoTaskWait,
+        search_interval => SearchInterval
+    }).
 
 -spec get_options(atom(), options()) ->
     _.

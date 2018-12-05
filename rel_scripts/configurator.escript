@@ -94,6 +94,7 @@ mg_woody_api(YamlConfig) ->
     [
         {woody_server   , woody_server   (YamlConfig)},
         {health_checkers, health_checkers(YamlConfig)},
+        {quotas         , quotas         (YamlConfig)},
         {namespaces     , namespaces     (YamlConfig)},
         {event_sink_ns  , event_sink_ns  (YamlConfig)}
     ].
@@ -134,6 +135,15 @@ health_checkers(YamlConfig) ->
             [{erl_health, Type, [Limit]}]
     end ++
     [{erl_health, service, [?C:utf_bin(?C:conf([service_name], YamlConfig))]}].
+
+quotas(YamlConfig) ->
+    [
+        #{
+            name => <<"scheduler_tasks_total">>,
+            limit => #{ value => Limit },
+            update_interval => 1000
+        }
+    ].
 
 percent(Value) ->
     [$%|RevInt] = lists:reverse(Value),
@@ -234,10 +244,20 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
                 timers    => {exponential, 100, 2, 1000, 30 * 60 * 1000},
                 processor => {exponential, {max_total_timeout, 24 * 60 * 60 * 1000}, 2, 10, 60 * 1000}
             },
-            scheduled_tasks => #{
-                timers         => #{ interval => 1000, limit => 10 }, % | disable
-                timers_retries => #{ interval => 1000, limit => 10 }, % | disable
-                overseer       => #{ interval => 1000, limit => 10 } % | disable
+            schedulers => #{
+                timers         => #{
+                    interval     => 1000,
+                    limit        => <<"sheduler_tasks_total">>
+                },
+                timers_retries => #{
+                    interval     => 1000,
+                    limit        => <<"sheduler_tasks_total">>
+                },
+                overseer       => #{
+                    interval     => 1000,
+                    limit        => <<"sheduler_tasks_total">>,
+                    no_task_wait => 10 * 60 * 1000  % 10 min
+                }
             },
             suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0))
         },

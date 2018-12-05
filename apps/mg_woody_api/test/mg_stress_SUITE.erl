@@ -103,10 +103,10 @@ mg_woody_api_config(_C) ->
                     transport_opts => [{pool, ns}, {max_connections, 100}]
                 },
                 default_processing_timeout => 5000,
-                scheduled_tasks => #{
-                    timers         => #{ interval => 100, limit => 10 },
-                    timers_retries => #{ interval => 100, limit => 10 },
-                    overseer       => #{ interval => 100, limit => 10 }
+                schedulers => #{
+                    timers         => #{ interval => 100 },
+                    timers_retries => #{ interval => 100 },
+                    overseer       => #{ interval => 100 }
                 },
                 retries => #{},
                 event_sink => ?ES_ID
