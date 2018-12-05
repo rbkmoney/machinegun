@@ -116,15 +116,13 @@ enrich_worker_info({NS, ID, Pid}) ->
 -spec group_workers_by_ns([worker()]) ->
     #{mg:ns() => [worker()]}.
 group_workers_by_ns(Workers) ->
-    group_workers_by_ns(Workers, #{}).
+    lists:foldl(fun do_group_workers_by_ns/2, #{}, Workers).
 
--spec group_workers_by_ns([worker()], Acc) -> Acc when
+-spec do_group_workers_by_ns(worker(), Acc) -> Acc when
     Acc :: #{mg:ns() => [worker()]}.
-group_workers_by_ns([], Acc) ->
-    Acc;
-group_workers_by_ns([#worker{ns = NS} = Worker | Tail], Acc) ->
-    WokersAcc = maps:get(NS, Acc, []),
-    group_workers_by_ns(Tail, Acc#{NS => [Worker | WokersAcc]}).
+do_group_workers_by_ns(#worker{ns = NS} = Worker, Acc) ->
+    NsAcc = maps:get(NS, Acc, []),
+    Acc#{NS => [Worker | NsAcc]}.
 
 -spec interest_worker_info() ->
     [atom()].
@@ -136,15 +134,8 @@ interest_worker_info() ->
 
 -spec extract_workers_stat(atom(), [worker()]) ->
     [number()].
-extract_workers_stat(Key, Workers) ->
-    extract_workers_stat(Key, Workers, []).
-
--spec extract_workers_stat(atom(), [worker()], [number()]) ->
-    [number()].
-extract_workers_stat(_Key, [], Acc) ->
-    Acc;
-extract_workers_stat(StatKey, [#worker{stats = Stats} | Workers], Acc) ->
-    extract_workers_stat(StatKey, Workers, [maps:get(StatKey, Stats) | Acc]).
+extract_workers_stat(StatKey, Workers) ->
+    [maps:get(StatKey, Stats) || #worker{stats = Stats} <- Workers].
 
 -spec stat_metrics(metric_key(), [number()]) ->
     nested_metrics().

@@ -37,7 +37,7 @@ logging:
     json_log: log.json
     level: info
 metrics:
-    exporter:
+    publisher:
         statsd:
             host: "localhost"
             port: 8125

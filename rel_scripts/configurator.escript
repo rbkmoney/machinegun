@@ -73,12 +73,12 @@ how_are_you(YamlConfig) ->
     ].
 
 hay_statsd_publisher(YamlConfig) ->
-    case ?C:conf([metrics, exporter, statsd], YamlConfig, undefined) of
+    case ?C:conf([metrics, publisher, statsd], YamlConfig, undefined) of
         Config when Config =/= undefined ->
             [
                 {hay_statsd_publisher, #{
-                    host => ?C:utf_bin(?C:conf([metrics, exporter, statsd, host], YamlConfig, "localhost")),
-                    port => ?C:conf([metrics, exporter, statsd, port], YamlConfig, 8125)
+                    host => ?C:utf_bin(?C:conf([metrics, publisher, statsd, host], YamlConfig, "localhost")),
+                    port => ?C:conf([metrics, publisher, statsd, port], YamlConfig, 8125)
                 }}
             ];
         undefined ->
