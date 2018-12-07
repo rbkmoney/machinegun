@@ -53,7 +53,7 @@
 -type metrics() :: [metric()].
 -type metric_key() :: how_are_you:metric_key().
 -type metric_value() :: how_are_you:metric_value().
--type nested_metrics() :: metrics() | [nested_metrics()].
+-type nested_metrics() :: [metrics() | nested_metrics()].
 
 %% API
 
