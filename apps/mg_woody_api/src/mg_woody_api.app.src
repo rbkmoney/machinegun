@@ -32,6 +32,7 @@
         yamerl,
         cg_mon,
         how_are_you,
+        bear,
         erl_health
     ]},
     {env, []},

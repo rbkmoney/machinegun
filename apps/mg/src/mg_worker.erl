@@ -29,6 +29,7 @@
 -export([reply         /2]).
 -export([get_call_queue/2]).
 -export([is_alive      /2]).
+-export([list_all      /0]).
 
 %% gen_server callbacks
 -behaviour(gen_server).
@@ -128,6 +129,12 @@ get_call_queue(NS, ID) ->
 is_alive(NS, ID) ->
     Pid = mg_utils:gen_reg_name_to_pid(self_ref({NS, ID})),
     Pid =/= undefined andalso erlang:is_process_alive(Pid).
+
+-spec list_all() ->
+    [{mg:ns(), mg:id(), pid()}].
+list_all() ->
+    AllWorkers = gproc:select([{{{n, l, wrap_id('_')}, '_', '_'}, [], ['$$']}]),
+    [{NS, ID, Pid} || [{n, l, {?MODULE, {NS, ID}}}, Pid, _Value] <- AllWorkers].
 
 %%
 %% gen_server callbacks
