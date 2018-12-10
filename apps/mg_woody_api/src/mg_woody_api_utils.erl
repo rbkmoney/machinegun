@@ -19,19 +19,11 @@
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 %% API
--export([handle_safe_with_retry /3]).
+-export([handle_error/3]).
 -export([opaque_to_woody_context/1]).
 -export([woody_context_to_opaque/1]).
 -export([get_deadline/2]).
 -export([set_deadline/2]).
-
-%% Types
--type error_reaction() ::
-      {rethrow, any()}
-    | {woody_error, {woody_error:class(), Details :: any()}}
-    | {retry_in, Timeout :: non_neg_integer(), genlib_retry:strategy()}.
-
--export_type([error_reaction/0]).
 
 %%
 %% API
@@ -44,66 +36,45 @@
 }.
 -type pulse() :: mg_pulse:handler().
 
--spec handle_safe_with_retry(ctx(), fun(() -> R), pulse()) ->
+-spec handle_error(ctx(), fun(() -> R), pulse()) ->
     R.
-handle_safe_with_retry(#{deadline := Deadline} = Ctx, F, Pulse) ->
-    handle_safe_with_retry_(
-        Ctx, F,
-        genlib_retry:exponential({max_total_timeout, mg_utils:deadline_to_timeout(Deadline)}, 2, 10),
-        Pulse
-    ).
-
--spec handle_safe_with_retry_(ctx(), fun(() -> R), genlib_retry:strategy(), pulse()) ->
-    R.
-handle_safe_with_retry_(Ctx, F, Retry, Pulse) ->
+handle_error(Ctx, F, Pulse) ->
     try
         F()
     catch throw:Error ->
         Exception = {throw, Error, erlang:get_stacktrace()},
         #{namespace := NS, machine_ref := Ref, request_context := ReqCtx, deadline := Deadline} = Ctx,
-        ErrorReaction = handle_error(Error, genlib_retry:next_step(Retry)),
         ok = mg_pulse:handle_beat(Pulse, #woody_request_handle_error{
             namespace = NS,
             machine_ref = Ref,
             request_context = ReqCtx,
             deadline = Deadline,
-            exception = Exception,
-            retry_strategy = Retry,
-            error_reaction = ErrorReaction
+            exception = Exception
         }),
-        case ErrorReaction  of
-            {rethrow, NewError} ->
-                erlang:throw(NewError);
-            {woody_error, {WoodyErrorClass, Description}} ->
-                BinaryDescription = erlang:list_to_binary(io_lib:format("~9999p", [Description])),
-                woody_error:raise(system, {internal, WoodyErrorClass, BinaryDescription});
-            {retry_in, Timeout, NewRetry} ->
-                ok = timer:sleep(Timeout),
-                handle_safe_with_retry_(Ctx, F, NewRetry, Pulse)
-        end
+        handle_error(Error)
     end.
 
--spec handle_error(mg_machine:thrown_error() | {logic, namespace_not_found}, {wait, _, _} | finish) ->
-    error_reaction().
-handle_error({logic, machine_not_found      }, _) -> {rethrow, #mg_stateproc_MachineNotFound      {}};
-handle_error({logic, machine_already_exist  }, _) -> {rethrow, #mg_stateproc_MachineAlreadyExists {}};
-handle_error({logic, machine_failed         }, _) -> {rethrow, #mg_stateproc_MachineFailed        {}};
-handle_error({logic, machine_already_working}, _) -> {rethrow, #mg_stateproc_MachineAlreadyWorking{}};
-handle_error({logic, namespace_not_found    }, _) -> {rethrow, #mg_stateproc_NamespaceNotFound    {}};
-handle_error({logic, event_sink_not_found   }, _) -> {rethrow, #mg_stateproc_EventSinkNotFound    {}};
+-spec handle_error(mg_machine:thrown_error() | {logic, namespace_not_found}) ->
+    no_return().
+handle_error({logic, Reason}) -> erlang:throw(handle_logic_error(Reason));
+% TODO может Reason не прокидывать дальше?
+handle_error({transient, Reason}) ->
+    BinaryDescription = erlang:list_to_binary(io_lib:format("~9999p", [Reason])),
+    woody_error:raise(system, {internal, resource_unavailable, BinaryDescription});
+handle_error({timeout, _} = Reason) ->
+    BinaryDescription = erlang:list_to_binary(io_lib:format("~9999p", [Reason])),
+    woody_error:raise(system, {internal, result_unknown, BinaryDescription});
+handle_error(UnknownError) -> erlang:error(badarg, [UnknownError]).
+
+-spec handle_logic_error(_) -> _.
+handle_logic_error(machine_not_found)       -> #mg_stateproc_MachineNotFound      {};
+handle_logic_error(machine_already_exist)   -> #mg_stateproc_MachineAlreadyExists {};
+handle_logic_error(machine_failed)          -> #mg_stateproc_MachineFailed        {};
+handle_logic_error(machine_already_working) -> #mg_stateproc_MachineAlreadyWorking{};
+handle_logic_error(namespace_not_found)     -> #mg_stateproc_NamespaceNotFound    {};
+handle_logic_error(event_sink_not_found)    -> #mg_stateproc_EventSinkNotFound    {};
 % TODO обработать случай создания машины c некорректным ID в рамках thrift
-handle_error({logic, {invalid_machine_id, _}}, _) -> {rethrow, #mg_stateproc_MachineNotFound      {}};
-
-% может Reason не прокидывать дальше?
-% TODO logs
-% повторы запросов только для стораджа, остальные не заслужили
-handle_error({transient, {storage_unavailable, _Reason}}, {wait, Timeout, NewStrategy}) ->
-    {retry_in, Timeout, NewStrategy};
-
-handle_error({transient, Reason}, _) -> {woody_error, {resource_unavailable, Reason}};
-handle_error(Reason={timeout, _}, _) -> {woody_error, {result_unknown      , Reason}};
-
-handle_error(UnknownError, _) -> erlang:error(badarg, [UnknownError]).
+handle_logic_error({invalid_machine_id, _}) -> #mg_stateproc_MachineNotFound      {}.
 
 %%
 %% packer to opaque
