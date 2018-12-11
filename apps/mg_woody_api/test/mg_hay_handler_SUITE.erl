@@ -104,6 +104,8 @@ init_per_suite(C) ->
 -spec end_per_suite(config()) ->
     ok.
 end_per_suite(C) ->
+    ok = application:set_env(how_are_you, metrics_publishers, []),
+    ok = application:set_env(how_are_you, metrics_handlers, []),
     true = erlang:exit(?config(processor_pid, C), kill),
     [application:stop(App) || App <- proplists:get_value(apps, C)].
 
