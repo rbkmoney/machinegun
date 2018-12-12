@@ -101,7 +101,7 @@ workers_stats(KeyPrefix, Workers) ->
 enrich_workers_info(WorkerKeys) ->
     enrich_workers_info(WorkerKeys, []).
 
--spec enrich_workers_info(worker_key(), [worker()]) ->
+-spec enrich_workers_info([worker_key()], [worker()]) ->
     [worker()].
 enrich_workers_info([], Acc) ->
     Acc;
