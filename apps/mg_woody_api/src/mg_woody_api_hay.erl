@@ -99,18 +99,25 @@ workers_stats(KeyPrefix, Workers) ->
 -spec enrich_workers_info([worker_key()]) ->
     [worker()].
 enrich_workers_info(WorkerKeys) ->
-    lists:map(fun enrich_worker_info/1, WorkerKeys).
+    enrich_workers_info(WorkerKeys, []).
 
--spec enrich_worker_info(worker_key()) ->
-    worker().
-enrich_worker_info({NS, ID, Pid}) ->
-    ProcessInfo = erlang:process_info(Pid, interest_worker_info()),
-    #worker{
-        id = ID,
-        ns = NS,
-        pid = Pid,
-        stats = maps:from_list(ProcessInfo)
-    }.
+-spec enrich_workers_info(worker_key(), [worker()]) ->
+    [worker()].
+enrich_workers_info([], Acc) ->
+    Acc;
+enrich_workers_info([{NS, ID, Pid} | WorkerKeys], Acc) ->
+    case erlang:process_info(Pid, interest_worker_info()) of
+        undefined ->
+            enrich_workers_info(WorkerKeys, Acc);
+        ProcessInfo ->
+            Worker = #worker{
+                id = ID,
+                ns = NS,
+                pid = Pid,
+                stats = maps:from_list(ProcessInfo)
+            },
+            enrich_workers_info(WorkerKeys, [Worker | Acc])
+    end.
 
 -spec group_workers_by_ns([worker()]) ->
     #{mg:ns() => [worker()]}.
