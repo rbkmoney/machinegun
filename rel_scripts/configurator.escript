@@ -66,6 +66,7 @@ how_are_you(YamlConfig) ->
         {metrics_publishers, Publishers},
         {metrics_handlers, [
             hay_vm_handler,
+            hay_cgroup_handler,
             {mg_woody_api_hay, #{
                 namespaces => namespaces_list(YamlConfig)
             }}
