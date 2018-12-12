@@ -67,9 +67,10 @@ format_beat(#woody_request_handle_error{exception = {_, Reason, _}, error_reacti
             {LogLevel, {"request handling failed ~p", [Reason]}, Context}
     end;
 format_beat(#woody_event{event = Event, rpc_id = RPCID, event_meta = EventMeta}) ->
-    WoodyMetaFields = [event, service, function, type, metadata, url, deadline],
-    {Level, Msg, Meta} = woody_event_handler:format_event_and_meta(Event, EventMeta, RPCID, WoodyMetaFields),
-    {Level, Msg, maps:to_list(Meta)};
+    WoodyMetaFields = [event, service, function, type, metadata, url, deadline, role],
+    {Level, Msg, WoodyMeta} = woody_event_handler:format_event_and_meta(Event, EventMeta, RPCID, WoodyMetaFields),
+    Meta = lists:flatten([extract_woody_meta(WoodyMeta), extract_meta(rpc_id, RPCID)]),
+    {Level, Msg, Meta};
 format_beat(#mg_scheduler_error{tag = Tag, exception = {_, Reason, _}} = Beat) ->
     Context = ?beat_to_meta(mg_scheduler_error, Beat),
     {warning, {"sheduler task ~p failed ~p", [Tag, Reason]}, Context};
@@ -107,6 +108,8 @@ extract_meta(request_context, null) ->
     [];
 extract_meta(request_context, ReqCtx) ->
     #{rpc_id := RPCID} = mg_woody_api_utils:opaque_to_woody_context(ReqCtx),
+    extract_meta(rpc_id, RPCID);
+extract_meta(rpc_id, RPCID) ->
     maps:to_list(RPCID);
 extract_meta(deadline, Deadline) when is_integer(Deadline) ->
     {deadline, format_timestamp(Deadline div 1000)};  % Deadline measured in millisecond
@@ -140,10 +143,17 @@ extract_meta(machine_ref, {tag, MachineTag}) ->
     {machine_tag, MachineTag};
 extract_meta(namespace, NS) ->
     {machine_ns, NS};
-extract_meta(Name, Value) when is_number(Value) orelse is_binary(Value) ->
-    {Name, Value};
 extract_meta(Name, Value) ->
-    {Name, genlib:format(Value)}.
+    {Name, Value}.
+
+-spec extract_woody_meta(woody_event_handler:event_meta()) ->
+    [meta()] | meta().
+extract_woody_meta(#{role := server} = Meta) ->
+    [{'rpc.server', Meta}];
+extract_woody_meta(#{role := client} = Meta) ->
+    [{'rpc.client', Meta}];
+extract_woody_meta(Meta) ->
+    [{rpc, Meta}].
 
 -spec format_timestamp(genlib_time:ts()) ->
     binary().
