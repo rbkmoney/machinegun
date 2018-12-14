@@ -445,13 +445,10 @@ handle_timer(C) ->
     #{history := InitialEvents} =
         mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),
     <<"set_timer">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"set_timer">>),
+    ok = timer:sleep(2000),
     #{history := History1} =
         mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),
-    [StartTimerEvent] = History1 -- InitialEvents,
-    ok = timer:sleep(2000),
-    #{history := History2} =
-        mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),
-    [StartTimerEvent, _] = History2 -- InitialEvents.
+    [_StartTimerEvent, _HandleTimerEvent] = History1 -- InitialEvents.
 
 -spec abort_timer(config()) ->
     _.
@@ -472,10 +469,11 @@ abort_timer(C) ->
     _.
 timeout_call_with_deadline(C) ->
     DeadlineFn = fun() -> mg_utils:timeout_to_deadline(?DEADLINE_TIMEOUT) end,
-    Options = no_timeout_automaton_options(C),
-    {'EXIT', {Reason, _Stack}} = (catch mg_automaton_client:call(Options, {id, ?ID}, <<"sleep">>, DeadlineFn())),
+    Options0 = no_timeout_automaton_options(C),
+    Options1 = Options0#{retry_strategy => finish},
+    {'EXIT', {Reason, _Stack}} = (catch mg_automaton_client:call(Options1, {id, ?ID}, <<"sleep">>, DeadlineFn())),
     {woody_error, {external, result_unknown, <<"{timeout,", _Rest/binary>>}} = Reason,
-    #mg_stateproc_MachineAlreadyWorking{} = (catch mg_automaton_client:repair(Options, {id, ?ID}, <<"ok">>, DeadlineFn())).
+    #mg_stateproc_MachineAlreadyWorking{} = (catch mg_automaton_client:repair(Options0, {id, ?ID}, <<"ok">>, DeadlineFn())).
 
 -spec success_call_with_deadline(config()) ->
     _.
