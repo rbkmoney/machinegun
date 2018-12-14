@@ -52,15 +52,15 @@ init_per_suite(C) ->
     CallFunc =
         fun({Args, _Machine}) ->
             case Args of
-                <<"event">> -> {Args, {<<>>, [<<"event_body">>]}, #{timer => undefined, tag => undefined}};
-                _           -> {Args, {<<>>, []}, #{timer => undefined, tag => undefined}}
+                <<"event">> -> {Args, {{#{}, <<>>}, [{#{}, <<"event_body">>}]}, #{timer => undefined, tag => undefined}};
+                _           -> {Args, {{#{}, <<>>}, []}, #{timer => undefined, tag => undefined}}
             end
         end
     ,
     SignalFunc =
         fun({Args, _Machine}) ->
             case Args of
-                _ -> mg_test_processor:default_result(signal)
+                _ -> mg_test_processor:default_result(signal, Args)
             end
         end
     ,
