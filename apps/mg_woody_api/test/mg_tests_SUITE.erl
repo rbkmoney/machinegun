@@ -442,13 +442,19 @@ working_machine_repair(C) ->
 -spec handle_timer(config()) ->
     _.
 handle_timer(C) ->
+    Options0 = automaton_options(C),
+    % retry with extremely short timeout
+    Options1 = Options0#{retry_strategy => genlib_retry:linear(3, 1)},
     #{history := InitialEvents} =
-        mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),
-    <<"set_timer">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"set_timer">>),
-    ok = timer:sleep(2000),
+        mg_automaton_client:get_machine(Options1, {id, ?ID}, {undefined, undefined, forward}),
+    <<"set_timer">> = mg_automaton_client:call(Options1, {id, ?ID}, <<"set_timer">>),
     #{history := History1} =
-        mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),
-    [_StartTimerEvent, _HandleTimerEvent] = History1 -- InitialEvents.
+        mg_automaton_client:get_machine(Options1, {id, ?ID}, {undefined, undefined, forward}),
+    [StartTimerEvent] = History1 -- InitialEvents,
+    ok = timer:sleep(2000),
+    #{history := History2} =
+        mg_automaton_client:get_machine(Options1, {id, ?ID}, {undefined, undefined, forward}),
+    [StartTimerEvent, _] = History2 -- InitialEvents.
 
 -spec abort_timer(config()) ->
     _.
