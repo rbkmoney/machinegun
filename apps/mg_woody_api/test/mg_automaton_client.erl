@@ -41,7 +41,7 @@
 -type options() :: #{
     url := URL::string(),
     ns  := mg:ns(),
-    retry_strategy := genlib_retry:strategy() | undefined,
+    retry_strategy => genlib_retry:strategy(),
     transport_opts => woody_client_thrift_http_transport:options()
 }.
 
@@ -122,8 +122,6 @@ machine_desc(NS, Ref, HRange) ->
 
 -spec call_service(options(), atom(), [_Arg], mg_utils:deadline()) ->
     any().
-call_service(#{retry_strategy := undefined} = Options, Function, Args, Deadline) ->
-    call_service(Options#{retry_strategy => genlib_retry:linear(3, 1000)}, Function, Args, Deadline);
 call_service(#{retry_strategy := Strategy} = Options, Function, Args, Deadline) ->
     try woody_call(Options, Function, Args, Deadline) of
         {ok, R} ->
@@ -141,7 +139,9 @@ call_service(#{retry_strategy := Strategy} = Options, Function, Args, Deadline) 
                 finish ->
                     erlang:error(Error)
             end
-    end.
+    end;
+call_service(Options, Function, Args, Deadline) ->
+    call_service(Options#{retry_strategy => finish}, Function, Args, Deadline).
 
 -spec woody_call(options(), atom(), [_Arg], mg_utils:deadline()) ->
     any().

@@ -237,7 +237,7 @@ init_per_group(C) ->
         {automaton_options , #{
             url            => "http://localhost:8022",
             ns             => ?NS,
-            retry_strategy => undefined
+            retry_strategy => genlib_retry:linear(3, 1)
         }},
         {event_sink_options, "http://localhost:8022"          },
         {processor_pid     , ProcessorPid                     }
@@ -476,7 +476,7 @@ abort_timer(C) ->
 timeout_call_with_deadline(C) ->
     DeadlineFn = fun() -> mg_utils:timeout_to_deadline(?DEADLINE_TIMEOUT) end,
     Options0 = no_timeout_automaton_options(C),
-    Options1 = Options0#{retry_strategy => finish},
+    Options1 = maps:remove(retry_strategy, Options0),
     {'EXIT', {Reason, _Stack}} = (catch mg_automaton_client:call(Options1, {id, ?ID}, <<"sleep">>, DeadlineFn())),
     {woody_error, {external, result_unknown, <<"{timeout,", _Rest/binary>>}} = Reason,
     #mg_stateproc_MachineAlreadyWorking{} = (catch mg_automaton_client:repair(Options0, {id, ?ID}, <<"ok">>, DeadlineFn())).
