@@ -131,7 +131,9 @@ call_service(#{retry_strategy := Strategy} = Options, Function, Args, Deadline) 
         {exception, Exception} ->
             erlang:throw(Exception)
     catch
-        error:Error ->
+        error:{woody_error, {_Source, Class, _Details}} = Error
+        when Class =:= resource_unavailable orelse Class =:= result_unknown
+        ->
             case genlib_retry:next_step(Strategy) of
                 {wait, Timeout, NewStrategy} ->
                     ok = timer:sleep(Timeout),
