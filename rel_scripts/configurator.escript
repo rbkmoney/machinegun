@@ -36,7 +36,7 @@ main([YamlConfigFilename, ConfigsPath]) ->
 sys_config(YamlConfig) ->
     [
         {lager       , lager       (YamlConfig)},
-        {statsderl   , statsderl   (YamlConfig)},
+        {how_are_you , how_are_you (YamlConfig)},
         {snowflake   , snowflake   (YamlConfig)},
         {mg_woody_api, mg_woody_api(YamlConfig)}
     ].
@@ -58,12 +58,34 @@ lager(YamlConfig) ->
         ]}
     ].
 
-statsderl(YamlConfig) ->
+how_are_you(YamlConfig) ->
+    Publishers = lists:flatten([
+        hay_statsd_publisher(YamlConfig)
+    ]),
     [
-        {hostname, ?C:utf_bin(?C:conf([metrics, host], YamlConfig, "localhost"))},
-        {port, ?C:conf([metrics, port], YamlConfig, "8125")},
-        {pool_size, ?C:conf([metrics, pool_size], YamlConfig, 4)}
+        {metrics_publishers, Publishers},
+        {metrics_handlers, [
+            hay_vm_handler,
+            hay_cgroup_handler,
+            {mg_woody_api_hay, #{
+                namespaces => namespaces_list(YamlConfig)
+            }}
+        ]}
     ].
+
+hay_statsd_publisher(YamlConfig) ->
+    case ?C:conf([metrics, publisher, statsd], YamlConfig, undefined) of
+        Config when Config =/= undefined ->
+            [
+                {hay_statsd_publisher, #{
+                    key_prefix => <<(?C:utf_bin(?C:conf([service_name], YamlConfig)))/binary, ".">>,
+                    host => ?C:utf_bin(?C:conf([metrics, publisher, statsd, host], YamlConfig, "localhost")),
+                    port => ?C:conf([metrics, publisher, statsd, port], YamlConfig, 8125)
+                }}
+            ];
+        undefined ->
+            []
+    end.
 
 snowflake(YamlConfig) ->
     [{machine_id, ?C:conf([snowflake_machine_id], YamlConfig, 0)}].
@@ -177,6 +199,16 @@ namespaces(YamlConfig) ->
         #{},
         ?C:conf([namespaces], YamlConfig)
     ).
+
+namespaces_list(YamlConfig) ->
+    NsNames = [
+        erlang:list_to_binary(NameStr)
+        || {NameStr, _NSYamlConfig} <- ?C:conf([namespaces], YamlConfig)
+    ],
+    lists:flatten([<<"_event_sinks_machines">>] ++ [
+        [NS, <<NS/binary, "_tags">>]
+        || NS <- NsNames
+    ]).
 
 namespace({NameStr, NSYamlConfig}, YamlConfig) ->
     Name = ?C:utf_bin(NameStr),

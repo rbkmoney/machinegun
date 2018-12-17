@@ -22,7 +22,7 @@
 %% logging types
 -type log_msg() :: {level(), msg(), meta()}.
 -type msg() :: expanded_msg() | string().
--type meta() :: [{atom(), binary() | number() | meta()}]. % there is no such exported type in lager
+-type meta() :: [{atom(), any()}]. % there is no such exported type in lager
 -type level() :: lager:log_level().
 
 -export_type([log_msg/0]).
