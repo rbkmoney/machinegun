@@ -197,8 +197,7 @@ start_mg_woody_api(Name, C) ->
         {group_apps        , Apps},
         {automaton_options , #{
             url            => "http://localhost:8022",
-            ns             => ?NS,
-            retry_strategy => undefined
+            ns             => ?NS
         }} | C
     ].
 

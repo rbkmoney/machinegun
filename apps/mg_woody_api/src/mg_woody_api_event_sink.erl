@@ -46,7 +46,7 @@ handle_function('GetHistory', [EventSinkID, Range], WoodyContext, {AvaliableEven
     DefaultDeadline = mg_utils:timeout_to_deadline(DefaultTimeout),
     Deadline = mg_woody_api_utils:get_deadline(WoodyContext, DefaultDeadline),
     SinkHistory =
-        mg_woody_api_utils:handle_safe_with_retry(
+        mg_woody_api_utils:handle_error(
             #{namespace => undefined, machine_ref => EventSinkID, request_context => ReqCtx, deadline => Deadline},
             fun() ->
                 _ = check_event_sink(AvaliableEventSinks, EventSinkID),

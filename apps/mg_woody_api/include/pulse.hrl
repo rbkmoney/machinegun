@@ -4,9 +4,7 @@
     machine_ref :: mg_events_machine:ref(),
     request_context :: mg:request_context(),
     deadline :: mg_utils:deadline(),
-    exception :: mg_utils:exception(),
-    retry_strategy :: mg_retry:strategy(),
-    error_reaction :: mg_woody_api_utils:error_reaction()
+    exception :: mg_utils:exception()
 }).
 
 -record(woody_event, {

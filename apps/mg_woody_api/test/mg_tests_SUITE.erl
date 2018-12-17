@@ -237,7 +237,7 @@ init_per_group(C) ->
         {automaton_options , #{
             url            => "http://localhost:8022",
             ns             => ?NS,
-            retry_strategy => undefined
+            retry_strategy => genlib_retry:linear(3, 1)
         }},
         {event_sink_options, "http://localhost:8022"          },
         {processor_pid     , ProcessorPid                     }
@@ -442,15 +442,18 @@ working_machine_repair(C) ->
 -spec handle_timer(config()) ->
     _.
 handle_timer(C) ->
+    Options0 = automaton_options(C),
+    % retry with extremely short timeout
+    Options1 = Options0#{retry_strategy => genlib_retry:linear(3, 1)},
     #{history := InitialEvents} =
-        mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),
-    <<"set_timer">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"set_timer">>),
+        mg_automaton_client:get_machine(Options1, {id, ?ID}, {undefined, undefined, forward}),
+    <<"set_timer">> = mg_automaton_client:call(Options1, {id, ?ID}, <<"set_timer">>),
     #{history := History1} =
-        mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),
+        mg_automaton_client:get_machine(Options1, {id, ?ID}, {undefined, undefined, forward}),
     [StartTimerEvent] = History1 -- InitialEvents,
     ok = timer:sleep(2000),
     #{history := History2} =
-        mg_automaton_client:get_machine(automaton_options(C), {id, ?ID}, {undefined, undefined, forward}),
+        mg_automaton_client:get_machine(Options1, {id, ?ID}, {undefined, undefined, forward}),
     [StartTimerEvent, _] = History2 -- InitialEvents.
 
 -spec abort_timer(config()) ->
@@ -472,10 +475,11 @@ abort_timer(C) ->
     _.
 timeout_call_with_deadline(C) ->
     DeadlineFn = fun() -> mg_utils:timeout_to_deadline(?DEADLINE_TIMEOUT) end,
-    Options = no_timeout_automaton_options(C),
-    {'EXIT', {Reason, _Stack}} = (catch mg_automaton_client:call(Options, {id, ?ID}, <<"sleep">>, DeadlineFn())),
+    Options0 = no_timeout_automaton_options(C),
+    Options1 = maps:remove(retry_strategy, Options0),
+    {'EXIT', {Reason, _Stack}} = (catch mg_automaton_client:call(Options1, {id, ?ID}, <<"sleep">>, DeadlineFn())),
     {woody_error, {external, result_unknown, <<"{timeout,", _Rest/binary>>}} = Reason,
-    #mg_stateproc_MachineAlreadyWorking{} = (catch mg_automaton_client:repair(Options, {id, ?ID}, <<"ok">>, DeadlineFn())).
+    #mg_stateproc_MachineAlreadyWorking{} = (catch mg_automaton_client:repair(Options0, {id, ?ID}, <<"ok">>, DeadlineFn())).
 
 -spec success_call_with_deadline(config()) ->
     _.

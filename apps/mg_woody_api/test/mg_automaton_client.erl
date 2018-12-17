@@ -41,7 +41,7 @@
 -type options() :: #{
     url := URL::string(),
     ns  := mg:ns(),
-    retry_strategy := genlib_retry:strategy() | undefined,
+    retry_strategy => genlib_retry:strategy(),
     transport_opts => woody_client_thrift_http_transport:options()
 }.
 
@@ -122,29 +122,26 @@ machine_desc(NS, Ref, HRange) ->
 
 -spec call_service(options(), atom(), [_Arg], mg_utils:deadline()) ->
     any().
-call_service(#{retry_strategy := undefined} = Options, Function, Args, Deadline) ->
-    WR = woody_call(Options, Function, Args, Deadline),
-    case WR of
+call_service(#{retry_strategy := Strategy} = Options, Function, Args, Deadline) ->
+    try woody_call(Options, Function, Args, Deadline) of
         {ok, R} ->
             R;
         {exception, Exception} ->
             erlang:throw(Exception)
-    end;
-call_service(#{retry_strategy := Strategy} = Options, Function, Args, Deadline) ->
-    WR = woody_call(Options, Function, Args, Deadline),
-
-    case WR of
-        {ok, R} ->
-            R;
-        {exception, Exception} ->
+    catch
+        error:{woody_error, {_Source, Class, _Details}} = Error
+        when Class =:= resource_unavailable orelse Class =:= result_unknown
+        ->
             case genlib_retry:next_step(Strategy) of
                 {wait, Timeout, NewStrategy} ->
                     ok = timer:sleep(Timeout),
                     call_service(Options#{retry_strategy := NewStrategy}, Function, Args, Deadline);
                 finish ->
-                    erlang:throw(Exception)
+                    erlang:error(Error)
             end
-    end.
+    end;
+call_service(Options, Function, Args, Deadline) ->
+    call_service(Options#{retry_strategy => finish}, Function, Args, Deadline).
 
 -spec woody_call(options(), atom(), [_Arg], mg_utils:deadline()) ->
     any().
