@@ -782,11 +782,17 @@ process_simple_repair(ReqCtx, Deadline, State) ->
 
 -spec process(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
     state().
-process(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
+process(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{id := ID, namespace := NS, options := Options}) ->
     try
         process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, try_init_state(Impact, State))
     catch
         throw:(Reason=({ErrorType, _Details})) when ?can_be_retried(ErrorType) ->
+            ok = emit_beat(Options, #mg_machine_process_transient_error{
+                namespace = NS,
+                machine_id = ID,
+                exception = {throw, Reason, erlang:get_stacktrace()},
+                request_context = ReqCtx
+            }),
             ok = do_reply_action({reply, {error, Reason}}, ProcessingCtx),
             State;
         Class:Reason ->
@@ -864,14 +870,6 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
     processor_result().
 call_processor(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
     #{options := Options, id := ID, storage_machine := #{state := MachineState}} = State,
-    F = fun() ->
-            processor_process_machine(ID, Impact, ProcessingCtx, ReqCtx, Deadline, MachineState, Options)
-        end,
-    do_with_retry(Options, ID, F, retry_strategy(processor, Options, Deadline), ReqCtx).
-
--spec processor_process_machine(mg:id(), processor_impact(), processing_context(), ReqCtx :: request_context(),
-                                mg_utils:deadline(), state(), options()) -> _Result.
-processor_process_machine(ID, Impact, ProcessingCtx, ReqCtx, Deadline, MachineState, Options) ->
     mg_utils:apply_mod_opts(
         get_options(processor, Options),
         process_machine,
@@ -1032,17 +1030,16 @@ retry_strategy(Subj, Options, Deadline) ->
 retry_strategy(Subj, Options, Deadline, InitialTs, Attempt) ->
     Retries = maps:get(retries, Options, #{}),
     Policy = maps:get(Subj, Retries, ?DEFAULT_RETRY_POLICY),
-    retry_strategy_(Subj, Policy, Deadline, InitialTs, Attempt).
+    constrain_retry_strategy(Policy, Deadline, InitialTs, Attempt).
 
--spec retry_strategy_(Subj, Policy, Deadline, InitialTs, Attempt) -> mg_retry:strategy() when
-    Subj :: retry_subj(),
+-spec constrain_retry_strategy(Policy, Deadline, InitialTs, Attempt) -> mg_retry:strategy() when
     Policy :: mg_retry:policy(),
     Deadline :: mg_utils:deadline(),
     InitialTs :: genlib_time:ts() | undefined,
     Attempt :: non_neg_integer() | undefined.
-retry_strategy_(storage, Policy, _Deadline, InitialTs, Attempt) ->
+constrain_retry_strategy(Policy, undefined, InitialTs, Attempt) ->
     mg_retry:new_strategy(Policy, InitialTs, Attempt);
-retry_strategy_(_Subj, Policy, Deadline, InitialTs, Attempt) ->
+constrain_retry_strategy(Policy, Deadline, InitialTs, Attempt) ->
     Timeout = mg_utils:deadline_to_timeout(Deadline),
     mg_retry:new_strategy({timecap, Timeout, Policy}, InitialTs, Attempt).
 
@@ -1218,18 +1215,7 @@ do_with_retry(Options, ID, Fun, RetryStrategy, ReqCtx) ->
     try
         Fun()
     catch throw:(Reason={transient, _}) ->
-        Exception = {throw, Reason, erlang:get_stacktrace()},
-        NS = maps:get(namespace, Options),
-        NextStep = genlib_retry:next_step(RetryStrategy),
-        ok = emit_beat(Options, #mg_machine_process_transient_error{
-            namespace = NS,
-            machine_id = ID,
-            exception = Exception,
-            request_context = ReqCtx,
-            retry_strategy = RetryStrategy,
-            retry_action = NextStep
-        }),
-        case NextStep of
+        case genlib_retry:next_step(RetryStrategy) of
             {wait, Timeout, NewRetryStrategy} ->
                 ok = timer:sleep(Timeout),
                 do_with_retry(Options, ID, Fun, NewRetryStrategy, ReqCtx);

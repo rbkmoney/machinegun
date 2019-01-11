@@ -68,9 +68,7 @@
     namespace :: mg:ns(),
     machine_id :: mg:id(),
     exception :: mg_utils:exception(),
-    request_context :: mg:request_context(),
-    retry_strategy :: mg_retry:strategy(),
-    retry_action :: {wait, timeout(), mg_retry:strategy()} | finish
+    request_context :: mg:request_context()
 }).
 
 -record(mg_machine_process_started, {

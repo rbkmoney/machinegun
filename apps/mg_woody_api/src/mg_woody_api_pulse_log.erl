@@ -71,12 +71,7 @@ format_beat(#mg_scheduler_error{tag = Tag, exception = {_, Reason, _}} = Beat) -
     {warning, {"sheduler task ~p failed ~p", [Tag, Reason]}, Context};
 format_beat(#mg_machine_process_transient_error{exception = {_, Reason, _}} = Beat) ->
     Context = ?beat_to_meta(mg_machine_process_transient_error, Beat),
-    case Beat#mg_machine_process_transient_error.retry_action of
-        {wait, Timeout, _} ->
-            {warning, {"transient error ~p, retrying in ~p msec", [Reason, Timeout]}, Context};
-        finish ->
-            {warning, {"transient error ~p, retires exhausted", [Reason]}, Context}
-    end;
+    {warning, {"transient error ~p", [Reason]}, Context};
 format_beat(#mg_machine_lifecycle_failed{exception = {_, Reason, _}} = Beat) ->
     Context = ?beat_to_meta(mg_machine_lifecycle_failed, Beat),
     {error, {"machine failed ~p", [Reason]}, Context};
@@ -118,13 +113,6 @@ extract_meta(exception, {Class, Reason, StackStrace}) ->
             {stack_trace, genlib_format:format_stacktrace(StackStrace)}
         ]}
     ];
-extract_meta(retry_action, {wait, Timeout, NextStrategy}) ->
-    [
-        {wait_timeout, Timeout},
-        {next_retry_strategy, genlib:format(NextStrategy)}
-    ];
-extract_meta(retry_action, _Other) ->
-    [];
 extract_meta(machine_ref, {id, MachineID}) ->
     {machine_id, MachineID};
 extract_meta(machine_ref, {tag, MachineTag}) ->
