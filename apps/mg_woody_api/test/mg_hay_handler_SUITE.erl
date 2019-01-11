@@ -138,7 +138,6 @@ mg_woody_api_config(_C) ->
                     overseer       => #{ interval => 100, limit => 10 }
                 },
                 retries => #{
-                    processor => {exponential, {max_total_timeout, 1000}, 1, 10},
                     storage   => {exponential, {max_total_timeout, 1000}, 1, 10},
                     timers    => {exponential, {max_total_timeout, 1000}, 1, 10}
                 }

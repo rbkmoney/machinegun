@@ -205,7 +205,10 @@ end_per_suite(_C) ->
 init_per_group(mwc, C) ->
     init_per_group([{storage, mg_storage_memory} | C]);
 init_per_group(_, C) ->
-    init_per_group([{storage, {mg_storage_memory, #{random_transient_fail => 0.1}}} | C]).
+    % NOTE
+    % Даже такой небольшой шанс может сработать в ситуациях, когда мы в процессоре выгребаем большой кусок
+    % истории машины, из-за чего реальная вероятность зафейлить операцию равна (1 - (1 - p) ^ n).
+    init_per_group([{storage, {mg_storage_memory, #{random_transient_fail => 0.01}}} | C]).
 
 -spec init_per_group(config()) ->
     config().
@@ -296,12 +299,6 @@ mg_woody_api_config(C) ->
                     overseer       => #{ interval => 100, limit => 10 }
                 },
                 retries => #{
-                    % вообще этого тут быть не должно,
-                    % но ввиду того, что events_machine — это процессор,
-                    % то проблемы с events_storage приводят к тому,
-                    % что срабатывают именно эти ретраи
-                    % TODO это нужно исправить
-                    processor => {exponential, infinity, 1, 10},
                     storage   => {exponential, infinity, 1, 10},
                     timers    => {exponential, infinity, 1, 10}
                 },
@@ -535,12 +532,15 @@ event_sink_lots_events_ordering(C) ->
     [#mg_stateproc_SinkEvent{id = LastEventID}] =
         mg_event_sink_client:get_history(es_opts(C), ?ES_ID, HRange1),
     N = 20,
+    % NOTE
+    % Операция создания одного ивента сейчас неидемпотентна, это может проявиться особенно ярко при получении
+    % ошибке сохранения новых ивентов в рамках continuation из-за недоступности storage.
     _ = create_events(N, C, ?ID),
 
     HRange2 = #mg_stateproc_HistoryRange{direction=forward},
     Events = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, HRange2),
     EventsIDs = lists:seq(1, N + LastEventID),
-    EventsIDs = [ID0 || #mg_stateproc_SinkEvent{id=ID0} <- Events].
+    true = lists:prefix(EventsIDs, [ID0 || #mg_stateproc_SinkEvent{id=ID0} <- Events]).
 
 % проверяем, что просто ничего не падает, для начала этого хватит
 -spec mwc_get_statuses_distrib(config()) ->

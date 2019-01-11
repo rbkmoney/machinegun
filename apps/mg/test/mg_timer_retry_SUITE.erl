@@ -177,8 +177,7 @@ automaton_options(NS, RetryPolicy) ->
         storage   => mg_storage_memory,
         pulse     => ?MODULE,
         retries   => #{
-            timers         => RetryPolicy,
-            processor      => {timecap, 0, {intervals, [1]}}  % without retries
+            timers         => RetryPolicy
         },
         scheduled_tasks => #{
             timers         => #{ interval => 100, limit => 10 },
