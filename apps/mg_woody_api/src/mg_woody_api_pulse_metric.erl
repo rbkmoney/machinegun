@@ -53,13 +53,13 @@ get_all_metrics(Namespaces) ->
 
 %% Internals
 
--define(DURATION_BINS, 5).
+-define(DURATION_BINS, 10).  % up to 2.7 hours
 -define(DURATION_UNIT, <<"mcs">>).
--define(QUEUE_LEN_BINS, 5).
+-define(QUEUE_LEN_BINS, 5).  % up to 10_000 elements
 -define(QUEUE_LEN_UNIT, <<"">>).
--define(OFFSET_BINS, 7).
+-define(OFFSET_BINS, 8).  % up to 3 year
 -define(OFFSET_UNIT, <<"s">>).
--define(FRACTION_BINS, 10).
+-define(FRACTION_BINS, 10).  % step by 0.1
 -define(FRACTION_UNIT, <<"">>).
 
 %% Metrics handling
