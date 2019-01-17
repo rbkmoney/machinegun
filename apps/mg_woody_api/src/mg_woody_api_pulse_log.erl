@@ -81,6 +81,14 @@ format_beat(#mg_machine_lifecycle_loading_error{exception = {_, Reason, _}} = Be
 format_beat(#mg_machine_lifecycle_committed_suicide{} = Beat) ->
     Context = ?beat_to_meta(mg_machine_lifecycle_committed_suicide, Beat),
     {info, {"machine has committed suicide", []}, Context};
+format_beat(#mg_machine_lifecycle_transient_error{context = Ctx, exception = {_, Reason, _}} = Beat) ->
+    Context = ?beat_to_meta(mg_machine_lifecycle_transient_error, Beat),
+    case Beat#mg_machine_lifecycle_transient_error.retry_action of
+        {wait, Timeout, _} ->
+            {warning, {"transient error ~p during ~p, retrying in ~p msec", [Ctx, Reason, Timeout]}, Context};
+        finish ->
+            {warning, {"transient error ~p during ~p, retires exhausted", [Ctx, Reason]}, Context}
+    end;
 format_beat(#mg_timer_lifecycle_rescheduled{target_timestamp = TS, attempt = Attempt} = Beat) ->
     Context = ?beat_to_meta(mg_timer_lifecycle_rescheduled, Beat),
     {info, {"machine rescheduled to ~s, attempt ~p", [format_timestamp(TS), Attempt]}, Context};
@@ -113,6 +121,13 @@ extract_meta(exception, {Class, Reason, StackStrace}) ->
             {stack_trace, genlib_format:format_stacktrace(StackStrace)}
         ]}
     ];
+extract_meta(retry_action, {wait, Timeout, NextStrategy}) ->
+    [
+        {wait_timeout, Timeout},
+        {next_retry_strategy, genlib:format(NextStrategy)}
+    ];
+extract_meta(retry_action, _Other) ->
+    [];
 extract_meta(machine_ref, {id, MachineID}) ->
     {machine_id, MachineID};
 extract_meta(machine_ref, {tag, MachineTag}) ->
