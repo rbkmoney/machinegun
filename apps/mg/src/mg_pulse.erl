@@ -41,11 +41,13 @@
     | #mg_timer_process_finished{}
     % Состояние процесса машины
     | #mg_machine_lifecycle_created{}
+    | #mg_machine_lifecycle_removed{}
     | #mg_machine_lifecycle_loaded{}
     | #mg_machine_lifecycle_unloaded{}
     | #mg_machine_lifecycle_committed_suicide{}
     | #mg_machine_lifecycle_failed{}
     | #mg_machine_lifecycle_loading_error{}
+    | #mg_machine_lifecycle_transient_error{}
     % Обработка запроса машиной
     | #mg_machine_process_started{}
     | #mg_machine_process_finished{}
