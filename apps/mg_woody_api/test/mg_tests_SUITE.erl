@@ -259,11 +259,16 @@ default_signal_handler({Args, _Machine}) ->
     end.
 
 -spec default_call_handler(mg:call_args()) -> mg:call_result().
-default_call_handler({Args, _Machine}) ->
+default_call_handler({Args, #{history := History}}) ->
+    Evs = [N || #{body := N} <- History],
     SetTimer = {set_timer, {timeout, 1}, {undefined, undefined, forward}, 30},
     case Args of
+        [<<"event">>, I]  ->
+            case lists:member(I, Evs) of
+                false -> {Args, {null(), [content(I)]}, #{}};
+                true  -> {Args, {null(), []}, #{}}
+            end;
         <<"tag"  >>       -> {Args, {null(), [content(<<"tag_body"  >>)]}, #{tag => Args}};
-        <<"event">>       -> {Args, {null(), [content(<<"event_body">>)]}, #{}};
         <<"nop"  >>       -> {Args, {null(), [                ]}, #{}};
         <<"set_timer"  >> -> {Args, {null(), [content(<<"timer_body">>)]}, #{timer => SetTimer   }};
         <<"unset_timer">> -> {Args, {null(), [content(<<"timer_body">>)]}, #{timer => unset_timer}};
@@ -540,7 +545,7 @@ event_sink_lots_events_ordering(C) ->
     HRange2 = #mg_stateproc_HistoryRange{direction=forward},
     Events = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, HRange2),
     EventsIDs = lists:seq(1, N + LastEventID),
-    true = lists:prefix(EventsIDs, [ID0 || #mg_stateproc_SinkEvent{id=ID0} <- Events]).
+    EventsIDs = [ID0 || #mg_stateproc_SinkEvent{id=ID0} <- Events].
 
 % проверяем, что просто ничего не падает, для начала этого хватит
 -spec mwc_get_statuses_distrib(config()) ->
@@ -629,8 +634,8 @@ create_event(Event, C, ID) ->
 -spec create_events(integer(), config(), mg:id()) -> _.
 create_events(N, C, ID) ->
     lists:foreach(
-            fun(_) ->
-                _ = create_event(<<"event">>, C, ID)
+            fun(I) ->
+                _ = create_event([<<"event">>, I], C, ID)
             end,
             lists:seq(1, N)
     ).
