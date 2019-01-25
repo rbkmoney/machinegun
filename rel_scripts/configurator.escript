@@ -247,16 +247,19 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             schedulers => #{
                 timers         => #{
                     interval     => 1000,
-                    limit        => <<"sheduler_tasks_total">>
+                    limit        => <<"sheduler_tasks_total">>,
+                    share        => 2
                 },
                 timers_retries => #{
                     interval     => 1000,
-                    limit        => <<"sheduler_tasks_total">>
+                    limit        => <<"sheduler_tasks_total">>,
+                    share        => 1
                 },
                 overseer       => #{
                     interval     => 1000,
                     limit        => <<"sheduler_tasks_total">>,
-                    no_task_wait => 10 * 60 * 1000  % 10 min
+                    no_task_wait => 10 * 60 * 1000,  % 10 min
+                    share        => 0
                 }
             },
             suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0))

@@ -113,7 +113,8 @@
 -type scheduler_opt() :: disable | #{
     interval     => pos_integer(),
     no_task_wait => pos_integer(),
-    limit        => mg_quota_worker:name()
+    limit        => mg_quota_worker:name(),
+    share        => mg_quota:share()
 }.
 -type retry_subj() :: storage | processor | timers.
 -type retry_opt() :: #{
@@ -1085,6 +1086,7 @@ scheduler_options(Name, HandlerMod, Options, HandlerOptions, Config) ->
         task_handler => Handler,
         pulse => Pulse,
         quota_name => maps:get(limit, Config, unlimited),
+        quota_share => maps:get(share, Config, 1),
         no_task_wait => NoTaskWait,
         search_interval => SearchInterval
     }).
