@@ -137,10 +137,11 @@ health_checkers(YamlConfig) ->
     [{erl_health, service, [?C:utf_bin(?C:conf([service_name], YamlConfig))]}].
 
 quotas(YamlConfig) ->
+    SchedulerLimit = ?C:conf([limits, scheduler_tasks], YamlConfig, 5000),
     [
         #{
             name => <<"scheduler_tasks_total">>,
-            limit => #{ value => Limit },
+            limit => #{ value => SchedulerLimit },
             update_interval => 1000
         }
     ].
@@ -222,8 +223,8 @@ namespaces_list(YamlConfig) ->
 
 namespace({NameStr, NSYamlConfig}, YamlConfig) ->
     Name = ?C:utf_bin(NameStr),
-    Timeout = fun(Name, Default) ->
-        ?C:time_interval(?C:conf([Name], NSYamlConfig, Default), ms)
+    Timeout = fun(TimeoutName, Default) ->
+        ?C:time_interval(?C:conf([TimeoutName], NSYamlConfig, Default), ms)
     end,
     NS0 = #{
             storage   => storage(Name, YamlConfig),
@@ -247,17 +248,17 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             schedulers => #{
                 timers         => #{
                     interval     => 1000,
-                    limit        => <<"sheduler_tasks_total">>,
+                    limit        => <<"scheduler_tasks_total">>,
                     share        => 2
                 },
                 timers_retries => #{
                     interval     => 1000,
-                    limit        => <<"sheduler_tasks_total">>,
+                    limit        => <<"scheduler_tasks_total">>,
                     share        => 1
                 },
                 overseer       => #{
                     interval     => 1000,
-                    limit        => <<"sheduler_tasks_total">>,
+                    limit        => <<"scheduler_tasks_total">>,
                     no_task_wait => 10 * 60 * 1000,  % 10 min
                     share        => 0
                 }

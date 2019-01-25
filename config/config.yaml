@@ -31,6 +31,7 @@ limits:
     memory: # return 503 if breaks
         type: cgroups  # cgroups | total
         value: 90%
+    scheduler_tasks: 5000
 logging:
     root: /var/log/machinegun
     crash_log: crash.log
