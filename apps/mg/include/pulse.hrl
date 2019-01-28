@@ -54,6 +54,12 @@
 
 %% Scheduler
 
+-record(mg_scheduler_search_error, {
+    namespace :: mg:ns(),
+    scheduler_name :: mg_scheduler:name(),
+    exception :: mg_utils:exception()
+}).
+
 -record(mg_scheduler_task_error, {
     namespace :: mg:ns(),
     scheduler_name :: mg_scheduler:name(),

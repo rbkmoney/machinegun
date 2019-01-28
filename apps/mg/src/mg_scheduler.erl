@@ -306,18 +306,13 @@ add_tasks(NewTasks, State) ->
 
 -spec search_new_tasks(state()) ->
     state().
-search_new_tasks(State) ->
-    #state{
-        tasks_info = TaskInfo,
-        queue_state = HandlerState,
-        queue_handler = Handler
-    } = State,
+search_new_tasks(#state{tasks_info = TaskInfo} = State) ->
     TasksNeeded = get_search_number(State),
     TotalKnownTasks = maps:size(TaskInfo),
     SearchLimit = erlang:max(TasksNeeded - TotalKnownTasks, 0),
     DuplicateDetector = fun(TaskID) -> maps:is_key(TaskID, TaskInfo) end,
-    {ok, NewTasks, NewHandlerState} = handler_search(Handler, SearchLimit, DuplicateDetector, HandlerState),
-    add_tasks(NewTasks, State#state{queue_state = NewHandlerState}).
+    {ok, NewTasks, NewState} = try_search_tasks(SearchLimit, DuplicateDetector, State),
+    add_tasks(NewTasks, NewState).
 
 -spec get_search_number(state()) ->
     non_neg_integer().
@@ -328,6 +323,26 @@ get_search_number(#state{quota_reserve = Reserve}) when
     ?INITIAL_SEARCH_NUMBER;
 get_search_number(#state{quota_reserve = Reserve}) ->
     Reserve * 2.
+
+-spec try_search_tasks(non_neg_integer(), fun((task_id()) -> boolean()), state()) ->
+    {ok, [task_info()], state()}.
+try_search_tasks(SearchLimit, DuplicateDetector, State) ->
+    #state{
+        queue_state = HandlerState,
+        queue_handler = Handler
+    } = State,
+    {ok, NewTasks, NewHandlerState} = try
+        handler_search(Handler, SearchLimit, DuplicateDetector, HandlerState)
+    catch
+        throw:({ErrorType, _Details} = Reason) when
+            ErrorType =:= transient orelse
+            ErrorType =:= timeout
+        ->
+            Exception = {throw, Reason, erlang:get_stacktrace()},
+            ok = emit_search_error_beat(Exception, State),
+            {ok, [], HandlerState}
+    end,
+    {ok, NewTasks, State#state{queue_state = NewHandlerState}}.
 
 -spec start_new_tasks(state()) ->
     state().
@@ -404,6 +419,15 @@ emit_new_tasks_beat(NewTasks, #state{pulse = Pulse, ns = NS, name = Name}) ->
         namespace = NS,
         scheduler_name = Name,
         new_tasks_count = erlang:length(NewTasks)
+    }).
+
+-spec emit_search_error_beat(mg_utils:exception(), state()) ->
+    ok.
+emit_search_error_beat(Exception, #state{pulse = Pulse, ns = NS, name = Name}) ->
+    emit_beat(Pulse, #mg_scheduler_search_error{
+        namespace = NS,
+        scheduler_name = Name,
+        exception = Exception
     }).
 
 -spec emit_reserved_beat(non_neg_integer(), non_neg_integer(), mg_quota:resource(), state()) ->
