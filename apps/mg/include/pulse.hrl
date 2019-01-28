@@ -68,9 +68,7 @@
     namespace :: mg:ns(),
     machine_id :: mg:id(),
     exception :: mg_utils:exception(),
-    request_context :: mg:request_context(),
-    retry_strategy :: mg_retry:strategy(),
-    retry_action :: {wait, timeout(), mg_retry:strategy()} | finish
+    request_context :: mg:request_context()
 }).
 
 -record(mg_machine_process_started, {
@@ -104,6 +102,12 @@
     request_context :: mg:request_context()
 }).
 
+-record(mg_machine_lifecycle_removed, {
+    namespace :: mg:ns(),
+    machine_id :: mg:id(),
+    request_context :: mg:request_context()
+}).
+
 -record(mg_machine_lifecycle_unloaded, {
     namespace :: mg:ns(),
     machine_id :: mg:id()
@@ -129,6 +133,16 @@
     machine_id :: mg:id(),
     request_context :: mg:request_context(),
     exception :: mg_utils:exception()
+}).
+
+-record(mg_machine_lifecycle_transient_error, {
+    context :: atom(),
+    namespace :: mg:ns(),
+    machine_id :: mg:id(),
+    exception :: mg_utils:exception(),
+    request_context :: mg:request_context(),
+    retry_strategy :: mg_retry:strategy(),
+    retry_action :: {wait, timeout(), mg_retry:strategy()} | finish
 }).
 
 %% Workers management

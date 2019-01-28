@@ -65,12 +65,16 @@ create_metric(#mg_machine_lifecycle_unloaded{namespace = NS}) ->
     [create_inc([mg, machine, lifecycle, NS, unloaded])];
 create_metric(#mg_machine_lifecycle_created{namespace = NS}) ->
     [create_inc([mg, machine, lifecycle, NS, created])];
+create_metric(#mg_machine_lifecycle_removed{namespace = NS}) ->
+    [create_inc([mg, machine, lifecycle, NS, removed])];
 create_metric(#mg_machine_lifecycle_failed{namespace = NS}) ->
     [create_inc([mg, machine, lifecycle, NS, failed])];
 create_metric(#mg_machine_lifecycle_committed_suicide{namespace = NS}) ->
     [create_inc([mg, machine, lifecycle, NS, committed_suicide])];
 create_metric(#mg_machine_lifecycle_loading_error{namespace = NS}) ->
     [create_inc([mg, machine, lifecycle, NS, loading_error])];
+create_metric(#mg_machine_lifecycle_transient_error{namespace = NS}) ->
+    [create_inc([mg, machine, lifecycle, NS, transient_error])];
 % Machine processing
 create_metric(#mg_machine_process_started{processor_impact = Impact, namespace = NS}) ->
     ImpactTag = decode_impact(Impact),
@@ -144,7 +148,7 @@ get_metrics(NS) ->
 
 -spec get_machine_lifecycle_metrics(mg:ns()) -> nested_metrics().
 get_machine_lifecycle_metrics(NS) ->
-    Events = [loaded, unloaded, created, failed, committed_suicide, loading_error],
+    Events = [loaded, unloaded, created, removed, failed, committed_suicide, loading_error, transient_error],
     [
         create_inc([mg, machine, lifecycle, NS, E])
         || E <- Events
