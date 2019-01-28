@@ -259,7 +259,7 @@ create_inc(Key) ->
 -spec list_bin_metric(metric_key(), bin_type()) ->
     [metric()].
 list_bin_metric(KeyPrefix, BinType) ->
-    [FirstValue | _] = BinsValues = [V || {V, _Name} = build_bins(BinType)],
+    [FirstValue | _] = BinsValues = [V || {V, _Name} <- build_bins(BinType)],
     Samples = [FirstValue - 1 | BinsValues],
     [create_bin_inc(KeyPrefix, BinType, Sample) || Sample <- Samples].
 
@@ -300,12 +300,9 @@ build_bin_key([{HeadValue, _HeadName} | Bins], Value) when HeadValue =< Value ->
 build_bins(duration) ->
     [
         {1000, <<"1ms">>},
-        {5 * 1000, <<"5ms">>},
-        {10 * 1000, <<"10ms">>},
-        {20 * 1000, <<"20ms">>},
-        {40 * 1000, <<"40ms">>},
-        {80 * 1000, <<"80ms">>},
-        {150 * 1000, <<"150ms">>},
+        {20 * 1000, <<"25ms">>},
+        {20 * 1000, <<"50ms">>},
+        {40 * 1000, <<"100ms">>},
         {250 * 1000, <<"250ms">>},
         {500 * 1000, <<"500ms">>},
         {1000 * 1000, <<"1s">>},
@@ -333,20 +330,17 @@ build_bins(offset) ->
         {10, <<"10s">>},
         {60, <<"1m">>},
         {10 * 60, <<"10m">>},
-        {10 * 60, <<"30m">>},
         {60 * 60, <<"1h">>},
-        {6  * 60 * 60, <<"6h">>},
         {24 * 60 * 60, <<"1d">>},
         {7  * 24 * 60 * 60, <<"7d">>},
         {30 * 24 * 60 * 60, <<"30d">>},
-        {90 * 24 * 60 * 60, <<"90d">>},
         {365 * 24 * 60 * 60, <<"1y">>},
         {5 * 365 * 24 * 60 * 60, <<"5y">>}
     ];
 build_bins(queue_length) ->
     [
         {1, <<"1">>},
-        {5, <<"10">>},
+        {5, <<"5">>},
         {10, <<"10">>},
         {20, <<"20">>},
         {50, <<"50">>},
