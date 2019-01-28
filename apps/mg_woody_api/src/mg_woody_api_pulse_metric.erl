@@ -118,7 +118,40 @@ create_metric(#mg_timer_process_finished{namespace = NS, queue = Queue, duration
     ];
 % Sheduler
 create_metric(#mg_scheduler_task_error{scheduler_name = Name, namespace = NS}) ->
-    [create_inc([mg, sheduler, NS, Name, task_error])];
+    [create_inc([mg, sheduler, NS, Name, task, error])];
+create_metric(#mg_scheduler_new_tasks{scheduler_name = Name, namespace = NS, new_tasks_count = Count}) ->
+    [create_inc([mg, sheduler, NS, Name, task, created], Count)];
+create_metric(#mg_scheduler_task_started{scheduler_name = Name, namespace = NS, task_delay = DelayMS}) ->
+    Delay = erlang:convert_time_unit(DelayMS, millisecond, native),
+    [
+        create_inc([mg, sheduler, NS, Name, task, started]),
+        create_bin_inc([mg, sheduler, NS, Name, task, delay], duration, Delay)
+    ];
+create_metric(#mg_scheduler_task_finished{} = Beat) ->
+    #mg_scheduler_task_finished{
+        scheduler_name = Name,
+        namespace = NS,
+        waiting_in_queue = Waiting,
+        process_duration = Processing
+    } = Beat,
+    [
+        create_inc([mg, sheduler, NS, Name, task, finished]),
+        create_bin_inc([mg, sheduler, NS, Name, task, queue_waiting], duration, Waiting),
+        create_bin_inc([mg, sheduler, NS, Name, task, processing], duration, Processing)
+    ];
+create_metric(#mg_scheduler_quota_reserved{} = Beat) ->
+    #mg_scheduler_quota_reserved{
+        scheduler_name = Name,
+        namespace = NS,
+        active_tasks = Active,
+        waiting_tasks = Waiting,
+        quota_reserved = Reserved
+    } = Beat,
+    [
+        create_gauge([mg, sheduler, NS, Name, quota, active], Active),
+        create_gauge([mg, sheduler, NS, Name, quota, waiting], Waiting),
+        create_gauge([mg, sheduler, NS, Name, quota, reserved], Reserved)
+    ];
 % Workers management
 create_metric(#mg_worker_call_attempt{namespace = NS, msg_queue_len = QLen, msg_queue_limit = QLimit}) ->
     QUsage = calc_queue_usage(QLen, QLimit),
@@ -162,10 +195,24 @@ get_machine_lifecycle_metrics(NS) ->
 -spec get_sheduler_metrics(mg:ns()) -> nested_metrics().
 get_sheduler_metrics(NS) ->
     Names = [timers, timers_retries, overseer],
-    [
-        create_inc([mg, sheduler, NS, N, task_error])
-        || N <- Names
-    ].
+    TaskKeys = [error, created, started, finished],
+    TaskBins = [delay, queue_waiting, processing],
+    TaskMetrics = [
+        [
+            create_inc([mg, sheduler, NS, N, task, M])
+            || N <- Names, M <- TaskKeys
+        ],
+        [
+            list_bin_metric([mg, sheduler, NS, N, task, B], duration)
+            || N <- Names, B <- TaskBins
+        ]
+    ],
+    QuotaKeys = [active, waiting, reserved],
+    QuotaMetrics = [
+        create_gauge([mg, sheduler, NS, N, quota, Q], 0)
+        || N <- Names, Q <- QuotaKeys
+    ],
+    [TaskMetrics, QuotaMetrics].
 
 -spec get_machine_processing_metrics(mg:ns()) -> nested_metrics().
 get_machine_processing_metrics(NS) ->
@@ -263,7 +310,17 @@ push([M | Metrics]) ->
 -spec create_inc(metric_key()) ->
     metric().
 create_inc(Key) ->
-    how_are_you:metric_construct(meter, Key, 1).
+    create_inc(Key, 1).
+
+-spec create_inc(metric_key(), non_neg_integer()) ->
+    metric().
+create_inc(Key, Number) ->
+    how_are_you:metric_construct(meter, Key, Number).
+
+-spec create_gauge(metric_key(), integer()) ->
+    metric().
+create_gauge(Key, Value) ->
+    how_are_you:metric_construct(gauge, Key, Value).
 
 -spec list_bin_metric(metric_key(), bin_type()) ->
     [metric()].
