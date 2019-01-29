@@ -303,7 +303,7 @@ build_bin_key([{HeadValue, HeadName} | _Bins], Value) when HeadValue > Value ->
 build_bin_key([{LastValue, LastName}], Value) when LastValue =< Value ->
     <<"greater_then_", LastName/binary>>;
 build_bin_key([{LeftValue, LeftName}, {RightValue, RightName} | _Bins], Value) when
-    LeftValue > Value andalso RightValue =< Value
+    LeftValue =< Value andalso RightValue > Value
 ->
     <<"from_", LeftName/binary, "_to_", RightName/binary>>;
 build_bin_key([{HeadValue, _HeadName} | Bins], Value) when HeadValue =< Value ->
