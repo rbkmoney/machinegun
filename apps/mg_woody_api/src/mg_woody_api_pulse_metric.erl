@@ -29,9 +29,10 @@
 -type metrics() :: [metric()].
 -type nested_metrics() :: metrics() | [nested_metrics()].
 -type metric_key() :: how_are_you:metric_key().
--type bin_type() :: duration | offset | queue_length | fraction.
 -type beat() :: mg_woody_api_pulse:beat().
 -type impact_tag() :: atom().
+-type bin_type() :: duration | offset | queue_length | fraction.
+-type bin() :: {number(), Name :: binary()}.
 
 %%
 %% mg_pulse handler
@@ -52,15 +53,6 @@ get_all_metrics(Namespaces) ->
     lists:flatten([get_metrics(NS) || NS <- Namespaces]).
 
 %% Internals
-
--define(DURATION_BINS, 5).
--define(DURATION_UNIT, <<"mcs">>).
--define(QUEUE_LEN_BINS, 5).
--define(QUEUE_LEN_UNIT, <<"">>).
--define(OFFSET_BINS, 7).
--define(OFFSET_UNIT, <<"s">>).
--define(FRACTION_BINS, 10).
--define(FRACTION_UNIT, <<"">>).
 
 %% Metrics handling
 
@@ -270,96 +262,93 @@ create_inc(Key) ->
 
 -spec list_bin_metric(metric_key(), bin_type()) ->
     [metric()].
-list_bin_metric(KeyPrefix, duration) ->
-    list_exp_bin_metric(KeyPrefix, ?DURATION_BINS, ?DURATION_UNIT);
-list_bin_metric(KeyPrefix, offset) ->
-    list_exp_bin_metric(KeyPrefix, ?OFFSET_BINS, ?OFFSET_UNIT);
-list_bin_metric(KeyPrefix, queue_length) ->
-    list_exp_bin_metric(KeyPrefix, ?QUEUE_LEN_BINS, ?QUEUE_LEN_UNIT);
-list_bin_metric(KeyPrefix, fraction) ->
-    list_fraction_bin_metric(KeyPrefix, ?FRACTION_BINS, ?FRACTION_UNIT).
-
--spec list_exp_bin_metric(metric_key(), MaxBin :: pos_integer(), Unit :: binary()) ->
-    [metric()].
-list_exp_bin_metric(KeyPrefix, MaxBin, Unit) ->
-    do_list_exp_bin_metric(KeyPrefix, MaxBin, Unit, MaxBin, []).
-
--spec list_fraction_bin_metric(metric_key(), MaxBin :: pos_integer(), Unit :: binary()) ->
-    [metric()].
-list_fraction_bin_metric(KeyPrefix, MaxBin, Unit) ->
-    do_list_fraction_bin_metric(KeyPrefix, MaxBin, Unit, MaxBin + 1, []).
-
--spec do_list_exp_bin_metric(metric_key(), pos_integer(), binary(), non_neg_integer(), [metric()]) ->
-    [metric()].
-do_list_exp_bin_metric(_KeyPrefix, _MaxBin, _Unit, Bin, Acc) when Bin < 0 ->
-    Acc;
-do_list_exp_bin_metric(KeyPrefix, MaxBin, Unit, Bin, Acc) ->
-    BinSampleValue = erlang:trunc(math:pow(10, Bin)) + 1,
-    BinKey = create_exp_bin_key(BinSampleValue, MaxBin, Unit),
-    Metric = how_are_you:metric_construct(meter, [KeyPrefix, BinKey], 1),
-    do_list_exp_bin_metric(KeyPrefix, MaxBin, Unit, Bin - 1, [Metric | Acc]).
-
--spec do_list_fraction_bin_metric(metric_key(), pos_integer(), binary(), non_neg_integer(), [metric()]) ->
-    [metric()].
-do_list_fraction_bin_metric(_KeyPrefix, _MaxBin, _Unit, Bin, Acc) when Bin < 0 ->
-    Acc;
-do_list_fraction_bin_metric(KeyPrefix, MaxBin, Unit, Bin, Acc) ->
-    BinSampleValue = (Bin + 0.1) / MaxBin,
-    BinKey = create_fraction_bin_key(BinSampleValue, MaxBin, Unit),
-    Metric = how_are_you:metric_construct(meter, [KeyPrefix, BinKey], 1),
-    do_list_fraction_bin_metric(KeyPrefix, MaxBin, Unit, Bin - 1, [Metric | Acc]).
+list_bin_metric(KeyPrefix, BinType) ->
+    [FirstValue | _] = BinsValues = [V || {V, _Name} <- build_bins(BinType)],
+    Samples = [FirstValue - 1 | BinsValues],
+    [create_bin_inc(KeyPrefix, BinType, Sample) || Sample <- Samples].
 
 -spec create_bin_inc(metric_key(), bin_type(), number()) ->
     metric().
-create_bin_inc(KeyPrefix, duration, Duration) ->
-    DurationMCS = erlang:convert_time_unit(Duration, native, microsecond),
-    BinKey = create_exp_bin_key(DurationMCS, ?DURATION_BINS, ?DURATION_UNIT),
-    how_are_you:metric_construct(meter, [KeyPrefix, BinKey], 1);
-create_bin_inc(KeyPrefix, offset, Timestamp) ->
-    Offset = erlang:max(genlib_time:unow() - Timestamp, 0),
-    BinKey = create_exp_bin_key(Offset, ?OFFSET_BINS, ?OFFSET_UNIT),
-    how_are_you:metric_construct(meter, [KeyPrefix, BinKey], 1);
-create_bin_inc(KeyPrefix, queue_length, Length0) ->
-    Length = erlang:max(Length0, 0),
-    BinKey = create_exp_bin_key(Length, ?QUEUE_LEN_BINS, ?QUEUE_LEN_UNIT),
-    how_are_you:metric_construct(meter, [KeyPrefix, BinKey], 1);
-create_bin_inc(KeyPrefix, fraction, Fraction0) ->
-    Fraction = erlang:max(Fraction0, 0.0),
-    BinKey = create_fraction_bin_key(Fraction, ?FRACTION_BINS, ?FRACTION_UNIT),
+create_bin_inc(KeyPrefix, BinType, Value) ->
+    Prepared = prepare_bin_value(BinType, Value),
+    Bins = build_bins(BinType),
+    BinKey = build_bin_key(Bins, Prepared),
     how_are_you:metric_construct(meter, [KeyPrefix, BinKey], 1).
 
--spec create_exp_bin_key(Value :: number(), MaxBin :: pos_integer(), Unit :: binary()) ->
-    metric_key().
-create_exp_bin_key(Value, MaxBin, Unit) ->
-    BinNumber = calc_exp_bin(Value, MaxBin),
-    case BinNumber of
-        0 ->
-            <<"less_then_10", Unit/binary>>;
-        MaxBin ->
-            <<"greater_then_1e", (erlang:integer_to_binary(MaxBin))/binary, Unit/binary>>;
-        _Other ->
-            Bin = erlang:integer_to_binary(BinNumber),
-            NexBin = erlang:integer_to_binary(BinNumber + 1),
-            <<"from_1e", Bin/binary, Unit/binary, "_to_1e", NexBin/binary, Unit/binary>>
-    end.
+-spec prepare_bin_value(bin_type(), number()) ->
+    number().
+prepare_bin_value(duration, Duration) ->
+    erlang:convert_time_unit(Duration, native, microsecond);
+prepare_bin_value(offset, Timestamp) ->
+    erlang:max(genlib_time:unow() - Timestamp, 0);
+prepare_bin_value(queue_length, Length) ->
+    erlang:max(Length, 0);
+prepare_bin_value(fraction, Fraction) ->
+    erlang:max(Fraction, 0.0).
 
--spec calc_exp_bin(Value :: number(), MaxBin :: pos_integer()) ->
-    non_neg_integer().
-calc_exp_bin(Value, _MaxBin) when Value < 1 ->
-    0;
-calc_exp_bin(Value, MaxBin) ->
-    erlang:min(erlang:trunc(math:log10(Value)), MaxBin).
-
--spec create_fraction_bin_key(Value :: number(), BinNumber :: pos_integer(), Unit :: binary()) ->
+-spec build_bin_key(Bins :: [bin()], Value :: number()) ->
     metric_key().
-create_fraction_bin_key(Value, MaxBin, Unit) ->
-    case erlang:trunc(Value * MaxBin) of
-        BinNumber when BinNumber =< MaxBin ->
-            BinStart = BinNumber / MaxBin,
-            BinStartPercent = erlang:integer_to_binary(erlang:trunc(BinStart * 100)),
-            BinEnd = (BinNumber + 1) / MaxBin,
-            BinEndPercent = erlang:integer_to_binary(erlang:trunc(BinEnd * 100)),
-            <<"from_", BinStartPercent/binary, Unit/binary, "_to_", BinEndPercent/binary, Unit/binary>>;
-        BinNumber when BinNumber > MaxBin ->
-            <<"overflow">>
-    end.
+build_bin_key([{HeadValue, HeadName} | _Bins], Value) when HeadValue > Value ->
+    <<"less_then_", HeadName/binary>>;
+build_bin_key([{LastValue, LastName}], Value) when LastValue =< Value ->
+    <<"greater_then_", LastName/binary>>;
+build_bin_key([{LeftValue, LeftName}, {RightValue, RightName} | _Bins], Value) when
+    LeftValue > Value andalso RightValue =< Value
+->
+    <<"from_", LeftName/binary, "_to_", RightName/binary>>;
+build_bin_key([{HeadValue, _HeadName} | Bins], Value) when HeadValue =< Value ->
+    build_bin_key(Bins, Value).
+
+-spec build_bins(bin_type()) ->
+    [bin()].
+build_bins(duration) ->
+    [
+        {1000, <<"1ms">>},
+        {25 * 1000, <<"25ms">>},
+        {50 * 1000, <<"50ms">>},
+        {100 * 1000, <<"100ms">>},
+        {250 * 1000, <<"250ms">>},
+        {500 * 1000, <<"500ms">>},
+        {1000 * 1000, <<"1s">>},
+        {10 * 1000 * 1000, <<"10s">>},
+        {30 * 1000 * 1000, <<"30s">>},
+        {60 * 1000 * 1000, <<"1m">>},
+        {5 * 60 * 1000 * 1000, <<"5m">>}
+    ];
+build_bins(fraction) ->
+    [
+        {0.1, <<"10">>},
+        {0.2, <<"20">>},
+        {0.3, <<"30">>},
+        {0.4, <<"40">>},
+        {0.5, <<"50">>},
+        {0.6, <<"60">>},
+        {0.7, <<"70">>},
+        {0.8, <<"80">>},
+        {0.9, <<"90">>},
+        {1.0, <<"100">>}
+    ];
+build_bins(offset) ->
+    [
+        {1, <<"1s">>},
+        {10, <<"10s">>},
+        {60, <<"1m">>},
+        {10 * 60, <<"10m">>},
+        {60 * 60, <<"1h">>},
+        {24 * 60 * 60, <<"1d">>},
+        {7  * 24 * 60 * 60, <<"7d">>},
+        {30 * 24 * 60 * 60, <<"30d">>},
+        {365 * 24 * 60 * 60, <<"1y">>},
+        {5 * 365 * 24 * 60 * 60, <<"5y">>}
+    ];
+build_bins(queue_length) ->
+    [
+        {1, <<"1">>},
+        {5, <<"5">>},
+        {10, <<"10">>},
+        {20, <<"20">>},
+        {50, <<"50">>},
+        {100, <<"100">>},
+        {1000, <<"1000">>},
+        {10000, <<"10000">>}
+    ].
