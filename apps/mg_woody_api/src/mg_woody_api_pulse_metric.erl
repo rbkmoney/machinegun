@@ -265,7 +265,8 @@ create_inc(Key) ->
 list_bin_metric(KeyPrefix, BinType) ->
     [FirstValue | _] = BinsValues = [V || {V, _Name} <- build_bins(BinType)],
     Samples = [FirstValue - 1 | BinsValues],
-    [create_bin_inc(KeyPrefix, BinType, Sample) || Sample <- Samples].
+    PreparedSmaples = [prepare_bin_sample(BinType, Sample) || Sample <- Samples],
+    [create_bin_inc(KeyPrefix, BinType, Sample) || Sample <- PreparedSmaples].
 
 -spec create_bin_inc(metric_key(), bin_type(), number()) ->
     metric().
@@ -285,6 +286,15 @@ prepare_bin_value(queue_length, Length) ->
     erlang:max(Length, 0);
 prepare_bin_value(fraction, Fraction) ->
     erlang:max(Fraction, 0.0).
+
+-spec prepare_bin_sample(bin_type(), number()) ->
+    number().
+prepare_bin_sample(duration, Sample) ->
+    erlang:convert_time_unit(Sample, microsecond, native);
+prepare_bin_sample(offset, Sample) ->
+    genlib_time:unow() + Sample;
+prepare_bin_sample(_Other, Sample) ->
+    Sample.
 
 -spec build_bin_key(Bins :: [bin()], Value :: number()) ->
     metric_key().
