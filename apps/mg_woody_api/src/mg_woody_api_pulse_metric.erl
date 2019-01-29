@@ -263,9 +263,11 @@ create_inc(Key) ->
 -spec list_bin_metric(metric_key(), bin_type()) ->
     [metric()].
 list_bin_metric(KeyPrefix, BinType) ->
-    [FirstValue | _] = BinsValues = [V || {V, _Name} <- build_bins(BinType)],
+    Bins = build_bins(BinType),
+    [FirstValue | _] = BinsValues = [V || {V, _Name} <- Bins],
     Samples = [FirstValue - 1 | BinsValues],
-    [create_bin_inc(KeyPrefix, BinType, Sample) || Sample <- Samples].
+    BinKeys = [build_bin_key(Bins, Sample) || Sample <- Samples],
+    [how_are_you:metric_construct(meter, [KeyPrefix, Key], 1) || Key <- BinKeys].
 
 -spec create_bin_inc(metric_key(), bin_type(), number()) ->
     metric().
@@ -293,7 +295,7 @@ build_bin_key([{HeadValue, HeadName} | _Bins], Value) when HeadValue > Value ->
 build_bin_key([{LastValue, LastName}], Value) when LastValue =< Value ->
     <<"greater_then_", LastName/binary>>;
 build_bin_key([{LeftValue, LeftName}, {RightValue, RightName} | _Bins], Value) when
-    LeftValue > Value andalso RightValue =< Value
+    LeftValue =< Value andalso RightValue > Value
 ->
     <<"from_", LeftName/binary, "_to_", RightName/binary>>;
 build_bin_key([{HeadValue, _HeadName} | Bins], Value) when HeadValue =< Value ->
