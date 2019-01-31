@@ -81,7 +81,7 @@
     options :: options(),
     quota_name :: mg_quota_worker:name(),
     quota_share :: mg_quota:share(),
-    quota_reserve :: mg_quota:resource() | undefined,
+    quota_reserved :: mg_quota:resource() | undefined,
     timer :: reference(),
     search_interval :: timeout(),
     no_task_sleep :: timeout(),
@@ -155,7 +155,7 @@ init(Options) ->
         options = Options,
         quota_name = maps:get(quota_name, Options),
         quota_share = maps:get(quota_share, Options, 1),
-        quota_reserve = undefined,
+        quota_reserved = undefined,
         search_interval = SearchInterval,
         no_task_sleep = NoTaskSleep,
         active_tasks = #{},
@@ -182,8 +182,8 @@ handle_cast(Cast, State) ->
 -spec handle_info(Info :: any(), state()) ->
     mg_utils:gen_server_handle_info_ret(state()).
 handle_info(?SEARCH_MESSAGE, State0) ->
-    State1 = search_new_tasks(State0),
-    State2 = restart_timer(?SEARCH_MESSAGE, State1),
+    State1 = restart_timer(?SEARCH_MESSAGE, State0),
+    State2 = search_new_tasks(State1),
     State3 = start_new_tasks(State2),
     {noreply, State3};
 handle_info({'DOWN', Monitor, process, _Object, _Info}, State0) ->
@@ -316,13 +316,13 @@ search_new_tasks(#state{tasks_info = TaskInfo} = State) ->
 
 -spec get_search_number(state()) ->
     non_neg_integer().
-get_search_number(#state{quota_reserve = Reserve}) when
-    Reserve =:= undefined orelse
-    Reserve =:= 0
+get_search_number(#state{quota_reserved = Reserved}) when
+    Reserved =:= undefined orelse
+    Reserved =:= 0
 ->
     ?INITIAL_SEARCH_NUMBER;
-get_search_number(#state{quota_reserve = Reserve}) ->
-    Reserve * 2.
+get_search_number(#state{quota_reserved = Reserved}) ->
+    Reserved * 2.
 
 -spec try_search_tasks(non_neg_integer(), fun((task_id()) -> boolean()), state()) ->
     {ok, [task_info()], state()}.
@@ -349,11 +349,11 @@ try_search_tasks(SearchLimit, DuplicateDetector, State) ->
 start_new_tasks(State0) ->
     State = reserve(State0),
     #state{
-        quota_reserve = Reserve,
+        quota_reserved = Reserved,
         active_tasks = ActiveTasks
     } = State,
     TotalActiveTasks = maps:size(ActiveTasks),
-    NewTasksNumber = erlang:max(Reserve - TotalActiveTasks, 0),
+    NewTasksNumber = erlang:max(Reserved - TotalActiveTasks, 0),
     start_multiple_tasks(NewTasksNumber, State).
 
 -spec start_multiple_tasks(non_neg_integer(), state()) ->
@@ -402,7 +402,7 @@ reserve(State) ->
         share => QuotaShare
     },
     Reserved = mg_quota_worker:reserve(ClientOptions, TotalActiveTasks, TotalKnownTasks, Quota),
-    NewState = State#state{quota_reserve = Reserved},
+    NewState = State#state{quota_reserved = Reserved},
     ok = emit_reserved_beat(TotalActiveTasks, TotalKnownTasks, Reserved, NewState),
     NewState.
 

@@ -119,8 +119,8 @@ init(Options) ->
     mg_utils:gen_server_handle_call_ret(state()).
 handle_call({reserve, ClientOptions, Usage, Expectation}, {Pid, _Tag}, State0) ->
     State1 = ensure_is_registered(ClientOptions, Pid, State0),
-    {ok, NewReserve, NewQuota} = mg_quota:reserve(ClientOptions, Usage, Expectation, State1#state.quota),
-    {reply, NewReserve, State1#state{quota = NewQuota}};
+    {ok, NewReserved, NewQuota} = mg_quota:reserve(ClientOptions, Usage, Expectation, State1#state.quota),
+    {reply, NewReserved, State1#state{quota = NewQuota}};
 handle_call(Call, From, State) ->
     ok = error_logger:error_msg("unexpected gen_server call received: ~p from ~p", [Call, From]),
     {noreply, State}.

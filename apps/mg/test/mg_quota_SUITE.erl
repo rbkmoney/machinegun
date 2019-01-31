@@ -55,7 +55,7 @@
     options :: mg_quota:client_options(),
     usage = 0 :: resource(),
     expectation = 0 :: resource(),
-    reserve = 0 :: resource()
+    reserved = 0 :: resource()
 }).
 -type client() :: #client{}.
 -type quota() :: mg_quota:state().
@@ -149,7 +149,7 @@ fair_sharing_without_usage_test(_C) ->
         limit => #{value => Limit}
     }),
     Clients0 = create_clients(10),
-    % Reserve more resources when availiable
+    % Reserved more resources when availiable
     Clients1 = [C#client{expectation = 20} || C <- Clients0],
     {Clients2, Q1} = reserve(Clients1, Q0),
     ok = validate_quota_contract(Clients2, Limit),
@@ -167,13 +167,13 @@ sharing_respects_usage_test(_C) ->
         limit => #{value => Limit}
     }),
     Clients0 = create_clients(10),
-    % Reserve more resources when availiable
+    % Reserved more resources when availiable
     Clients1 = [C#client{expectation = 20} || C <- Clients0],
     {Clients2, Q1} = reserve(Clients1, Q0),
     ok = validate_quota_contract(Clients2, Limit),
     ?assertEqual(repeat(20, 5) ++ repeat(0, 5), get_reserve(Clients2)),
     % Use reserved resources completelly
-    Clients3 = [C#client{usage = C#client.reserve} || C <- Clients2],
+    Clients3 = [C#client{usage = C#client.reserved} || C <- Clients2],
     {Clients4, Q2} = reserve(Clients3, Q1),
     ok = validate_quota_contract(Clients4, Limit),
     % Recalculate targets
@@ -195,7 +195,7 @@ fair_sharing_with_full_usage_test(_C) ->
     ok = validate_quota_contract(Clients2, Limit),
     ?assertEqual([100, 0], get_reserve(Clients2)),
     % Use reserved resources completelly
-    Clients3 = [C#client{usage = C#client.reserve} || C <- Clients2],
+    Clients3 = [C#client{usage = C#client.reserved} || C <- Clients2],
     {Clients4, Q2} = reserve(Clients3, Q1),
     ok = validate_quota_contract(Clients4, Limit),
     % Recalculate targets
@@ -204,7 +204,7 @@ fair_sharing_with_full_usage_test(_C) ->
     ok = validate_quota_contract(Clients5, Limit),
     ?assertEqual([50, 0], get_reserve(Clients5)),
     % Set usage as recommended
-    Clients6 = [C#client{usage = C#client.reserve} || C <- Clients5],
+    Clients6 = [C#client{usage = C#client.reserved} || C <- Clients5],
     {Clients7, _Q5} = reserve(Clients6, Q4),
     ok = validate_quota_contract(Clients7, Limit),
     ?assertEqual([50, 50], get_reserve(Clients7)).
@@ -348,8 +348,8 @@ reserve(Clients, Quota) ->
     Acc :: {[client()], quota()}.
 do_reserve(Client, {Acc, Quota}) ->
     #client{options = Options, usage = Usage, expectation = Exp} = Client,
-    {ok, Reserve, NewQuota} = mg_quota:reserve(Options, Usage, Exp, Quota),
-    {[Client#client{reserve = Reserve} | Acc], NewQuota}.
+    {ok, Reserved, NewQuota} = mg_quota:reserve(Options, Usage, Exp, Quota),
+    {[Client#client{reserved = Reserved} | Acc], NewQuota}.
 
 -spec loop([client()], quota()) ->
     {[client()], quota()}.
@@ -368,7 +368,7 @@ loop(Clients0, Quota0, N) when N > 0 ->
 -spec get_reserve([client()]) ->
     [resource()].
 get_reserve(Clients) ->
-    [C#client.reserve || C <- Clients].
+    [C#client.reserved || C <- Clients].
 
 -spec get_expectation([client()]) ->
     [resource()].
@@ -394,6 +394,6 @@ validate_quota_contract(Clients, Limit) ->
     true = lists:sum(get_reserve(Clients)) =< Limit,
     TotalUsage = [C#client.usage || C <- Clients],
     true = lists:sum(TotalUsage) =< Limit,
-    MaxPossibleUsage = [erlang:max(R, U) || #client{reserve = R, usage = U} <- Clients],
+    MaxPossibleUsage = [erlang:max(R, U) || #client{reserved = R, usage = U} <- Clients],
     true = lists:sum(MaxPossibleUsage) =< Limit,
     ok.

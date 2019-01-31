@@ -21,7 +21,7 @@
 %% Менеджер оперирует только целочисленным количеством ресурса.
 
 %% Для каждого потребителя хранятся характеристики квоты:
-%% * reserve – выделенное эксклюзивно ему количество ресурса
+%% * reserved – выделенное эксклюзивно ему количество ресурса
 %% * usage – использование им этого ресурса
 %% * expectation – количество ресурса, которое клиент желал бы использовать
 %% * share – количество полагающегося этому клиенту ресурса (задается
@@ -39,10 +39,10 @@
 %% В итоге, для менеджера и входных данных подразумеваются следующие
 %% ограничения:
 %% * сумма всех target никогда не превышает limit
-%% * сумма всех reserve никогда не превышает limit
+%% * сумма всех reserved никогда не превышает limit
 %% * сумма всех share никогда не превышает limit и равна limit с точностью
 %%   до ошибок округления
-%% * reserve никогда не может быть меньше usage
+%% * reserved никогда не может быть меньше usage
 %% * если expectation меньше или равно reserve, то usage не больше expectation
 
 %% API
@@ -88,7 +88,7 @@
 }).
 -record(client_state, {
     client_id :: client_id(),
-    reserve :: resource(),
+    reserved :: resource(),
     usage :: resource(),
     expectation :: resource(),
     share :: share(),
@@ -143,8 +143,8 @@ recalculate_targets(State) ->
 remove_client(ClientID, State) ->
     #state{clients = Clients, resource_state = Resource} = State,
     case maps:find(ClientID, Clients) of
-        {ok, #client_state{reserve = Reserve}} ->
-            {ok, Reserve, NewResource} = free_resource(Reserve, Resource),
+        {ok, #client_state{reserved = Reserved}} ->
+            {ok, Reserved, NewResource} = free_resource(Reserved, Resource),
             NewClients = maps:remove(ClientID, Clients),
             State#state{clients = NewClients, resource_state = NewResource};
         error ->
@@ -168,8 +168,8 @@ new_resource_state(Limit) ->
 change_resource(0 = Amount, State) ->
     {ok, Amount, State};
 change_resource(Amount, State) when Amount < 0 ->
-    {ok, Feed, NewState} = free_resource(-Amount, State),
-    {ok, -Feed, NewState};
+    {ok, NewState} = free_resource(-Amount, State),
+    {ok, Amount, NewState};
 change_resource(Amount, State) when Amount > 0 ->
     allocate_resource(Amount, State).
 
@@ -180,10 +180,11 @@ allocate_resource(Amount, #resource_state{free = Free} = State) ->
     {ok, Allocated, State#resource_state{free = Free - Allocated}}.
 
 -spec free_resource(Amount :: resource(), resource_state()) ->
-    {ok, Feed :: resource(), resource_state()}.
+    {ok, resource_state()}.
 free_resource(Amount, #resource_state{free = Free, limit = Limit} = State) ->
-    Feed = erlang:min(Amount, Limit - Free),
-    {ok, Feed, State#resource_state{free = Free + Feed}}.
+    NewFree = Free + Amount,
+    true = Limit =< NewFree,
+    {ok, State#resource_state{free = NewFree}}.
 
 % Client stats management
 
@@ -202,7 +203,7 @@ update_client_info(ClientOptions, Usage, Expectation, State) ->
         error ->
             #client_state{
                 client_id = ClientID,
-                reserve = 0,
+                reserved = 0,
                 usage = Usage,
                 expectation = Expectation,
                 share = Share,
@@ -221,19 +222,19 @@ calc_reserve_target(#client_state{target = Target, expectation = Expectation, us
 
 -spec calc_reserve_result(client_state()) ->
     NewTarget :: resource().
-calc_reserve_result(#client_state{target = undefined, reserve = Reserve}) ->
-    Reserve;
-calc_reserve_result(#client_state{target = Target, reserve = Reserve}) ->
-    erlang:min(Target, Reserve).
+calc_reserve_result(#client_state{target = undefined, reserved = Reserved}) ->
+    Reserved;
+calc_reserve_result(#client_state{target = Target, reserved = Reserved}) ->
+    erlang:min(Target, Reserved).
 
 -spec try_reserve(ReserveTarget :: resource(), client_state(), resource_state()) ->
     {ok, client_state(), resource_state()}.
 try_reserve(ReserveTarget, ClientState, Resource) ->
-    #client_state{reserve = AlreadyReserved} = ClientState,
+    #client_state{reserved = AlreadyReserved} = ClientState,
     Diff = ReserveTarget - AlreadyReserved,
     {ok, AcceptedChange, NewResource} = change_resource(Diff, Resource),
     NewReserved = AlreadyReserved + AcceptedChange,
-    NewClientState = ClientState#client_state{reserve = NewReserved},
+    NewClientState = ClientState#client_state{reserved = NewReserved},
     {ok, NewClientState, NewResource}.
 
 -spec recalculate_clients_targets(resource(), clients()) ->
@@ -294,19 +295,15 @@ do_fair_share_resources(TotalGuaranteedShares, Clients, Limit, FinalClients) ->
 -spec filter_needy_client([client_state()], [client_state()]) ->
     {[client_state()], [client_state()]}.
 filter_needy_client(Clients, FinalClients) ->
-    do_filter_needy_client(Clients, FinalClients, []).
+    {Needy, NotNeedy} = lists:partition(fun is_needy_client/1, Clients),
+    {Needy, NotNeedy ++ FinalClients}.
 
--spec do_filter_needy_client([client_state()], [client_state()], [client_state()]) ->
-    {[client_state()], [client_state()]}.
-do_filter_needy_client([], FinalClients, NeedyClients) ->
-    {NeedyClients, FinalClients};
-do_filter_needy_client([Client | Clients], FinalClients, NeedyClients) ->
-    case Client of
-        #client_state{expectation = E, target = T} when E =< T ->
-            do_filter_needy_client(Clients, [Client | FinalClients], NeedyClients);
-        #client_state{expectation = E, target = T} when E > T ->
-            do_filter_needy_client(Clients, FinalClients, [Client | NeedyClients])
-    end.
+-spec is_needy_client(client_state()) ->
+    boolean().
+is_needy_client(#client_state{expectation = E, target = T}) when E =< T ->
+    false;
+is_needy_client(#client_state{expectation = E, target = T}) when E > T ->
+    true.
 
 -spec share_resource(Fun, Params, resource(), [client_state()]) -> [client_state()] when
     Params :: any(),

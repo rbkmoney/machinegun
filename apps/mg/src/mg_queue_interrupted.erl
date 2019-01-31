@@ -108,7 +108,7 @@ execute_task(Options, TaskInfo) ->
         {processing, ReqCtx} ->
             Timeout = maps:get(processing_timeout, Options, ?DEFAULT_PROCESSING_TIMEOUT),
             Deadline = mg_utils:timeout_to_deadline(Timeout),
-            call_continue(Options, MachineID, ReqCtx, Deadline);
+            ok = mg_machine:resume_interrupted(MachineOptions, MachineID, ReqCtx, Deadline);
         _Other ->
             ok
     end.
@@ -130,8 +130,3 @@ search(MachineOptions, Limit, Continuation) ->
     mg_machine:options().
 machine_options(#{machine := MachineOptions}) ->
     MachineOptions.
-
--spec call_continue(options(), mg:id(), req_ctx(), deadline()) ->
-    ok.
-call_continue(Options, MachineID, ReqCtx, Deadline) ->
-    ok = mg_machine:resume_interrupted(machine_options(Options), MachineID, ReqCtx, Deadline).
