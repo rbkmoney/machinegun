@@ -108,16 +108,16 @@ create_metric(#mg_timer_process_finished{namespace = NS, queue = Queue, duration
         create_inc([mg, timer, process, NS, Queue, finished]),
         create_bin_inc([mg, timer, process, NS, Queue, duration], duration, Duration)
     ];
-% Sheduler
+% scheduler
 create_metric(#mg_scheduler_task_error{scheduler_name = Name, namespace = NS}) ->
-    [create_inc([mg, sheduler, NS, Name, task, error])];
+    [create_inc([mg, scheduler, NS, Name, task, error])];
 create_metric(#mg_scheduler_new_tasks{scheduler_name = Name, namespace = NS, new_tasks_count = Count}) ->
-    [create_inc([mg, sheduler, NS, Name, task, created], Count)];
+    [create_inc([mg, scheduler, NS, Name, task, created], Count)];
 create_metric(#mg_scheduler_task_started{scheduler_name = Name, namespace = NS, task_delay = DelayMS}) ->
     Delay = erlang:convert_time_unit(DelayMS, millisecond, native),
     [
-        create_inc([mg, sheduler, NS, Name, task, started]),
-        create_bin_inc([mg, sheduler, NS, Name, task, delay], duration, Delay)
+        create_inc([mg, scheduler, NS, Name, task, started]),
+        create_bin_inc([mg, scheduler, NS, Name, task, delay], duration, Delay)
     ];
 create_metric(#mg_scheduler_task_finished{} = Beat) ->
     #mg_scheduler_task_finished{
@@ -127,9 +127,9 @@ create_metric(#mg_scheduler_task_finished{} = Beat) ->
         process_duration = Processing
     } = Beat,
     [
-        create_inc([mg, sheduler, NS, Name, task, finished]),
-        create_bin_inc([mg, sheduler, NS, Name, task, queue_waiting], duration, Waiting),
-        create_bin_inc([mg, sheduler, NS, Name, task, processing], duration, Processing)
+        create_inc([mg, scheduler, NS, Name, task, finished]),
+        create_bin_inc([mg, scheduler, NS, Name, task, queue_waiting], duration, Waiting),
+        create_bin_inc([mg, scheduler, NS, Name, task, processing], duration, Processing)
     ];
 create_metric(#mg_scheduler_quota_reserved{} = Beat) ->
     #mg_scheduler_quota_reserved{
@@ -140,9 +140,9 @@ create_metric(#mg_scheduler_quota_reserved{} = Beat) ->
         quota_reserved = Reserved
     } = Beat,
     [
-        create_gauge([mg, sheduler, NS, Name, quota, active], Active),
-        create_gauge([mg, sheduler, NS, Name, quota, waiting], Waiting),
-        create_gauge([mg, sheduler, NS, Name, quota, reserved], Reserved)
+        create_gauge([mg, scheduler, NS, Name, quota, active], Active),
+        create_gauge([mg, scheduler, NS, Name, quota, waiting], Waiting),
+        create_gauge([mg, scheduler, NS, Name, quota, reserved], Reserved)
     ];
 % Workers management
 create_metric(#mg_worker_call_attempt{namespace = NS, msg_queue_len = QLen, msg_queue_limit = QLimit}) ->
@@ -169,7 +169,7 @@ create_metric(_Beat) ->
 get_metrics(NS) ->
     [
         get_machine_lifecycle_metrics(NS),
-        get_sheduler_metrics(NS),
+        get_scheduler_metrics(NS),
         get_machine_processing_metrics(NS),
         get_timer_lifecycle_metrics(NS),
         get_timer_process_metrics(NS),
@@ -184,24 +184,24 @@ get_machine_lifecycle_metrics(NS) ->
         || E <- Events
     ].
 
--spec get_sheduler_metrics(mg:ns()) -> nested_metrics().
-get_sheduler_metrics(NS) ->
+-spec get_scheduler_metrics(mg:ns()) -> nested_metrics().
+get_scheduler_metrics(NS) ->
     Names = [timers, timers_retries, overseer],
     TaskKeys = [error, created, started, finished],
     TaskBins = [delay, queue_waiting, processing],
     TaskMetrics = [
         [
-            create_inc([mg, sheduler, NS, N, task, M])
+            create_inc([mg, scheduler, NS, N, task, M])
             || N <- Names, M <- TaskKeys
         ],
         [
-            list_bin_metric([mg, sheduler, NS, N, task, B], duration)
+            list_bin_metric([mg, scheduler, NS, N, task, B], duration)
             || N <- Names, B <- TaskBins
         ]
     ],
     QuotaKeys = [active, waiting, reserved],
     QuotaMetrics = [
-        create_gauge([mg, sheduler, NS, N, quota, Q], 0)
+        create_gauge([mg, scheduler, NS, N, quota, Q], 0)
         || N <- Names, Q <- QuotaKeys
     ],
     [TaskMetrics, QuotaMetrics].

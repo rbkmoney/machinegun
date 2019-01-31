@@ -93,7 +93,7 @@
 -type state() :: #state{}.
 -type task_id() :: any().
 -type monitor() :: reference().
--type sheduler_id() :: {mg:ns(), name()}.
+-type scheduler_id() :: {mg:ns(), name()}.
 -type queue_state() :: any().
 -type task_payload() :: any().
 -type queue_options() :: any().
@@ -218,17 +218,17 @@ manager_child_spec(#{name := Name, namespace := NS} = Options, ChildID) ->
 
 % Process registration
 
--spec self_ref(sheduler_id()) ->
+-spec self_ref(scheduler_id()) ->
     mg_utils:gen_ref().
 self_ref(ID) ->
     {via, gproc, {n, l, wrap_id(ID)}}.
 
--spec self_reg_name(sheduler_id()) ->
+-spec self_reg_name(scheduler_id()) ->
     mg_utils:gen_reg_name().
 self_reg_name(ID) ->
     {via, gproc, {n, l, wrap_id(ID)}}.
 
--spec wrap_id(sheduler_id()) ->
+-spec wrap_id(scheduler_id()) ->
     term().
 wrap_id(ID) ->
     {?MODULE, ID}.
