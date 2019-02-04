@@ -258,7 +258,7 @@ push([M | Metrics]) ->
 -spec create_inc(metric_key()) ->
     metric().
 create_inc(Key) ->
-    how_are_you:metric_construct(meter, Key, 1).
+    how_are_you:metric_construct(counter, Key, 1).
 
 -spec list_bin_metric(metric_key(), bin_type()) ->
     [metric()].
@@ -267,7 +267,7 @@ list_bin_metric(KeyPrefix, BinType) ->
     [FirstValue | _] = BinsValues = [V || {V, _Name} <- Bins],
     Samples = [FirstValue - 1 | BinsValues],
     BinKeys = [build_bin_key(Bins, Sample) || Sample <- Samples],
-    [how_are_you:metric_construct(meter, [KeyPrefix, Key], 1) || Key <- BinKeys].
+    [how_are_you:metric_construct(counter, [KeyPrefix, Key], 1) || Key <- BinKeys].
 
 -spec create_bin_inc(metric_key(), bin_type(), number()) ->
     metric().
@@ -275,7 +275,7 @@ create_bin_inc(KeyPrefix, BinType, Value) ->
     Prepared = prepare_bin_value(BinType, Value),
     Bins = build_bins(BinType),
     BinKey = build_bin_key(Bins, Prepared),
-    how_are_you:metric_construct(meter, [KeyPrefix, BinKey], 1).
+    how_are_you:metric_construct(counter, [KeyPrefix, BinKey], 1).
 
 -spec prepare_bin_value(bin_type(), number()) ->
     number().

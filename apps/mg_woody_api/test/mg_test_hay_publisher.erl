@@ -59,9 +59,15 @@ init(Options) ->
 get_interval(#state{interval = Interval}) ->
     Interval.
 
--spec publish_metrics([how_are_you:metric()], state()) -> {ok, state()} | {error, Reason :: term()}.
-publish_metrics(Metrics, #state{ets = Ets} = State) ->
-    true = ets:insert(Ets, [#metric{key = hay_metrics:key(M), value = hay_metrics:value(M)} || M <- Metrics]),
+-spec publish_metrics(hay_metrics_publisher:metric_fold(), state()) ->
+    {ok, state()} | {error, Reason :: term()}.
+publish_metrics(Fold, #state{ets = Ets} = State) ->
+    true = Fold(
+        fun(M, _) ->
+            ets:insert(Ets, #metric{key = hay_metrics:key(M), value = hay_metrics:value(M)})
+        end,
+        true
+    ),
     {ok, State}.
 
 -spec lookup(how_are_you:metric_key()) ->
