@@ -183,7 +183,7 @@ allocate_resource(Amount, #resource_state{free = Free} = State) ->
     {ok, resource_state()}.
 free_resource(Amount, #resource_state{free = Free, limit = Limit} = State) ->
     NewFree = Free + Amount,
-    true = Limit > NewFree,
+    true = Limit >= NewFree,
     {ok, State#resource_state{free = NewFree}}.
 
 % Client stats management

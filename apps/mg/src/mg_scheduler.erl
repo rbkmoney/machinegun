@@ -35,10 +35,9 @@
 
 -callback child_spec(queue_options(), atom()) -> supervisor:child_spec() | undefined.
 -callback init(queue_options()) -> {ok, queue_state()}.
--callback search_new_tasks(Options, Limit, DuplicateDetector, State) -> {ok, Result, State} when
+-callback search_new_tasks(Options, Limit, State) -> {ok, Result, State} when
     Options :: queue_options(),
     Limit :: non_neg_integer(),
-    DuplicateDetector :: fun((task_id()) -> boolean()),
     Result :: [task_info()],
     State :: queue_state().
 
@@ -102,7 +101,7 @@
 -define(DEFAULT_SEARCH_INTERVAL, 1000).  % 1 second
 -define(DEFAULT_NO_TASK_SLEEP, 1000).  % 1 second
 -define(SEARCH_MESSAGE, search_new_tasks).
--define(INITIAL_SEARCH_NUMBER, 100).
+-define(SEARCH_NUMBER, 10).
 
 %%
 %% API
@@ -167,8 +166,10 @@ init(Options) ->
 
 -spec handle_call(Call :: any(), mg_utils:gen_server_from(), state()) ->
     mg_utils:gen_server_handle_call_ret(state()).
-handle_call({add_task, TaskInfo}, _From, State) ->
-    {reply, ok, add_tasks([TaskInfo], State)};
+handle_call({add_task, TaskInfo}, _From, State0) ->
+    State1 = add_tasks([TaskInfo], State0),
+    State2 = start_new_tasks(State1),
+    {reply, ok, State2};
 handle_call(Call, From, State) ->
     ok = error_logger:error_msg("unexpected gen_server call received: ~p from ~p", [Call, From]),
     {noreply, State}.
@@ -184,8 +185,9 @@ handle_cast(Cast, State) ->
 handle_info(?SEARCH_MESSAGE, State0) ->
     State1 = restart_timer(?SEARCH_MESSAGE, State0),
     State2 = search_new_tasks(State1),
-    State3 = start_new_tasks(State2),
-    {noreply, State3};
+    State3 = update_reserved(State2),
+    State4 = start_new_tasks(State3),
+    {noreply, State4};
 handle_info({'DOWN', Monitor, process, _Object, _Info}, State0) ->
     State1 = forget_about_task(Monitor, State0),
     State2 = start_new_tasks(State1),
@@ -240,14 +242,13 @@ wrap_id(ID) ->
 handler_init(Handler) ->
     mg_utils:apply_mod_opts(Handler, init).
 
--spec handler_search(Handler, Limit, Detector, State) -> {ok, Result, State} when
+-spec handler_search(Handler, Limit, State) -> {ok, Result, State} when
     Handler :: queue_handler(),
     Limit :: non_neg_integer(),
-    Detector :: fun((task_id()) -> boolean()),
     Result :: [task_info()],
     State :: queue_state().
-handler_search(Handler, Limit, Detector, State) ->
-    mg_utils:apply_mod_opts(Handler, search_new_tasks, [Limit, Detector, State]).
+handler_search(Handler, Limit, State) ->
+    mg_utils:apply_mod_opts(Handler, search_new_tasks, [Limit, State]).
 
 -spec handler_child_spec(queue_options(), atom()) ->
     supervisor:child_spec() | undefined.
@@ -298,41 +299,41 @@ forget_about_task(Monitor, State) ->
 add_tasks([], State) ->
     State;
 add_tasks(NewTasks, State) ->
-    #state{tasks_info = TaskInfo, waiting_tasks = WaitingTasks} = State,
-    NewWaitingTasks = queue:join(WaitingTasks, queue:from_list([ID || #{id := ID} <- NewTasks])),
-    NewTasksInfo = maps:merge(TaskInfo, maps:from_list([{ID, Info} || #{id := ID} = Info <- NewTasks])),
-    ok = emit_new_tasks_beat(NewTasks, State),
+    #state{tasks_info = TasksInfo, waiting_tasks = WaitingTasks} = State,
+    UnknownTasks = [Task || #{id := ID} = Task <- NewTasks, maps:is_key(ID, TasksInfo) =:= false],
+    NewWaitingTasks = queue:join(WaitingTasks, queue:from_list([ID || #{id := ID} <- UnknownTasks])),
+    NewTasksInfo = maps:merge(TasksInfo, maps:from_list([{ID, Info} || #{id := ID} = Info <- UnknownTasks])),
+    ok = emit_new_tasks_beat(UnknownTasks, State),
     State#state{tasks_info = NewTasksInfo, waiting_tasks = NewWaitingTasks}.
 
 -spec search_new_tasks(state()) ->
     state().
 search_new_tasks(#state{tasks_info = TaskInfo} = State) ->
     TasksNeeded = get_search_number(State),
-    TotalKnownTasks = maps:size(TaskInfo),
-    SearchLimit = erlang:max(TasksNeeded - TotalKnownTasks, 0),
-    DuplicateDetector = fun(TaskID) -> maps:is_key(TaskID, TaskInfo) end,
-    {ok, NewTasks, NewState} = try_search_tasks(SearchLimit, DuplicateDetector, State),
-    add_tasks(NewTasks, NewState).
+    case maps:size(TaskInfo) of
+        TotalKnownTasks when TotalKnownTasks < TasksNeeded ->
+            {ok, NewTasks, NewState} = try_search_tasks(TasksNeeded, State),
+            add_tasks(NewTasks, NewState);
+        TotalKnownTasks when TotalKnownTasks >= TasksNeeded ->
+            State
+    end.
 
 -spec get_search_number(state()) ->
     non_neg_integer().
-get_search_number(#state{quota_reserved = Reserved}) when
-    Reserved =:= undefined orelse
-    Reserved =:= 0
-->
-    ?INITIAL_SEARCH_NUMBER;
+get_search_number(#state{quota_reserved = undefined}) ->
+    ?SEARCH_NUMBER;
 get_search_number(#state{quota_reserved = Reserved}) ->
-    Reserved * 2.
+    erlang:max(Reserved * 2, ?SEARCH_NUMBER).
 
--spec try_search_tasks(non_neg_integer(), fun((task_id()) -> boolean()), state()) ->
+-spec try_search_tasks(non_neg_integer(), state()) ->
     {ok, [task_info()], state()}.
-try_search_tasks(SearchLimit, DuplicateDetector, State) ->
+try_search_tasks(SearchLimit, State) ->
     #state{
         queue_state = HandlerState,
         queue_handler = Handler
     } = State,
     {ok, NewTasks, NewHandlerState} = try
-        handler_search(Handler, SearchLimit, DuplicateDetector, HandlerState)
+        handler_search(Handler, SearchLimit, HandlerState)
     catch
         throw:({ErrorType, _Details} = Reason) when
             ErrorType =:= transient orelse
@@ -346,8 +347,7 @@ try_search_tasks(SearchLimit, DuplicateDetector, State) ->
 
 -spec start_new_tasks(state()) ->
     state().
-start_new_tasks(State0) ->
-    State = reserve(State0),
+start_new_tasks(State) ->
     #state{
         quota_reserved = Reserved,
         active_tasks = ActiveTasks
@@ -384,9 +384,9 @@ start_multiple_tasks(N, State) when N > 0 ->
             State
     end.
 
--spec reserve(state()) ->
+-spec update_reserved(state()) ->
     state().
-reserve(State) ->
+update_reserved(State) ->
     #state{
         ns = NS,
         name = Name,

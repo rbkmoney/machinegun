@@ -21,7 +21,7 @@
 
 %% mg_scheduler callbacks
 -export([init/1]).
--export([search_new_tasks/4]).
+-export([search_new_tasks/3]).
 
 %% mg_scheduler_worker callbacks
 -export([execute_task/2]).
@@ -52,8 +52,6 @@
 }.
 -type task_info() :: mg_scheduler:task_info(task_id(), task_payload()).
 -type timestamp_s() :: genlib_time:ts().  % in seconds
--type deadline() :: mg_utils:deadline().
--type req_ctx() :: mg:request_context().
 -type continuation() :: mg_storage:continuation().
 -type machine_options() :: mg_machine:options().
 
@@ -68,13 +66,12 @@
 init(_Options) ->
     {ok, #state{continuation = obsolete}}.
 
--spec search_new_tasks(Options, Limit, DuplicateDetector, State) -> {ok, Result, State} when
+-spec search_new_tasks(Options, Limit, State) -> {ok, Result, State} when
     Options :: options(),
     Limit :: non_neg_integer(),
-    DuplicateDetector :: fun((task_id()) -> boolean()),
     Result :: [task_info()],
     State :: state().
-search_new_tasks(Options, Limit, DuplicateDetector, #state{continuation = Continuation} = State) ->
+search_new_tasks(Options, Limit, #state{continuation = Continuation} = State) ->
     MachineOptions = machine_options(Options),
     case search(MachineOptions, Limit, Continuation) of
         {[], _Continuation} ->
@@ -90,7 +87,7 @@ search_new_tasks(Options, Limit, DuplicateDetector, #state{continuation = Contin
                     created_at => CreateTime,
                     machine_id => ID
                 }
-                || ID <- IDs, DuplicateDetector(ID) =:= false
+                || ID <- IDs
             ],
             {ok, Tasks, State#state{continuation = NewContinuation}}
     end.

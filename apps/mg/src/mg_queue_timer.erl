@@ -21,7 +21,7 @@
 
 %% mg_scheduler callbacks
 -export([init/1]).
--export([search_new_tasks/4]).
+-export([search_new_tasks/3]).
 
 %% mg_scheduler_worker callbacks
 -export([execute_task/2]).
@@ -67,13 +67,12 @@
 init(_Options) ->
     {ok, #state{}}.
 
--spec search_new_tasks(Options, Limit, DuplicateDetector, State) -> {ok, Result, State} when
+-spec search_new_tasks(Options, Limit, State) -> {ok, Result, State} when
     Options :: options(),
     Limit :: non_neg_integer(),
-    DuplicateDetector :: fun((task_id()) -> boolean()),
     Result :: [task_info()],
     State :: state().
-search_new_tasks(#{timer_queue := TimerMode} = Options, Limit, DuplicateDetector, State) ->
+search_new_tasks(#{timer_queue := TimerMode} = Options, Limit, State) ->
     MachineOptions = machine_options(Options),
     Query = {TimerMode, 1, genlib_time:unow()},
     {Timers, _Continuation} = mg_machine:search(MachineOptions, Query, Limit),
@@ -89,7 +88,7 @@ search_new_tasks(#{timer_queue := TimerMode} = Options, Limit, DuplicateDetector
             target_time => Ts,
             machine_id => ID
         }
-        || {Ts, ID} <- Timers, DuplicateDetector(ID) =:= false
+        || {Ts, ID} <- Timers
     ],
     {ok, Tasks, State}.
 
