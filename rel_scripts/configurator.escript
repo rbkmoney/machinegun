@@ -80,7 +80,8 @@ hay_statsd_publisher(YamlConfig) ->
                 {hay_statsd_publisher, #{
                     key_prefix => <<(?C:utf_bin(?C:conf([service_name], YamlConfig)))/binary, ".">>,
                     host => ?C:utf_bin(?C:conf([metrics, publisher, statsd, host], YamlConfig, "localhost")),
-                    port => ?C:conf([metrics, publisher, statsd, port], YamlConfig, 8125)
+                    port => ?C:conf([metrics, publisher, statsd, port], YamlConfig, 8125),
+                    interval => 15000
                 }}
             ];
         undefined ->
