@@ -144,7 +144,7 @@ remove_client(ClientID, State) ->
     #state{clients = Clients, resource_state = Resource} = State,
     case maps:find(ClientID, Clients) of
         {ok, #client_state{reserved = Reserved}} ->
-            {ok, Reserved, NewResource} = free_resource(Reserved, Resource),
+            {ok, NewResource} = free_resource(Reserved, Resource),
             NewClients = maps:remove(ClientID, Clients),
             State#state{clients = NewClients, resource_state = NewResource};
         error ->
@@ -183,7 +183,7 @@ allocate_resource(Amount, #resource_state{free = Free} = State) ->
     {ok, resource_state()}.
 free_resource(Amount, #resource_state{free = Free, limit = Limit} = State) ->
     NewFree = Free + Amount,
-    true = Limit =< NewFree,
+    true = Limit > NewFree,
     {ok, State#resource_state{free = NewFree}}.
 
 % Client stats management
@@ -300,10 +300,8 @@ filter_needy_client(Clients, FinalClients) ->
 
 -spec is_needy_client(client_state()) ->
     boolean().
-is_needy_client(#client_state{expectation = E, target = T}) when E =< T ->
-    false;
-is_needy_client(#client_state{expectation = E, target = T}) when E > T ->
-    true.
+is_needy_client(#client_state{expectation = E, target = T}) ->
+    E > T.
 
 -spec share_resource(Fun, Params, resource(), [client_state()]) -> [client_state()] when
     Params :: any(),
