@@ -36,7 +36,7 @@
     processing_timeout => timeout()
 }.
 -record(state, {
-    continuation :: mg_storage:continuation() | obsolete
+    continuation :: mg_storage:continuation()
 }).
 -opaque state() :: #state{}.
 
@@ -52,8 +52,6 @@
 }.
 -type task_info() :: mg_scheduler:task_info(task_id(), task_payload()).
 -type timestamp_s() :: genlib_time:ts().  % in seconds
--type continuation() :: mg_storage:continuation().
--type machine_options() :: mg_machine:options().
 
 -define(DEFAULT_PROCESSING_TIMEOUT, 60000).  % 1 minute
 
@@ -64,33 +62,31 @@
 -spec init(options()) ->
     {ok, state()}.
 init(_Options) ->
-    {ok, #state{continuation = obsolete}}.
+    {ok, #state{continuation = undefined}}.
 
--spec search_new_tasks(Options, Limit, State) -> {ok, Result, State} when
+-spec search_new_tasks(Options, Limit, State) -> {ok, Status, Result, State} when
     Options :: options(),
     Limit :: non_neg_integer(),
     Result :: [task_info()],
+    Status :: mg_scheduler:search_status(),
     State :: state().
 search_new_tasks(Options, Limit, #state{continuation = Continuation} = State) ->
     MachineOptions = machine_options(Options),
-    case search(MachineOptions, Limit, Continuation) of
-        {[], _Continuation} ->
-            {ok, [], State#state{continuation = obsolete}};
-        {IDs, NewContinuation} ->
-            CreateTime = erlang:monotonic_time(),
-            Tasks = [
-                #{
-                    id => ID,
-                    payload => #{
-                        machine_id => ID
-                    },
-                    created_at => CreateTime,
-                    machine_id => ID
-                }
-                || ID <- IDs
-            ],
-            {ok, Tasks, State#state{continuation = NewContinuation}}
-    end.
+    Query = processing,
+    {IDs, NewContinuation} = mg_machine:search(MachineOptions, Query, Limit, Continuation),
+    CreateTime = erlang:monotonic_time(),
+    Tasks = [
+        #{
+            id => ID,
+            payload => #{
+                machine_id => ID
+            },
+            created_at => CreateTime,
+            machine_id => ID
+        }
+        || ID <- IDs
+    ],
+    {ok, get_status(NewContinuation), Tasks, State#state{continuation = NewContinuation}}.
 
 -spec execute_task(options(), task_info()) ->
     ok.
@@ -112,18 +108,14 @@ execute_task(Options, TaskInfo) ->
 
 %% Internals
 
--spec search(machine_options(), non_neg_integer(), continuation() | obsolete) ->
-    {[mg:id()], continuation()}.
-search(_MachineOptions, _Limit, undefined) ->
-    {[], obsolete};
-search(MachineOptions, Limit, obsolete) ->
-    Query = processing,
-    mg_machine:search(MachineOptions, Query, Limit);
-search(MachineOptions, Limit, Continuation) ->
-    Query = processing,
-    mg_machine:search(MachineOptions, Query, Limit, Continuation).
-
 -spec machine_options(options()) ->
     mg_machine:options().
 machine_options(#{machine := MachineOptions}) ->
     MachineOptions.
+
+-spec get_status(mg_storage:continuation()) ->
+    mg_scheduler:search_status().
+get_status(undefined) ->
+    completed;
+get_status(_Other) ->
+    continue.

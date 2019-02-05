@@ -35,10 +35,11 @@
 
 -callback child_spec(queue_options(), atom()) -> supervisor:child_spec() | undefined.
 -callback init(queue_options()) -> {ok, queue_state()}.
--callback search_new_tasks(Options, Limit, State) -> {ok, Result, State} when
+-callback search_new_tasks(Options, Limit, State) -> {ok, Status, Result, State} when
     Options :: queue_options(),
     Limit :: non_neg_integer(),
     Result :: [task_info()],
+    Status :: search_status(),
     State :: queue_state().
 
 -optional_callbacks([child_spec/2]).
@@ -52,7 +53,7 @@
     pulse := mg_pulse:handler(),
     quota_name := mg_quota_worker:name(),
     quota_share => mg_quota:share(),
-    no_task_wait => timeout(),
+    completed_search_sleep => timeout(),
     search_interval => timeout()
 }.
 -type task_info(TaskID, TaskPayload) :: #{
@@ -63,12 +64,14 @@
     machine_id => mg:id()
 }.
 -type task_info() :: task_info(task_id(), task_payload()).
+-type search_status() :: continue | completed.
 -type name() :: binary().
 
 -export_type([name/0]).
 -export_type([options/0]).
 -export_type([task_info/0]).
 -export_type([task_info/2]).
+-export_type([search_status/0]).
 
 %% Internal types
 -record(state, {
@@ -83,7 +86,7 @@
     quota_reserved :: mg_quota:resource() | undefined,
     timer :: reference(),
     search_interval :: timeout(),
-    no_task_sleep :: timeout(),
+    completed_search_sleep :: timeout(),
     active_tasks :: #{task_id() => pid()},
     waiting_tasks :: queue:queue(task_id()),
     tasks_info :: #{task_id() => task_info()},
@@ -99,7 +102,7 @@
 -type queue_handler() :: mg_utils:mod_opts(queue_options()).
 
 -define(DEFAULT_SEARCH_INTERVAL, 1000).  % 1 second
--define(DEFAULT_NO_TASK_SLEEP, 1000).  % 1 second
+-define(DEFAULT_COMPLETED_SLEEP, 1000).  % 1 second
 -define(SEARCH_MESSAGE, search_new_tasks).
 -define(SEARCH_NUMBER, 10).
 
@@ -140,7 +143,7 @@ add_task(NS, Name, TaskInfo) ->
     mg_utils:gen_server_init_ret(state()).
 init(Options) ->
     SearchInterval = maps:get(search_interval, Options, ?DEFAULT_SEARCH_INTERVAL),
-    NoTaskSleep = maps:get(no_task_sleep, Options, ?DEFAULT_NO_TASK_SLEEP),
+    CompletedSleep = maps:get(completed_search_sleep, Options, ?DEFAULT_COMPLETED_SLEEP),
     Name = maps:get(name, Options),
     NS = maps:get(namespace, Options),
     QueueHandler = maps:get(queue_handler, Options),
@@ -156,7 +159,7 @@ init(Options) ->
         quota_share = maps:get(quota_share, Options, 1),
         quota_reserved = undefined,
         search_interval = SearchInterval,
-        no_task_sleep = NoTaskSleep,
+        completed_search_sleep = CompletedSleep,
         active_tasks = #{},
         task_monitors = #{},
         tasks_info = #{},
@@ -183,8 +186,9 @@ handle_cast(Cast, State) ->
 -spec handle_info(Info :: any(), state()) ->
     mg_utils:gen_server_handle_info_ret(state()).
 handle_info(?SEARCH_MESSAGE, State0) ->
-    State1 = restart_timer(?SEARCH_MESSAGE, State0),
-    State2 = search_new_tasks(State1),
+    {SearchStatus, State1} = search_new_tasks(State0),
+    Timeout = get_timer_timeout(SearchStatus, State1),
+    State2 = restart_timer(?SEARCH_MESSAGE, Timeout, State1),
     State3 = update_reserved(State2),
     State4 = start_new_tasks(State3),
     {noreply, State4};
@@ -242,10 +246,11 @@ wrap_id(ID) ->
 handler_init(Handler) ->
     mg_utils:apply_mod_opts(Handler, init).
 
--spec handler_search(Handler, Limit, State) -> {ok, Result, State} when
+-spec handler_search(Handler, Limit, State) -> {ok, Status, Result, State} when
     Handler :: queue_handler(),
     Limit :: non_neg_integer(),
     Result :: [task_info()],
+    Status :: search_status(),
     State :: queue_state().
 handler_search(Handler, Limit, State) ->
     mg_utils:apply_mod_opts(Handler, search_new_tasks, [Limit, State]).
@@ -257,25 +262,17 @@ handler_child_spec(Handler, ChildID) ->
 
 % Timer
 
--spec restart_timer(any(), state()) -> state().
-restart_timer(Message, #state{timer = TimerRef} = State) ->
+-spec restart_timer(any(), timeout(), state()) -> state().
+restart_timer(Message, Timeout, #state{timer = TimerRef} = State) ->
     _ = erlang:cancel_timer(TimerRef),
-    State#state{timer = erlang:send_after(get_timer_interval(State), self(), Message)}.
+    State#state{timer = erlang:send_after(Timeout, self(), Message)}.
 
--spec get_timer_interval(state()) ->
+-spec get_timer_timeout(search_status(), state()) ->
     timeout().
-get_timer_interval(State) ->
-    #state{
-        waiting_tasks = Tasks,
-        search_interval = SearchInterval,
-        no_task_sleep = NoTaskSleep
-    } = State,
-    case queue:is_empty(Tasks) of
-        true ->
-            NoTaskSleep;
-        false ->
-            SearchInterval
-    end.
+get_timer_timeout(continue, State) ->
+    State#state.search_interval;
+get_timer_timeout(completed, State) ->
+    State#state.completed_search_sleep.
 
 % Helpers
 
@@ -307,15 +304,15 @@ add_tasks(NewTasks, State) ->
     State#state{tasks_info = NewTasksInfo, waiting_tasks = NewWaitingTasks}.
 
 -spec search_new_tasks(state()) ->
-    state().
+    {search_status(), state()}.
 search_new_tasks(#state{tasks_info = TaskInfo} = State) ->
     TasksNeeded = get_search_number(State),
     case maps:size(TaskInfo) of
         TotalKnownTasks when TotalKnownTasks < TasksNeeded ->
-            {ok, NewTasks, NewState} = try_search_tasks(TasksNeeded, State),
-            add_tasks(NewTasks, NewState);
+            {ok, Status, NewTasks, NewState} = try_search_tasks(TasksNeeded, State),
+            {Status, add_tasks(NewTasks, NewState)};
         TotalKnownTasks when TotalKnownTasks >= TasksNeeded ->
-            State
+            {continue, State}
     end.
 
 -spec get_search_number(state()) ->
@@ -326,13 +323,13 @@ get_search_number(#state{quota_reserved = Reserved}) ->
     erlang:max(Reserved * 2, ?SEARCH_NUMBER).
 
 -spec try_search_tasks(non_neg_integer(), state()) ->
-    {ok, [task_info()], state()}.
+    {ok, search_status(), [task_info()], state()}.
 try_search_tasks(SearchLimit, State) ->
     #state{
         queue_state = HandlerState,
         queue_handler = Handler
     } = State,
-    {ok, NewTasks, NewHandlerState} = try
+    {ok, Status, NewTasks, NewHandlerState} = try
         handler_search(Handler, SearchLimit, HandlerState)
     catch
         throw:({ErrorType, _Details} = Reason) when
@@ -343,7 +340,7 @@ try_search_tasks(SearchLimit, State) ->
             ok = emit_search_error_beat(Exception, State),
             {ok, [], HandlerState}
     end,
-    {ok, NewTasks, State#state{queue_state = NewHandlerState}}.
+    {ok, Status, NewTasks, State#state{queue_state = NewHandlerState}}.
 
 -spec start_new_tasks(state()) ->
     state().

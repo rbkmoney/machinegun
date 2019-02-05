@@ -67,15 +67,16 @@
 init(_Options) ->
     {ok, #state{}}.
 
--spec search_new_tasks(Options, Limit, State) -> {ok, Result, State} when
+-spec search_new_tasks(Options, Limit, State) -> {ok, Status, Result, State} when
     Options :: options(),
     Limit :: non_neg_integer(),
     Result :: [task_info()],
+    Status :: mg_scheduler:search_status(),
     State :: state().
 search_new_tasks(#{timer_queue := TimerMode} = Options, Limit, State) ->
     MachineOptions = machine_options(Options),
     Query = {TimerMode, 1, genlib_time:unow()},
-    {Timers, _Continuation} = mg_machine:search(MachineOptions, Query, Limit),
+    {Timers, Continuation} = mg_machine:search(MachineOptions, Query, Limit),
     CreateTime = erlang:monotonic_time(),
     Tasks = [
         #{
@@ -90,7 +91,7 @@ search_new_tasks(#{timer_queue := TimerMode} = Options, Limit, State) ->
         }
         || {Ts, ID} <- Timers
     ],
-    {ok, Tasks, State}.
+    {ok, get_status(Continuation), Tasks, State}.
 
 -spec execute_task(options(), task_info()) ->
     ok.
@@ -140,3 +141,10 @@ call_retry_wait(#{timer_queue := TimerMode} = Options, MachineID, Timestamp, Req
     Timeout = maps:get(reschedule_timeout, Options, ?DEFAULT_RESCHEDULE_TIMEOUT),
     Deadline = mg_utils:timeout_to_deadline(Timeout),
     ok = mg_machine:send_retry_wait(MachineOptions, MachineID, TimerMode, Timestamp, ReqCtx, Deadline).
+
+-spec get_status(mg_storage:continuation()) ->
+    mg_scheduler:search_status().
+get_status(undefined) ->
+    completed;
+get_status(_Other) ->
+    continue.
