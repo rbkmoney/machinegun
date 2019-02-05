@@ -59,7 +59,7 @@
     storage                    := mg_storage:options(),
     event_sink                 => mg:id(),
     retries                    := mg_machine:retry_opt(),
-    scheduled_tasks            := mg_machine:scheduled_tasks_opt(),
+    schedulers                 := mg_machine:schedulers_opt(),
     default_processing_timeout := timeout(),
     suicide_probability        => mg_machine:suicide_probability()
 }.
@@ -97,6 +97,8 @@ start(_StartType, _StartArgs) ->
     mg_utils_supervisor_wrapper:start_link(
         {local, ?MODULE},
         #{strategy => rest_for_one},
+        quotas_child_specs(Config, quota)
+        ++
         [event_sink_ns_child_spec(Config, event_sink)]
         ++
         events_machines_child_specs(Config)
@@ -112,6 +114,14 @@ stop(_State) ->
 %%
 %% local
 %%
+
+-spec quotas_child_specs(config(), atom()) ->
+    [supervisor:child_spec()].
+quotas_child_specs(Config, ChildID) ->
+    [
+        mg_quota_worker:child_spec(Options, {ChildID, maps:get(name, Options)})
+        || Options <- proplists:get_value(quotas, Config, [])
+    ].
 
 -spec events_machines_child_specs(config()) ->
     [supervisor:child_spec()].
@@ -207,7 +217,7 @@ machine_options(NS, Config) ->
     Options = maps:with(
         [
             retries,
-            scheduled_tasks,
+            schedulers,
             reschedule_timeout,
             timer_processing_timeout
         ],

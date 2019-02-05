@@ -35,7 +35,12 @@
     | #mg_timer_lifecycle_rescheduling_error{}
     | #mg_timer_lifecycle_removed{}
     % Планировщик
-    | #mg_scheduler_error{}
+    | #mg_scheduler_search_error{}
+    | #mg_scheduler_task_error{}
+    | #mg_scheduler_new_tasks{}
+    | #mg_scheduler_task_started{}
+    | #mg_scheduler_task_finished{}
+    | #mg_scheduler_quota_reserved{}
     % Обработка таймера
     | #mg_timer_process_started{}
     | #mg_timer_process_finished{}

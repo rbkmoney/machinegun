@@ -125,7 +125,7 @@ permament_fail(_C) ->
     ok = mg_machine:start(Options, ID, <<"normal">>, ?req_ctx, mg_utils:default_deadline()),
     0  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
     ok = mg_machine:call(Options, ID, {set_mode, <<"failing">>}, ?req_ctx, mg_utils:default_deadline()),
-    ok = timer:sleep(3000),
+    ok = timer:sleep(4000),
     {logic, machine_failed} = (catch mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline())),
     ok.
 
@@ -179,10 +179,10 @@ automaton_options(NS, RetryPolicy) ->
         retries   => #{
             timers         => RetryPolicy
         },
-        scheduled_tasks => #{
-            timers         => #{ interval => 100, limit => 10 },
-            timers_retries => #{ interval => 100, limit => 10 },
-            overseer       => #{ interval => 100, limit => 10 }
+        schedulers => #{
+            timers         => #{ interval => 100 },
+            timers_retries => #{ interval => 100 },
+            overseer       => #{ interval => 100 }
         }
     }.
 

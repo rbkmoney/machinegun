@@ -66,9 +66,12 @@ format_beat(#woody_event{event = Event, rpc_id = RPCID, event_meta = EventMeta})
     {Level, Msg, WoodyMeta} = woody_event_handler:format_event_and_meta(Event, EventMeta, RPCID, WoodyMetaFields),
     Meta = lists:flatten([extract_woody_meta(WoodyMeta), extract_meta(rpc_id, RPCID)]),
     {Level, Msg, Meta};
-format_beat(#mg_scheduler_error{tag = Tag, exception = {_, Reason, _}} = Beat) ->
-    Context = ?beat_to_meta(mg_scheduler_error, Beat),
-    {warning, {"sheduler task ~p failed ~p", [Tag, Reason]}, Context};
+format_beat(#mg_scheduler_task_error{scheduler_name = Name, exception = {_, Reason, _}} = Beat) ->
+    Context = ?beat_to_meta(mg_scheduler_task_error, Beat),
+    {warning, {"scheduler task ~p failed ~p", [Name, Reason]}, Context};
+format_beat(#mg_scheduler_search_error{scheduler_name = Name, exception = {_, Reason, _}} = Beat) ->
+    Context = ?beat_to_meta(mg_scheduler_search_error, Beat),
+    {warning, {"scheduler search ~p failed ~p", [Name, Reason]}, Context};
 format_beat(#mg_machine_process_transient_error{exception = {_, Reason, _}} = Beat) ->
     Context = ?beat_to_meta(mg_machine_process_transient_error, Beat),
     {warning, {"transient error ~p", [Reason]}, Context};

@@ -54,12 +54,48 @@
 
 %% Scheduler
 
--record(mg_scheduler_error, {
-    tag :: atom(),
+-record(mg_scheduler_search_error, {
     namespace :: mg:ns(),
+    scheduler_name :: mg_scheduler:name(),
+    exception :: mg_utils:exception()
+}).
+
+-record(mg_scheduler_task_error, {
+    namespace :: mg:ns(),
+    scheduler_name :: mg_scheduler:name(),
     exception :: mg_utils:exception(),
+    machine_id :: mg:id() | undefined
+}).
+
+-record(mg_scheduler_new_tasks, {
+    namespace :: mg:ns(),
+    scheduler_name :: mg_scheduler:name(),
+    new_tasks_count :: non_neg_integer()
+}).
+
+-record(mg_scheduler_task_started, {
+    namespace :: mg:ns(),
+    scheduler_name :: mg_scheduler:name(),
     machine_id :: mg:id() | undefined,
-    request_context :: mg:request_context()
+    task_delay :: timeout() | undefined
+}).
+
+-record(mg_scheduler_task_finished, {
+    namespace :: mg:ns(),
+    scheduler_name :: mg_scheduler:name(),
+    machine_id :: mg:id() | undefined,
+    task_delay :: timeout() | undefined,
+    waiting_in_queue :: non_neg_integer(),  % in native units
+    process_duration :: non_neg_integer()  % in native units
+}).
+
+-record(mg_scheduler_quota_reserved, {
+    namespace :: mg:ns(),
+    scheduler_name :: mg_scheduler:name(),
+    active_tasks :: non_neg_integer() ,
+    waiting_tasks :: non_neg_integer(),
+    quota_name :: mg_quota_worker:name(),
+    quota_reserved :: mg_quota:resource()
 }).
 
 %% Machine
