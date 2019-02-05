@@ -338,7 +338,7 @@ try_search_tasks(SearchLimit, State) ->
         ->
             Exception = {throw, Reason, erlang:get_stacktrace()},
             ok = emit_search_error_beat(Exception, State),
-            {ok, [], HandlerState}
+            {ok, continue, [], HandlerState}
     end,
     {ok, Status, NewTasks, State#state{queue_state = NewHandlerState}}.
 
