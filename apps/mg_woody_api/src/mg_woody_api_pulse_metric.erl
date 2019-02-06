@@ -57,7 +57,7 @@ get_all_metrics(Namespaces) ->
 %% Metrics handling
 
 -spec create_metric(beat()) ->
-    metrics() | undefined.
+    metrics().
 % Machine lifecycle
 create_metric(#mg_machine_lifecycle_loaded{namespace = NS}) ->
     [create_inc([mg, machine, lifecycle, NS, loaded])];
@@ -114,10 +114,8 @@ create_metric(#mg_scheduler_task_error{scheduler_name = Name, namespace = NS}) -
 create_metric(#mg_scheduler_new_tasks{scheduler_name = Name, namespace = NS, new_tasks_count = Count}) ->
     [create_inc([mg, scheduler, NS, Name, task, created], Count)];
 create_metric(#mg_scheduler_task_started{scheduler_name = Name, namespace = NS, task_delay = DelayMS}) ->
-    [
-        create_inc([mg, scheduler, NS, Name, task, started]),
-        create_delay_inc([mg, scheduler, NS, Name, task, delay], DelayMS)
-    ];
+    DelayMetrics = create_delay_inc([mg, scheduler, NS, Name, task, delay], DelayMS),
+    [create_inc([mg, scheduler, NS, Name, task, started]) | DelayMetrics];
 create_metric(#mg_scheduler_task_finished{} = Beat) ->
     #mg_scheduler_task_finished{
         scheduler_name = Name,
