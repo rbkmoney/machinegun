@@ -114,10 +114,9 @@ create_metric(#mg_scheduler_task_error{scheduler_name = Name, namespace = NS}) -
 create_metric(#mg_scheduler_new_tasks{scheduler_name = Name, namespace = NS, new_tasks_count = Count}) ->
     [create_inc([mg, scheduler, NS, Name, task, created], Count)];
 create_metric(#mg_scheduler_task_started{scheduler_name = Name, namespace = NS, task_delay = DelayMS}) ->
-    Delay = erlang:convert_time_unit(DelayMS, millisecond, native),
     [
         create_inc([mg, scheduler, NS, Name, task, started]),
-        create_bin_inc([mg, scheduler, NS, Name, task, delay], duration, Delay)
+        create_delay_inc([mg, scheduler, NS, Name, task, delay], DelayMS)
     ];
 create_metric(#mg_scheduler_task_finished{} = Beat) ->
     #mg_scheduler_task_finished{
@@ -322,6 +321,14 @@ list_bin_metric(KeyPrefix, BinType) ->
     Samples = [FirstValue - 1 | BinsValues],
     BinKeys = [build_bin_key(Bins, Sample) || Sample <- Samples],
     [how_are_you:metric_construct(counter, [KeyPrefix, Key], 1) || Key <- BinKeys].
+
+-spec create_delay_inc(metric_key(), number() | undefined) ->
+    [metric()].
+create_delay_inc(_KeyPrefix, undefined) ->
+    [];
+create_delay_inc(Key, DelayMS) ->
+    Delay = erlang:convert_time_unit(DelayMS, millisecond, native),
+    [create_bin_inc(Key, duration, Delay)].
 
 -spec create_bin_inc(metric_key(), bin_type(), number()) ->
     metric().
