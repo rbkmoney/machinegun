@@ -290,7 +290,10 @@ vm_args(YamlConfig, ERLInetrcFilename) ->
         {'+K'        , <<"true">>},
         {'+A'        , <<"10">>  },
         {'-kernel'   , <<"inetrc '\"", (?C:utf_bin(ERLInetrcFilename))/binary, "\"'">>}
-    ].
+    ] ++
+    conf_if([erlang, ipv6], YamlConfig, [
+        {'-proto_dist', <<"inet6_tcp">>}
+    ]).
 
 %%
 %% erl_inetrc
