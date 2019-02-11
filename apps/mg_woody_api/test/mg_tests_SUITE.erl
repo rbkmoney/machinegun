@@ -18,7 +18,9 @@
 %%% TODO сделать нормальный тест автомата, как вариант, через пропер
 %%%
 -module(mg_tests_SUITE).
+
 -include_lib("common_test/include/ct.hrl").
+-include_lib("stdlib/include/assert.hrl").
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 %% tests descriptions
@@ -260,13 +262,13 @@ default_signal_handler({Args, _Machine}) ->
 
 -spec default_call_handler(mg:call_args()) -> mg:call_result().
 default_call_handler({Args, #{history := History}}) ->
-    Evs = [N || #{body := N} <- History],
+    Evs = [N || #{body := {_Metadata, N}} <- History],
     SetTimer = {set_timer, {timeout, 1}, {undefined, undefined, forward}, 30},
     case Args of
         [<<"event">>, I]  ->
             case lists:member(I, Evs) of
-                false -> {Args, {null(), [content(I)]}, #{}};
-                true  -> {Args, {null(), []}, #{}}
+                false -> {I, {null(), [content(I)]}, #{}};
+                true  -> {I, {null(), []}, #{}}
             end;
         <<"tag"  >>       -> {Args, {null(), [content(<<"tag_body"  >>)]}, #{tag => Args}};
         <<"nop"  >>       -> {Args, {null(), [                ]}, #{}};
@@ -540,19 +542,21 @@ event_sink_incorrect_sink_id(C) ->
 -spec event_sink_lots_events_ordering(config()) ->
     _.
 event_sink_lots_events_ordering(C) ->
+    ID = genlib:unique(),
+    ok = start_machine(C, ID),
     HRange1 = #mg_stateproc_HistoryRange{direction=backward, limit=1},
     [#mg_stateproc_SinkEvent{id = LastEventID}] =
         mg_event_sink_client:get_history(es_opts(C), ?ES_ID, HRange1),
     N = 20,
-    % NOTE
-    % Операция создания одного ивента сейчас неидемпотентна, это может проявиться особенно ярко при получении
-    % ошибке сохранения новых ивентов в рамках continuation из-за недоступности storage.
-    _ = create_events(N, C, ?ID),
+    _ = create_events(N, C, ID),
 
     HRange2 = #mg_stateproc_HistoryRange{direction=forward},
     Events = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, HRange2),
     EventsIDs = lists:seq(1, N + LastEventID),
-    EventsIDs = [ID0 || #mg_stateproc_SinkEvent{id=ID0} <- Events].
+    ?assertEqual(
+        EventsIDs,
+        [ID0 || #mg_stateproc_SinkEvent{id=ID0} <- Events]
+    ).
 
 % проверяем, что просто ничего не падает, для начала этого хватит
 -spec mwc_get_statuses_distrib(config()) ->
@@ -644,7 +648,7 @@ create_event(Event, C, ID) ->
 create_events(N, C, ID) ->
     lists:foreach(
             fun(I) ->
-                _ = create_event([<<"event">>, I], C, ID)
+                I = create_event([<<"event">>, I], C, ID)
             end,
             lists:seq(1, N)
     ).
