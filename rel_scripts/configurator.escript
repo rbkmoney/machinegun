@@ -279,6 +279,7 @@ event_sink_ns(YamlConfig) ->
         storage                    => storage(<<"_event_sinks">>, YamlConfig),
         duplicate_search_batch     => 1000,
         default_processing_timeout => ?C:time_interval("30S", ms)
+        message_queue_len_limit    => ?C:conf([message_queue_len_limit], NSYamlConfig, 100)
     }.
 
 %%

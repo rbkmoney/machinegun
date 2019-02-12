@@ -44,7 +44,8 @@
     pulse                      := mg_pulse:handler(),
     duplicate_search_batch     := mg_storage:index_limit(),
     events_storage             := mg_storage:options(),
-    default_processing_timeout := timeout()
+    default_processing_timeout := timeout(),
+    message_queue_len_limit    := mg_workers_manager:queue_limit()
 }.
 
 -define(default_duplicate_search_batch, 1000).
@@ -266,12 +267,14 @@ new_state() ->
 
 -spec machine_options(options()) ->
     mg_machine:options().
-machine_options(Options = #{namespace := Namespace, storage := Storage, pulse := Pulse}) ->
+machine_options(Options) ->
+    #{namespace := Namespace, storage := Storage, pulse := Pulse, message_queue_len_limit := Len} = Options,
     #{
-        namespace       => mg_utils:concatenate_namespaces(Namespace, <<"machines">>),
-        processor       => {?MODULE, Options},
-        storage         => Storage,
-        pulse           => Pulse
+        namespace                => mg_utils:concatenate_namespaces(Namespace, <<"machines">>),
+        processor                => {?MODULE, Options},
+        storage                  => Storage,
+        pulse                    => Pulse,
+        message_queue_len_limit  => Len
     }.
 
 -spec events_storage_options(options()) ->
