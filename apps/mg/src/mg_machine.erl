@@ -132,6 +132,7 @@
     storage                  => mg_storage:options(),
     processor                => mg_utils:mod_opts(),
     pulse                    => mg_pulse:handler(),
+    message_queue_len_limit  => mg_workers_manager:queue_limit(),
     retries                  => retry_opt(),
     schedulers               => schedulers_opt(),
     suicide_probability      => suicide_probability(),
@@ -1004,8 +1005,9 @@ emit_machine_load_beat(Options, Namespace, ID, ReqCtx, _StorageMachine) ->
     mg_workers_manager:options().
 manager_options(Options) ->
     #{
-        name           => maps:get(namespace, Options),
-        pulse          => maps:get(pulse, Options),
+        name                     => maps:get(namespace, Options),
+        pulse                    => maps:get(pulse, Options),
+        message_queue_len_limit  => maps:get(message_queue_len_limit, Options),
         worker_options => #{
             worker => {?MODULE, Options}
         }

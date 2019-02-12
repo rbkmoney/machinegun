@@ -239,6 +239,7 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             default_processing_timeout => Timeout(default_processing_timeout, "30S"),
             timer_processing_timeout => Timeout(timer_processing_timeout, "60S"),
             reschedule_timeout => Timeout(reschedule_timeout, "60S"),
+            message_queue_len_limit => ?C:conf([message_queue_len_limit], NSYamlConfig, 100)
             retries => #{
                 storage   => {exponential, infinity, 2, 10, 60 * 1000},
                 %% max_total_timeout not supported for timers yet, see mg_retry:new_strategy/2 comments
