@@ -61,6 +61,7 @@
     retries                    := mg_machine:retry_opt(),
     schedulers                 := mg_machine:schedulers_opt(),
     default_processing_timeout := timeout(),
+    message_queue_len_limit    := mg_workers_manager:queue_limit(),
     suicide_probability        => mg_machine:suicide_probability()
 }.
 -type event_sink_ns() :: #{
@@ -196,18 +197,20 @@ events_machine_options(NS, Config = #{processor := ProcessorConfig, storage := S
             machines                   => machine_options(NS, Config),
             events_storage             => add_bucket_postfix(<<"events">>, Storage),
             pulse                      => pulse(),
-            default_processing_timeout => maps:get(default_processing_timeout, Config)
+            default_processing_timeout => maps:get(default_processing_timeout, Config),
+            message_queue_len_limit    => maps:get(message_queue_len_limit, Config)
         }
     ).
 
 -spec tags_options(mg:ns(), events_machines()) ->
     mg_machine_tags:options().
-tags_options(NS, #{retries := Retries, storage := Storage}) ->
+tags_options(NS, #{retries := Retries, storage := Storage, message_queue_len_limit := QLimit}) ->
     #{
         namespace => mg_utils:concatenate_namespaces(NS, <<"tags">>),
         storage   => Storage, % по логике тут должен быть sub namespace, но его по историческим причинам нет
         pulse     => pulse(),
-        retries   => Retries
+        retries   => Retries,
+        message_queue_len_limit => QLimit
     }.
 
 -spec machine_options(mg:ns(), events_machines()) ->
@@ -219,7 +222,8 @@ machine_options(NS, Config) ->
             retries,
             schedulers,
             reschedule_timeout,
-            timer_processing_timeout
+            timer_processing_timeout,
+            message_queue_len_limit
         ],
         Config
     ),

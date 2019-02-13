@@ -29,10 +29,11 @@
 -export([process_machine/7]).
 
 -type options() :: #{
-    namespace => mg:ns(),
-    storage   => mg_storage:options(),
-    pulse     => mg_pulse:handler(),
-    retries   => mg_machine:retry_opt()
+    namespace               := mg:ns(),
+    storage                 := mg_storage:options(),
+    pulse                   := mg_pulse:handler(),
+    retries                 := mg_machine:retry_opt(),
+    message_queue_len_limit := mg_workers_manager:queue_limit()
 }.
 -type tag() :: binary().
 
@@ -88,13 +89,21 @@ process_machine(_, _, {call, {replace, ID}}, _, _, _, _) ->
 %%
 -spec machine_options(options()) ->
     mg_machine:options().
-machine_options(#{namespace:=Namespace, storage:=Storage, pulse := Pulse, retries := Retries}) ->
+machine_options(Options) ->
     #{
-        namespace => Namespace,
-        processor => ?MODULE,
-        storage   => Storage,
-        pulse     => Pulse,
-        retries   => Retries
+        namespace := Namespace,
+        storage := Storage,
+        pulse := Pulse,
+        message_queue_len_limit := Len,
+        retries := Retries
+    } = Options,
+    #{
+        namespace               => Namespace,
+        processor               => ?MODULE,
+        storage                 => Storage,
+        pulse                   => Pulse,
+        retries                 => Retries,
+        message_queue_len_limit => Len
     }.
 
 %%

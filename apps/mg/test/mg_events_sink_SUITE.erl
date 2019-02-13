@@ -140,11 +140,12 @@ start_event_sink(Options) ->
     mg_events_sink:options().
 event_sink_options() ->
     #{
-        namespace              => ?ES_ID,
-        storage                => mg_storage_memory,
-        pulse                  => ?MODULE,
-        duplicate_search_batch => 1000,
-        events_storage         => mg_storage_memory
+        namespace               => ?ES_ID,
+        storage                 => mg_storage_memory,
+        pulse                   => ?MODULE,
+        duplicate_search_batch  => 1000,
+        message_queue_len_limit => 10,
+        events_storage          => mg_storage_memory
     }.
 
 -spec handle_beat(_, mg_pulse:beat()) ->

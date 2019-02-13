@@ -102,6 +102,7 @@ mg_woody_api_config(_C) ->
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => [{pool, ns}, {max_connections, 100}]
                 },
+                message_queue_len_limit => 50,
                 default_processing_timeout => 5000,
                 schedulers => #{
                     timers         => #{ interval => 100 },
@@ -114,6 +115,7 @@ mg_woody_api_config(_C) ->
         }},
         {event_sink_ns, #{
             storage => mg_storage_memory,
+            message_queue_len_limit => 50,
             default_processing_timeout => 5000
         }}
     ].

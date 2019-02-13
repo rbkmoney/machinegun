@@ -164,11 +164,12 @@ start_automaton(Options) ->
     mg_machine:options().
 automaton_options() ->
     #{
-        namespace => <<"test">>,
-        processor => ?MODULE,
-        storage   => mg_storage_memory,
-        pulse     => ?MODULE,
-        schedulers => #{
+        namespace               => <<"test">>,
+        processor               => ?MODULE,
+        storage                 => mg_storage_memory,
+        pulse                   => ?MODULE,
+        message_queue_len_limit => 50,
+        schedulers              => #{
             timers         => #{ interval => 1000 },
             timers_retries => #{ interval => 1000 },
             overseer       => #{ interval => 1000 }

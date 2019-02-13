@@ -130,10 +130,11 @@ start_automaton(Options) ->
     mg_machine_tags:options().
 automaton_options() ->
     #{
-        namespace => <<"test_tags">>,
-        storage   => mg_storage_memory,
-        pulse     => ?MODULE,
-        retries   => #{}
+        namespace               => <<"test_tags">>,
+        storage                 => mg_storage_memory,
+        pulse                   => ?MODULE,
+        message_queue_len_limit => 50,
+        retries                 => #{}
     }.
 
 -spec handle_beat(_, mg_pulse:beat()) ->

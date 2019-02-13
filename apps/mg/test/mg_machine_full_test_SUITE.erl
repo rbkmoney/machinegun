@@ -237,7 +237,8 @@ automaton_options() ->
         namespace => <<"test">>,
         processor => ?MODULE,
         storage   => mg_storage_memory,
-        pulse     => ?MODULE
+        pulse     => ?MODULE,
+        message_queue_len_limit => 10
     }.
 
 -spec lists_random(list(T)) ->

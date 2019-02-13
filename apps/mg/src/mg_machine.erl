@@ -128,11 +128,11 @@
 -type suicide_probability() :: float() | integer() | undefined. % [0, 1]
 
 -type options() :: #{
-    namespace                => mg:ns(),
-    storage                  => mg_storage:options(),
-    processor                => mg_utils:mod_opts(),
-    pulse                    => mg_pulse:handler(),
-    message_queue_len_limit  => mg_workers_manager:queue_limit(),
+    namespace                := mg:ns(),
+    storage                  := mg_storage:options(),
+    processor                := mg_utils:mod_opts(),
+    pulse                    := mg_pulse:handler(),
+    message_queue_len_limit  := mg_workers_manager:queue_limit(),
     retries                  => retry_opt(),
     schedulers               => schedulers_opt(),
     suicide_probability      => suicide_probability(),

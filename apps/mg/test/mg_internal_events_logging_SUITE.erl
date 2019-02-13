@@ -129,7 +129,8 @@ automaton_options(NS) ->
             timers         => #{ interval => 100 },
             timers_retries => #{ interval => 100 },
             overseer       => #{ interval => 100 }
-        }
+        },
+        message_queue_len_limit => 10
     }.
 
 -spec handle_beat(_, mg_pulse:beat()) ->
