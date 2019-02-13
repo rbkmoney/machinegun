@@ -286,9 +286,9 @@ process_machine_(Options, ID, continuation, PCtx, ReqCtx, Deadline, State = #{de
     % отложенные действия (эвент синк, тэг)
     %
     % надо понимать, что:
-    %  - эвенты сохраняются в сторадж
-    %  - создатся тэг
     %  - эвенты добавляются в event sink
+    %  - создатся тэг
+    %  - эвенты сохраняются в сторадж
     %  - обновится event_range
     %  - отсылается ответ
     %  - если есть удаление, то удаляется
@@ -296,9 +296,9 @@ process_machine_(Options, ID, continuation, PCtx, ReqCtx, Deadline, State = #{de
     %
     % действия должны обязательно произойти в конце концов (таймаута нет), либо машина должна упасть
     #{add_tag := Tag, add_events := Events} = DelayedActions,
+    ok = push_events_to_event_sink(Options, ID, ReqCtx, Deadline, Events),
     ok =                   add_tag(Options, ID, ReqCtx, Deadline, Tag   ),
     ok =              store_events(Options, ID, ReqCtx, Events),
-    ok = push_events_to_event_sink(Options, ID, ReqCtx, Deadline, Events),
 
     ReplyAction =
         case PCtx of
