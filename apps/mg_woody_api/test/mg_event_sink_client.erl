@@ -25,8 +25,8 @@
 %%
 -type options() :: URL::string().
 
--spec get_history(options(), mg:id(), mg_events:history_range()) ->
-    mg_events:history().
+-spec get_history(options(), mg:id(), mg_proto_state_processing_thrift:'HistoryRange'()) ->
+    mg_proto_state_processing_thrift:'SinkHistory'().
 get_history(BaseURL, EventSinkID, Range) ->
     call_service(BaseURL, 'GetHistory', [EventSinkID, Range]).
 
