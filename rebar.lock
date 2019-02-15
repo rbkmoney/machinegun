@@ -18,7 +18,7 @@
   1},
  {<<"genlib">>,
   {git,"https://github.com/rbkmoney/genlib.git",
-       {ref,"82ff16f4314fc406dd90752467a08fe401b009ef"}},
+       {ref,"41920d7774d119c294f3aaba4043ced12da2a815"}},
   0},
  {<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.8">>},1},
  {<<"gproc">>,{pkg,<<"gproc">>,<<"0.6.1">>},0},

@@ -547,13 +547,16 @@ machine(Options = #{namespace := Namespace}, ID, State, HRange) ->
     [mg_events:event()].
 get_events(Options, ID, EventsRange, HRange) ->
     EventsKeys = get_events_keys(ID, EventsRange, HRange),
-    kvs_to_events(ID, [
-        {Key, Value} ||
-        {Key, {_, Value}} <- [
-            {Key, mg_storage:get(events_storage_options(Options), events_storage_ref(Options), Key)} ||
-            Key <- EventsKeys
-        ]
-    ]).
+    StorageOptions = events_storage_options(Options),
+    StorageRef = events_storage_ref(Options),
+    Kvs = genlib_pmap:map(
+        fun(Key) ->
+            {_Context, Value} = mg_storage:get(StorageOptions, StorageRef, Key),
+            {Key, Value}
+        end,
+        EventsKeys
+    ),
+    kvs_to_events(ID, Kvs).
 
 -spec get_events_keys(mg:id(), mg_events:events_range(), mg_events:history_range()) ->
     [mg_storage:key()].

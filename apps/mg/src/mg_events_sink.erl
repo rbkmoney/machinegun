@@ -93,13 +93,16 @@ add_events(Options, EventSinkID, SourceNS, SourceMachineID, Events, ReqCtx, Dead
 get_history(Options, EventSinkID, HistoryRange) ->
     #{events_range := EventsRange} = get_state(Options, EventSinkID),
     EventsKeys = get_events_keys(EventSinkID, EventsRange, HistoryRange),
-    kvs_to_sink_events(EventSinkID, [
-        {Key, Value} ||
-        {Key, {_, Value}} <- [
-            {Key, mg_storage:get(events_storage_options(Options), events_storage_ref(Options), Key)} ||
-            Key <- EventsKeys
-        ]
-    ]).
+    StorageOptions = events_storage_options(Options),
+    StorageRef = events_storage_ref(Options),
+    Kvs = genlib_pmap:map(
+        fun(Key) ->
+            {_Context, Value} = mg_storage:get(StorageOptions, StorageRef, Key),
+            {Key, Value}
+        end,
+        EventsKeys
+    ),
+    kvs_to_sink_events(EventSinkID, Kvs).
 
 -spec repair(options(), mg:id(), mg:request_context(), mg_utils:deadline()) ->
     ok.
