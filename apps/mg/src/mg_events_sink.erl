@@ -111,7 +111,6 @@ repair(Options, EventSinkID, ReqCtx, Deadline) ->
 %%
 %% mg_processor handler
 %%
--define(ext_id_idx, {binary, <<"ext_id">>}).
 -type state() :: #{
     events_range => mg_events:events_range()
 }.
