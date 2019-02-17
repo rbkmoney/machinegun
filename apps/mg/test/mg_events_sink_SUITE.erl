@@ -15,6 +15,7 @@
 %%%
 
 -module(mg_events_sink_SUITE).
+-include_lib("stdlib/include/assert.hrl").
 -include_lib("common_test/include/ct.hrl").
 
 %% tests descriptions
@@ -24,10 +25,9 @@
 -export([end_per_suite /1]).
 
 %% tests
--export([add_events               /1]).
--export([get_history              /1]).
--export([get_unexisted_event      /1]).
--export([idempotent_add_get_events/1]).
+-export([add_events_test                   /1]).
+-export([get_unexisted_event_test          /1]).
+-export([not_idempotent_add_get_events_test/1]).
 
 %% Pulse
 -export([handle_beat/2]).
@@ -51,11 +51,9 @@ all() ->
 groups() ->
     [
         {main, [sequence], [
-            add_events,
-            get_history,
-            % TODO починить
-            % get_unexisted_event,
-            idempotent_add_get_events
+            add_events_test,
+            get_unexisted_event_test,
+            not_idempotent_add_get_events_test
         ]}
     ].
 
@@ -87,45 +85,49 @@ end_per_suite(C) ->
 -define(SOURCE_NS, <<"source_ns">>).
 -define(SOURCE_ID, <<"source_id">>).
 
--spec add_events(config()) ->
+-spec add_events_test(config()) ->
     _.
-add_events(C) ->
-    ok = mg_events_sink:add_events(event_sink_options(), ?ES_ID, ?SOURCE_NS, ?SOURCE_ID,
-        ?config(events, C), null, mg_utils:default_deadline()).
+add_events_test(C) ->
+    ?assertEqual(ok, add_events(C)).
 
--spec get_history(config()) ->
+-spec get_unexisted_event_test(config()) ->
     _.
-get_history(C) ->
-    HRange = {undefined, undefined, forward},
-    Events =
+get_unexisted_event_test(_C) ->
+    [] = mg_events_sink:get_history(event_sink_options(), ?ES_ID, {42, undefined, forward}).
+
+-spec not_idempotent_add_get_events_test(config()) ->
+    _.
+not_idempotent_add_get_events_test(C) ->
+    ?assertEqual(ok, add_events(C)),
+    ConfigEvents =
         [
             #{event => Event, source_ns => ?SOURCE_NS, source_id => ?SOURCE_ID}
             || Event <- ?config(events, C)
         ],
-    PreparedEvents = lists:zip(lists:seq(1, erlang:length(?config(events, C))), Events),
-    % _ = ct:pal("~p", [PreparedEvents]),
-    PreparedEvents =
-        [
-            {ID, Body}
-            ||
-            #{id := ID, body := Body} <- mg_events_sink:get_history(event_sink_options(), ?ES_ID, HRange)
-        ],
-    ok.
-
--spec get_unexisted_event(config()) ->
-    _.
-get_unexisted_event(_C) ->
-    [] = mg_events_sink:get_history(event_sink_options(), ?ES_ID, {42, undefined, forward}).
-
--spec idempotent_add_get_events(config()) ->
-    _.
-idempotent_add_get_events(C) ->
-    ok = add_events(C),
-    ok = get_history(C).
+    ExpectedEvents = lists:zip(
+        lists:seq(1, erlang:length(?config(events, C)) * 2),
+        ConfigEvents ++ ConfigEvents
+    ),
+    ?assertEqual(ExpectedEvents, get_history(C)).
 
 %%
 %% utils
 %%
+
+-spec add_events(config()) ->
+    _.
+add_events(C) ->
+    mg_events_sink:add_events(event_sink_options(), ?ES_ID, ?SOURCE_NS, ?SOURCE_ID,
+        ?config(events, C), null, mg_utils:default_deadline()).
+
+-spec get_history(config()) ->
+    _.
+get_history(_C) ->
+    HRange = {undefined, undefined, forward},
+    % _ = ct:pal("~p", [PreparedEvents]),
+    EventsSinkEvents = mg_events_sink:get_history(event_sink_options(), ?ES_ID, HRange),
+    [{ID, Body} || #{id := ID, body := Body} <- EventsSinkEvents].
+
 -spec start_event_sink(mg_events_sink:options()) ->
     pid().
 start_event_sink(Options) ->
