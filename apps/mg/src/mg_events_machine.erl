@@ -109,7 +109,7 @@
     tagging                    => mg_machine_tags:options(),
     machines                   => mg_machine:options(),
     pulse                      => mg_pulse:handler(),
-    event_sink                 => {mg:id(), mg_events_sink:options()},
+    event_sinks                => [mg_events_sink:handler()],
     default_processing_timeout => timeout()
 }.
 
@@ -296,9 +296,9 @@ process_machine_(Options, ID, continuation, PCtx, ReqCtx, Deadline, State = #{de
     %
     % действия должны обязательно произойти в конце концов (таймаута нет), либо машина должна упасть
     #{add_tag := Tag, add_events := Events} = DelayedActions,
-    ok = push_events_to_event_sink(Options, ID, ReqCtx, Deadline, Events),
-    ok =                   add_tag(Options, ID, ReqCtx, Deadline, Tag   ),
-    ok =              store_events(Options, ID, ReqCtx, Events),
+    ok = push_events_to_event_sinks(Options, ID, ReqCtx, Deadline, Events),
+    ok =                    add_tag(Options, ID, ReqCtx, Deadline, Tag   ),
+    ok =               store_events(Options, ID, ReqCtx, Events),
 
     ReplyAction =
         case PCtx of
@@ -349,24 +349,24 @@ store_events(Options, ID, _, Events) ->
     ).
 
 
--spec push_events_to_event_sink(options(), mg:id(), request_context(), deadline(), [mg_events:event()]) ->
+-spec push_events_to_event_sinks(options(), mg:id(), request_context(), deadline(), [mg_events:event()]) ->
     ok.
-push_events_to_event_sink(Options, ID, ReqCtx, Deadline, Events) ->
+push_events_to_event_sinks(Options, ID, ReqCtx, Deadline, Events) ->
     Namespace = get_option(namespace, Options),
-    case maps:get(event_sink, Options, undefined) of
-        {EventSinkID, EventSinkOptions} ->
+    EventSinks = maps:get(event_sinks, Options, []),
+    lists:foreach(
+        fun(EventSinkHandler) ->
             ok = mg_events_sink:add_events(
-                    EventSinkOptions,
-                    EventSinkID,
-                    Namespace,
-                    ID,
-                    Events,
-                    ReqCtx,
-                    Deadline
-                );
-        undefined ->
-            ok
-    end.
+                EventSinkHandler,
+                Namespace,
+                ID,
+                Events,
+                ReqCtx,
+                Deadline
+            )
+        end,
+        EventSinks
+    ).
 
 -spec state_to_flow_action(state()) ->
     mg_machine:processor_flow_action().

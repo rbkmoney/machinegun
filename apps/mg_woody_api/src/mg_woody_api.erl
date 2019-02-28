@@ -27,7 +27,7 @@
 -export([stop /0]).
 
 %%
--export([events_machine_options/3]).
+-export([events_machine_options/2]).
 -export([machine_options       /2]).
 
 %% application callbacks
@@ -57,7 +57,7 @@
     processor                  := processor(),
     modernizer                 => modernizer(),
     storage                    := mg_storage:options(),
-    event_sink                 => mg:id(),
+    event_sinks                => [mg_events_sink:handler()],
     retries                    := mg_machine:retry_opt(),
     schedulers                 := mg_machine:schedulers_opt(),
     default_processing_timeout := timeout(),
@@ -126,17 +126,16 @@ quotas_child_specs(Config, ChildID) ->
 -spec events_machines_child_specs(config()) ->
     [supervisor:child_spec()].
 events_machines_child_specs(Config) ->
-    NSs         = proplists:get_value(namespaces   , Config),
-    EventSinkNS = proplists:get_value(event_sink_ns, Config),
+    NSs = proplists:get_value(namespaces, Config),
     [
-        mg_events_machine:child_spec(events_machine_options(NS, ConfigNS, EventSinkNS), binary_to_atom(NS, utf8))
-        || {NS, ConfigNS} <- maps:to_list(NSs)
+        mg_events_machine:child_spec(events_machine_options(NS, Config), binary_to_atom(NS, utf8))
+        || NS <- maps:keys(NSs)
     ].
 
 -spec event_sink_ns_child_spec(config(), atom()) ->
     supervisor:child_spec().
 event_sink_ns_child_spec(Config, ChildID) ->
-    mg_events_sink:child_spec(event_sink_options(proplists:get_value(event_sink_ns, Config)), ChildID).
+    mg_events_sink_machine:child_spec(event_sink_namespace_options(Config), ChildID).
 
 -spec woody_server_child_spec(config(), atom()) ->
     supervisor:child_spec().
@@ -167,13 +166,12 @@ woody_server_child_spec(Config, ChildID) ->
 -spec api_automaton_options(config()) ->
     mg_woody_api_automaton:options().
 api_automaton_options(Config) ->
-    NSs         = proplists:get_value(namespaces, Config),
-    EventSinkNS = proplists:get_value(event_sink_ns, Config),
+    NSs = proplists:get_value(namespaces, Config),
     maps:fold(
         fun(NS, ConfigNS, Options) ->
             Options#{NS => maps:merge(
                 #{
-                    machine => events_machine_options(NS, ConfigNS, EventSinkNS)
+                    machine => events_machine_options(NS, Config)
                 },
                 modernizer_options(maps:get(modernizer, ConfigNS, undefined))
             )}
@@ -182,23 +180,48 @@ api_automaton_options(Config) ->
         NSs
     ).
 
--spec events_machine_options(mg:ns(), events_machines(), event_sink_ns()) ->
+-spec events_machine_options(mg:ns(), config()) ->
     mg_events_machine:options().
-events_machine_options(NS, Config = #{processor := ProcessorConfig, storage := Storage}, EventSinkNS) ->
-    EventSinkOptions = event_sink_options(EventSinkNS),
-    events_machine_options_event_sink(
-        maps:get(event_sink, Config, undefined),
-        EventSinkOptions,
-        #{
-            namespace                  => NS,
-            processor                  => processor(ProcessorConfig),
-            tagging                    => tags_options(NS, Config),
-            machines                   => machine_options(NS, Config),
-            events_storage             => add_bucket_postfix(<<"events">>, Storage),
-            pulse                      => pulse(),
-            default_processing_timeout => maps:get(default_processing_timeout, Config)
-        }
-    ).
+events_machine_options(NS, Config) ->
+    NSs = proplists:get_value(namespaces, Config),
+    NSConfigs = maps:get(NS, NSs),
+    #{processor := ProcessorConfig, storage := Storage} = NSConfigs,
+    EventSinks = [
+        event_sink_options(SinkConfig, Config)
+        || SinkConfig <- maps:get(event_sinks, NSConfigs, [])
+    ],
+    #{
+        namespace                  => NS,
+        processor                  => processor(ProcessorConfig),
+        tagging                    => tags_options(NS, NSConfigs),
+        machines                   => machine_options(NS, NSConfigs),
+        events_storage             => add_bucket_postfix(<<"events">>, Storage),
+        event_sinks                => EventSinks,
+        pulse                      => pulse(),
+        default_processing_timeout => maps:get(default_processing_timeout, NSConfigs)
+    }.
+
+-spec event_sink_options(mg_events_sink:handler(), config()) ->
+    mg_events_sink:handler().
+event_sink_options({mg_events_sink_machine, EventSinkConfig}, Config) ->
+    EventSinkNS = event_sink_namespace_options(Config),
+    {mg_events_sink_machine, maps:merge(EventSinkNS, EventSinkConfig)};
+event_sink_options({mg_events_sink_kafka, EventSinkConfig}, _Config) ->
+    {mg_events_sink_kafka, EventSinkConfig#{
+        pulse            => pulse(),
+        encoder          => fun mg_woody_api_event_sink:serialize/3
+    }}.
+
+-spec event_sink_namespace_options(config()) ->
+    mg_events_sink_machine:ns_options().
+event_sink_namespace_options(Config) ->
+    EventSinkNS = #{storage := Storage} = proplists:get_value(event_sink_ns, Config),
+    EventSinkNS#{
+        namespace        => <<"_event_sinks">>,
+        pulse            => pulse(),
+        storage          => add_bucket_postfix(<<"machines">>, Storage),
+        events_storage   => add_bucket_postfix(<<"events"  >>, Storage)
+    }.
 
 -spec tags_options(mg:ns(), events_machines()) ->
     mg_machine_tags:options().
@@ -231,15 +254,6 @@ machine_options(NS, Config) ->
         suicide_probability => maps:get(suicide_probability, Config, undefined)
     }.
 
--spec events_machine_options_event_sink(mg:id(), mg_events_sink:options(), mg_events_machine:options()) ->
-    mg_events_machine:options().
-events_machine_options_event_sink(undefined, _, Options) ->
-    Options;
-events_machine_options_event_sink(EventSinkID, EventSinkOptions, Options) ->
-    Options#{
-        event_sink => {EventSinkID, EventSinkOptions}
-    }.
-
 -spec processor(processor()) ->
     mg_utils:mod_opts().
 processor(Processor) ->
@@ -258,34 +272,19 @@ modernizer_options(undefined) ->
 -spec api_event_sink_options(config()) ->
     mg_woody_api_event_sink:options().
 api_event_sink_options(Config) ->
-    EventSinks  = collect_event_sinks(Config),
-    EventSinkNS = proplists:get_value(event_sink_ns, Config),
-    {EventSinks, event_sink_options(EventSinkNS)}.
+    EventSinkMachines  = collect_event_sink_machines(Config),
+    {EventSinkMachines, event_sink_namespace_options(Config)}.
 
--spec event_sink_options(event_sink_ns()) ->
-    mg_events_sink:options().
-event_sink_options(EventSinkNS = #{storage := Storage, default_processing_timeout := Timeout}) ->
-    EventSinkNS#{
-        namespace        => <<"_event_sinks">>,
-        pulse            => pulse(),
-        storage          => add_bucket_postfix(<<"machines">>, Storage),
-        events_storage   => add_bucket_postfix(<<"events"  >>, Storage),
-        default_processing_timeout => Timeout
-    }.
-
--spec collect_event_sinks(config()) ->
+-spec collect_event_sink_machines(config()) ->
     [mg:id()].
-collect_event_sinks(Config) ->
-    ordsets:to_list(maps:fold(
-        fun
-            (_, #{event_sink:=EventSinkID}, Acc) ->
-                ordsets:add_element(EventSinkID, Acc);
-            (_, _, Acc) ->
-                Acc
-        end,
-        ordsets:new(),
-        proplists:get_value(namespaces, Config)
-    )).
+collect_event_sink_machines(Config) ->
+    NSs = proplists:get_value(namespaces, Config),
+    NSConfigs = maps:values(NSs),
+    EventSinks = ordsets:from_list([
+        maps:get(machine_id, SinkConfig)
+        || NSConfig <- NSConfigs, {mg_events_sink_machine, SinkConfig} <- maps:get(event_sinks, NSConfig, [])
+    ]),
+    ordsets:to_list(EventSinks).
 
 -spec add_bucket_postfix(mg:ns(), mg_storage:options()) ->
     mg_storage:options().

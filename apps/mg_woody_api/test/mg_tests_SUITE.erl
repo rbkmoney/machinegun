@@ -321,7 +321,7 @@ mg_woody_api_config(C) ->
                 % TODO в будущем нужно это сделать
                 % сейчас же можно иногда включать и смотреть
                 % suicide_probability => 0.1,
-                event_sink => ?ES_ID
+                event_sinks => [{mg_events_sink_machine, #{name => default, machine_id => ?ES_ID}}]
             }
         }},
         {event_sink_ns, #{
@@ -615,7 +615,7 @@ config_with_multiple_event_sinks(_C) ->
                     overseer       => #{ interval => 100 }
                 },
                 retries => #{},
-                event_sink => <<"SingleES">>
+                event_sinks => [{mg_events_sink_machine, #{name => default, machine_id => <<"SingleES">>}}]
             },
             <<"2">> => #{
                 storage    => mg_storage_memory,
@@ -630,7 +630,7 @@ config_with_multiple_event_sinks(_C) ->
                     overseer       => #{ interval => 100 }
                 },
                 retries => #{},
-                event_sink => <<"SingleES">>
+                event_sinks => [{mg_events_sink_machine, #{name => default, machine_id => <<"SingleES">>}}]
             }
         }},
         {event_sink_ns, #{
