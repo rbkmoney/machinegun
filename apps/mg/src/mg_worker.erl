@@ -60,6 +60,8 @@
 -type pulse() :: mg_pulse:handler().
 -type queue_limit() :: mg_workers_manager:queue_limit().
 
+-define(wrap_id(NS, ID), {?MODULE, {NS, ID}}).
+
 -spec child_spec(atom(), options()) ->
     supervisor:child_spec().
 child_spec(ChildID, Options) ->
@@ -70,15 +72,15 @@ child_spec(ChildID, Options) ->
         shutdown => brutal_kill
     }.
 
--spec start_link(options(), _NS, _ID, _ReqCtx) ->
+-spec start_link(options(), mg:ns(), mg:id(), _ReqCtx) ->
     mg_utils:gen_start_ret().
 start_link(Options, NS, ID, ReqCtx) ->
-    gen_server:start_link(self_reg_name({NS, ID}), ?MODULE, {ID, Options, ReqCtx}, []).
+    gen_server:start_link(self_reg_name(NS, ID), ?MODULE, {ID, Options, ReqCtx}, []).
 
--spec call(_NS, _ID, _Call, _ReqCtx, mg_utils:deadline(), queue_limit(), pulse()) ->
+-spec call(mg:ns(), mg:id(), _Call, _ReqCtx, mg_utils:deadline(), queue_limit(), pulse()) ->
     _Result | {error, _}.
 call(NS, ID, Call, ReqCtx, Deadline, MaxQueueLength, Pulse) ->
-    QueueLength = mg_utils:msg_queue_len(self_ref({NS, ID})),
+    QueueLength = mg_utils:msg_queue_len(self_ref(NS, ID)),
     ok = mg_pulse:handle_beat(Pulse, #mg_worker_call_attempt{
         namespace = NS,
         machine_id = ID,
@@ -90,7 +92,7 @@ call(NS, ID, Call, ReqCtx, Deadline, MaxQueueLength, Pulse) ->
     case QueueLength < MaxQueueLength of
         true ->
             gen_server:call(
-                self_ref({NS, ID}),
+                self_ref(NS, ID),
                 {call, Deadline, Call, ReqCtx},
                 mg_utils:deadline_to_timeout(Deadline)
             );
@@ -99,10 +101,10 @@ call(NS, ID, Call, ReqCtx, Deadline, MaxQueueLength, Pulse) ->
     end.
 
 %% for testing
--spec brutal_kill(_NS, _ID) ->
+-spec brutal_kill(mg:ns(), mg:id()) ->
     ok.
 brutal_kill(NS, ID) ->
-    case mg_utils:gen_reg_name_to_pid(self_ref({NS, ID})) of
+    case mg_utils:gen_reg_name_to_pid(self_ref(NS, ID)) of
         undefined ->
             ok;
         Pid ->
@@ -117,24 +119,24 @@ reply(CallCtx, Reply) ->
     _ = gen_server:reply(CallCtx, Reply),
     ok.
 
--spec get_call_queue(_NS, _ID) ->
+-spec get_call_queue(mg:ns(), mg:id()) ->
     [_Call].
 get_call_queue(NS, ID) ->
-    Pid = mg_utils:exit_if_undefined(mg_utils:gen_reg_name_to_pid(self_ref({NS, ID})), noproc),
+    Pid = mg_utils:exit_if_undefined(mg_utils:gen_reg_name_to_pid(self_ref(NS, ID)), noproc),
     {messages, Messages} = erlang:process_info(Pid, messages),
     [Call || {'$gen_call', _, {call, _, Call, _}} <- Messages].
 
--spec is_alive(_NS, _ID) ->
+-spec is_alive(mg:ns(), mg:id()) ->
     boolean().
 is_alive(NS, ID) ->
-    Pid = mg_utils:gen_reg_name_to_pid(self_ref({NS, ID})),
+    Pid = mg_utils:gen_reg_name_to_pid(self_ref(NS, ID)),
     Pid =/= undefined andalso erlang:is_process_alive(Pid).
 
 -spec list_all() ->
     [{mg:ns(), mg:id(), pid()}].
 list_all() ->
-    AllWorkers = gproc:select([{{{n, l, wrap_id('_')}, '_', '_'}, [], ['$$']}]),
-    [{NS, ID, Pid} || [{n, l, {?MODULE, {NS, ID}}}, Pid, _Value] <- AllWorkers].
+    AllWorkers = consuela:all(),
+    [{NS, ID, Pid} || {?wrap_id(NS, ID), Pid} <- AllWorkers].
 
 %%
 %% gen_server callbacks
@@ -257,17 +259,12 @@ schedule_unload_timer(State=#{unload_tref:=UnloadTRef}) ->
 start_timer(State) ->
     erlang:start_timer(unload_timeout(State), erlang:self(), unload).
 
--spec self_ref(_ID) ->
+-spec self_ref(mg:ns(), mg:id()) ->
     mg_utils:gen_ref().
-self_ref(ID) ->
-    {via, gproc, {n, l, wrap_id(ID)}}.
+self_ref(NS, ID) ->
+    {via, consuela, ?wrap_id(NS, ID)}.
 
--spec self_reg_name(_ID) ->
+-spec self_reg_name(mg:ns(), mg:id()) ->
     mg_utils:gen_reg_name().
-self_reg_name(ID) ->
-    {via, gproc, {n, l, wrap_id(ID)}}.
-
--spec wrap_id(_ID) ->
-    term().
-wrap_id(ID) ->
-    {?MODULE, ID}.
+self_reg_name(NS, ID) ->
+    self_ref(NS, ID).

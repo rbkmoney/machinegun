@@ -1031,17 +1031,28 @@ storage_reg_name(Options) ->
 gproc_key(Type, #{namespace := Namespace}) ->
     {n, l, {?MODULE, Type, Namespace}}.
 
--spec scheduler_child_spec(overseer | timers | timers_retries, options()) ->
+-type scheduler_id() :: overseer | timers | timers_retries.
+
+-spec scheduler_child_spec(scheduler_id(), options()) ->
     supervisor:child_spec() | undefined.
 scheduler_child_spec(SchedulerID, Options) ->
     case maps:get(SchedulerID, maps:get(schedulers, Options, #{}), disable) of
         disable ->
             undefined;
         Config ->
-            mg_scheduler:child_spec(scheduler_options(SchedulerID, Options, Config), SchedulerID)
+            mg_scheduler:child_spec(
+                scheduler_reg_name(SchedulerID, Options),
+                scheduler_options(SchedulerID, Options, Config),
+                SchedulerID
+            )
     end.
 
--spec scheduler_options(overseer | timers | timers_retries, options(), scheduler_opt()) ->
+-spec scheduler_reg_name(scheduler_id(), options()) ->
+    _RegName.
+scheduler_reg_name(SchedulerID, #{namespace := NS}) ->
+    {scheduler, {NS, SchedulerID}}.
+
+-spec scheduler_options(scheduler_id(), options(), scheduler_opt()) ->
     mg_scheduler:options().
 scheduler_options(timers, Options, Config) ->
     HandlerOptions = #{

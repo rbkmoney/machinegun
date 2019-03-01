@@ -36,6 +36,7 @@ main([YamlConfigFilename, ConfigsPath]) ->
 sys_config(YamlConfig) ->
     [
         {lager       , lager       (YamlConfig)},
+        {consuela    , consuela    (YamlConfig)},
         {how_are_you , how_are_you (YamlConfig)},
         {snowflake   , snowflake   (YamlConfig)},
         {brod        , brod        (YamlConfig)},
@@ -57,6 +58,12 @@ lager(YamlConfig) ->
                 {date, ""}
             ]}
         ]}
+    ].
+
+consuela(YamlConfig) ->
+    [
+        {nodename  , ?C:conf([consuela, nodename], YamlConfig)},
+        {namespace , ?C:utf_bin(?C:conf([consuela, namespace], YamlConfig, "mg"))}
     ].
 
 how_are_you(YamlConfig) ->

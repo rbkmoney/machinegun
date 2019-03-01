@@ -64,6 +64,7 @@ init_per_suite(C) ->
     Apps = mg_ct_helper:start_applications([
         lager,
         gproc,
+        consuela,
         {how_are_you, [
             {metrics_publishers, []},
             {metrics_handlers, [

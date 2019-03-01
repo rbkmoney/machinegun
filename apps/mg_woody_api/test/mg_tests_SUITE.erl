@@ -219,6 +219,7 @@ init_per_group(C) ->
     Apps = mg_ct_helper:start_applications([
         lager,
         brod,
+        consuela,
         {mg_woody_api, mg_woody_api_config(C)}
     ]),
 
