@@ -23,6 +23,7 @@
         stdlib,
         genlib,
         gproc,
+        consuela,
         riakc,
         msgpack
     ]},

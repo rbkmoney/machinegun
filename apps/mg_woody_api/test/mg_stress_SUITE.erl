@@ -43,6 +43,7 @@ all() ->
 init_per_suite(C) ->
     Apps = mg_ct_helper:start_applications([
         {hackney      , [{use_default_pool, false}]},
+        consuela      ,
         {mg_woody_api , mg_woody_api_config(C)}
     ]),
 

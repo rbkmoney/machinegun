@@ -14,6 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+CONSUL_VERSION=1.4.2
+
 cat <<EOF
 # https://hub.docker.com/r/basho/riak-kv/
 version: '2'
@@ -52,6 +54,24 @@ services:
       - COORDINATOR_NODE=riakdb
     volumes:
       - ./riak_user.conf:/etc/riak/user.conf:ro
+
+  consul1: &consul-server
+    image: consul:${CONSUL_VERSION}
+    hostname: consul1
+    command:
+      agent -server -retry-join consul0 -client 0.0.0.0
+
+  consul2:
+    <<: *consul-server
+    hostname: consul2
+
+  consul0:
+    <<: *consul-server
+    hostname: consul0
+    ports:
+      - "8500:8500"
+    command:
+      agent -server -bootstrap-expect 3 -ui -client 0.0.0.0
 
 volumes:
   schemas:
