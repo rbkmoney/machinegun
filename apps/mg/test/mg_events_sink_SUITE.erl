@@ -65,7 +65,7 @@ groups() ->
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
     % dbg:tpl({mg_events_sink, '_', '_'}, x),
-    Apps = genlib_app:start_application(mg),
+    Apps = mg_ct_helper:start_applications([mg]),
     Pid = start_event_sink(event_sink_options()),
     true = erlang:unlink(Pid),
     {Events, _} = mg_events:generate_events_with_range([{#{}, Body} || Body <- [1, 2, 3]], undefined),
@@ -75,7 +75,7 @@ init_per_suite(C) ->
     ok.
 end_per_suite(C) ->
     true = erlang:exit(?config(pid, C), kill),
-    [application:stop(App) || App <- ?config(apps, C)].
+    mg_ct_helper:stop_applications(?config(apps, C)).
 
 
 %%

@@ -216,19 +216,10 @@ init_per_group(_, C) ->
     config().
 init_per_group(C) ->
     %% TODO сделать нормальную генерацию урлов
-    Apps =
-        genlib_app:start_application_with(lager, [
-            {handlers, [
-                {lager_common_test_backend, [
-                    info,
-                    {lager_default_formatter, [time, " ", severity, " ", metadata, " ", message]}
-                ]}
-            ]},
-            {async_threshold, undefined}
-        ])
-        ++
-        genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(C))
-    ,
+    Apps = mg_ct_helper:start_applications([
+        lager,
+        {mg_woody_api, mg_woody_api_config(C)}
+    ]),
 
     {ok, ProcessorPid} = mg_test_processor:start(
         {0, 0, 0, 0}, 8023,
@@ -334,7 +325,7 @@ mg_woody_api_config(C) ->
     ok.
 end_per_group(_, C) ->
     true = erlang:exit(?config(processor_pid, C), kill),
-    [application:stop(App) || App <- proplists:get_value(apps, C)].
+    mg_ct_helper:stop_applications(?config(apps, C)).
 
 %%
 %% base group tests

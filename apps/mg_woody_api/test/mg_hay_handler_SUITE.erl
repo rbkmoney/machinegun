@@ -58,18 +58,9 @@ groups() ->
 -spec init_per_suite(config()) ->
     config().
 init_per_suite(C) ->
-    Configs = [
-        {lager, [
-            {handlers, [
-                {lager_common_test_backend, [
-                    info,
-                    {lager_default_formatter, [time, " ", severity, " ", metadata, " ", message]}
-                ]}
-            ]},
-            {error_logger_hwm, 600},
-            {async_threshold, undefined}
-        ]},
-        {gproc, []},
+    Apps = mg_ct_helper:start_applications([
+        lager,
+        gproc,
         {how_are_you, [
             {metrics_publishers, [mg_test_hay_publisher]},
             {metrics_handlers, [
@@ -78,8 +69,7 @@ init_per_suite(C) ->
             ]}
         ]},
         {mg_woody_api, mg_woody_api_config(C)}
-    ],
-    Apps = lists:flatten([genlib_app:start_application_with(A, Conf) || {A, Conf} <- Configs]),
+    ]),
 
     {ok, ProcessorPid} = mg_test_processor:start(
         {0, 0, 0, 0}, 8023,
@@ -107,7 +97,7 @@ end_per_suite(C) ->
     ok = application:set_env(how_are_you, metrics_publishers, []),
     ok = application:set_env(how_are_you, metrics_handlers, []),
     true = erlang:exit(?config(processor_pid, C), kill),
-    [application:stop(App) || App <- proplists:get_value(apps, C)].
+    mg_ct_helper:stop_applications(?config(apps, C)).
 
 -spec init_per_group(group_name(), config()) ->
     config().
