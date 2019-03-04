@@ -215,10 +215,10 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             storage   => storage(Name, YamlConfig),
             processor => #{
                 url            => ?C:utf_bin(?C:conf([processor, url], NSYamlConfig)),
-                transport_opts => [
-                    {pool, erlang:list_to_atom(NameStr)},
-                    {max_connections, ?C:conf([processor, pool_size], NSYamlConfig, 50)}
-                ]
+                transport_opts => #{
+                    pool => erlang:list_to_atom(NameStr),
+                    max_connections => ?C:conf([processor, pool_size], NSYamlConfig, 50)
+                }
             },
             default_processing_timeout => Timeout(default_processing_timeout, "30S"),
             timer_processing_timeout => Timeout(timer_processing_timeout, "60S"),
