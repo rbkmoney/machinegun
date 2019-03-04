@@ -122,7 +122,7 @@ mg_woody_api_config(_C) ->
                 storage    => mg_storage_memory,
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
-                    transport_opts => [{pool, ns}, {max_connections, 100}]
+                    transport_opts => #{pool => ns, max_connections => 100}
                 },
                 default_processing_timeout => 5000,
                 retries => #{

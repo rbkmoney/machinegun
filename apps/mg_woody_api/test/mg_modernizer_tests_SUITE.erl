@@ -163,7 +163,7 @@ start_mg_woody_api(Name, C) ->
                     storage    => {mg_storage_memory, #{existing_storage_ref => ?config(storage_pid, C)}},
                     processor  => #{
                         url            => <<"http://localhost:8023/processor">>,
-                        transport_opts => [{pool, ns}, {max_connections, 100}]
+                        transport_opts => #{pool => ns, max_connections => 100}
                     },
                     default_processing_timeout => 5000,
                     schedulers => #{
