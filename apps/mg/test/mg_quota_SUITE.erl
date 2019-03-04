@@ -98,13 +98,12 @@ groups() ->
 -spec init_per_suite(config()) ->
     config().
 init_per_suite(C) ->
-    Apps = genlib_app:start_application(stdlib),
-    [{apps, Apps} | C].
+    C.
 
 -spec end_per_suite(config()) ->
     ok.
-end_per_suite(C) ->
-    mg_ct_helper:stop_applications(?config(apps, C)).
+end_per_suite(_C) ->
+    ok.
 
 -spec init_per_group(group_name(), config()) ->
     config().
