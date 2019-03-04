@@ -72,9 +72,6 @@ lint:
 dialyze:
 	$(REBAR) dialyzer
 
-start: submodules
-	$(REBAR) run
-
 devrel: submodules
 	$(REBAR) release
 
