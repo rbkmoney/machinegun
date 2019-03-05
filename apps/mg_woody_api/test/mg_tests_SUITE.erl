@@ -225,6 +225,14 @@ init_per_group(C) ->
                 ]}
             ]},
             {async_threshold, undefined}
+        ]) ++
+        genlib_app:start_application_with(brod, [
+            {clients, [
+                {mg_kafka_client, [
+                    {endpoints, [{"kafka1", 9092}, {"kafka2", 9092}, {"kafka3", 9092}]},
+                    {auto_start_producers, true}
+                ]}
+            ]}
         ])
         ++
         genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(C))
@@ -306,7 +314,7 @@ mg_woody_api_config(C) ->
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => [{pool, ns}, {max_connections, 100}]
                 },
-                default_processing_timeout => 5000,
+                default_processing_timeout => 15000,
                 schedulers => #{
                     timers         => #{ interval => 100, limit => <<"scheduler_tasks_total">> },
                     timers_retries => #{ interval => 100, limit => <<"scheduler_tasks_total">> },
@@ -321,12 +329,22 @@ mg_woody_api_config(C) ->
                 % TODO в будущем нужно это сделать
                 % сейчас же можно иногда включать и смотреть
                 % suicide_probability => 0.1,
-                event_sinks => [{mg_events_sink_machine, #{name => default, machine_id => ?ES_ID}}]
+                event_sinks => [
+                    {mg_events_sink_machine, #{
+                        name => machine,
+                        machine_id => ?ES_ID
+                    }},
+                    {mg_events_sink_kafka, #{
+                        name => kafka,
+                        topic => ?ES_ID,
+                        client => mg_kafka_client
+                    }}
+                ]
             }
         }},
         {event_sink_ns, #{
             storage => mg_storage_memory,
-            default_processing_timeout => 5000
+            default_processing_timeout => 15000
         }}
     ].
 
@@ -623,21 +641,30 @@ config_with_multiple_event_sinks(_C) ->
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => [{pool, pool2}, {max_connections, 100}]
                 },
-                default_processing_timeout => 5000,
+                default_processing_timeout => 15000,
                 schedulers => #{
                     timers         => #{ interval => 100 },
                     timers_retries => #{ interval => 100 },
                     overseer       => #{ interval => 100 }
                 },
                 retries => #{},
-                event_sinks => [{mg_events_sink_machine, #{name => default, machine_id => <<"SingleES">>}}]
+                event_sinks => [
+                    {mg_events_sink_machine, #{
+                        name => machine,
+                        machine_id => <<"SingleES">>
+                    }},
+                    {mg_events_sink_kafka, #{
+                        name => kafka,
+                        topic => <<"mg_event_sink">>,
+                        client => mg_kafka_client
+                    }}
+                ]
             }
         }},
         {event_sink_ns, #{
             storage => mg_storage_memory,
-            default_processing_timeout => 5000
-        }},
-        {event_sinks, [<<"SingleES">>]}
+            default_processing_timeout => 15000
+        }}
     ],
     Apps = genlib_app:start_application_with(mg_woody_api, Config),
     [application:stop(App) || App <- Apps].
@@ -650,10 +677,9 @@ config_with_multiple_event_sinks(_C) ->
 start_machine(C, ID) ->
     case catch mg_automaton_client:start(automaton_options(C), ID, ID) of
         ok ->
+            ok;
+        #mg_stateproc_MachineAlreadyExists{} ->
             ok
-        % сейчас это не идемпотентная операция
-        % #'MachineAlreadyExists'{} ->
-        %     ok
     end.
 
 -spec create_event(binary(), config(), mg:id()) ->

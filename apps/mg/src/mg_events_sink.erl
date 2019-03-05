@@ -39,5 +39,7 @@
 
 -spec add_events(handler(), mg:ns(), mg:id(), [event()], req_ctx(), deadline()) ->
     ok.
+add_events(_Handler, _NS, _ID, [], _ReqCtx, _Deadline) ->
+    ok;
 add_events(Handler, NS, ID, Events, ReqCtx, Deadline) ->
     ok = mg_utils:apply_mod_opts(Handler, add_events, [NS, ID, Events, ReqCtx, Deadline]).

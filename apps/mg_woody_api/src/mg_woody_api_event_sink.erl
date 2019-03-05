@@ -83,13 +83,13 @@ serialize(SourceNS, SourceID, Event) ->
         source_id = SourceID,
         event_id = EventID,
         created_at = mg_woody_api_packer:pack(timestamp, CreatedAt),
-        format_version = maps:get(format_version, Metadata),
+        format_version = maps:get(format_version, Metadata, undefined),
         data = mg_woody_api_packer:pack(opaque, Content)
     }},
-    Type = {struct, struct, {mg_proto_event_sink_thrift, 'SinkEvent'}},
+    Type = {struct, union, {mg_proto_event_sink_thrift, 'SinkEvent'}},
     case thrift_protocol:write(Proto, {Type, Data}) of
         {NewProto, ok} ->
-            {_, Result} = thrift_protocol:close_transport(NewProto),
+            {_, {ok, Result}} = thrift_protocol:close_transport(NewProto),
             Result;
         {_NewProto, {error, Reason}} ->
             erlang:error({?MODULE, Reason})

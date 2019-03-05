@@ -75,7 +75,7 @@ init_per_suite(C) ->
     ok.
 end_per_suite(C) ->
     true = erlang:exit(?config(pid, C), kill),
-    [application:stop(App) || App <- ?config(apps, C)].
+    [application:stop(App) || App <- lists:reverse(?config(apps, C))].
 
 
 %%
@@ -142,6 +142,7 @@ start_event_sink(Options) ->
     mg_events_sink_machine:ns_options().
 event_sink_options() ->
     #{
+        name                   => machine,
         machine_id             => ?ES_ID,
         namespace              => ?ES_ID,
         storage                => mg_storage_memory,

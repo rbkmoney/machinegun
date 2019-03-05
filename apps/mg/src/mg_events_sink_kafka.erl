@@ -16,6 +16,8 @@
 
 -module(mg_events_sink_kafka).
 
+-include_lib("mg/include/pulse.hrl").
+
 %% mg_events_sink handler
 -behaviour(mg_events_sink).
 -export([add_events/6]).
@@ -45,20 +47,64 @@
 
 -spec add_events(options(), mg:ns(), mg:id(), [event()], req_ctx(), deadline()) ->
     ok.
-add_events(Options, NS, ID, Events, _ReqCtx, _Deadline) ->
-    #{client := Client, topic := Topic, encoder := Encoder} = Options,
-    Batch = [
-        #{
-            key => partition_key(ID),
-            value => Encoder(NS, ID, Event)
-        }
-        || Event <- Events
-    ],
-    ok = brod:produce_sync(Client, Topic, hash, partition_key(ID), Batch).
+add_events(Options, NS, MachineID, Events, ReqCtx, Deadline) ->
+    #{pulse := Pulse, client := Client, topic := Topic, encoder := Encoder, name := Name} = Options,
+    StartTimestamp = erlang:monotonic_time(),
+    Batch = encode(Encoder, NS, MachineID, Events),
+    EncodeTimestamp = erlang:monotonic_time(),
+    ok = produce(Client, Topic, partition_key(MachineID), Batch),
+    FinishTimestamp = erlang:monotonic_time(),
+    ok = mg_pulse:handle_beat(Pulse, #mg_events_sink_sent{
+        name = Name,
+        namespace = NS,
+        machine_id = MachineID,
+        request_context = ReqCtx,
+        deadline = Deadline,
+        encode_duration = EncodeTimestamp - StartTimestamp,
+        send_duration = FinishTimestamp - EncodeTimestamp,
+        data_size = batch_size(Batch)
+    }).
 
 %% Internals
 
 -spec partition_key(mg:id()) ->
     term().
-partition_key(ID) ->
-    ID.
+partition_key(MachineID) ->
+    MachineID.
+
+-spec encode(encoder(), mg:ns(), mg:id(), [event()]) ->
+    brod:batch_input().
+encode(Encoder, NS, MachineID, Events) ->
+    [
+        #{
+            key => partition_key(MachineID),
+            value => Encoder(NS, MachineID, Event)
+        }
+        || Event <- Events
+    ].
+
+-spec produce(brod:client(), brod:topic(), brod:key(), brod:batch_input()) ->
+    ok.
+produce(Client, Topic, Key, Batch) ->
+    case brod:produce_sync(Client, Topic, hash, Key, Batch) of
+        ok ->
+            ok;
+        {error, Reason} when
+            Reason =:= leader_not_available orelse
+            Reason =:= unknown_topic_or_partition
+        ->
+            erlang:throw({transient, {event_sink_unavailable, Reason}});
+        {error, Reason} ->
+            erlang:error({?MODULE, Reason})
+    end.
+
+-spec batch_size(brod:batch_input()) ->
+    non_neg_integer().
+batch_size(Batch) ->
+    lists:foldl(
+        fun(#{value := Value}, Acc) ->
+            Acc + erlang:iolist_size(Value)
+        end,
+        0,
+        Batch
+    ).

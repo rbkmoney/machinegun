@@ -59,7 +59,9 @@
     | #mg_machine_process_transient_error{}
     % Обслуживание обработчиков машин
     | #mg_worker_call_attempt{}
-    | #mg_worker_start_attempt{}.
+    | #mg_worker_start_attempt{}
+    % Операции events_sink
+    | #mg_events_sink_sent{}.
 
 -type handler() :: mg_utils:mod_opts() | undefined.
 
