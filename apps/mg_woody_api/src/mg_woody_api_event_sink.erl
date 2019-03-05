@@ -82,7 +82,7 @@ serialize(SourceNS, SourceID, Event) ->
         source_ns = SourceNS,
         source_id = SourceID,
         event_id = EventID,
-        created_at = mg_woody_api_packer:pack(timestamp, CreatedAt),
+        created_at = mg_woody_api_packer:pack(timestamp_ns, CreatedAt),
         format_version = maps:get(format_version, Metadata, undefined),
         data = mg_woody_api_packer:pack(opaque, Content)
     }},
