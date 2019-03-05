@@ -411,7 +411,14 @@ machine_remove(C) ->
 
 -spec machine_remove_by_action(config()) -> _.
 machine_remove_by_action(C) ->
-    <<"remove">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"remove">>).
+    <<"nop">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"nop">>),
+    <<"remove">> = try
+        mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"remove">>)
+    catch
+        throw:#mg_stateproc_MachineNotFound{} ->
+            % The request had been retried
+            <<"remove">>
+    end.
 
 %%
 %% repair group tests
