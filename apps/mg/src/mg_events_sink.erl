@@ -112,7 +112,6 @@ repair(Options, EventSinkID, ReqCtx, Deadline) ->
 %%
 %% mg_processor handler
 %%
--define(ext_id_idx, {binary, <<"ext_id">>}).
 -type state() :: #{
     events_range => mg_events:events_range()
 }.
@@ -142,73 +141,11 @@ process_machine_(_, _, {init, undefined}, State) ->
 process_machine_(_, _, {repair, undefined}, State) ->
     State;
 process_machine_(Options, EventSinkID, {call, {add_events, SourceNS, SourceMachineID, Events}}, State) ->
-    NewEvents = filter_duplicated(Options, EventSinkID, SourceNS, SourceMachineID, Events, State),
-    {SinkEvents, NewState} = generate_sink_events(SourceNS, SourceMachineID, NewEvents, State),
+    {SinkEvents, NewState} = generate_sink_events(SourceNS, SourceMachineID, Events, State),
     ok = store_sink_events(Options, EventSinkID, SinkEvents),
     NewState.
 
 %%
-
--spec filter_duplicated(options(), mg:id(), mg:ns(), mg:id(), [mg_events:event()], state()) ->
-    [mg_events:event()].
-filter_duplicated(Options, EventSinkID, SourceNS, SourceMachineID, Events, State) ->
-    lists:filter(
-        fun(Event) ->
-            not is_duplicate(Options, EventSinkID, SourceNS, SourceMachineID, Event, State)
-        end,
-        Events
-    ).
--spec is_duplicate(options(), mg:id(), mg:ns(), mg:id(), mg_events:event(), state()) ->
-    boolean().
-is_duplicate(Options, EventSinkID, SourceNS, SourceMachineID, Event, State) ->
-    is_duplicate(Options, EventSinkID, SourceNS, SourceMachineID, Event, State, undefined).
-
--spec is_duplicate(options(), mg:id(), mg:ns(), mg:id(), mg_events:event(), state(), mg_storage:continuation()) ->
-    boolean().
-is_duplicate(
-    Options,
-    EventSinkID,
-    SourceNS,
-    SourceMachineID,
-    Event = #{id := EventID},
-    State = #{events_range := EventsRange},
-    Cont
-) ->
-    Query = {
-        ?ext_id_idx,
-        make_ext_id(EventSinkID, SourceNS, SourceMachineID, EventID),
-        maps:get(duplicate_search_batch, Options, ?default_duplicate_search_batch),
-        Cont
-    },
-    {Keys, NewCont} = mg_storage:search(events_storage_options(Options), events_storage_ref(Options), Query),
-
-    Result = lists:any(
-        fun(OtherEventFullID) ->
-            % возможно будет больше одного "мусного" эвента
-            % такого, который записался в сторадж эвентов,
-            % но event_range не успел проапдейтиться
-            % и эвенты по факту потеряны, и их можно смело переписывать
-            OtherEventID = mg_events:key_to_event_id(mg_events:remove_machine_id(EventSinkID, OtherEventFullID)),
-            is_intersect(OtherEventID, EventsRange)
-        end,
-        Keys
-    ),
-
-    case {Result, NewCont} of
-        {true, _} ->
-            true;
-        {false, undefined} ->
-            false;
-        {false, _} ->
-            is_duplicate(Options, EventSinkID, SourceNS, SourceMachineID, Event, State, NewCont)
-    end.
-
--spec is_intersect(mg_events:id(), mg_events:events_range()) ->
-    boolean().
-is_intersect(EventID, {From, To}) when From =< EventID andalso EventID =< To ->
-    true;
-is_intersect(_, _) ->
-    false.
 
 -spec store_sink_events(options(), mg:id(), [event()]) ->
     ok.
@@ -223,10 +160,9 @@ store_sink_events(Options, EventSinkID, SinkEvents) ->
 -spec store_event(options(), mg:id(), event()) ->
     ok.
 store_event(Options, EventSinkID, SinkEvent) ->
-    ExtID = make_ext_id(EventSinkID, SinkEvent),
     {Key, Value} = sink_event_to_kv(EventSinkID, SinkEvent),
     _ = mg_storage:put(events_storage_options(Options), events_storage_ref(Options), Key,
-            undefined, Value, [{?ext_id_idx, ExtID}]),
+            undefined, Value, []),
     ok.
 
 -spec get_events_keys(mg:id(), mg_events:events_range(), mg_events:history_range()) ->
@@ -237,22 +173,6 @@ get_events_keys(EventSinkID, EventsRange, HistoryRange) ->
         ||
         EventID <- mg_events:get_event_ids(EventsRange, HistoryRange)
     ].
-
--spec make_ext_id(mg:id(), event()) ->
-    binary().
-make_ext_id(EventSinkID, SinkEvent) ->
-    #{body := #{source_ns := SourceNS, source_id := SourceMachineID, event := #{id := EventID}}} = SinkEvent,
-    make_ext_id(EventSinkID, SourceNS, SourceMachineID, EventID).
-
--spec make_ext_id(mg:id(), mg:ns(), mg:id(), mg_events:id()) ->
-    binary().
-make_ext_id(EventSinkID, SourceNS, SourceMachineID, EventID) ->
-    <<
-        EventSinkID                        /binary, $_,
-        SourceNS                           /binary, $_,
-        SourceMachineID                    /binary, $_,
-        (erlang:integer_to_binary(EventID))/binary
-    >>.
 
 -spec get_state(options(), mg:id()) ->
     state().

@@ -544,20 +544,37 @@ event_sink_incorrect_sink_id(C) ->
 -spec event_sink_lots_events_ordering(config()) ->
     _.
 event_sink_lots_events_ordering(C) ->
-    ID = genlib:unique(),
-    ok = start_machine(C, ID),
-    HRange1 = #mg_stateproc_HistoryRange{direction=backward, limit=1},
-    [#mg_stateproc_SinkEvent{id = LastEventID}] =
-        mg_event_sink_client:get_history(es_opts(C), ?ES_ID, HRange1),
+    MachineID = genlib:unique(),
+    ok = start_machine(C, MachineID),
     N = 20,
-    _ = create_events(N, C, ID),
+    _ = create_events(N, C, MachineID),
 
-    HRange2 = #mg_stateproc_HistoryRange{direction=forward},
-    Events = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, HRange2),
-    EventsIDs = lists:seq(1, N + LastEventID),
-    ?assertEqual(
-        EventsIDs,
-        [ID0 || #mg_stateproc_SinkEvent{id=ID0} <- Events]
+    HRange = #mg_stateproc_HistoryRange{direction=forward},
+    Events = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, HRange),
+    % event_sink не гарантирует отсутствия дублей событий, но гарантирует
+    % сохранения порядка событий отдельной машины.
+    lists:foldl(
+        fun(Ev, LastEvIDMap) ->
+            #mg_stateproc_SinkEvent{
+                source_id = Machine,
+                source_ns = NS,
+                event = Body
+            } = Ev,
+            Key = {NS, Machine},
+            LastID = maps:get(Key, LastEvIDMap, 0),
+            case Body#mg_stateproc_Event.id of
+                ID when ID =:= LastID + 1 ->
+                    LastEvIDMap#{Key => ID};
+                ID when ID =< LastID ->
+                    % Дубликат одного из уже известных событий
+                    LastEvIDMap;
+                ID ->
+                    % Нарушен порядок событий, получился пропуск
+                    erlang:error({invalid_order, ID, LastID}, [Ev, LastEvIDMap])
+            end
+        end,
+        #{},
+        Events
     ).
 
 % проверяем, что просто ничего не падает, для начала этого хватит
