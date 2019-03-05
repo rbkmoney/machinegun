@@ -110,7 +110,7 @@
 %% API
 %%
 
--spec child_spec(options(), atom()) ->
+-spec child_spec(options(), _ChildID) ->
     supervisor:child_spec().
 child_spec(Options, ChildID) ->
     #{
@@ -332,11 +332,11 @@ try_search_tasks(SearchLimit, State) ->
     {ok, Status, NewTasks, NewHandlerState} = try
         handler_search(Handler, SearchLimit, HandlerState)
     catch
-        throw:({ErrorType, _Details} = Reason) when
+        throw:({ErrorType, _Details} = Reason):ST when
             ErrorType =:= transient orelse
             ErrorType =:= timeout
         ->
-            Exception = {throw, Reason, erlang:get_stacktrace()},
+            Exception = {throw, Reason, ST},
             ok = emit_search_error_beat(Exception, State),
             {ok, continue, [], HandlerState}
     end,

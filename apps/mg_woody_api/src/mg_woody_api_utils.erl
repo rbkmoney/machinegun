@@ -41,8 +41,8 @@
 handle_error(Ctx, F, Pulse) ->
     try
         F()
-    catch throw:Error ->
-        Exception = {throw, Error, erlang:get_stacktrace()},
+    catch throw:Error:ST ->
+        Exception = {throw, Error, ST},
         #{namespace := NS, machine_ref := Ref, request_context := ReqCtx, deadline := Deadline} = Ctx,
         ok = mg_pulse:handle_beat(Pulse, #woody_request_handle_error{
             namespace = NS,

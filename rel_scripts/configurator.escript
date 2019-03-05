@@ -59,9 +59,7 @@ lager(YamlConfig) ->
     ].
 
 how_are_you(YamlConfig) ->
-    Publishers = lists:flatten([
-        hay_statsd_publisher(YamlConfig)
-    ]),
+    Publishers = hay_statsd_publisher(YamlConfig),
     [
         {metrics_publishers, Publishers},
         {metrics_handlers, [
@@ -74,19 +72,14 @@ how_are_you(YamlConfig) ->
     ].
 
 hay_statsd_publisher(YamlConfig) ->
-    case ?C:conf([metrics, publisher, statsd], YamlConfig, undefined) of
-        Config when Config =/= undefined ->
-            [
-                {hay_statsd_publisher, #{
-                    key_prefix => <<(?C:utf_bin(?C:conf([service_name], YamlConfig)))/binary, ".">>,
-                    host => ?C:utf_bin(?C:conf([metrics, publisher, statsd, host], YamlConfig, "localhost")),
-                    port => ?C:conf([metrics, publisher, statsd, port], YamlConfig, 8125),
-                    interval => 15000
-                }}
-            ];
-        undefined ->
-            []
-    end.
+    conf_with([metrics, publisher, statsd], YamlConfig, [], fun (Config) -> [
+        {hay_statsd_publisher, #{
+            key_prefix => <<(?C:utf_bin(?C:conf([service_name], YamlConfig)))/binary, ".">>,
+            host => ?C:utf_bin(?C:conf([host], Config, "localhost")),
+            port => ?C:conf([port], Config, 8125),
+            interval => 15000
+        }}
+    ] end).
 
 snowflake(YamlConfig) ->
     [{machine_id, ?C:conf([snowflake_machine_id], YamlConfig, 0)}].
@@ -104,13 +97,14 @@ woody_server(YamlConfig) ->
     #{
         ip       => ?C:ip(?C:conf([woody_server, ip], YamlConfig, "::")),
         port     => ?C:conf([woody_server, port], YamlConfig, 8022),
-        transport_opts => [
+        transport_opts => #{
             % same as ranch defaults
-            {max_connections, ?C:conf([woody_server, max_concurrent_connections], YamlConfig, 1024)}
-        ],
-        protocol_opts => [
-            {timeout, ?C:time_interval(?C:conf([woody_server, keep_alive_timeout], YamlConfig, "5S"), 'ms')}
-        ],
+            max_connections => ?C:conf([woody_server, max_concurrent_connections], YamlConfig, 1024)
+        },
+        protocol_opts => #{
+            request_timeout => ?C:time_interval(?C:conf([woody_server, request_timeout], YamlConfig, "5S"), 'ms'),
+            idle_timeout    => ?C:time_interval(?C:conf([woody_server, idle_timeout   ], YamlConfig, "5S"), 'ms')
+        },
         limits   => genlib_map:compact(#{
             max_heap_size       => ?C:mem_words(?C:conf([limits, process_heap], YamlConfig, undefined)),
             total_mem_threshold => absolute_memory_limit(YamlConfig)
@@ -118,23 +112,17 @@ woody_server(YamlConfig) ->
     }.
 
 health_checkers(YamlConfig) ->
-    case ?C:conf([limits, disk], YamlConfig, undefined) of
-        undefined ->
-            [];
-        DiskConfig ->
-            [{erl_health, disk, [?C:conf([path], DiskConfig, "/"), percent(?C:conf([value], DiskConfig))]}]
-    end ++
-    case relative_memory_limit(YamlConfig) of
-        undefined ->
-            [];
-        {TypeStr, Limit} ->
-            Type =
-                case TypeStr of
-                    "total"   -> total;
-                    "cgroups" -> cg_memory
-                end,
-            [{erl_health, Type, [Limit]}]
-    end ++
+    conf_with([limits, disk], YamlConfig, [], fun (DiskConfig) ->
+        [{erl_health, disk, [?C:conf([path], DiskConfig, "/"), percent(?C:conf([value], DiskConfig))]}]
+    end) ++
+    relative_memory_limit(YamlConfig, [], fun ({TypeStr, Limit}) ->
+        Type =
+            case TypeStr of
+                "total"   -> total;
+                "cgroups" -> cg_memory
+            end,
+        [{erl_health, Type, [Limit]}]
+    end) ++
     [{erl_health, service, [?C:utf_bin(?C:conf([service_name], YamlConfig))]}].
 
 quotas(YamlConfig) ->
@@ -151,22 +139,18 @@ percent(Value) ->
     [$%|RevInt] = lists:reverse(Value),
     erlang:list_to_integer(lists:reverse(RevInt)).
 
-relative_memory_limit(YamlConfig) ->
-    case ?C:conf([limits, memory], YamlConfig, undefined) of
-        undefined    -> undefined;
-        MemoryConfig -> {?C:conf([type], MemoryConfig, "total"), percent(?C:conf([value], MemoryConfig))}
-    end.
+relative_memory_limit(YamlConfig, Default, Fun) ->
+    conf_with([limits, memory], YamlConfig, Default, fun (MemoryConfig) ->
+        Fun({?C:conf([type], MemoryConfig, "total"), percent(?C:conf([value], MemoryConfig))})
+    end).
 
 absolute_memory_limit(YamlConfig) ->
     {ok, _} = application:ensure_all_started(cg_mon),
     {ok, _} = application:ensure_all_started(os_mon),
-    case relative_memory_limit(YamlConfig) of
-        undefined ->
-            undefined;
-        {Type, RelativeLimit} ->
-            CGMemLimit = wait_value(fun() -> memory_amount(Type) end, 1000, 10, memory_limit),
-            RelativeLimit * CGMemLimit div 100
-    end.
+    relative_memory_limit(YamlConfig, undefined, fun({Type, RelativeLimit}) ->
+        CGMemLimit = wait_value(fun() -> memory_amount(Type) end, 1000, 10, memory_limit),
+        RelativeLimit * CGMemLimit div 100
+    end).
 
 memory_amount("cgroups") -> cg_mem_sup:limit();
 memory_amount("total"  ) -> proplist:get_value(memsup:get_system_memory_data()).
@@ -231,10 +215,10 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             storage   => storage(Name, YamlConfig),
             processor => #{
                 url            => ?C:utf_bin(?C:conf([processor, url], NSYamlConfig)),
-                transport_opts => [
-                    {pool, erlang:list_to_atom(NameStr)},
-                    {max_connections, ?C:conf([processor, pool_size], NSYamlConfig, 50)}
-                ]
+                transport_opts => #{
+                    pool => erlang:list_to_atom(NameStr),
+                    max_connections => ?C:conf([processor, pool_size], NSYamlConfig, 50)
+                }
             },
             default_processing_timeout => Timeout(default_processing_timeout, "30S"),
             timer_processing_timeout => Timeout(timer_processing_timeout, "60S"),
@@ -306,4 +290,10 @@ conf_if(YamlConfigPath, YamlConfig, Value) ->
     case ?C:conf(YamlConfigPath, YamlConfig, false) of
         true  -> Value;
         false -> []
+    end.
+
+conf_with(YamlConfigPath, YamlConfig, Default, Fun) ->
+    case ?C:conf(YamlConfigPath, YamlConfig, undefined) of
+        undefined -> Default;
+        Value     -> Fun(Value)
     end.

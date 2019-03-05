@@ -72,8 +72,8 @@ handle_beat(Handler, Beat) ->
     try
         ok = Mod:handle_beat(Options, Beat)
     catch
-        Class:Reason ->
-            Stacktrace = genlib_format:format_stacktrace(erlang:get_stacktrace()),
+        Class:Reason:ST ->
+            Stacktrace = genlib_format:format_stacktrace(ST),
             Msg = "Pulse handler ~p failed at beat ~p: ~p:~p ~s",
             error_logger:error_msg(Msg, [{Mod, Options}, Beat, Class, Reason, Stacktrace])
     end.

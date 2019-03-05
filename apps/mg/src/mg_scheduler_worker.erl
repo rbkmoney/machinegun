@@ -39,7 +39,7 @@
 %% API
 %%
 
--spec child_spec(options(), atom()) ->
+-spec child_spec(options(), _ChildID) ->
     supervisor:child_spec().
 child_spec(Options, ChildID) ->
     #{
@@ -85,8 +85,8 @@ execute(#{task_handler := Handler} = Options, TaskInfo) ->
         End = erlang:monotonic_time(),
         ok = emit_finish_beat(TaskInfo, Start, End, Options)
     catch
-        Class:Reason ->
-            Exception = {Class, Reason, erlang:get_stacktrace()},
+        Class:Reason:ST ->
+            Exception = {Class, Reason, ST},
             ok = emit_error_beat(TaskInfo, Exception, Options)
     end.
 

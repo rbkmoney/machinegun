@@ -41,13 +41,10 @@ all() ->
 -spec init_per_suite(config()) ->
     config().
 init_per_suite(C) ->
-    Apps =
-        genlib_app:start_application_with(hackney, [{use_default_pool, false}])
-        ++
-        genlib_app:start_application_with(woody, [{acceptors_pool_size, 100}])
-        ++
-        genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(C))
-    ,
+    Apps = mg_ct_helper:start_applications([
+        {hackney      , [{use_default_pool, false}]},
+        {mg_woody_api , mg_woody_api_config(C)}
+    ]),
 
     CallFunc =
         fun({Args, _Machine}) ->
@@ -87,20 +84,24 @@ init_per_suite(C) ->
     ok.
 end_per_suite(C) ->
     true = erlang:exit(?config(processor_pid, C), kill),
-    _ = [application:stop(App) || App <- proplists:get_value(apps, C)],
-    ok.
+    mg_ct_helper:stop_applications(?config(apps, C)).
 
 -spec mg_woody_api_config(config()) ->
     list().
 mg_woody_api_config(_C) ->
     [
-        {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, limits => #{}}},
+        {woody_server, #{
+            ip     => {0,0,0,0,0,0,0,0},
+            port   => 8022,
+            limits => #{},
+            transport_opts => #{num_acceptors => 100}
+        }},
         {namespaces, #{
             ?NS => #{
                 storage    => mg_storage_memory,
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
-                    transport_opts => [{pool, ns}, {max_connections, 100}]
+                    transport_opts => #{pool => ns, max_connections => 100}
                 },
                 default_processing_timeout => 5000,
                 schedulers => #{
