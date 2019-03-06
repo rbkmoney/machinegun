@@ -91,13 +91,8 @@ produce(Client, Topic, Key, Batch) ->
     case do_produce(Client, Topic, Key, Batch) of
         {ok, _Partition, _Offset} = Result ->
             Result;
-        {error, Reason} when
-            Reason =:= leader_not_available orelse
-            Reason =:= unknown_topic_or_partition
-        ->
-            erlang:throw({transient, {event_sink_unavailable, Reason}});
         {error, Reason} ->
-            erlang:error({?MODULE, Reason})
+            handle_produce_error(Reason)
     end.
 
 -spec do_produce(brod:client(), brod:topic(), brod:key(), brod:batch_input()) ->
@@ -106,10 +101,58 @@ do_produce(Client, Topic, Key, Batch) ->
     case brod:get_partitions_count(Client, Topic) of
         {ok, PartitionsCount} ->
             Partition = partition(PartitionsCount, Key),
-            {ok, Offset} = brod:produce_sync_offset(Client, Topic, Partition, Key, Batch),
-            {ok, Partition, Offset};
+            case brod:produce_sync_offset(Client, Topic, Partition, Key, Batch) of
+                {ok, Offset} ->
+                    {ok, Partition, Offset};
+                {error, _Reason} = Error ->
+                    Error
+            end;
         {error, _Reason} = Error ->
             Error
+    end.
+
+-spec handle_produce_error(atom()) ->
+    no_return().
+handle_produce_error(timeout) ->
+    erlang:throw({transient, timeout});
+handle_produce_error({producer_down, Reason}) ->
+    erlang:throw({transient, {event_sink_unavailable, {producer_down, Reason}}});
+handle_produce_error(Reason) ->
+    KnownErrors = #{
+        client_down => transient,
+        unknown_server_error => unknown,
+        corrupt_message => transient,
+        unknown_topic_or_partition => transient,
+        leader_not_available => transient,
+        not_leader_for_partition => transient,
+        request_timed_out => transient,
+        broker_not_available => transient,
+        replica_not_available => transient,
+        message_too_large => misconfiguration,
+        stale_controller_epoch => transient,
+        network_exception => transient,
+        invalid_topic_exception => logic,
+        record_list_too_large => misconfiguration,
+        not_enough_replicas => transient,
+        not_enough_replicas_after_append => transient,
+        invalid_required_acks => transient,
+        topic_authorization_failed => misconfiguration,
+        cluster_authorization_failed => misconfiguration,
+        invalid_timestamp => logic,
+        unsupported_sasl_mechanism => misconfiguration,
+        illegal_sasl_state => logic,
+        unsupported_version => misconfiguration,
+        reassignment_in_progress => transient
+    },
+    case maps:find(Reason, KnownErrors) of
+        {ok, transient} ->
+            erlang:throw({transient, {event_sink_unavailable, Reason}});
+        {ok, misconfiguration} ->
+            erlang:throw({transient, {event_sink_misconfiguration, Reason}});
+        {ok, Other} ->
+            erlang:error({?MODULE, {Other, Reason}});
+        error ->
+            erlang:error({?MODULE, {unexpected, Reason}})
     end.
 
 -spec batch_size(brod:batch_input()) ->
