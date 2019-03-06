@@ -61,7 +61,7 @@
     | #mg_worker_call_attempt{}
     | #mg_worker_start_attempt{}
     % Операции events_sink
-    | #mg_events_sink_sent{}.
+    | #mg_events_sink_kafka_sent{}.
 
 -type handler() :: mg_utils:mod_opts() | undefined.
 

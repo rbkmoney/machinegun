@@ -52,9 +52,9 @@ add_events(Options, NS, MachineID, Events, ReqCtx, Deadline) ->
     StartTimestamp = erlang:monotonic_time(),
     Batch = encode(Encoder, NS, MachineID, Events),
     EncodeTimestamp = erlang:monotonic_time(),
-    ok = produce(Client, Topic, partition_key(MachineID), Batch),
+    {ok, Partition, Offset} = produce(Client, Topic, partition_key(MachineID), Batch),
     FinishTimestamp = erlang:monotonic_time(),
-    ok = mg_pulse:handle_beat(Pulse, #mg_events_sink_sent{
+    ok = mg_pulse:handle_beat(Pulse, #mg_events_sink_kafka_sent{
         name = Name,
         namespace = NS,
         machine_id = MachineID,
@@ -62,7 +62,9 @@ add_events(Options, NS, MachineID, Events, ReqCtx, Deadline) ->
         deadline = Deadline,
         encode_duration = EncodeTimestamp - StartTimestamp,
         send_duration = FinishTimestamp - EncodeTimestamp,
-        data_size = batch_size(Batch)
+        data_size = batch_size(Batch),
+        partition = Partition,
+        offset = Offset
     }).
 
 %% Internals
@@ -84,11 +86,11 @@ encode(Encoder, NS, MachineID, Events) ->
     ].
 
 -spec produce(brod:client(), brod:topic(), brod:key(), brod:batch_input()) ->
-    ok.
+    {ok, brod:partition(), brod:offset()}.
 produce(Client, Topic, Key, Batch) ->
-    case brod:produce_sync(Client, Topic, hash, Key, Batch) of
-        ok ->
-            ok;
+    case do_produce(Client, Topic, Key, Batch) of
+        {ok, _Partition, _Offset} = Result ->
+            Result;
         {error, Reason} when
             Reason =:= leader_not_available orelse
             Reason =:= unknown_topic_or_partition
@@ -96,6 +98,18 @@ produce(Client, Topic, Key, Batch) ->
             erlang:throw({transient, {event_sink_unavailable, Reason}});
         {error, Reason} ->
             erlang:error({?MODULE, Reason})
+    end.
+
+-spec do_produce(brod:client(), brod:topic(), brod:key(), brod:batch_input()) ->
+    {ok, brod:partition(), brod:offset()}.
+do_produce(Client, Topic, Key, Batch) ->
+    case brod:get_partitions_count(Client, Topic) of
+        {ok, PartitionsCount} ->
+            Partition = partition(PartitionsCount, Key),
+            {ok, Offset} = brod:produce_sync_offset(Client, Topic, Partition, Key, Batch),
+            {ok, Partition, Offset};
+        {error, _Reason} = Error ->
+            Error
     end.
 
 -spec batch_size(brod:batch_input()) ->
@@ -108,3 +122,8 @@ batch_size(Batch) ->
         0,
         Batch
     ).
+
+-spec partition(non_neg_integer(), brod:key()) ->
+    brod:partition().
+partition(PartitionsCount, Key) ->
+    erlang:phash2(Key) rem PartitionsCount.
