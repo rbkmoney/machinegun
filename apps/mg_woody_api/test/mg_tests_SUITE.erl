@@ -352,7 +352,7 @@ mg_woody_api_config(C) ->
     ok.
 end_per_group(_, C) ->
     true = erlang:exit(?config(processor_pid, C), kill),
-    [application:stop(App) || App <- proplists:get_value(apps, C)].
+    [application:stop(App) || App <- lists:reverse(proplists:get_value(apps, C))].
 
 %%
 %% base group tests
