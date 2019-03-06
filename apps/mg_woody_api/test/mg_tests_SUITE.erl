@@ -314,7 +314,7 @@ mg_woody_api_config(C) ->
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => [{pool, ns}, {max_connections, 100}]
                 },
-                default_processing_timeout => 15000,
+                default_processing_timeout => 5000,
                 schedulers => #{
                     timers         => #{ interval => 100, limit => <<"scheduler_tasks_total">> },
                     timers_retries => #{ interval => 100, limit => <<"scheduler_tasks_total">> },
@@ -344,7 +344,7 @@ mg_woody_api_config(C) ->
         }},
         {event_sink_ns, #{
             storage => mg_storage_memory,
-            default_processing_timeout => 15000
+            default_processing_timeout => 5000
         }}
     ].
 
@@ -648,7 +648,7 @@ config_with_multiple_event_sinks(_C) ->
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => [{pool, pool2}, {max_connections, 100}]
                 },
-                default_processing_timeout => 15000,
+                default_processing_timeout => 5000,
                 schedulers => #{
                     timers         => #{ interval => 100 },
                     timers_retries => #{ interval => 100 },
@@ -670,7 +670,7 @@ config_with_multiple_event_sinks(_C) ->
         }},
         {event_sink_ns, #{
             storage => mg_storage_memory,
-            default_processing_timeout => 15000
+            default_processing_timeout => 5000
         }}
     ],
     Apps = genlib_app:start_application_with(mg_woody_api, Config),

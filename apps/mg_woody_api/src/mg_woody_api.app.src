@@ -26,7 +26,6 @@
         lager,
         lager_logstash_formatter,
         rfc3339,
-        brod,
         mg_proto,
         mg,
         woody,

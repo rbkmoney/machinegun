@@ -52,9 +52,7 @@
     default_processing_timeout := timeout()
 }.
 -type ns_options() :: #{
-    name                       => atom(),
     namespace                  := mg:ns(),
-    machine_id                 => mg:id(),
     storage                    := mg_storage:options(),
     pulse                      := mg_pulse:handler(),
     events_storage             := mg_storage:options(),
@@ -199,8 +197,8 @@ get_state(Options, EventSinkID) ->
 new_state() ->
     #{events_range => undefined}.
 
--spec machine_options(ns_options()) ->
-    mg_machine:options().
+-spec machine_options(options()) ->
+    mg_machine:ns_options().
 machine_options(Options = #{namespace := Namespace, storage := Storage, pulse := Pulse}) ->
     #{
         namespace       => mg_utils:concatenate_namespaces(Namespace, <<"machines">>),
