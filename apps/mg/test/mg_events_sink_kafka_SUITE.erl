@@ -17,6 +17,7 @@
 -module(mg_events_sink_kafka_SUITE).
 -include_lib("stdlib/include/assert.hrl").
 -include_lib("common_test/include/ct.hrl").
+-include_lib("kafka_protocol/include/kpro_public.hrl").
 
 %% tests descriptions
 -export([all           /0]).
@@ -33,6 +34,7 @@
 -define(TOPIC, <<"test_event_sink">>).
 -define(SOURCE_NS, <<"source_ns">>).
 -define(SOURCE_ID, <<"source_id">>).
+-define(BROKERS, [{"kafka1", 9092}, {"kafka2", 9092}, {"kafka3", 9092}]).
 -define(CLIENT, mg_kafka_client).
 
 %%
@@ -70,7 +72,7 @@ init_per_suite(C) ->
         {brod, [
             {clients, [
                 {?CLIENT, [
-                    {endpoints, [{"kafka1", 9092}, {"kafka2", 9092}, {"kafka3", 9092}]},
+                    {endpoints, ?BROKERS},
                     {auto_start_producers, true}
                 ]}
             ]}
@@ -93,7 +95,8 @@ end_per_suite(C) ->
 -spec add_events_test(config()) ->
     _.
 add_events_test(C) ->
-    ?assertEqual(ok, add_events(C)).
+    ?assertEqual(ok, add_events(C)),
+    ?assertEqual([], [{?SOURCE_NS, ?SOURCE_ID, E} || E <- ?config(events, C)] -- read_all_events()).
 
 %%
 %% utils
@@ -113,6 +116,25 @@ add_events(C) ->
         )
     end,
     call_with_retry(F, mg_retry:new_strategy({linear, 10, 500})).
+
+-spec read_all_events() ->
+    ok.
+read_all_events() ->
+    {ok, PartitionsCount} = brod:get_partitions_count(?CLIENT, ?TOPIC),
+    do_read_all(?BROKERS, ?TOPIC, PartitionsCount - 1, 0, []).
+
+-spec do_read_all([brod:endpoint()], brod:topic(), brod:partition(), brod:offset(), [mg_event:event()]) ->
+    ok.
+do_read_all(_Hosts, _Topic, Partition, _Offset, Result) when Partition < 0 ->
+    lists:reverse(Result);
+do_read_all(Hosts, Topic, Partition, Offset, Result) ->
+    case brod:fetch(Hosts, Topic, Partition, Offset) of
+        {ok, {Offset, []}} ->
+            do_read_all(Hosts, Topic, Partition - 1, Offset, Result);
+        {ok, {NewOffset, Records}} when NewOffset =/= Offset ->
+            NewResult = lists:reverse([erlang:binary_to_term(Value) || #kafka_message{value = Value} <- Records]) ++ Result,
+            do_read_all(Hosts, Topic, Partition, NewOffset, NewResult)
+    end.
 
 -spec event_sink_options() ->
     mg_events_sink_machine:ns_options().

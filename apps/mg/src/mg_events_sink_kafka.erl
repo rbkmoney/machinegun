@@ -52,7 +52,7 @@ add_events(Options, NS, MachineID, Events, ReqCtx, Deadline) ->
     StartTimestamp = erlang:monotonic_time(),
     Batch = encode(Encoder, NS, MachineID, Events),
     EncodeTimestamp = erlang:monotonic_time(),
-    {ok, Partition, Offset} = produce(Client, Topic, partition_key(MachineID), Batch),
+    {ok, Partition, Offset} = produce(Client, Topic, MachineID, Batch),
     FinishTimestamp = erlang:monotonic_time(),
     ok = mg_pulse:handle_beat(Pulse, #mg_events_sink_kafka_sent{
         name = Name,
@@ -69,17 +69,17 @@ add_events(Options, NS, MachineID, Events, ReqCtx, Deadline) ->
 
 %% Internals
 
--spec partition_key(mg:id()) ->
+-spec event_key(mg:ns(), mg:id(), event()) ->
     term().
-partition_key(MachineID) ->
-    MachineID.
+event_key(NS, MachineID, #{id := EventID}) ->
+    <<NS/binary, " ", MachineID/binary, " ", EventID:64/big>>.
 
 -spec encode(encoder(), mg:ns(), mg:id(), [event()]) ->
     brod:batch_input().
 encode(Encoder, NS, MachineID, Events) ->
     [
         #{
-            key => partition_key(MachineID),
+            key => event_key(NS, MachineID, Event),
             value => Encoder(NS, MachineID, Event)
         }
         || Event <- Events
@@ -97,11 +97,11 @@ produce(Client, Topic, Key, Batch) ->
 
 -spec do_produce(brod:client(), brod:topic(), brod:key(), brod:batch_input()) ->
     {ok, brod:partition(), brod:offset()} | {error, Reason :: any()}.
-do_produce(Client, Topic, Key, Batch) ->
+do_produce(Client, Topic, PartitionKey, Batch) ->
     case brod:get_partitions_count(Client, Topic) of
         {ok, PartitionsCount} ->
-            Partition = partition(PartitionsCount, Key),
-            case brod:produce_sync_offset(Client, Topic, Partition, Key, Batch) of
+            Partition = partition(PartitionsCount, PartitionKey),
+            case brod:produce_sync_offset(Client, Topic, Partition, PartitionKey, Batch) of
                 {ok, Offset} ->
                     {ok, Partition, Offset};
                 {error, _Reason} = Error ->
@@ -119,6 +119,7 @@ handle_produce_error({producer_down, Reason}) ->
     erlang:throw({transient, {event_sink_unavailable, {producer_down, Reason}}});
 handle_produce_error(Reason) ->
     KnownErrors = #{
+        % See https://kafka.apache.org/protocol.html#protocol_error_codes for kafka error details
         client_down => transient,
         unknown_server_error => unknown,
         corrupt_message => transient,
