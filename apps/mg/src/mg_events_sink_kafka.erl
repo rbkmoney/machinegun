@@ -96,7 +96,7 @@ produce(Client, Topic, Key, Batch) ->
     end.
 
 -spec do_produce(brod:client(), brod:topic(), brod:key(), brod:batch_input()) ->
-    {ok, brod:partition(), brod:offset()}.
+    {ok, brod:partition(), brod:offset()} | {error, Reason :: any()}.
 do_produce(Client, Topic, Key, Batch) ->
     case brod:get_partitions_count(Client, Topic) of
         {ok, PartitionsCount} ->

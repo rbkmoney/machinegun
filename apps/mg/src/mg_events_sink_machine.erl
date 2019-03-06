@@ -88,8 +88,9 @@ when
     ReqCtx:: mg:request_context()
 .
 add_events(#{machine_id := EventSinkID} = Options, SourceNS, SourceMachineID, Events, ReqCtx, Deadline) ->
+    NSOptions = maps:without([machine_id, name], Options),
     ok = mg_machine:call_with_lazy_start(
-            machine_options(Options),
+            machine_options(NSOptions),
             EventSinkID,
             {add_events, SourceNS, SourceMachineID, Events},
             ReqCtx,
@@ -197,8 +198,8 @@ get_state(Options, EventSinkID) ->
 new_state() ->
     #{events_range => undefined}.
 
--spec machine_options(options()) ->
-    mg_machine:ns_options().
+-spec machine_options(ns_options()) ->
+    mg_machine:options().
 machine_options(Options = #{namespace := Namespace, storage := Storage, pulse := Pulse}) ->
     #{
         namespace       => mg_utils:concatenate_namespaces(Namespace, <<"machines">>),
