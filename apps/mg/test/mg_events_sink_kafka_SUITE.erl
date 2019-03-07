@@ -132,8 +132,10 @@ do_read_all(Hosts, Topic, Partition, Offset, Result) ->
         {ok, {Offset, []}} ->
             do_read_all(Hosts, Topic, Partition - 1, Offset, Result);
         {ok, {NewOffset, Records}} when NewOffset =/= Offset ->
-            NewResult = lists:reverse([erlang:binary_to_term(Value) || #kafka_message{value = Value} <- Records]) ++ Result,
-            do_read_all(Hosts, Topic, Partition, NewOffset, NewResult)
+            NewRecords = lists:reverse([
+                erlang:binary_to_term(Value) || #kafka_message{value = Value} <- Records
+            ]),
+            do_read_all(Hosts, Topic, Partition, NewOffset, NewRecords ++ Result)
     end.
 
 -spec event_sink_options() ->
