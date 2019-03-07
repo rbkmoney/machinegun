@@ -631,8 +631,8 @@ config_with_multiple_event_sinks(_C) ->
         }},
         {event_sinks, [<<"SingleES">>]}
     ],
-    Apps = genlib_app:start_application_with(mg_woody_api, Config),
-    [application:stop(App) || App <- Apps].
+    Apps = mg_ct_helper:start_applications([consuela, {mg_woody_api, Config}]),
+    ok = mg_ct_helper:stop_applications(Apps).
 
 %%
 %% utils
