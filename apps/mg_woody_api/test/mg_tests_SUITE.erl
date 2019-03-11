@@ -225,6 +225,14 @@ init_per_group(C) ->
                 ]}
             ]},
             {async_threshold, undefined}
+        ]) ++
+        genlib_app:start_application_with(brod, [
+            {clients, [
+                {mg_kafka_client, [
+                    {endpoints, [{"kafka1", 9092}, {"kafka2", 9092}, {"kafka3", 9092}]},
+                    {auto_start_producers, true}
+                ]}
+            ]}
         ])
         ++
         genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(C))
@@ -321,7 +329,17 @@ mg_woody_api_config(C) ->
                 % TODO в будущем нужно это сделать
                 % сейчас же можно иногда включать и смотреть
                 % suicide_probability => 0.1,
-                event_sink => ?ES_ID
+                event_sinks => [
+                    {mg_events_sink_machine, #{
+                        name => machine,
+                        machine_id => ?ES_ID
+                    }},
+                    {mg_events_sink_kafka, #{
+                        name => kafka,
+                        topic => ?ES_ID,
+                        client => mg_kafka_client
+                    }}
+                ]
             }
         }},
         {event_sink_ns, #{
@@ -334,7 +352,7 @@ mg_woody_api_config(C) ->
     ok.
 end_per_group(_, C) ->
     true = erlang:exit(?config(processor_pid, C), kill),
-    [application:stop(App) || App <- proplists:get_value(apps, C)].
+    [application:stop(App) || App <- lists:reverse(proplists:get_value(apps, C))].
 
 %%
 %% base group tests
@@ -393,7 +411,14 @@ machine_remove(C) ->
 
 -spec machine_remove_by_action(config()) -> _.
 machine_remove_by_action(C) ->
-    <<"remove">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"remove">>).
+    <<"nop">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"nop">>),
+    <<"remove">> = try
+        mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"remove">>)
+    catch
+        throw:#mg_stateproc_MachineNotFound{} ->
+            % The request had been retried
+            <<"remove">>
+    end.
 
 %%
 %% repair group tests
@@ -514,11 +539,12 @@ event_sink_get_not_empty_history(C) ->
 
     _ = create_events(3, C, ?ID),
 
-    [
-        #mg_stateproc_SinkEvent{id = 1, source_id = ?ID, source_ns = ?NS, event = #mg_stateproc_Event{}},
-        #mg_stateproc_SinkEvent{id = 2, source_id = ?ID, source_ns = ?NS, event = #mg_stateproc_Event{}},
-        #mg_stateproc_SinkEvent{id = 3, source_id = ?ID, source_ns = ?NS, event = #mg_stateproc_Event{}}
-    ] = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #mg_stateproc_HistoryRange{direction=forward}).
+    AllEvents = mg_event_sink_client:get_history(es_opts(C), ?ES_ID, #mg_stateproc_HistoryRange{direction=forward}),
+    GeneratedEvents = [
+        E
+        || E = #mg_stateproc_SinkEvent{source_id = ?ID, source_ns = ?NS, event = #mg_stateproc_Event{}} <- AllEvents
+    ],
+    ?assert(erlang:length(GeneratedEvents) >= 3).
 
 -spec event_sink_get_last_event(config()) ->
     _.
@@ -615,7 +641,7 @@ config_with_multiple_event_sinks(_C) ->
                     overseer       => #{ interval => 100 }
                 },
                 retries => #{},
-                event_sink => <<"SingleES">>
+                event_sinks => [{mg_events_sink_machine, #{name => default, machine_id => <<"SingleES">>}}]
             },
             <<"2">> => #{
                 storage    => mg_storage_memory,
@@ -630,14 +656,23 @@ config_with_multiple_event_sinks(_C) ->
                     overseer       => #{ interval => 100 }
                 },
                 retries => #{},
-                event_sink => <<"SingleES">>
+                event_sinks => [
+                    {mg_events_sink_machine, #{
+                        name => machine,
+                        machine_id => <<"SingleES">>
+                    }},
+                    {mg_events_sink_kafka, #{
+                        name => kafka,
+                        topic => <<"mg_event_sink">>,
+                        client => mg_kafka_client
+                    }}
+                ]
             }
         }},
         {event_sink_ns, #{
             storage => mg_storage_memory,
             default_processing_timeout => 5000
-        }},
-        {event_sinks, [<<"SingleES">>]}
+        }}
     ],
     Apps = genlib_app:start_application_with(mg_woody_api, Config),
     [application:stop(App) || App <- Apps].
@@ -650,10 +685,9 @@ config_with_multiple_event_sinks(_C) ->
 start_machine(C, ID) ->
     case catch mg_automaton_client:start(automaton_options(C), ID, ID) of
         ok ->
+            ok;
+        #mg_stateproc_MachineAlreadyExists{} ->
             ok
-        % сейчас это не идемпотентная операция
-        % #'MachineAlreadyExists'{} ->
-        %     ok
     end.
 
 -spec create_event(binary(), config(), mg:id()) ->

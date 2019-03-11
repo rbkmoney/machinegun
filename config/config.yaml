@@ -46,7 +46,14 @@ namespaces:
     mg_test_ns:
         # only for testing, default 0
         # suicide_probability: 0.1
-        event_sink: main_event_sink
+        event_sinks:
+            machine:
+                type: machine
+                machine_id: main_event_sink
+            kafka:
+                type: kafka
+                client: default_kafka_client
+                topic: mg_test_ns
         default_processing_timeout: 30s
         timer_processing_timeout: 60s
         reschedule_timeout: 60s
@@ -66,6 +73,71 @@ storage:
 #     connect_timeout: 5S
 #     request_timeout: 10S
 
+## kafka settings example
+kafka:
+    default_kafka_client:
+        endpoints:
+            - host: "kafka1"
+              port: 9092
+        ssl:
+            certfile: "client.crt"
+            keyfile: "client.key"
+            cacertfile: "ca.crt"
+        producer:
+            compression: no_compression  # 'gzip' or 'snappy' to enable compression
+            # How many message sets (per-partition) can be sent to kafka broker
+            # asynchronously before receiving ACKs from broker.
+            partition_onwire_limit: 1
+            # Maximum time the broker can await the receipt of the
+            # number of acknowledgements in RequiredAcks. The timeout is not an exact
+            # limit on the request time for a few reasons: (1) it does not include
+            # network latency, (2) the timer begins at the beginning of the processing
+            # of this request so if many requests are queued due to broker overload
+            # that wait time will not be included, (3) kafka leader will not terminate
+            # a local write so if the local write time exceeds this timeout it will
+            # not be respected.
+            ack_timeout: 10s
+            # How many acknowledgements the kafka broker should receive from the
+            # clustered replicas before acking producer.
+            #   none: the broker will not send any response
+            #      (this is the only case where the broker will not reply to a request)
+            #   leader_only: The leader will wait the data is written to the local log before
+            #      sending a response.
+            #   all_isr: If it is 'all_isr' the broker will block until the message is committed by
+            #      all in sync replicas before acking.
+            required_acks: all_isr
+            # How many requests (per-partition) can be buffered without blocking the
+            # caller. The callers are released (by receiving the
+            # 'brod_produce_req_buffered' reply) once the request is taken into buffer
+            # and after the request has been put on wire, then the caller may expect
+            # a reply 'brod_produce_req_acked' when the request is accepted by kafka.
+            partition_buffer_limit: 256
+            # Messages are allowed to 'linger' in buffer for this amount of
+            # time before being sent.
+            # Definition of 'linger': A message is in 'linger' state when it is allowed
+            # to be sent on-wire, but chosen not to (for better batching).
+            max_linger: 0ms
+            # At most this amount (count not size) of messages are allowed to 'linger'
+            # in buffer. Messages will be sent regardless of 'linger' age when this
+            # threshold is hit.
+            # NOTE: It does not make sense to have this value set larger than
+            #       `partition_buffer_limit'
+            max_linger_count: 0
+            # In case callers are producing faster than brokers can handle (or
+            # congestion on wire), try to accumulate small requests into batches
+            # as much as possible but not exceeding max_batch_size.
+            # OBS: If compression is enabled, care should be taken when picking
+            #      the max batch size, because a compressed batch will be produced
+            #      as one message and this message might be larger than
+            #      'max.message.bytes' in kafka config (or topic config)
+            max_batch_size: 1M
+            # If {max_retries, N} is given, the producer retry produce request for
+            # N times before crashing in case of failures like connection being
+            # shutdown by remote or exceptions received in produce response from kafka.
+            # The special value N = -1 means 'retry indefinitely'
+            max_retries: 3
+            # Time in milli-seconds to sleep before retry the failed produce request.
+            retry_backoff: 500ms
 
 ##
 ## a short example for HG

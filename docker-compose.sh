@@ -14,6 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+
+CONFLUENT_PLATFORM_VERSION="5.1.2"  # with Kafka 2.1.1
+
 cat <<EOF
 # https://hub.docker.com/r/basho/riak-kv/
 version: '2'
@@ -29,6 +32,9 @@ services:
     command: /sbin/init
     depends_on:
       - riakdb
+      - kafka1
+      - kafka2
+      - kafka3
 
   riakdb:
     image: dr.rbkmoney.com/basho/riak-kv:ubuntu-2.1.4-1
@@ -52,6 +58,32 @@ services:
       - COORDINATOR_NODE=riakdb
     volumes:
       - ./riak_user.conf:/etc/riak/user.conf:ro
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:${CONFLUENT_PLATFORM_VERSION}
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+
+  kafka1: &kafka-broker
+    image: confluentinc/cp-kafka:${CONFLUENT_PLATFORM_VERSION}
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:9092
+  kafka2:
+    <<: *kafka-broker
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:9092
+  kafka3:
+    <<: *kafka-broker
+    environment:
+      KAFKA_BROKER_ID: 3
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:9092
 
 volumes:
   schemas:

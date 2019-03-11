@@ -37,10 +37,15 @@ pack(opaque, Opaque) ->
     pack_opaque(Opaque);
 pack(integer, Integer) when is_integer(Integer) ->
     Integer; % TODO check size
-pack(timestamp, Timestamp) ->
-    pack(datetime, genlib_time:unixtime_to_daytime(Timestamp));
-pack(datetime, Datetime) ->
-    format_datetime(Datetime);
+pack(timestamp_s, Timestamp) when is_integer(Timestamp) ->
+    {ok, TimestampBin} = rfc3339:format(Timestamp, second),
+    TimestampBin;
+pack(timestamp_ns, Timestamp) when is_integer(Timestamp) ->
+    {ok, TimestampBin} = rfc3339:format(Timestamp, nanosecond),
+    TimestampBin;
+pack(datetime, Datetime) when is_tuple(Datetime) ->
+    {ok, DatetimeBin} = rfc3339:format(Datetime),
+    DatetimeBin;
 pack({list, T}, Values) ->
     [pack(T, Value) || Value <- Values];
 
@@ -89,8 +94,8 @@ pack(event, #{id := ID, created_at := CreatedAt, body := Body}) ->
         data           = Data
     } = pack(event_body, Body),
     #mg_stateproc_Event{
-        id             = pack(event_id  , ID       ),
-        created_at     = pack(datetime  , CreatedAt),
+        id             = pack(event_id    , ID       ),
+        created_at     = pack(timestamp_ns, CreatedAt),
         format_version = FormatVersion,
         data           = Data
     };
@@ -118,7 +123,7 @@ pack(machine_event, #{ns := NS, id := ID, event := Event}) ->
     };
 pack(int_timer, {Timestamp, _, _, _}) ->
     % TODO сделать нормально
-    pack(timestamp, Timestamp);
+    pack(timestamp_s, Timestamp);
 
 
 %% actions
@@ -231,9 +236,13 @@ unpack(opaque, Opaque) ->
     unpack_opaque(Opaque);
 unpack(integer, Integer) when is_integer(Integer) ->
     Integer; % TODO check size
-unpack(timestamp, Timestamp) ->
-    genlib_time:daytime_to_unixtime(unpack(datetime, Timestamp));
-unpack(datetime, Datetime) ->
+unpack(timestamp_s, Timestamp) when is_binary(Timestamp) ->
+    {ok, Result} = rfc3339:to_time(Timestamp, second),
+    Result;
+unpack(timestamp_ns, Timestamp) when is_binary(Timestamp) ->
+    {ok, Result} = rfc3339:to_time(Timestamp, nanosecond),
+    Result;
+unpack(datetime, Datetime) when is_binary(Datetime) ->
     parse_datetime(Datetime);
 unpack({list, T}, Values) ->
     [unpack(T, Value) || Value <- Values];
@@ -290,9 +299,9 @@ unpack(event, Event) ->
         data           = Data
     },
     #{
-        id         => unpack(event_id  , ID       ),
-        created_at => unpack(datetime  , CreatedAt),
-        body       => unpack(event_body, Body     )
+        id         => unpack(event_id    , ID       ),
+        created_at => unpack(timestamp_ns, CreatedAt),
+        body       => unpack(event_body  , Body     )
     };
 unpack(history, History) ->
     unpack({list, event}, History);
@@ -321,7 +330,7 @@ unpack(machine_event, #mg_stateproc_MachineEvent{ns = NS, id = ID, event = Event
     };
 unpack(int_timer, Timestamp) ->
     % TODO сделать нормально
-    {unpack(timestamp, Timestamp), undefined, undefined, undefined};
+    {unpack(timestamp_s, Timestamp), undefined, undefined, undefined};
 
 %% actions
 unpack(complex_action, ComplexAction) ->
@@ -469,9 +478,3 @@ unpack_opaque(Arg) ->
 parse_datetime(Datetime) ->
     {ok, {Date, Time, _, 0}} = rfc3339:parse(Datetime),
     {Date, Time}.
-
--spec format_datetime(calendar:datetime()) ->
-    binary().
-format_datetime(Datetime) ->
-    {ok, DatetimeBin} = rfc3339:format(Datetime),
-    DatetimeBin.

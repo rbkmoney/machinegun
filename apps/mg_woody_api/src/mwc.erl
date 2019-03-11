@@ -124,8 +124,7 @@ get_events_machine(Namespace, Ref, HRange) ->
 em_opts(Namespace) ->
     mg_woody_api:events_machine_options(
         ns(Namespace),
-        ns_config(Namespace),
-        genlib_app:env(mg_woody_api, event_sink_ns)
+        application:get_all_env(mg_woody_api)
     ).
 
 -spec m_opts(scalar()) ->
