@@ -105,7 +105,8 @@ brod_client(ClientConfig) ->
     ProducerConfig = ?C:conf([producer], ClientConfig, []),
     [
         {endpoints, [
-            {"localhost", 9093}
+            {?C:conf([host], Endpoint), ?C:conf([port], Endpoint)}
+            || Endpoint <- ?C:conf([endpoints], ClientConfig)
         ]},
         {restart_delay_seconds, 10},
         {auto_start_producers, true},
