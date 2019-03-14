@@ -27,12 +27,14 @@ SERVICE_IMAGE_TAG ?= $(shell git rev-parse HEAD)
 # The tag for service image to be pushed with
 SERVICE_IMAGE_PUSH_TAG ?= $(SERVICE_IMAGE_TAG)
 
+REGISTRY ?= dr2.rbkmoney.com
+
 # Base image for the service
-BASE_IMAGE_NAME := service_erlang
-BASE_IMAGE_TAG := 16e2b3ef17e5fdefac8554ced9c2c74e5c6e9e11
+BASE_IMAGE_NAME := service-erlang
+BASE_IMAGE_TAG := a226aa4616c1ba9843020b63570221c13a3553a5
 
 # Build image tag to be used
-BUILD_IMAGE_TAG := 10ace69bc3a1fc3179672098b7be081f9f6018b2
+BUILD_IMAGE_TAG := 903ec30497023cef050d8f281ac0bfad668dc5f4
 
 CALL_ANYWHERE := all submodules rebar-update compile xref lint dialyze start devrel release clean distclean
 
