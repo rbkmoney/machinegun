@@ -122,7 +122,7 @@ child_spec(RegName, Options, ChildID) ->
 
 -spec start_link(_RegName, options()) ->
     mg_utils:gen_start_ret().
-start_link(RegName, #{queue_handler := Handler} = Options) ->
+start_link(RegName, #{queue_handler := Handler, pulse := Pulse} = Options) ->
     consuela_leader_supervisor:start_link(RegName, mg_utils_supervisor_wrapper, {
         #{strategy => one_for_all},
         mg_utils:lists_compact([
@@ -130,6 +130,9 @@ start_link(RegName, #{queue_handler := Handler} = Options) ->
             handler_child_spec(Handler, queue_handler),
             manager_child_spec(Options, manager)
         ])
+    },
+    #{
+        pulse => mg_consuela_pulse_adapter:pulse(leader, Pulse)
     }).
 
 -spec add_task(mg:ns(), name(), task_info()) ->
