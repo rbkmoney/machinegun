@@ -41,13 +41,15 @@ start_application(lager) ->
     ]);
 start_application(consuela) ->
     genlib_app:start_application_with(consuela, [
-        {nodename, "consul0"},
-        {namespace, <<"mg">>},
         {registry, #{
-            pulse => {?MODULE, {registry, info}}
-        }},
-        {keeper, #{
-            pulse => {?MODULE, {keeper, info}}
+            nodename => "consul0",
+            namespace => <<"mg">>,
+            registry => #{
+                pulse => {?MODULE, {registry, info}}
+            },
+            keeper => #{
+                pulse => {?MODULE, {keeper, info}}
+            }
         }}
     ]);
 start_application({AppName, Env}) ->
