@@ -110,7 +110,7 @@ handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason) ->
         {shutdown  , _} -> start_and_retry_call(Options, ID, Call, ReqCtx, Deadline);
         {timeout   , _} -> {error, Reason};
         {killed    , _} -> {error, {transient, unavailable}};
-        {consuela  , _} -> {error, {transient, registry_unavailable}};
+        {consuela  , _} -> {error, {transient, {registry_unavailable, Reason}}};
          Unknown        -> {error, {unexpected_exit, Unknown}}
     end.
 
