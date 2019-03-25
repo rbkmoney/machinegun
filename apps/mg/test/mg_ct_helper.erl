@@ -37,6 +37,15 @@ start_application(lager) ->
         ]},
         {async_threshold, undefined}
     ]);
+start_application(brod) ->
+    genlib_app:start_application_with(brod, [
+        {clients, [
+            {mg_kafka_client, [
+                {endpoints, [{"kafka1", 9092}, {"kafka2", 9092}, {"kafka3", 9092}]},
+                {auto_start_producers, true}
+            ]}
+        ]}
+    ]);
 start_application({AppName, Env}) ->
     genlib_app:start_application_with(AppName, Env);
 start_application(AppName) ->

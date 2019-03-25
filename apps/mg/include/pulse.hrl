@@ -199,3 +199,18 @@
     msg_queue_len :: non_neg_integer(),
     msg_queue_limit :: mg_workers_manager:queue_limit()
 }).
+
+%% Events sink operations
+
+-record(mg_events_sink_kafka_sent, {
+    name :: atom(),
+    namespace :: mg:ns(),
+    machine_id :: mg:id(),
+    request_context :: mg:request_context(),
+    deadline :: mg_utils:deadline(),
+    encode_duration :: non_neg_integer(),  % in native units
+    send_duration :: non_neg_integer(),  % in native units
+    data_size :: non_neg_integer(),  % in bytes
+    partition :: brod:partition(),
+    offset :: brod:offset()
+}).
