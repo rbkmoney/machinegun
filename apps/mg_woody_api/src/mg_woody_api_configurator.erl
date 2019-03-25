@@ -31,6 +31,7 @@
 -export([time_interval    /2]).
 -export([ip               /1]).
 -export([utf_bin          /1]).
+-export([atom             /1]).
 -export([conf             /3]).
 -export([conf             /2]).
 -export([probability      /1]).
@@ -220,6 +221,11 @@ ip(Host) ->
     binary().
 utf_bin(IDStr) ->
     unicode:characters_to_binary(IDStr, utf8).
+
+-spec atom(string()) ->
+    atom().
+atom(AtomStr) ->
+    erlang:binary_to_atom(utf_bin(AtomStr), utf8).
 
 -spec conf(yaml_config_path(), yaml_config(), _) ->
     _.

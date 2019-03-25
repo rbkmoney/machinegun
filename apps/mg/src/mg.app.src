@@ -25,6 +25,7 @@
         gproc,
         consuela,
         riakc,
+        brod,
         msgpack
     ]},
     {env, []},

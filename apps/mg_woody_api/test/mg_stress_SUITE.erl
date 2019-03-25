@@ -111,7 +111,7 @@ mg_woody_api_config(_C) ->
                     overseer       => #{ interval => 100 }
                 },
                 retries => #{},
-                event_sink => ?ES_ID
+                event_sinks => [{mg_events_sink_machine, #{name => default, machine_id => ?ES_ID}}]
             }
         }},
         {event_sink_ns, #{

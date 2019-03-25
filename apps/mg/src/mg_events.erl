@@ -73,7 +73,7 @@
 -type event() :: event(body()).
 -type event(T) :: #{
     id         => id(),
-    created_at => genlib_time:ts(),
+    created_at => integer(),  % in nanosecond
     body       => T
 }.
 
@@ -159,7 +159,8 @@ generate_event(EventBody, LastID) ->
     Event =
         #{
             id         => ID,
-            created_at => erlang:system_time(),
+            % We use `nanosecond` for backward compatibility
+            created_at => os:system_time(nanosecond),
             body       => EventBody
         },
     {Event, ID}.

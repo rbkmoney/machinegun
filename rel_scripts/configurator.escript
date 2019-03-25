@@ -39,6 +39,7 @@ sys_config(YamlConfig) ->
         {consuela    , consuela    (YamlConfig)},
         {how_are_you , how_are_you (YamlConfig)},
         {snowflake   , snowflake   (YamlConfig)},
+        {brod        , brod        (YamlConfig)},
         {mg_woody_api, mg_woody_api(YamlConfig)}
     ].
 
@@ -143,6 +144,51 @@ hay_statsd_publisher(YamlConfig) ->
 
 snowflake(YamlConfig) ->
     [{machine_id, ?C:conf([snowflake_machine_id], YamlConfig, 0)}].
+
+brod(YamlConfig) ->
+    Clients = ?C:conf([kafka], YamlConfig, []),
+    [
+        {clients, [
+            {?C:atom(Name), brod_client(ClientConfig)}
+            || {Name, ClientConfig} <- Clients
+        ]}
+    ].
+
+brod_client(ClientConfig) ->
+    ProducerConfig = ?C:conf([producer], ClientConfig, []),
+    [
+        {endpoints, [
+            {?C:conf([host], Endpoint), ?C:conf([port], Endpoint)}
+            || Endpoint <- ?C:conf([endpoints], ClientConfig)
+        ]},
+        {restart_delay_seconds, 10},
+        {auto_start_producers, true},
+        {default_producer_config, [
+            {topic_restart_delay_seconds, 10},
+            {partition_restart_delay_seconds, 2},
+            {partition_buffer_limit, ?C:conf([partition_buffer_limit], ProducerConfig, 256)},
+            {partition_onwire_limit, ?C:conf([partition_onwire_limit], ProducerConfig, 1)},
+            {max_batch_size, ?C:mem_bytes(?C:conf([max_batch_size], ProducerConfig, "1M"))},
+            {max_retries, ?C:conf([max_retries], ProducerConfig, 3)},
+            {retry_backoff_ms, ?C:time_interval(?C:conf([retry_backoff], ProducerConfig, "500ms"), ms)},
+            {required_acks, ?C:atom(?C:conf([required_acks], ProducerConfig, "all_isr"))},
+            {ack_timeout, ?C:time_interval(?C:conf([ack_timeout], ProducerConfig, "10s"), ms)},
+            {compression, ?C:atom(?C:conf([compression], ProducerConfig, "no_compression"))},
+            {max_linger_ms, ?C:time_interval(?C:conf([max_linger], ProducerConfig, "0ms"), ms)},
+            {max_linger_count, ?C:conf([max_linger_count], ProducerConfig, 0)}
+        ]},
+        {ssl, brod_client_ssl(?C:conf([ssl], ClientConfig, false))}
+    ].
+
+brod_client_ssl(false) ->
+    false;
+brod_client_ssl(SslConfig) ->
+    Opts = [
+        {certfile, ?C:conf([certfile], SslConfig, undefined)},
+        {keyfile, ?C:conf([keyfile], SslConfig, undefined)},
+        {cacertfile, ?C:conf([cacertfile], SslConfig, undefined)}
+    ],
+    [Opt || Opt = {_Key, Value} <- Opts, Value =/= undefined].
 
 mg_woody_api(YamlConfig) ->
     [
@@ -271,51 +317,46 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
     Timeout = fun(TimeoutName, Default) ->
         ?C:time_interval(?C:conf([TimeoutName], NSYamlConfig, Default), ms)
     end,
-    NS0 = #{
-            storage   => storage(Name, YamlConfig),
-            processor => #{
-                url            => ?C:utf_bin(?C:conf([processor, url], NSYamlConfig)),
-                transport_opts => #{
-                    pool => erlang:list_to_atom(NameStr),
-                    max_connections => ?C:conf([processor, pool_size], NSYamlConfig, 50)
-                }
-            },
-            default_processing_timeout => Timeout(default_processing_timeout, "30S"),
-            timer_processing_timeout => Timeout(timer_processing_timeout, "60S"),
-            reschedule_timeout => Timeout(reschedule_timeout, "60S"),
-            retries => #{
-                storage   => {exponential, infinity, 2, 10, 60 * 1000},
-                %% max_total_timeout not supported for timers yet, see mg_retry:new_strategy/2 comments
-                %% actual timers sheduling resolution is one second
-                timers    => {exponential, 100, 2, 1000, 30 * 60 * 1000},
-                processor => {exponential, {max_total_timeout, 24 * 60 * 60 * 1000}, 2, 10, 60 * 1000}
-            },
-            schedulers => #{
-                timers         => #{
-                    interval     => 1000,
-                    limit        => <<"scheduler_tasks_total">>,
-                    share        => 2
-                },
-                timers_retries => #{
-                    interval     => 1000,
-                    limit        => <<"scheduler_tasks_total">>,
-                    share        => 1
-                },
-                overseer       => #{
-                    interval     => 1000,
-                    limit        => <<"scheduler_tasks_total">>,
-                    no_task_wait => 10 * 60 * 1000,  % 10 min
-                    share        => 0
-                }
-            },
-            suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0))
+    {Name, #{
+        storage   => storage(Name, YamlConfig),
+        processor => #{
+            url            => ?C:utf_bin(?C:conf([processor, url], NSYamlConfig)),
+            transport_opts => #{
+                pool => erlang:list_to_atom(NameStr),
+                max_connections => ?C:conf([processor, pool_size], NSYamlConfig, 50)
+            }
         },
-    NS1 =
-        case ?C:conf([event_sink], NSYamlConfig, undefined) of
-            undefined -> NS0;
-            EventSink -> NS0#{event_sink => ?C:utf_bin(EventSink)}
-        end,
-    {Name, NS1}.
+        default_processing_timeout => Timeout(default_processing_timeout, "30S"),
+        timer_processing_timeout => Timeout(timer_processing_timeout, "60S"),
+        reschedule_timeout => Timeout(reschedule_timeout, "60S"),
+        retries => #{
+            storage   => {exponential, infinity, 2, 10, 60 * 1000},
+            %% max_total_timeout not supported for timers yet, see mg_retry:new_strategy/2 comments
+            %% actual timers sheduling resolution is one second
+            timers    => {exponential, 100, 2, 1000, 30 * 60 * 1000},
+            processor => {exponential, {max_total_timeout, 24 * 60 * 60 * 1000}, 2, 10, 60 * 1000}
+        },
+        schedulers => #{
+            timers         => #{
+                interval     => 1000,
+                limit        => <<"scheduler_tasks_total">>,
+                share        => 2
+            },
+            timers_retries => #{
+                interval     => 1000,
+                limit        => <<"scheduler_tasks_total">>,
+                share        => 1
+            },
+            overseer       => #{
+                interval     => 1000,
+                limit        => <<"scheduler_tasks_total">>,
+                no_task_wait => 10 * 60 * 1000,  % 10 min
+                share        => 0
+            }
+        },
+        event_sinks => [event_sink(ES) || ES <- ?C:conf([event_sinks], NSYamlConfig, [])],
+        suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0))
+    }}.
 
 event_sink_ns(YamlConfig) ->
     #{
@@ -323,6 +364,21 @@ event_sink_ns(YamlConfig) ->
         duplicate_search_batch     => 1000,
         default_processing_timeout => ?C:time_interval("30S", ms)
     }.
+
+event_sink({Name, ESYamlConfig}) ->
+    event_sink(?C:atom(?C:conf([type], ESYamlConfig)), Name, ESYamlConfig).
+
+event_sink(machine, Name, ESYamlConfig) ->
+    {mg_events_sink_machine, #{
+        name       => ?C:atom(Name),
+        machine_id => ?C:utf_bin(?C:conf([machine_id], ESYamlConfig))
+    }};
+event_sink(kafka, Name, ESYamlConfig) ->
+    {mg_events_sink_kafka, #{
+        name       => ?C:atom(Name),
+        client     => ?C:atom(?C:conf([client], ESYamlConfig)),
+        topic      => ?C:utf_bin(?C:conf([topic], ESYamlConfig))
+    }}.
 
 %%
 %% vm.args
