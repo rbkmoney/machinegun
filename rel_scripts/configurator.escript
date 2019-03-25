@@ -61,7 +61,7 @@ lager(YamlConfig) ->
 
 consuela(YamlConfig) ->
     lists:append(
-        conf_with([consuela, registry], YamlConfig, [], fun (RegConfig) -> [
+        conf_with([consuela, registry], YamlConfig, fun (RegConfig) -> [
             {registry, #{
                 nodename  => ?C:conf([nodename], RegConfig),
                 namespace => ?C:utf_bin(?C:conf([namespace], RegConfig, "mg")),
@@ -354,6 +354,9 @@ conf_if(YamlConfigPath, YamlConfig, Value) ->
         true  -> Value;
         false -> []
     end.
+
+conf_with(YamlConfigPath, YamlConfig, Fun) ->
+    Fun(?C:conf(YamlConfigPath, YamlConfig)).
 
 conf_with(YamlConfigPath, YamlConfig, Default, Fun) ->
     case ?C:conf(YamlConfigPath, YamlConfig, undefined) of
