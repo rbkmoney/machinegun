@@ -27,7 +27,7 @@ SERVICE_IMAGE_TAG ?= $(shell git rev-parse HEAD)
 # The tag for service image to be pushed with
 SERVICE_IMAGE_PUSH_TAG ?= $(SERVICE_IMAGE_TAG)
 
-REGISTRY := dr2.rbkmoney.com
+REGISTRY ?= dr2.rbkmoney.com
 
 # Base image for the service
 BASE_IMAGE_NAME := service-erlang
