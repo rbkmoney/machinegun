@@ -34,46 +34,44 @@ build('machinegun', 'docker-host', finalHook) {
     withWsCache = load("${env.JENKINS_LIB}/withWsCache.groovy")
   }
 
-  docker.withRegistry('https://dr2.rbkmoney.com/v2/', 'jenkins_harbor') {
-    pipeDefault() {
-      runStage('compile') {
-        withGithubPrivkey{
-            sh 'make wc_compile'
-        }
+  pipeDefault() {
+    runStage('compile') {
+      withGithubPrivkey{
+          sh 'make wc_compile'
       }
-      runStage('lint') {
-        sh 'make wc_lint'
+    }
+    runStage('lint') {
+      sh 'make wc_lint'
+    }
+    runStage('xref') {
+      sh 'make wc_xref'
+    }
+    runStage('dialyze') {
+      withWsCache("_build/default/rebar3_19.3_plt") {
+        sh 'make wc_dialyze'
       }
-      runStage('xref') {
-        sh 'make wc_xref'
+    }
+    runStage('test') {
+      sh "make wdeps_test"
+    }
+    runStage('make release') {
+      withGithubPrivkey{
+        sh "make wc_release"
       }
-      runStage('dialyze') {
-        withWsCache("_build/default/rebar3_19.3_plt") {
-          sh 'make wc_dialyze'
-        }
-      }
-      runStage('test') {
-        sh "make wdeps_test"
-      }
-      runStage('make release') {
-        withGithubPrivkey{
-          sh "make wc_release"
-        }
-      }
-      runStage('build image') {
-        sh "make build_image"
-      }
+    }
+    runStage('build image') {
+      sh "make build_image"
+    }
 
-      try {
-        if (env.BRANCH_NAME == 'master') {
-          runStage('push image') {
-            sh "make push_image"
-          }
+    try {
+      if (env.BRANCH_NAME == 'master') {
+        runStage('push image') {
+          sh "make push_image"
         }
-      } finally {
-        runStage('rm local image') {
-          sh 'make rm_local_image'
-        }
+      }
+    } finally {
+      runStage('rm local image') {
+        sh 'make rm_local_image'
       }
     }
   }
