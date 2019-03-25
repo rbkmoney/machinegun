@@ -52,7 +52,7 @@ add_events(Options, NS, MachineID, Events, ReqCtx, Deadline) ->
     StartTimestamp = erlang:monotonic_time(),
     Batch = encode(Encoder, NS, MachineID, Events),
     EncodeTimestamp = erlang:monotonic_time(),
-    {ok, Partition, Offset} = produce(Client, Topic, MachineID, Batch),
+    {ok, Partition, Offset} = produce(Client, Topic, event_key(NS, MachineID), Batch),
     FinishTimestamp = erlang:monotonic_time(),
     ok = mg_pulse:handle_beat(Pulse, #mg_events_sink_kafka_sent{
         name = Name,
@@ -69,17 +69,17 @@ add_events(Options, NS, MachineID, Events, ReqCtx, Deadline) ->
 
 %% Internals
 
--spec event_key(mg:ns(), mg:id(), event()) ->
+-spec event_key(mg:ns(), mg:id()) ->
     term().
-event_key(NS, MachineID, #{id := EventID}) ->
-    <<NS/binary, " ", MachineID/binary, " ", EventID:64/big>>.
+event_key(NS, MachineID) ->
+    <<NS/binary, " ", MachineID/binary>>.
 
 -spec encode(encoder(), mg:ns(), mg:id(), [event()]) ->
     brod:batch_input().
 encode(Encoder, NS, MachineID, Events) ->
     [
         #{
-            key => event_key(NS, MachineID, Event),
+            key => event_key(NS, MachineID),
             value => Encoder(NS, MachineID, Event)
         }
         || Event <- Events
