@@ -14,7 +14,7 @@
 %%% limitations under the License.
 %%%
 
--module(mg_events_sink_SUITE).
+-module(mg_events_sink_machine_SUITE).
 -include_lib("stdlib/include/assert.hrl").
 -include_lib("common_test/include/ct.hrl").
 
@@ -64,7 +64,7 @@ groups() ->
     config().
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
-    % dbg:tpl({mg_events_sink, '_', '_'}, x),
+    % dbg:tpl({mg_events_sink_machine, '_', '_'}, x),
     Apps = mg_ct_helper:start_applications([mg]),
     Pid = start_event_sink(event_sink_options()),
     true = erlang:unlink(Pid),
@@ -93,7 +93,7 @@ add_events_test(C) ->
 -spec get_unexisted_event_test(config()) ->
     _.
 get_unexisted_event_test(_C) ->
-    [] = mg_events_sink:get_history(event_sink_options(), ?ES_ID, {42, undefined, forward}).
+    [] = mg_events_sink_machine:get_history(event_sink_options(), ?ES_ID, {42, undefined, forward}).
 
 -spec not_idempotent_add_get_events_test(config()) ->
     _.
@@ -117,7 +117,7 @@ not_idempotent_add_get_events_test(C) ->
 -spec add_events(config()) ->
     _.
 add_events(C) ->
-    mg_events_sink:add_events(event_sink_options(), ?ES_ID, ?SOURCE_NS, ?SOURCE_ID,
+    mg_events_sink_machine:add_events(event_sink_options(), ?SOURCE_NS, ?SOURCE_ID,
         ?config(events, C), null, mg_utils:default_deadline()).
 
 -spec get_history(config()) ->
@@ -125,23 +125,25 @@ add_events(C) ->
 get_history(_C) ->
     HRange = {undefined, undefined, forward},
     % _ = ct:pal("~p", [PreparedEvents]),
-    EventsSinkEvents = mg_events_sink:get_history(event_sink_options(), ?ES_ID, HRange),
+    EventsSinkEvents = mg_events_sink_machine:get_history(event_sink_options(), ?ES_ID, HRange),
     [{ID, Body} || #{id := ID, body := Body} <- EventsSinkEvents].
 
--spec start_event_sink(mg_events_sink:options()) ->
+-spec start_event_sink(mg_events_sink_machine:ns_options()) ->
     pid().
 start_event_sink(Options) ->
     mg_utils:throw_if_error(
         mg_utils_supervisor_wrapper:start_link(
             #{strategy => one_for_all},
-            [mg_events_sink:child_spec(Options, event_sink)]
+            [mg_events_sink_machine:child_spec(Options, event_sink)]
         )
     ).
 
 -spec event_sink_options() ->
-    mg_events_sink:options().
+    mg_events_sink_machine:ns_options().
 event_sink_options() ->
     #{
+        name                   => machine,
+        machine_id             => ?ES_ID,
         namespace              => ?ES_ID,
         storage                => mg_storage_memory,
         pulse                  => ?MODULE,
