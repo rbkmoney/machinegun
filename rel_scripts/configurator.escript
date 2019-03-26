@@ -67,6 +67,7 @@ consuela(YamlConfig) ->
                 nodename  => ?C:conf([nodename], RegConfig),
                 namespace => ?C:utf_bin(?C:conf([namespace], RegConfig, "mg")),
                 consul    => consul_client(mg_consuela_registry, YamlConfig),
+                shutdown  => ?C:time_interval(?C:conf([shutdown_timeout], DiscoveryConfig, undefined), 'ms'),
                 keeper    => #{
                     pulse => mg_consuela_pulse_adapter:pulse(session_keeper, mg_woody_api_pulse)
                 },
