@@ -110,6 +110,8 @@
 %%
 %% API
 %%
+-type scheduler_id() :: overseer | timers | timers_retries.
+
 -type scheduler_opt() :: disable | #{
     interval     => pos_integer(),
     no_task_wait => pos_integer(),
@@ -1031,8 +1033,6 @@ storage_reg_name(Options) ->
 gproc_key(Type, #{namespace := Namespace}) ->
     {n, l, {?MODULE, Type, Namespace}}.
 
--type scheduler_id() :: overseer | timers | timers_retries.
-
 -spec scheduler_child_spec(scheduler_id(), options()) ->
     supervisor:child_spec() | undefined.
 scheduler_child_spec(SchedulerID, Options) ->
@@ -1082,7 +1082,7 @@ scheduler_options(Name, HandlerMod, Options, HandlerOptions, Config) ->
         #{
             namespace => NS,
             scheduler_name => Name,
-            pulse => Pulse,
+            pulse => pulse,
             machine => Options
         },
         HandlerOptions
