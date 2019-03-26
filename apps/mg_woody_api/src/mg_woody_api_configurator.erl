@@ -29,6 +29,7 @@
 -export([mem_bytes        /1]).
 -export([time_interval    /1]).
 -export([time_interval    /2]).
+-export([proplist         /1]).
 -export([ip               /1]).
 -export([utf_bin          /1]).
 -export([atom             /1]).
@@ -211,6 +212,12 @@ time_interval_mul(3) -> 60;
 time_interval_mul(2) -> 1000;
 time_interval_mul(1) -> 1000.
 
+-spec proplist(yaml_config() | undefined) ->
+    proplists:proplist() | undefined.
+proplist(undefined) ->
+    undefined;
+proplist(Config) ->
+    [{erlang:list_to_existing_atom(Key), Value} || {Key, Value} <- Config].
 
 -spec ip(string()) ->
     inet:ip_address().

@@ -112,7 +112,7 @@ consul_client(Name, YamlConfig) ->
                 recv_timeout =>
                     ?C:time_interval(?C:conf([consul, recv_timeout   ], YamlConfig, undefined), 'ms'),
                 ssl_options =>
-                    ?C:conf([consul, ssl_options      ], YamlConfig, undefined),
+                    ?C:proplist(?C:conf([consul, ssl_options      ], YamlConfig, undefined)),
                 pulse =>
                     mg_consuela_pulse_adapter:pulse(client, mg_woody_api_pulse)
             })
