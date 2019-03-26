@@ -25,10 +25,11 @@
 %% pulse types
 -type beat() ::
       mg_pulse:beat()
+    | mg_consuela_pulse_adapter:beat()
     | #woody_event{}
     | #woody_request_handle_error{}.
 
--export_type([beat   /0]).
+-export_type([beat/0]).
 
 %%
 %% mg_pulse handler

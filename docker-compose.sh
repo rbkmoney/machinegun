@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
+CONSUL_VERSION=1.4.2
 CONFLUENT_PLATFORM_VERSION="5.1.2"  # with Kafka 2.1.1
 
 cat <<EOF
@@ -58,6 +58,24 @@ services:
       - COORDINATOR_NODE=riakdb
     volumes:
       - ./riak_user.conf:/etc/riak/user.conf:ro
+
+  consul1: &consul-server
+    image: consul:${CONSUL_VERSION}
+    hostname: consul1
+    command:
+      agent -server -retry-join consul0 -client 0.0.0.0
+
+  consul2:
+    <<: *consul-server
+    hostname: consul2
+
+  consul0:
+    <<: *consul-server
+    hostname: consul0
+    ports:
+      - "8500:8500"
+    command:
+      agent -server -bootstrap-expect 3 -ui -client 0.0.0.0
 
   zookeeper:
     image: confluentinc/cp-zookeeper:${CONFLUENT_PLATFORM_VERSION}

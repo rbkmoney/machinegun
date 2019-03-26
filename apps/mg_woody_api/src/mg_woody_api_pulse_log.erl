@@ -98,7 +98,172 @@ format_beat(#mg_timer_lifecycle_rescheduled{target_timestamp = TS, attempt = Att
 format_beat(#mg_timer_lifecycle_rescheduling_error{exception = {_, Reason, _}} = Beat) ->
     Context = ?beat_to_meta(mg_timer_lifecycle_rescheduling_error, Beat),
     {info, {"machine rescheduling failed ~p", [Reason]}, Context};
+
+format_beat({consuela, Beat = {Producer, _}}) ->
+    {Level, Format, Context} = format_consuela_beat(Beat),
+    {Level, Format, [{consuela_producer, Producer} | Context]};
+
 format_beat(_Beat) ->
+    undefined.
+
+%% consuela
+-spec format_consuela_beat(mg_consuela_pulse_adapter:beat()) ->
+    log_msg() | undefined.
+
+%% consul client
+format_consuela_beat({client, {request, {Method, Url, _Headers, Body}}}) ->
+    {debug, {"consul request: ~s ~s ~p", [Method, Url, Body]}, [
+        {mg_pulse_event_id, consuela_client_request}
+    ]};
+format_consuela_beat({client, {response, Response = {ok, Status, _Headers, _Body}}}) ->
+    {debug, {"consul response: ~p", [Response]}, [
+        {mg_pulse_event_id, consuela_client_response},
+        {http, [{status, Status}]}
+    ]};
+format_consuela_beat({client, {response, Error = {error, Reason}}}) ->
+    {warning, {"consul request failed: ~p", [Error]}, [
+        {mg_pulse_event_id, consuela_client_request_failed},
+        {error, [{reason, genlib:print(Reason, 500)}]}
+    ]};
+
+%% registry
+format_consuela_beat({registry_server, {{register, {Name, Pid}}, Status}}) ->
+    case Status of
+        started ->
+            {debug, {"registering ~p as ~p ...", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_registration_started}
+            ]};
+        succeeded ->
+            {debug, {"registered ~p as ~p", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_registration_succeeded}
+            ]};
+        {failed, Reason} ->
+            {warning, {"failed to register ~p as ~p", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_registration_failed},
+                {error, [{reason, genlib:print(Reason, 500)}]}
+            ]}
+    end;
+format_consuela_beat({registry_server, {{unregister, Reg}, Status}}) ->
+    {Name, Pid} = case Reg of
+        {_, N, P} -> {N, P};
+        {N, P}    -> {N, P}
+    end,
+    case Status of
+        started ->
+            {debug, {"unregistering ~p known as ~p ...", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_unregistration_started}
+            ]};
+        succeeded ->
+            {debug, {"unregistered ~p known as ~p", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_unregistration_succeeded}
+            ]};
+        {failed, Reason} ->
+            {warning, {"failed to unregister ~p known as ~p", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_unregistration_failed},
+                {error, [{reason, genlib:print(Reason, 500)}]}
+            ]}
+    end;
+
+%% zombie reaper
+format_consuela_beat({zombie_reaper, {{zombie, {Rid, Name, Pid}}, Status}}) ->
+    {Level, Format, Context} = case Status of
+        enqueued ->
+            {info, {"enqueued zombie registration ~p as ~p", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_zombie_enqueued}
+            ]};
+        {reaping, succeeded} ->
+            {info, {"reaped zombie registration ~p as ~p", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_zombie_reaped}
+            ]};
+        {reaping, {failed, Reason}} ->
+            {warning, {"reaped zombie registration ~p as ~p failed", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_zombie_failed},
+                {error, [{reason, genlib:print(Reason, 500)}]}
+            ]}
+    end,
+    {Level, Format, [{registration_id, Rid} | Context]};
+
+%% leader sup
+format_consuela_beat({leader, {{leader, Name}, Status}}) ->
+    case Status of
+        {started, Pid} ->
+            {info, {"leader ~p started", [Name]}, [
+                {mg_pulse_event_id, consuela_leader_sup_started},
+                {leader_pid, Pid}
+            ]};
+        {down, Pid, Reason} ->
+            {info, {"leader ~p looks down from here", [Name]}, [
+                {mg_pulse_event_id, consuela_leader_sup_down},
+                {leader_pid, Pid},
+                {error, [{reason, genlib:print(Reason, 500)}]}
+            ]}
+    end;
+format_consuela_beat({leader, {{warden, Name}, {started, Pid}}}) ->
+    {info, {"leader ~p warden started", [Name]}, [
+        {mg_pulse_event_id, consuela_leader_warden_started},
+        {warden_pid, Pid}
+    ]};
+format_consuela_beat({leader, {{warden, Name}, {stopped, Pid}}}) ->
+    {info, {"leader ~p warden stopped", [Name]}, [
+        {mg_pulse_event_id, consuela_leader_warden_stopped},
+        {warden_pid, Pid}
+    ]};
+
+%% kinda generic beats
+format_consuela_beat({_Producer, {{deadline_call, Deadline, Call}, Status}}) ->
+    TimeLeft = Deadline - erlang:monotonic_time(millisecond),
+    case Status of
+        accepted ->
+            {debug, {"accepted call ~p with ~p ms time left", [Call, TimeLeft]}, [
+                {mg_pulse_event_id, consuela_deadline_call_accepted},
+                {time_left, TimeLeft}
+            ]};
+        rejected ->
+            {warning, {"rejected stale call ~p (~p ms late)", [Call, -TimeLeft]}, [
+                {mg_pulse_event_id, consuela_deadline_call_rejected},
+                {time_left, TimeLeft}
+            ]}
+    end;
+format_consuela_beat({_Producer, {{timer, TRef}, Status}}) ->
+    case Status of
+        {started, Timeout} ->
+            {debug, {"timer ~p armed to fire after ~p ms", [TRef, Timeout]}, [
+                {mg_pulse_event_id, consuela_timer_started},
+                {timeout, Timeout}
+            ]};
+        {started, Msg, Timeout} ->
+            {debug, {"timer ~p armed to fire ~p after ~p ms", [TRef, Msg, Timeout]}, [
+                {mg_pulse_event_id, consuela_timer_started},
+                {timeout, Timeout}
+            ]};
+        fired ->
+            {debug, {"timer ~p fired", [TRef]}, [{mg_pulse_event_id, consuela_timer_fired}]};
+        reset ->
+            {debug, {"timer ~p reset", [TRef]}, [{mg_pulse_event_id, consuela_timer_reset}]}
+    end;
+format_consuela_beat({_Producer, {{monitor, MRef}, Status}}) ->
+    case Status of
+        set ->
+            {debug, {"monitor ~p set", [MRef]}, [{mg_pulse_event_id, consuela_monitor_set}]};
+        fired ->
+            {debug, {"monitor ~p fired", [MRef]}, [{mg_pulse_event_id, consuela_monitor_fired}]}
+    end;
+format_consuela_beat({_Producer, {unexpected, {Type, Message}}}) ->
+    case Type of
+        {call, From} ->
+            {warning, {"received unexpected call from ~p: ~p", [From, Message]}, [
+                {mg_pulse_event_id, consuela_unexpected_call}
+            ]};
+        cast ->
+            {warning, {"received unexpected cast: ~p", [Message]}, [
+                {mg_pulse_event_id, consuela_unexpected_cast}
+            ]};
+        info ->
+            {warning, {"received unexpected info: ~p", [Message]}, [
+                {mg_pulse_event_id, consuela_unexpected_info}
+            ]}
+    end;
+format_consuela_beat({_Producer, _Beat}) ->
     undefined.
 
 -spec extract_meta(atom(), any()) ->

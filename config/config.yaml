@@ -23,6 +23,18 @@ woody_server:
     ip: "::"
     port: 8022
     keep_alive_timeout: 60s
+consuela:
+    registry:
+        nodename: mhost1
+    discovery:
+        name: machinegun
+        tags:
+            - production
+consul:
+    url: http://localhost:8500
+    acl_token: LONGUNREADABLESTRING
+    connect_timeout: 200ms
+    recv_timeout: 1s
 limits:
     process_heap: 2M # heap limit
     disk: # uses only for health check

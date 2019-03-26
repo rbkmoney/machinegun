@@ -36,6 +36,7 @@ main([YamlConfigFilename, ConfigsPath]) ->
 sys_config(YamlConfig) ->
     [
         {lager       , lager       (YamlConfig)},
+        {consuela    , consuela    (YamlConfig)},
         {how_are_you , how_are_you (YamlConfig)},
         {snowflake   , snowflake   (YamlConfig)},
         {brod        , brod        (YamlConfig)},
@@ -58,6 +59,66 @@ lager(YamlConfig) ->
             ]}
         ]}
     ].
+
+consuela(YamlConfig) ->
+    lists:append(
+        conf_with([consuela, registry], YamlConfig, fun (RegConfig) -> [
+            {registry, #{
+                nodename  => ?C:conf([nodename], RegConfig),
+                namespace => ?C:utf_bin(?C:conf([namespace], RegConfig, "mg")),
+                consul    => consul_client(mg_consuela_registry, YamlConfig),
+                shutdown  => ?C:time_interval(?C:conf([shutdown_timeout], DiscoveryConfig, undefined), 'ms'),
+                keeper    => #{
+                    pulse => mg_consuela_pulse_adapter:pulse(session_keeper, mg_woody_api_pulse)
+                },
+                reaper    => #{
+                    pulse => mg_consuela_pulse_adapter:pulse(zombie_reaper, mg_woody_api_pulse)
+                },
+                registry  => #{
+                    pulse => mg_consuela_pulse_adapter:pulse(registry_server, mg_woody_api_pulse)
+                }
+            }}
+        ] end),
+        conf_with([consuela, discovery], YamlConfig, [], fun (DiscoveryConfig) -> [
+            {discovery, #{
+                name      => service_name(YamlConfig),
+                tags      => [?C:utf_bin(T) || T <- ?C:conf([tags], DiscoveryConfig, [])],
+                consul    => consul_client(mg_consuela_discovery, YamlConfig),
+                opts      => #{
+                    interval => genlib_map:compact(#{
+                        init => ?C:time_interval(?C:conf([interval, init], DiscoveryConfig, undefined), 'ms'),
+                        idle => ?C:time_interval(?C:conf([interval, idle], DiscoveryConfig, undefined), 'ms')
+                    }),
+                    pulse => mg_consuela_pulse_adapter:pulse(discovery_server, mg_woody_api_pulse)
+                }
+            }}
+        ] end)
+    ).
+
+consul_client(Name, YamlConfig) ->
+    #{
+        url   => ?C:conf([consul, url], YamlConfig),
+        opts  => genlib_map:compact(#{
+            datacenter => ?C:conf([consul, datacenter], YamlConfig, undefined),
+            acl        => ?C:conf([consul, acl_token ], YamlConfig, undefined),
+            transport_opts => genlib_map:compact(#{
+                pool =>
+                    ?C:conf([consul, pool             ], YamlConfig, Name),
+                max_connections =>
+                    ?C:conf([consul, max_connections  ], YamlConfig, 8),
+                max_response_size =>
+                    ?C:conf([consul, max_response_size], YamlConfig, undefined),
+                connect_timeout =>
+                    ?C:time_interval(?C:conf([consul, connect_timeout], YamlConfig, undefined), 'ms'),
+                recv_timeout =>
+                    ?C:time_interval(?C:conf([consul, recv_timeout   ], YamlConfig, undefined), 'ms'),
+                ssl_options =>
+                    ?C:proplist(?C:conf([consul, ssl_options      ], YamlConfig, undefined)),
+                pulse =>
+                    mg_consuela_pulse_adapter:pulse(client, mg_woody_api_pulse)
+            })
+        })
+    }.
 
 how_are_you(YamlConfig) ->
     Publishers = hay_statsd_publisher(YamlConfig),
@@ -325,7 +386,7 @@ event_sink(kafka, Name, ESYamlConfig) ->
 %%
 vm_args(YamlConfig, ERLInetrcFilename) ->
     [
-        {'-sname'    , ?C:utf_bin(?C:conf([service_name  ], YamlConfig, "machinegun"))},
+        {'-sname'    , service_name(YamlConfig)},
         {'-setcookie', ?C:utf_bin(?C:conf([erlang, cookie], YamlConfig, "mg_cookie" ))},
         {'+K'        , <<"true">>},
         {'+A'        , <<"10">>  },
@@ -334,6 +395,9 @@ vm_args(YamlConfig, ERLInetrcFilename) ->
     conf_if([erlang, ipv6], YamlConfig, [
         {'-proto_dist', <<"inet6_tcp">>}
     ]).
+
+service_name(YamlConfig) ->
+    ?C:utf_bin(?C:conf([service_name], YamlConfig, "machinegun")).
 
 %%
 %% erl_inetrc
@@ -347,6 +411,9 @@ conf_if(YamlConfigPath, YamlConfig, Value) ->
         true  -> Value;
         false -> []
     end.
+
+conf_with(YamlConfigPath, YamlConfig, Fun) ->
+    Fun(?C:conf(YamlConfigPath, YamlConfig)).
 
 conf_with(YamlConfigPath, YamlConfig, Default, Fun) ->
     case ?C:conf(YamlConfigPath, YamlConfig, undefined) of

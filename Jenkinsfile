@@ -64,7 +64,7 @@ build('machinegun', 'docker-host', finalHook) {
     }
 
     try {
-      if (env.BRANCH_NAME == 'master') {
+      if (masterlikeBranch()) {
         runStage('push image') {
           sh "make push_image"
         }

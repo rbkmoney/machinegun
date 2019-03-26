@@ -21,6 +21,8 @@
 
 -export([stop_applications/1]).
 
+-export([handle_beat/2]).
+
 -type appname() :: atom().
 
 -spec start_application(appname() | {appname(), [{atom(), _Value}]}) ->
@@ -36,6 +38,19 @@ start_application(lager) ->
             ]}
         ]},
         {async_threshold, undefined}
+    ]);
+start_application(consuela) ->
+    genlib_app:start_application_with(consuela, [
+        {registry, #{
+            nodename => "consul0",
+            namespace => <<"mg">>,
+            registry => #{
+                pulse => {?MODULE, {registry, info}}
+            },
+            keeper => #{
+                pulse => {?MODULE, {keeper, info}}
+            }
+        }}
     ]);
 start_application(brod) ->
     genlib_app:start_application_with(brod, [
@@ -62,3 +77,19 @@ start_applications(Apps) ->
 
 stop_applications(AppNames) ->
     lists:foreach(fun application:stop/1, lists:reverse(AppNames)).
+
+%%
+
+-type category() :: atom().
+
+-spec handle_beat
+    (consuela_client:beat(), {client, category()}) -> ok;
+    (consuela_session_keeper:beat(), {keeper, category()}) -> ok;
+    (consuela_zombie_reaper:beat(), {reaper, category()}) -> ok;
+    (consuela_registry:beat(), {registry, category()}) -> ok
+.
+
+handle_beat(Beat, {Producer, Category}) ->
+    ct:pal(Category, "[~p] ~p", [Producer, Beat]);
+handle_beat(_Beat, _) ->
+    ok.

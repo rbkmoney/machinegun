@@ -20,8 +20,8 @@
 
 -behaviour(gen_server).
 
--export([child_spec/2]).
--export([start_link/1]).
+-export([child_spec/3]).
+-export([start_link/2]).
 
 -export([add_task/3]).
 
@@ -110,27 +110,30 @@
 %% API
 %%
 
--spec child_spec(options(), _ChildID) ->
+-spec child_spec(_RegName, options(), _ChildID) ->
     supervisor:child_spec().
-child_spec(Options, ChildID) ->
+child_spec(RegName, Options, ChildID) ->
     #{
         id       => ChildID,
-        start    => {?MODULE, start_link, [Options]},
+        start    => {?MODULE, start_link, [RegName, Options]},
         restart  => permanent,
         type     => supervisor
     }.
 
--spec start_link(options()) ->
+-spec start_link(_RegName, options()) ->
     mg_utils:gen_start_ret().
-start_link(#{queue_handler := Handler} = Options) ->
-    mg_utils_supervisor_wrapper:start_link(
+start_link(RegName, #{queue_handler := Handler, pulse := Pulse} = Options) ->
+    consuela_leader_supervisor:start_link(RegName, mg_utils_supervisor_wrapper, {
         #{strategy => one_for_all},
         mg_utils:lists_compact([
             mg_scheduler_worker:child_spec(Options, tasks),
             handler_child_spec(Handler, queue_handler),
             manager_child_spec(Options, manager)
         ])
-    ).
+    },
+    #{
+        pulse => mg_consuela_pulse_adapter:pulse(leader, Pulse)
+    }).
 
 -spec add_task(mg:ns(), name(), task_info()) ->
     ok.
@@ -227,12 +230,12 @@ manager_child_spec(#{name := Name, namespace := NS} = Options, ChildID) ->
 -spec self_ref(scheduler_id()) ->
     mg_utils:gen_ref().
 self_ref(ID) ->
-    {via, gproc, {n, l, wrap_id(ID)}}.
+    {via, consuela, wrap_id(ID)}.
 
 -spec self_reg_name(scheduler_id()) ->
     mg_utils:gen_reg_name().
 self_reg_name(ID) ->
-    {via, gproc, {n, l, wrap_id(ID)}}.
+    {via, consuela, wrap_id(ID)}.
 
 -spec wrap_id(scheduler_id()) ->
     term().
