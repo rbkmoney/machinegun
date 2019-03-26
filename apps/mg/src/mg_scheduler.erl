@@ -230,12 +230,12 @@ manager_child_spec(#{name := Name, namespace := NS} = Options, ChildID) ->
 -spec self_ref(scheduler_id()) ->
     mg_utils:gen_ref().
 self_ref(ID) ->
-    {via, gproc, {n, l, wrap_id(ID)}}.
+    {via, consuela, wrap_id(ID)}.
 
 -spec self_reg_name(scheduler_id()) ->
     mg_utils:gen_reg_name().
 self_reg_name(ID) ->
-    {via, gproc, {n, l, wrap_id(ID)}}.
+    {via, consuela, wrap_id(ID)}.
 
 -spec wrap_id(scheduler_id()) ->
     term().
