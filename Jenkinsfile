@@ -47,7 +47,7 @@ build('machinegun', 'docker-host', finalHook) {
       sh 'make wc_xref'
     }
     runStage('dialyze') {
-      withWsCache("_build/default/rebar3_19.1_plt") {
+      withWsCache("_build/default/rebar3_19.3_plt") {
         sh 'make wc_dialyze'
       }
     }
