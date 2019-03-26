@@ -101,7 +101,7 @@ format_beat(#mg_timer_lifecycle_rescheduling_error{exception = {_, Reason, _}} =
 
 format_beat({consuela, Beat = {Producer, _}}) ->
     {Level, Format, Context} = format_consuela_beat(Beat),
-    {Level, Format, [{by, Producer} | Context]};
+    {Level, Format, [{consuela_producer, Producer} | Context]};
 
 format_beat(_Beat) ->
     undefined.
