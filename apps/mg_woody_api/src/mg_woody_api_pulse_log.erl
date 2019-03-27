@@ -116,10 +116,10 @@ format_consuela_beat({client, {request, {Method, Url, _Headers, Body}}}) ->
         {mg_pulse_event_id, consuela_client_request}
     ]};
 format_consuela_beat({client, {response, Response = {ok, Status, _Headers, _Body}}}) ->
-    Level = if
-        Status < 400 -> debug;
-        Status < 500 -> info;
-        true         -> warning
+    Level = case Status of
+        S when S < 400 -> debug;
+        S when S < 500 -> info;
+        _              -> warning
     end,
     {Level, {"consul response: ~p", [Response]}, [
         {mg_pulse_event_id, consuela_client_response},
