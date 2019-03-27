@@ -116,9 +116,14 @@ format_consuela_beat({client, {request, {Method, Url, _Headers, Body}}}) ->
         {mg_pulse_event_id, consuela_client_request}
     ]};
 format_consuela_beat({client, {response, Response = {ok, Status, _Headers, _Body}}}) ->
-    {debug, {"consul response: ~p", [Response]}, [
+    Level = if
+        Status < 400 -> debug;
+        Status < 500 -> info;
+        true         -> warning
+    end,
+    {Level, {"consul response: ~p", [Response]}, [
         {mg_pulse_event_id, consuela_client_response},
-        {http, [{status, Status}]}
+        {status, Status}
     ]};
 format_consuela_beat({client, {response, Error = {error, Reason}}}) ->
     {warning, {"consul request failed: ~p", [Error]}, [
