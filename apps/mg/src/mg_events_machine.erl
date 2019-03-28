@@ -247,8 +247,8 @@ process_machine(Options, ID, Impact, PCtx, ReqCtx, Deadline, PackedState) ->
         try
             process_machine_(Options, ID, Impact, PCtx, ReqCtx, Deadline, opaque_to_state(PackedState))
         catch
-            throw:{transient, Reason} ->
-                erlang:raise(throw, {transient, Reason}, erlang:get_stacktrace());
+            throw:{transient, Reason}:ST ->
+                erlang:raise(throw, {transient, Reason}, ST);
             throw:Reason ->
                 erlang:throw({transient, {processor_unavailable, Reason}})
         end,

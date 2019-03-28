@@ -61,18 +61,9 @@ groups() ->
 -spec init_per_suite(config()) ->
     config().
 init_per_suite(C) ->
-    Configs = [
-        {lager, [
-            {handlers, [
-                {lager_common_test_backend, [
-                    info,
-                    {lager_default_formatter, [time, " ", severity, " ", metadata, " ", message]}
-                ]}
-            ]},
-            {error_logger_hwm, 600},
-            {async_threshold, undefined}
-        ]},
-        {gproc, []},
+    Apps = mg_ct_helper:start_applications([
+        lager,
+        gproc,
         {how_are_you, [
             {metrics_publishers, []},
             {metrics_handlers, [
@@ -80,8 +71,7 @@ init_per_suite(C) ->
             ]}
         ]},
         {mg_woody_api, mg_woody_api_config(C)}
-    ],
-    Apps = lists:flatten([genlib_app:start_application_with(A, Conf) || {A, Conf} <- Configs]),
+    ]),
 
     [
         {apps              , Apps                             },
@@ -100,7 +90,7 @@ init_per_suite(C) ->
 end_per_suite(C) ->
     ok = application:set_env(how_are_you, metrics_publishers, []),
     ok = application:set_env(how_are_you, metrics_handlers, []),
-    [application:stop(App) || App <- proplists:get_value(apps, C)].
+    mg_ct_helper:stop_applications(?config(apps, C)).
 
 -spec init_per_group(group_name(), config()) ->
     config().
@@ -122,7 +112,7 @@ mg_woody_api_config(_C) ->
                 storage    => mg_storage_memory,
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
-                    transport_opts => [{pool, ns}, {max_connections, 100}]
+                    transport_opts => #{pool => ns, max_connections => 100}
                 },
                 default_processing_timeout => 5000,
                 retries => #{

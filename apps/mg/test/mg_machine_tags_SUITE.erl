@@ -68,7 +68,7 @@ groups() ->
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
     % dbg:tpl({mg_storage, '_', '_'}, x),
-    Apps = genlib_app:start_application(mg),
+    Apps = mg_ct_helper:start_applications([mg]),
     Pid = start_automaton(automaton_options()),
     true = erlang:unlink(Pid),
     [{apps, Apps}, {pid, Pid}| C].
@@ -77,7 +77,7 @@ init_per_suite(C) ->
     ok.
 end_per_suite(C) ->
     true = erlang:exit(?config(pid, C), kill),
-    [application:stop(App) || App <- ?config(apps, C)].
+    mg_ct_helper:stop_applications(?config(apps, C)).
 
 
 %%

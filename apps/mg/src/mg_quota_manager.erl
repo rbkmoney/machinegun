@@ -32,7 +32,7 @@
 %% API
 %%
 
--spec child_spec(options(), atom()) ->
+-spec child_spec(options(), _ChildID) ->
     supervisor:child_spec().
 child_spec(Options, ChildID) ->
     #{

@@ -146,7 +146,7 @@ call_service(Options, Function, Args, Deadline) ->
 -spec woody_call(options(), atom(), [_Arg], mg_utils:deadline()) ->
     any().
 woody_call(#{url := BaseURL} = Options, Function, Args, Deadline) ->
-    TransportOptions = maps:get(transport_opts, Options, []),
+    TransportOptions = maps:get(transport_opts, Options, #{}),
     Context = mg_woody_api_utils:set_deadline(Deadline, woody_context:new()),
     woody_client:call(
             {{mg_proto_state_processing_thrift, 'Automaton'}, Function, Args},

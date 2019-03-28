@@ -93,17 +93,7 @@ init_per_suite(C) ->
     % dbg:tracer(),
     % dbg:p(all, c),
     % dbg:tpl({mg_woody_api, '_', '_'}, x),
-    Apps =
-        genlib_app:start_application_with(lager, [
-            {handlers, [
-                {lager_common_test_backend, [
-                    info,
-                    {lager_default_formatter, [time, " ", severity, " ", metadata, " ", message]}
-                ]}
-            ]},
-            {async_threshold, undefined}
-        ])
-    ,
+    Apps = mg_ct_helper:start_applications([lager]),
     % Запускаем memory storage, который сможет "пережить" рестарты mg
     {ok, StoragePid} = mg_storage_memory:start_link(undefined, {local, ?MODULE}),
     true = erlang:unlink(StoragePid),
@@ -112,8 +102,7 @@ init_per_suite(C) ->
 -spec end_per_suite(config()) ->
     ok.
 end_per_suite(C) ->
-    _ = [application:stop(App) || App <- ?config(suite_apps, C)],
-    ok.
+    mg_ct_helper:stop_applications(?config(suite_apps, C)).
 
 %%
 
@@ -145,7 +134,7 @@ init_per_group(activities, C) ->
     ok.
 end_per_group(_, C) ->
     true = erlang:exit(?config(processor_pid, C), kill),
-    [application:stop(App) || App <- proplists:get_value(group_apps, C)].
+    mg_ct_helper:stop_applications(?config(group_apps, C)).
 
 -spec start_mg_woody_api(group_name(), config()) ->
     config().
@@ -163,7 +152,7 @@ start_mg_woody_api(Name, C) ->
                     storage    => {mg_storage_memory, #{existing_storage_ref => ?config(storage_pid, C)}},
                     processor  => #{
                         url            => <<"http://localhost:8023/processor">>,
-                        transport_opts => [{pool, ns}, {max_connections, 100}]
+                        transport_opts => #{pool => ns, max_connections => 100}
                     },
                     default_processing_timeout => 5000,
                     schedulers => #{
@@ -191,7 +180,7 @@ start_mg_woody_api(Name, C) ->
             default_processing_timeout => 5000
         }}
     ],
-    Apps = genlib_app:start_application_with(mg_woody_api, Config),
+    Apps = mg_ct_helper:start_applications([{mg_woody_api, Config}]),
     [
         {group_name        , Name},
         {group_apps        , Apps},

@@ -216,27 +216,11 @@ init_per_group(_, C) ->
     config().
 init_per_group(C) ->
     %% TODO сделать нормальную генерацию урлов
-    Apps =
-        genlib_app:start_application_with(lager, [
-            {handlers, [
-                {lager_common_test_backend, [
-                    info,
-                    {lager_default_formatter, [time, " ", severity, " ", metadata, " ", message]}
-                ]}
-            ]},
-            {async_threshold, undefined}
-        ]) ++
-        genlib_app:start_application_with(brod, [
-            {clients, [
-                {mg_kafka_client, [
-                    {endpoints, [{"kafka1", 9092}, {"kafka2", 9092}, {"kafka3", 9092}]},
-                    {auto_start_producers, true}
-                ]}
-            ]}
-        ])
-        ++
-        genlib_app:start_application_with(mg_woody_api, mg_woody_api_config(C))
-    ,
+    Apps = mg_ct_helper:start_applications([
+        lager,
+        brod,
+        {mg_woody_api, mg_woody_api_config(C)}
+    ]),
 
     {ok, ProcessorPid} = mg_test_processor:start(
         {0, 0, 0, 0}, 8023,
@@ -312,7 +296,7 @@ mg_woody_api_config(C) ->
                 storage    => ?config(storage, C),
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
-                    transport_opts => [{pool, ns}, {max_connections, 100}]
+                    transport_opts => #{pool => ns, max_connections => 100}
                 },
                 default_processing_timeout => 5000,
                 schedulers => #{
@@ -352,7 +336,7 @@ mg_woody_api_config(C) ->
     ok.
 end_per_group(_, C) ->
     true = erlang:exit(?config(processor_pid, C), kill),
-    [application:stop(App) || App <- lists:reverse(proplists:get_value(apps, C))].
+    mg_ct_helper:stop_applications(?config(apps, C)).
 
 %%
 %% base group tests
@@ -513,8 +497,8 @@ timeout_call_with_deadline(C) ->
     DeadlineFn = fun() -> mg_utils:timeout_to_deadline(?DEADLINE_TIMEOUT) end,
     Options0 = no_timeout_automaton_options(C),
     Options1 = maps:remove(retry_strategy, Options0),
-    {'EXIT', {Reason, _Stack}} = (catch mg_automaton_client:call(Options1, {id, ?ID}, <<"sleep">>, DeadlineFn())),
-    {woody_error, {external, result_unknown, <<"{timeout,", _Rest/binary>>}} = Reason,
+    {'EXIT', {{woody_error, {external, result_unknown, <<"timeout">>}}, _Stack}} =
+        (catch mg_automaton_client:call(Options1, {id, ?ID}, <<"sleep">>, DeadlineFn())),
     #mg_stateproc_MachineAlreadyWorking{} = (catch mg_automaton_client:repair(Options0, {id, ?ID}, <<"ok">>, DeadlineFn())).
 
 -spec success_call_with_deadline(config()) ->
@@ -632,7 +616,7 @@ config_with_multiple_event_sinks(_C) ->
                 storage    => mg_storage_memory,
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
-                    transport_opts => [{pool, pool1}, {max_connections, 100}]
+                    transport_opts => #{pool => pool1, max_connections => 100}
                 },
                 default_processing_timeout => 30000,
                 schedulers => #{
@@ -647,7 +631,7 @@ config_with_multiple_event_sinks(_C) ->
                 storage    => mg_storage_memory,
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
-                    transport_opts => [{pool, pool2}, {max_connections, 100}]
+                    transport_opts => #{pool => pool2, max_connections => 100}
                 },
                 default_processing_timeout => 5000,
                 schedulers => #{
@@ -714,4 +698,4 @@ es_opts(C) -> ?config(event_sink_options, C).
 no_timeout_automaton_options(C) ->
     Options0 = automaton_options(C),
     %% Let's force enlarge client timeout. We expect server timeout only.
-    Options0#{transport_opts => [{recv_timeout, ?DEADLINE_TIMEOUT * 10}]}.
+    Options0#{transport_opts => #{recv_timeout => ?DEADLINE_TIMEOUT * 10}}.
