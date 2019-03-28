@@ -658,7 +658,7 @@ config_with_multiple_event_sinks(_C) ->
             default_processing_timeout => 5000
         }}
     ],
-    Apps = mg_ct_helper:start_applications([consuela, {mg_woody_api, Config}]),
+    Apps = mg_ct_helper:start_applications([{mg_woody_api, Config}]),
     ok = mg_ct_helper:stop_applications(Apps).
 
 %%
