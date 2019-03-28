@@ -497,7 +497,7 @@ timeout_call_with_deadline(C) ->
     DeadlineFn = fun() -> mg_utils:timeout_to_deadline(?DEADLINE_TIMEOUT) end,
     Options0 = no_timeout_automaton_options(C),
     Options1 = maps:remove(retry_strategy, Options0),
-    {'EXIT', {{woody_error, {external, result_unknown, <<"timeout">>}}, _Stack}} =
+    {'EXIT', {{woody_error, {external, result_unknown, <<"{timeout", _/binary>>}}, _Stack}} =
         (catch mg_automaton_client:call(Options1, {id, ?ID}, <<"sleep">>, DeadlineFn())),
     #mg_stateproc_MachineAlreadyWorking{} = (catch mg_automaton_client:repair(Options0, {id, ?ID}, <<"ok">>, DeadlineFn())).
 
