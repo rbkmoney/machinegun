@@ -99,8 +99,6 @@ services:
   consul0:
     <<: *consul-server
     hostname: consul0
-    ports:
-      - "8500:8500"
     command:
       agent -server -bootstrap-expect 3 -ui -client 0.0.0.0
 
