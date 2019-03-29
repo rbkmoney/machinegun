@@ -398,8 +398,8 @@ handle_load(ID, Options, ReqCtx) ->
             },
         ok = emit_machine_load_beat(Options, Namespace, ID, ReqCtx, StorageMachine),
         {ok, State}
-    catch throw:Reason ->
-        Exception = {throw, Reason, erlang:get_stacktrace()},
+    catch throw:Reason:ST ->
+        Exception = {throw, Reason, ST},
         ok = emit_beat(Options, #mg_machine_lifecycle_loading_error{
             namespace = Namespace,
             machine_id = ID,
@@ -641,18 +641,18 @@ process(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{id := ID, namespace :
     try
         process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, try_init_state(Impact, State))
     catch
-        throw:(Reason=({ErrorType, _Details})) when ?can_be_retried(ErrorType) ->
+        throw:(Reason=({ErrorType, _Details})):ST when ?can_be_retried(ErrorType) ->
             ok = emit_beat(Options, #mg_machine_process_transient_error{
                 namespace = NS,
                 machine_id = ID,
-                exception = {throw, Reason, erlang:get_stacktrace()},
+                exception = {throw, Reason, ST},
                 request_context = ReqCtx
             }),
             ok = do_reply_action({reply, {error, Reason}}, ProcessingCtx),
             State;
-        Class:Reason ->
+        Class:Reason:ST ->
             ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
-            handle_exception({Class, Reason, erlang:get_stacktrace()}, Impact, ReqCtx, Deadline, State)
+            handle_exception({Class, Reason, ST}, Impact, ReqCtx, Deadline, State)
     end.
 
 -spec try_init_state(processor_impact(), state()) ->
@@ -755,8 +755,8 @@ reschedule(ProcessingCtx, ReqCtx, Deadline, State) ->
         ok = do_reply_action({reply, ok}, ProcessingCtx),
         NewState
     catch
-        throw:(Reason=({ErrorType, _Details})) when ?can_be_retried(ErrorType) ->
-            Exception = {throw, Reason, erlang:get_stacktrace()},
+        throw:(Reason=({ErrorType, _Details})):ST when ?can_be_retried(ErrorType) ->
+            Exception = {throw, Reason, ST},
             ok = emit_beat(Options, #mg_timer_lifecycle_rescheduling_error{
                 namespace = NS,
                 machine_id = ID,
@@ -766,8 +766,8 @@ reschedule(ProcessingCtx, ReqCtx, Deadline, State) ->
             }),
             ok = do_reply_action({reply, {error, Reason}}, ProcessingCtx),
             State;
-        Class:Reason ->
-            Exception = {Class, Reason, erlang:get_stacktrace()},
+        Class:Reason:ST ->
+            Exception = {Class, Reason, ST},
             ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
             handle_exception(Exception, undefined, ReqCtx, Deadline, State)
     end.
@@ -1122,13 +1122,13 @@ try_suicide(#{}, _) ->
 do_with_retry(Options = #{namespace := NS}, ID, Fun, RetryStrategy, ReqCtx, BeatCtx) ->
     try
         Fun()
-    catch throw:(Reason={transient, _}) ->
+    catch throw:(Reason={transient, _}):ST ->
         NextStep = genlib_retry:next_step(RetryStrategy),
         ok = emit_beat(Options, #mg_machine_lifecycle_transient_error{
             context = BeatCtx,
             namespace = NS,
             machine_id = ID,
-            exception = {throw, Reason, erlang:get_stacktrace()},
+            exception = {throw, Reason, ST},
             request_context = ReqCtx,
             retry_strategy = RetryStrategy,
             retry_action = NextStep

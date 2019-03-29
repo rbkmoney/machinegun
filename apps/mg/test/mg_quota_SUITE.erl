@@ -98,13 +98,11 @@ groups() ->
 -spec init_per_suite(config()) ->
     config().
 init_per_suite(C) ->
-    Apps = genlib_app:start_application(mg),
-    [{apps, Apps} | C].
+    C.
 
 -spec end_per_suite(config()) ->
     ok.
-end_per_suite(C) ->
-    [ok = application:stop(App) || App <- proplists:get_value(apps, C)],
+end_per_suite(_C) ->
     ok.
 
 -spec init_per_group(group_name(), config()) ->

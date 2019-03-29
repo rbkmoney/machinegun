@@ -476,5 +476,7 @@ unpack_opaque(Arg) ->
 -spec parse_datetime(binary()) ->
     calendar:datetime().
 parse_datetime(Datetime) ->
-    {ok, {Date, Time, _, 0}} = rfc3339:parse(Datetime),
-    {Date, Time}.
+    case rfc3339:parse(Datetime) of
+        {ok, {Date, Time, _, TZ}} when TZ == undefined; TZ == 0 ->
+            {Date, Time}
+    end.

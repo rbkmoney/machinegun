@@ -84,13 +84,13 @@ init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
     % dbg:tpl({riakc_pb_socket, 'get_index_eq', '_'}, x),
     % dbg:tpl({riakc_pb_socket, 'get_index_range', '_'}, x),
-    Apps = genlib_app:start_application(mg),
+    Apps = mg_ct_helper:start_applications([msgpack, gproc, riakc]),
     [{apps, Apps} | C].
 
 -spec end_per_suite(config()) ->
     ok.
 end_per_suite(C) ->
-    [application:stop(App) || App <- proplists:get_value(apps, C)].
+    mg_ct_helper:stop_applications(?config(apps, C)).
 
 -spec init_per_group(group_name(), config()) ->
     config().

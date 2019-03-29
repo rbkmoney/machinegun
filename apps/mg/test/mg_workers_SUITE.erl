@@ -71,13 +71,13 @@ init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
     % dbg:tpl({mg_workers_manager, '_', '_'}, x),
     % dbg:tpl({mg_workers, '_', '_'}, x),
-    Apps = genlib_app:start_application(mg),
+    Apps = mg_ct_helper:start_applications([mg]),
     [{apps, Apps} | C].
 
 -spec end_per_suite(config()) ->
     ok.
 end_per_suite(C) ->
-    [application:stop(App) || App <- proplists:get_value(apps, C)].
+    mg_ct_helper:stop_applications(?config(apps, C)).
 
 %%
 %% base group tests

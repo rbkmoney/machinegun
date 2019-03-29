@@ -43,14 +43,11 @@
     current_format_version := mg_events:format_version(),
     handler                := mg_woody_api_modernizer:options()
 }.
-% упс, а вот и протечка абстракции.
-% в woody этот тип не экспортируется, а хочется
--type woody_server_protocol_opts() :: cowboy_protocol:opts().
 -type woody_server() :: #{
     ip             := tuple(),
     port           := inet:port_number(),
     transport_opts => woody_server_thrift_http_handler:transport_opts(),
-    protocol_opts  => woody_server_protocol_opts(),
+    protocol_opts  => woody_server_thrift_http_handler:protocol_opts(),
     limits         => woody_server_thrift_http_handler:handler_limits()
 }.
 -type events_machines() :: #{
@@ -149,8 +146,8 @@ woody_server_child_spec(Config, ChildID) ->
             transport      => http,
             ip             => maps:get(ip             , WoodyConfig),
             port           => maps:get(port           , WoodyConfig),
-            transport_opts => maps:get(transport_opts , WoodyConfig, []),
-            protocol_opts  => maps:get(protocol_opts  , WoodyConfig, []),
+            transport_opts => maps:get(transport_opts , WoodyConfig, #{}),
+            protocol_opts  => maps:get(protocol_opts  , WoodyConfig, #{}),
             event_handler  => {mg_woody_api_event_handler, mg_woody_api_pulse},
             handler_limits => maps:get(limits         , WoodyConfig, #{}),
             handlers       => [
@@ -305,19 +302,7 @@ metrics_init(Config) ->
     TagNSs = [mg_utils:concatenate_namespaces(NS, <<"tags">>) || NS <- MachineNSs],
     AllNS = [<<"_event_sinks_machines">>] ++ MachineNSs ++ TagNSs,
     Metrics = mg_woody_api_pulse_metric:get_all_metrics(AllNS),
-    register_metrics(Metrics).
-
--spec register_metrics([how_are_you:metric()]) ->
-    ok | {error, _Details}.
-register_metrics([]) ->
-    ok;
-register_metrics([M | Metrics]) ->
-    case how_are_you:metric_register(M) of
-        ok ->
-            register_metrics(Metrics);
-        {error, _Reason} = Error ->
-            Error
-    end.
+    lists:foreach(fun (M) -> ok = how_are_you:metric_register(M) end, Metrics).
 
 -spec pulse() ->
     mg_pulse:handler().
