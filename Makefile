@@ -34,7 +34,7 @@ BASE_IMAGE_TAG := a226aa4616c1ba9843020b63570221c13a3553a5
 # Build image tag to be used
 BUILD_IMAGE_TAG := f3732d29a5e622aabf80542b5138b3631a726adb
 
-CALL_ANYWHERE := all submodules rebar-update compile xref lint dialyze start devrel release clean distclean
+CALL_ANYWHERE := all submodules compile xref lint dialyze start devrel release clean distclean
 
 CALL_W_CONTAINER := $(CALL_ANYWHERE) test dev_test
 
@@ -54,13 +54,10 @@ $(SUBTARGETS): %/.git: %
 
 submodules: $(SUBTARGETS)
 
-rebar-update:
-	$(REBAR) update
-
 upgrade-proto:
 	$(REBAR) upgrade mg_proto
 
-compile: submodules rebar-update
+compile: submodules
 	$(REBAR) compile
 
 xref: submodules
