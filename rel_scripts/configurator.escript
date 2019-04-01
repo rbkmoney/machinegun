@@ -67,7 +67,7 @@ consuela(YamlConfig) ->
                 nodename  => ?C:conf([nodename], RegConfig),
                 namespace => ?C:utf_bin(?C:conf([namespace], RegConfig, "mg")),
                 consul    => consul_client(mg_consuela_registry, YamlConfig),
-                shutdown  => ?C:time_interval(?C:conf([shutdown_timeout], DiscoveryConfig, undefined), 'ms'),
+                shutdown  => ?C:time_interval(?C:conf([shutdown_timeout], RegConfig, "5s"), 'ms'),
                 keeper    => #{
                     pulse => mg_consuela_pulse_adapter:pulse(session_keeper, mg_woody_api_pulse)
                 },
@@ -85,10 +85,10 @@ consuela(YamlConfig) ->
                 tags      => [?C:utf_bin(T) || T <- ?C:conf([tags], DiscoveryConfig, [])],
                 consul    => consul_client(mg_consuela_discovery, YamlConfig),
                 opts      => #{
-                    interval => genlib_map:compact(#{
-                        init => ?C:time_interval(?C:conf([interval, init], DiscoveryConfig, undefined), 'ms'),
-                        idle => ?C:time_interval(?C:conf([interval, idle], DiscoveryConfig, undefined), 'ms')
-                    }),
+                    interval => #{
+                        init => ?C:time_interval(?C:conf([interval, init], DiscoveryConfig,  "5s"), 'ms'),
+                        idle => ?C:time_interval(?C:conf([interval, idle], DiscoveryConfig, "10m"), 'ms')
+                    },
                     pulse => mg_consuela_pulse_adapter:pulse(discovery_server, mg_woody_api_pulse)
                 }
             }}
@@ -327,13 +327,13 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
                 max_connections => ?C:conf([processor, pool_size], NSYamlConfig, 50)
             }
         },
-        workers => genlib_map:compact(#{
-            hibernate_timeout => ?C:time_interval(?C:conf([hibernate_timeout], NSYamlConfig), ms),
-            unload_timeout    => ?C:time_interval(?C:conf([unload_timeout   ], NSYamlConfig), ms)
-        }),
-        default_processing_timeout => timeout(default_processing_timeout, "30S"),
-        timer_processing_timeout => timeout(timer_processing_timeout, "60S"),
-        reschedule_timeout => timeout(reschedule_timeout, "60S"),
+        workers => #{
+            hibernate_timeout => ?C:time_interval(?C:conf([hibernate_timeout], NSYamlConfig,  "5s"), ms),
+            unload_timeout    => ?C:time_interval(?C:conf([unload_timeout   ], NSYamlConfig, "60s"), ms)
+        },
+        default_processing_timeout => Timeout(default_processing_timeout, "30S"),
+        timer_processing_timeout => Timeout(timer_processing_timeout, "60S"),
+        reschedule_timeout => Timeout(reschedule_timeout, "60S"),
         retries => #{
             storage   => {exponential, infinity, 2, 10, 60 * 1000},
             %% max_total_timeout not supported for timers yet, see mg_retry:new_strategy/2 comments
