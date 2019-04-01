@@ -30,6 +30,7 @@
 
 -type options() :: #{
     namespace => mg:ns(),
+    worker    => mg_worker:options(), % all but `worker` option
     storage   => mg_storage:options(),
     pulse     => mg_pulse:handler(),
     retries   => mg_machine:retry_opt()
@@ -88,10 +89,11 @@ process_machine(_, _, {call, {replace, ID}}, _, _, _, _) ->
 %%
 -spec machine_options(options()) ->
     mg_machine:options().
-machine_options(#{namespace:=Namespace, storage:=Storage, pulse := Pulse, retries := Retries}) ->
+machine_options(Opts = #{namespace:=Namespace, storage:=Storage, pulse := Pulse, retries := Retries}) ->
     #{
         namespace => Namespace,
         processor => ?MODULE,
+        worker    => maps:get(worker, Opts, #{}),
         storage   => Storage,
         pulse     => Pulse,
         retries   => Retries

@@ -133,6 +133,7 @@
     namespace                => mg:ns(),
     storage                  => mg_storage:options(),
     processor                => mg_utils:mod_opts(),
+    worker                   => mg_worker:options(), % all but `worker` option
     pulse                    => mg_pulse:handler(),
     retries                  => retry_opt(),
     schedulers               => schedulers_opt(),
@@ -1008,9 +1009,12 @@ manager_options(Options) ->
     #{
         name           => maps:get(namespace, Options),
         pulse          => maps:get(pulse, Options),
-        worker_options => #{
-            worker => {?MODULE, Options}
-        }
+        worker_options => maps:merge(
+            maps:get(worker, Options, #{}),
+            #{
+                worker => {?MODULE, Options}
+            }
+        )
     }.
 
 -spec storage_options(options()) ->

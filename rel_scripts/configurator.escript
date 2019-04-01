@@ -67,7 +67,7 @@ consuela(YamlConfig) ->
                 nodename  => ?C:conf([nodename], RegConfig),
                 namespace => ?C:utf_bin(?C:conf([namespace], RegConfig, "mg")),
                 consul    => consul_client(mg_consuela_registry, YamlConfig),
-                shutdown  => ?C:time_interval(?C:conf([shutdown_timeout], DiscoveryConfig, undefined), 'ms'),
+                shutdown  => ?C:time_interval(?C:conf([shutdown_timeout], RegConfig, "5s"), 'ms'),
                 keeper    => #{
                     pulse => mg_consuela_pulse_adapter:pulse(session_keeper, mg_woody_api_pulse)
                 },
@@ -85,10 +85,10 @@ consuela(YamlConfig) ->
                 tags      => [?C:utf_bin(T) || T <- ?C:conf([tags], DiscoveryConfig, [])],
                 consul    => consul_client(mg_consuela_discovery, YamlConfig),
                 opts      => #{
-                    interval => genlib_map:compact(#{
-                        init => ?C:time_interval(?C:conf([interval, init], DiscoveryConfig, undefined), 'ms'),
-                        idle => ?C:time_interval(?C:conf([interval, idle], DiscoveryConfig, undefined), 'ms')
-                    }),
+                    interval => #{
+                        init => ?C:time_interval(?C:conf([interval, init], DiscoveryConfig,  "5s"), 'ms'),
+                        idle => ?C:time_interval(?C:conf([interval, idle], DiscoveryConfig, "10m"), 'ms')
+                    },
                     pulse => mg_consuela_pulse_adapter:pulse(discovery_server, mg_woody_api_pulse)
                 }
             }}
@@ -326,6 +326,10 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
                 pool => erlang:list_to_atom(NameStr),
                 max_connections => ?C:conf([processor, pool_size], NSYamlConfig, 50)
             }
+        },
+        worker => #{
+            hibernate_timeout => Timeout(hibernate_timeout,  "5S"),
+            unload_timeout    => Timeout(unload_timeout   , "60S")
         },
         default_processing_timeout => Timeout(default_processing_timeout, "30S"),
         timer_processing_timeout => Timeout(timer_processing_timeout, "60S"),
