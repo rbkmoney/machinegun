@@ -328,8 +328,8 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             }
         },
         worker => #{
-            hibernate_timeout => ?C:time_interval(?C:conf([hibernate_timeout], NSYamlConfig,  "5s"), ms),
-            unload_timeout    => ?C:time_interval(?C:conf([unload_timeout   ], NSYamlConfig, "60s"), ms)
+            hibernate_timeout => Timeout(hibernate_timeout,  "5S"),
+            unload_timeout    => Timeout(unload_timeout   , "60S")
         },
         default_processing_timeout => Timeout(default_processing_timeout, "30S"),
         timer_processing_timeout => Timeout(timer_processing_timeout, "60S"),
