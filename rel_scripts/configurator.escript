@@ -327,7 +327,7 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
                 max_connections => ?C:conf([processor, pool_size], NSYamlConfig, 50)
             }
         },
-        workers => #{
+        worker => #{
             hibernate_timeout => ?C:time_interval(?C:conf([hibernate_timeout], NSYamlConfig,  "5s"), ms),
             unload_timeout    => ?C:time_interval(?C:conf([unload_timeout   ], NSYamlConfig, "60s"), ms)
         },

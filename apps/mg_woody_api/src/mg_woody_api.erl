@@ -53,7 +53,7 @@
 -type events_machines() :: #{
     processor                  := processor(),
     modernizer                 => modernizer(),
-    workers                    => mg_worker:options(), % all but `worker` option
+    worker                     => mg_worker:options(), % all but `worker` option
     storage                    := mg_storage:options(),
     event_sinks                => [mg_events_sink:handler()],
     retries                    := mg_machine:retry_opt(),
@@ -226,7 +226,7 @@ event_sink_namespace_options(Config) ->
 tags_options(NS, Config = #{retries := Retries, storage := Storage}) ->
     #{
         namespace => mg_utils:concatenate_namespaces(NS, <<"tags">>),
-        workers   => maps:get(workers, Config, #{}),
+        worker    => maps:get(worker, Config, #{}),
         storage   => Storage, % по логике тут должен быть sub namespace, но его по историческим причинам нет
         pulse     => pulse(),
         retries   => Retries
@@ -238,7 +238,7 @@ machine_options(NS, Config) ->
     #{storage := Storage} = Config,
     Options = maps:with(
         [
-            workers,
+            worker,
             retries,
             schedulers,
             reschedule_timeout,

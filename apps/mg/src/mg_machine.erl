@@ -133,7 +133,7 @@
     namespace                => mg:ns(),
     storage                  => mg_storage:options(),
     processor                => mg_utils:mod_opts(),
-    workers                  => mg_worker:options(), % all but `worker` option
+    worker                   => mg_worker:options(), % all but `worker` option
     pulse                    => mg_pulse:handler(),
     retries                  => retry_opt(),
     schedulers               => schedulers_opt(),
