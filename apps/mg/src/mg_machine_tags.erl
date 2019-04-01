@@ -93,7 +93,7 @@ machine_options(Opts = #{namespace:=Namespace, storage:=Storage, pulse := Pulse,
     #{
         namespace => Namespace,
         processor => ?MODULE,
-        workers   => maps:get(workers, Opts, #{}),
+        worker    => maps:get(worker, Opts, #{}),
         storage   => Storage,
         pulse     => Pulse,
         retries   => Retries

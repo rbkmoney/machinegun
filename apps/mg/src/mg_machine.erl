@@ -1010,7 +1010,7 @@ manager_options(Options) ->
         name           => maps:get(namespace, Options),
         pulse          => maps:get(pulse, Options),
         worker_options => maps:merge(
-            maps:get(workers, Options, #{}),
+            maps:get(worker, Options, #{}),
             #{
                 worker => {?MODULE, Options}
             }
