@@ -69,6 +69,8 @@ namespaces:
         default_processing_timeout: 30s
         timer_processing_timeout: 60s
         reschedule_timeout: 60s
+        hibernate_timeout: 5s
+        unload_timeout: 60s
         processor:
             url: http://localhost:8022/processor
             pool_size: 50
