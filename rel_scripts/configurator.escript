@@ -136,7 +136,7 @@ how_are_you(YamlConfig) ->
 hay_statsd_publisher(YamlConfig) ->
     conf_with([metrics, publisher, statsd], YamlConfig, [], fun (Config) -> [
         {hay_statsd_publisher, #{
-            key_prefix => <<(?C:utf_bin(?C:conf([service_name], YamlConfig)))/binary, ".">>,
+            key_prefix => <<(service_name(YamlConfig))/binary, ".">>,
             host => ?C:utf_bin(?C:conf([host], Config, "localhost")),
             port => ?C:conf([port], Config, 8125),
             interval => 15000
@@ -230,7 +230,7 @@ health_checkers(YamlConfig) ->
             end,
         [{erl_health, Type, [Limit]}]
     end) ++
-    [{erl_health, service, [?C:utf_bin(?C:conf([service_name], YamlConfig))]}].
+    [{erl_health, service, [service_name(YamlConfig)]}].
 
 quotas(YamlConfig) ->
     SchedulerLimit = ?C:conf([limits, scheduler_tasks], YamlConfig, 5000),
