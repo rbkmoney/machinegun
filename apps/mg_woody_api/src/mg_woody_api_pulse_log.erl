@@ -115,7 +115,7 @@ format_consuela_beat({client, {request, {Method, Url, _Headers, Body}}}) ->
     {debug, {"consul request: ~s ~s ~p", [Method, Url, Body]}, [
         {mg_pulse_event_id, consuela_client_request}
     ]};
-format_consuela_beat({client, {response, Response = {ok, Status, _Headers, _Body}}}) ->
+format_consuela_beat({client, {result, Response = {ok, Status, _Headers, _Body}}}) ->
     Level = case Status of
         S when S < 400 -> debug;
         S when S < 500 -> info;
@@ -125,7 +125,7 @@ format_consuela_beat({client, {response, Response = {ok, Status, _Headers, _Body
         {mg_pulse_event_id, consuela_client_response},
         {status, Status}
     ]};
-format_consuela_beat({client, {response, Error = {error, Reason}}}) ->
+format_consuela_beat({client, {result, Error = {error, Reason}}}) ->
     {warning, {"consul request failed: ~p", [Error]}, [
         {mg_pulse_event_id, consuela_client_request_failed},
         {error, [{reason, genlib:print(Reason, 500)}]}
@@ -214,6 +214,51 @@ format_consuela_beat({leader, {{warden, Name}, {stopped, Pid}}}) ->
         {warden_pid, Pid}
     ]};
 
+%% discovery
+format_consuela_beat({discovery_server, {discovery, Status}}) ->
+    case Status of
+        started ->
+            {debug, {"discovery started ...", []}, [
+                {mg_pulse_event_id, consuela_discovery_started}
+            ]};
+        {succeeded, Nodes} ->
+            {info, {"discovery succeeded, found ~p nodes: ~p", [length(Nodes), Nodes]}, [
+                {mg_pulse_event_id, consuela_discovery_succeeded}
+            ]};
+        {failed, Reason} ->
+            {error, {"discovery failed", []}, [
+                {mg_pulse_event_id, consuela_discovery_failed},
+                {error, [{reason, genlib:print(Reason, 500)}]}
+            ]}
+    end;
+format_consuela_beat({discovery_server, {{connect, Node}, Status}}) ->
+    case Status of
+        started ->
+            {debug, {"trying to connect to ~p ...", [Node]}, [
+                {mg_pulse_event_id, consuela_distnode_connect_started}
+            ]};
+        {finished, true} ->
+            {info, {"connection to ~p estabilished", [Node]}, [
+                {mg_pulse_event_id, consuela_distnode_connect_succeeded}
+            ]};
+        {failed, false} ->
+            {error, {"connect to ~p failed", []}, [
+                {mg_pulse_event_id, consuela_distnode_connect_failed}
+            ]}
+    end;
+format_consuela_beat({discovery_server, {{node, Node}, Status}}) ->
+    case Status of
+        up ->
+            {info, {"~p is online now", [Node]}, [
+                {mg_pulse_event_id, consuela_distnode_online}
+            ]};
+        {down, Reason} ->
+            {error, {"~p gone offline", [Node]}, [
+                {mg_pulse_event_id, consuela_distnode_offline},
+                {error, [{reason, genlib:print(Reason, 500)}]}
+            ]}
+    end;
+
 %% kinda generic beats
 format_consuela_beat({_Producer, {{deadline_call, Deadline, Call}, Status}}) ->
     TimeLeft = Deadline - erlang:monotonic_time(millisecond),
@@ -268,8 +313,8 @@ format_consuela_beat({_Producer, {unexpected, {Type, Message}}}) ->
                 {mg_pulse_event_id, consuela_unexpected_info}
             ]}
     end;
-format_consuela_beat({_Producer, _Beat}) ->
-    undefined.
+format_consuela_beat({_Producer, Beat}) ->
+    {warning, {"unknown or mishandled consuela beat: ~p", [Beat]}, []}.
 
 -spec extract_meta(atom(), any()) ->
     [meta()] | meta().
