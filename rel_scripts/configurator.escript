@@ -35,12 +35,19 @@ main([YamlConfigFilename, ConfigsPath]) ->
 %%
 sys_config(YamlConfig) ->
     [
+        {os_mon,     , os_mon      (YamlConfig)},
         {lager       , lager       (YamlConfig)},
         {consuela    , consuela    (YamlConfig)},
         {how_are_you , how_are_you (YamlConfig)},
         {snowflake   , snowflake   (YamlConfig)},
         {brod        , brod        (YamlConfig)},
         {mg_woody_api, mg_woody_api(YamlConfig)}
+    ].
+
+os_mon(_YamlConfig) ->
+    [
+        % for better compatibility with busybox coreutils
+        {disksup_posix_only, true}
     ].
 
 lager(YamlConfig) ->
@@ -259,7 +266,7 @@ absolute_memory_limit(YamlConfig) ->
     end).
 
 memory_amount("cgroups") -> cg_mem_sup:limit();
-memory_amount("total"  ) -> proplist:get_value(memsup:get_system_memory_data()).
+memory_amount("total"  ) -> proplists:get_value(memsup:get_system_memory_data()).
 
 wait_value(_, 0, _, Key) ->
     exit({failed_fetch, Key});
