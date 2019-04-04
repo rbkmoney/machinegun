@@ -169,6 +169,28 @@ format_consuela_beat({registry_server, {{unregister, Reg}, Status}}) ->
             ]}
     end;
 
+%% session keeper
+format_consuela_beat({session_keeper, {session, {renewal, Status}}}) ->
+    case Status of
+        {succeeded, Session, Deadline} ->
+            {info, {"session renewal succeeded: ~p", [Session]}, [
+                {mg_pulse_event_id, consuela_session_renewal_succeeded},
+                {time_left, Deadline - os:system_time(second)}
+            ]};
+        {failed, Reason, Stacktrace} ->
+            {error, {"session renewal failed", []}, [
+                {mg_pulse_event_id, consuela_session_renewal_failed},
+                {error, [
+                    {reason, genlib:print(Reason, 500)},
+                    {stack_trace, genlib_format:format_stacktrace(Stacktrace)}
+                ]}
+            ]}
+    end;
+format_consuela_beat({session_keeper, {session, expired}}) ->
+    {error, {"session expired", []}, [{mg_pulse_event_id, consuela_session_expired}]};
+format_consuela_beat({session_keeper, {session, destroyed}}) ->
+    {info, {"session destroyed", []}, [{mg_pulse_event_id, consuela_session_destroyed}]};
+
 %% zombie reaper
 format_consuela_beat({zombie_reaper, {{zombie, {Rid, Name, Pid}}, Status}}) ->
     {Level, Format, Context} = case Status of
