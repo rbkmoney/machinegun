@@ -241,7 +241,7 @@ format_consuela_beat({discovery_server, {{connect, Node}, Status}}) ->
             {info, {"connection to ~p estabilished", [Node]}, [
                 {mg_pulse_event_id, consuela_distnode_connect_succeeded}
             ]};
-        {failed, false} ->
+        {finished, false} ->
             {error, {"connect to ~p failed", []}, [
                 {mg_pulse_event_id, consuela_distnode_connect_failed}
             ]}
