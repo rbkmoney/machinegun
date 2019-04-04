@@ -35,7 +35,7 @@ main([YamlConfigFilename, ConfigsPath]) ->
 %%
 sys_config(YamlConfig) ->
     [
-        {os_mon,     , os_mon      (YamlConfig)},
+        {os_mon      , os_mon      (YamlConfig)},
         {lager       , lager       (YamlConfig)},
         {consuela    , consuela    (YamlConfig)},
         {how_are_you , how_are_you (YamlConfig)},
