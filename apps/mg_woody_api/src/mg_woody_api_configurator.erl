@@ -136,9 +136,9 @@ gather_iface_addrs(Ifaces, Pref) ->
 
 -spec choose_iface_address(iface_name(), [inet:ip_address()], inet:address_family()) ->
     false | {true, {iface_name(), inet:ip_address()}}.
-choose_iface_address(Name, [Addr = {_,_,_,_} | _], inet) ->
+choose_iface_address(Name, [Addr = {_, _, _, _} | _], inet) ->
     {true, {Name, Addr}};
-choose_iface_address(Name, [Addr = {_,_,_,_,_,_,_,_} | _], inet6) ->
+choose_iface_address(Name, [Addr = {_, _, _, _, _, _, _, _} | _], inet6) ->
     {true, {Name, Addr}};
 choose_iface_address(Name, [_ | Rest], Pref) ->
     choose_iface_address(Name, Rest, Pref);
