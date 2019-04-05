@@ -138,9 +138,13 @@ format_consuela_beat({registry_server, {{register, {Name, Pid}}, Status}}) ->
             {debug, {"registering ~p as ~p ...", [Pid, Name]}, [
                 {mg_pulse_event_id, consuela_registration_started}
             ]};
-        succeeded ->
+        {finished, ok} ->
             {debug, {"registered ~p as ~p", [Pid, Name]}, [
                 {mg_pulse_event_id, consuela_registration_succeeded}
+            ]};
+        {finished, Error} ->
+            {info, {"did not register ~p as ~p: ~p", [Pid, Name, Error]}, [
+                {mg_pulse_event_id, consuela_registration_did_not_succeed}
             ]};
         {failed, Reason} ->
             {warning, {"failed to register ~p as ~p", [Pid, Name]}, [
@@ -158,9 +162,13 @@ format_consuela_beat({registry_server, {{unregister, Reg}, Status}}) ->
             {debug, {"unregistering ~p known as ~p ...", [Pid, Name]}, [
                 {mg_pulse_event_id, consuela_unregistration_started}
             ]};
-        succeeded ->
+        {finished, ok} ->
             {debug, {"unregistered ~p known as ~p", [Pid, Name]}, [
                 {mg_pulse_event_id, consuela_unregistration_succeeded}
+            ]};
+        {finished, Error} ->
+            {info, {"did not unregister ~p known as ~p: ~p", [Pid, Name, Error]}, [
+                {mg_pulse_event_id, consuela_registration_did_not_succeed}
             ]};
         {failed, Reason} ->
             {warning, {"failed to unregister ~p known as ~p", [Pid, Name]}, [
@@ -264,7 +272,7 @@ format_consuela_beat({discovery_server, {{connect, Node}, Status}}) ->
                 {mg_pulse_event_id, consuela_distnode_connect_succeeded}
             ]};
         {finished, false} ->
-            {error, {"connect to ~p failed", []}, [
+            {error, {"connect to ~p did not succeed", [Node]}, [
                 {mg_pulse_event_id, consuela_distnode_connect_failed}
             ]}
     end;
