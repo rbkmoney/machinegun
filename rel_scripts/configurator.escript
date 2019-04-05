@@ -431,48 +431,13 @@ host_name_type(Name) ->
     end.
 
 default_node_name(YamlConfig) ->
-    ?C:conf([service_name], YamlConfig, "machinegun") ++ "@" ++ get_host_addr(YamlConfig).
+    ?C:conf([service_name], YamlConfig, "machinegun") ++ "@" ++ guess_host_addr(YamlConfig).
 
-get_host_addr(YamlConfig) ->
-    {ok, Ifaces0} = inet:getifaddrs(),
-    Ifaces1 = filter_running_ifaces(Ifaces0),
-    IfaceAddrs0 = gather_iface_addrs(Ifaces1, is_ipv6_enabled(YamlConfig)),
-    [{_Name, Addr} | _] = sort_iface_addrs(IfaceAddrs0),
-    inet:ntoa(Addr).
+guess_host_addr(YamlConfig) ->
+    inet:ntoa(?C:guess_host_address(address_family_preference(YamlConfig))).
 
-filter_running_ifaces(Ifaces) ->
-    lists:filter(fun ({_, Ps}) -> is_iface_running(proplists:get_value(flags, Ps)) end, Ifaces).
-
-is_iface_running(Flags) ->
-    [] == [up, running] -- Flags.
-
-gather_iface_addrs(Ifaces, Ipv6) ->
-    lists:filtermap(
-        fun ({Name, Ps}) -> choose_iface_addr(Name, proplists:get_all_values(addr, Ps), Ipv6) end,
-        Ifaces
-    ).
-
-choose_iface_addr(Name, [Addr = {_,_,_,_} | _], _Ipv6 = false) ->
-    {true, {Name, Addr}};
-choose_iface_addr(Name, [Addr = {_,_,_,_,_,_,_,_} | _], _Ipv6 = true) ->
-    {true, {Name, Addr}};
-choose_iface_addr(Name, [_ | Rest], Ipv6) ->
-    choose_iface_addr(Name, Rest, Ipv6);
-choose_iface_addr(_, [], _) ->
-    false.
-
-sort_iface_addrs(IfaceAddrs) ->
-    lists:sort(fun ({N1, _}, {N2, _}) -> get_iface_prio(N1) =< get_iface_prio(N2) end, IfaceAddrs).
-
-get_iface_prio("eth" ++ _) -> 1;
-get_iface_prio("en"  ++ _) -> 1;
-get_iface_prio("wl"  ++ _) -> 2;
-get_iface_prio("tun" ++ _) -> 3;
-get_iface_prio("lo"  ++ _) -> 4;
-get_iface_prio(_)          -> 100.
-
-is_ipv6_enabled(YamlConfig) ->
-    conf_with([erlang, ipv6], YamlConfig, false, fun (V) -> V end).
+address_family_preference(YamlConfig) ->
+    conf_with([erlang, ipv6], YamlConfig, inet, fun (true) -> inet6; (false) -> inet end).
 
 %%
 %% erl_inetrc

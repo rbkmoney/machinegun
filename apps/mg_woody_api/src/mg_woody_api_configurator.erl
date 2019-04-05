@@ -23,6 +23,8 @@
 -export([print_vm_args    /1]).
 -export([print_erl_inetrc /1]).
 
+-export([guess_host_address/1]).
+
 -export([filename         /1]).
 -export([log_level        /1]).
 -export([mem_words        /1]).
@@ -98,6 +100,65 @@ filename(Filename) when is_list(Filename) ->
     Filename;
 filename(Filename) ->
     erlang:throw({bad_file_name, Filename}).
+
+-spec guess_host_address(inet:address_family()) ->
+    inet:ip_address().
+guess_host_address(AddressFamilyPreference) ->
+    {ok, Ifaces0} = inet:getifaddrs(),
+    Ifaces1 = filter_running_ifaces(Ifaces0),
+    IfaceAddrs0 = gather_iface_addrs(Ifaces1, AddressFamilyPreference),
+    [{_Name, Addr} | _] = sort_iface_addrs(IfaceAddrs0),
+    Addr.
+
+-type iface_name() :: string().
+-type iface()      :: {iface_name(), proplists:proplist()}.
+
+-spec filter_running_ifaces([iface()]) ->
+    [iface()].
+filter_running_ifaces(Ifaces) ->
+    lists:filter(
+        fun ({_, Ps}) -> is_iface_running(proplists:get_value(flags, Ps)) end,
+        Ifaces
+    ).
+
+-spec is_iface_running([up | running | atom()]) ->
+    boolean().
+is_iface_running(Flags) ->
+    [] == [up, running] -- Flags.
+
+-spec gather_iface_addrs([iface()], inet:address_family()) ->
+    [{iface_name(), inet:ip_address()}].
+gather_iface_addrs(Ifaces, Pref) ->
+    lists:filtermap(
+        fun ({Name, Ps}) -> choose_iface_address(Name, proplists:get_all_values(addr, Ps), Pref) end,
+        Ifaces
+    ).
+
+-spec choose_iface_address(iface_name(), [inet:ip_address()], inet:address_family()) ->
+    false | {true, {iface_name(), inet:ip_address()}}.
+choose_iface_address(Name, [Addr = {_,_,_,_} | _], inet) ->
+    {true, {Name, Addr}};
+choose_iface_address(Name, [Addr = {_,_,_,_,_,_,_,_} | _], inet6) ->
+    {true, {Name, Addr}};
+choose_iface_address(Name, [_ | Rest], Pref) ->
+    choose_iface_address(Name, Rest, Pref);
+choose_iface_address(_, [], _) ->
+    false.
+
+-spec sort_iface_addrs([{iface_name(), inet:ip_address()}]) ->
+    [{iface_name(), inet:ip_address()}].
+sort_iface_addrs(IfaceAddrs) ->
+    lists:sort(fun ({N1, _}, {N2, _}) -> get_iface_prio(N1) =< get_iface_prio(N2) end, IfaceAddrs).
+
+-spec get_iface_prio(iface_name()) ->
+    integer().
+get_iface_prio("eth" ++ _) -> 1;
+get_iface_prio("en"  ++ _) -> 1;
+get_iface_prio("wl"  ++ _) -> 2;
+get_iface_prio("tun" ++ _) -> 3;
+get_iface_prio("lo"  ++ _) -> 4;
+get_iface_prio(_)          -> 100.
+
 
 -spec
 log_level(string()  ) -> atom().
