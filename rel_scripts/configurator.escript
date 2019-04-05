@@ -396,7 +396,7 @@ event_sink(kafka, Name, ESYamlConfig) ->
 %%
 vm_args(YamlConfig, ERLInetrcFilename) ->
     [
-        {'-sname'    , service_name(YamlConfig)},
+        node_name(YamlConfig),
         {'-setcookie', ?C:utf_bin(?C:conf([erlang, cookie], YamlConfig, "mg_cookie" ))},
         {'+K'        , <<"true">>},
         {'+A'        , <<"10">>  },
@@ -408,6 +408,36 @@ vm_args(YamlConfig, ERLInetrcFilename) ->
 
 service_name(YamlConfig) ->
     ?C:utf_bin(?C:conf([service_name], YamlConfig, "machinegun")).
+
+node_name(YamlConfig) ->
+    Name = ?C:conf([dist_node_name], YamlConfig, default_node_name(YamlConfig)),
+    {node_name_type(Name), ?C:utf_bin(Name)}.
+
+node_name_type(Name) ->
+    case string:split(Name, "@") of
+        [_, Hostname] -> host_name_type(Hostname);
+        [_]           -> '-sname'
+    end.
+
+host_name_type(Name) ->
+    case inet:parse_address(Name) of
+        {ok, _} ->
+            '-name';
+        {error, einval} ->
+            case string:find(Name, ".") of
+                nomatch -> '-sname';
+                _       -> '-name'
+            end
+    end.
+
+default_node_name(YamlConfig) ->
+    ?C:conf([service_name], YamlConfig, "machinegun") ++ "@" ++ guess_host_addr(YamlConfig).
+
+guess_host_addr(YamlConfig) ->
+    inet:ntoa(?C:guess_host_address(address_family_preference(YamlConfig))).
+
+address_family_preference(YamlConfig) ->
+    conf_with([erlang, ipv6], YamlConfig, inet, fun (true) -> inet6; (false) -> inet end).
 
 %%
 %% erl_inetrc
