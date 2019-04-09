@@ -103,7 +103,7 @@ load_fail_test(_C) ->
     % тут процесс специально падает, поэтому линк не нужен
     Options = workers_options(?unload_timeout, #{fail_on=>load}),
     Pid     = start_workers(Options),
-    {error, {unexpected_worker_exit, _}} =
+    {error, {unexpected_exit, _}} =
         mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_utils:default_deadline()),
     ok      = wait_machines_unload(?unload_timeout),
     ok      = stop_workers(Pid).
@@ -124,7 +124,7 @@ call_fail_test(_C) ->
     % тут процесс специально падает, поэтому линк не нужен
     Options = workers_options(?unload_timeout, #{fail_on=>call}),
     Pid     = start_workers(Options),
-    {error, {unexpected_worker_exit, _}} =
+    {error, {unexpected_exit, _}} =
         mg_workers_manager:call(Options, 43, hello, ?req_ctx, mg_utils:default_deadline()),
     ok      = wait_machines_unload(?unload_timeout),
     ok      = stop_workers(Pid).
