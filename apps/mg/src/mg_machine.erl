@@ -1086,7 +1086,7 @@ scheduler_options(Name, HandlerMod, Options, HandlerOptions, Config) ->
         #{
             namespace => NS,
             scheduler_name => Name,
-            pulse => pulse,
+            pulse => Pulse,
             machine => Options
         },
         HandlerOptions
