@@ -35,11 +35,18 @@ main([YamlConfigFilename, ConfigsPath]) ->
 %%
 sys_config(YamlConfig) ->
     [
+        {os_mon      , os_mon      (YamlConfig)},
         {lager       , lager       (YamlConfig)},
         {how_are_you , how_are_you (YamlConfig)},
         {snowflake   , snowflake   (YamlConfig)},
         {brod        , brod        (YamlConfig)},
         {mg_woody_api, mg_woody_api(YamlConfig)}
+    ].
+
+os_mon(_YamlConfig) ->
+    [
+        % for better compatibility with busybox coreutils
+        {disksup_posix_only, true}
     ].
 
 lager(YamlConfig) ->
