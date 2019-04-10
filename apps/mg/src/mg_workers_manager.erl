@@ -128,7 +128,9 @@ start_and_retry_call(Options, ID, Call, ReqCtx, Deadline) ->
             call(Options, ID, Call, ReqCtx, Deadline);
         {error, {already_started, _}} ->
             call(Options, ID, Call, ReqCtx, Deadline);
-        Error={error, _} ->
+        {error, {consuela, Reason}} ->
+            {error, {transient, {registry_unavailable, Reason}}};
+        Error = {error, _} ->
             Error
     end.
 

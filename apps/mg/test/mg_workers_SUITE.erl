@@ -38,6 +38,7 @@
 -export([call_fail_test  /1]).
 -export([unload_fail_test/1]).
 -export([stress_test     /1]).
+-export([manager_contention_test/1]).
 
 %% mg_worker
 -behaviour(mg_worker).
@@ -59,7 +60,8 @@ all() ->
        load_error_test,
        call_fail_test,
        unload_fail_test,
-       stress_test
+       stress_test,
+       manager_contention_test
     ].
 
 %%
@@ -140,31 +142,15 @@ unload_fail_test(_C) ->
 -spec stress_test(config()) ->
     _.
 stress_test(_C) ->
-    TestTimeout        = 5 * 1000,
-    WorkersCount       = 50,
-    TestProcessesCount = 1000,
-    UnloadTimeout      = 0, % чтобы машины выгружались в процессе теста
-
-    Options = workers_options(UnloadTimeout, #{link_pid=>erlang:self()}),
-    WorkersPid = start_workers(Options),
-
-    TestProcesses = [stress_test_start_process(Options, WorkersCount) || _ <- lists:seq(1, TestProcessesCount)],
-    ok = timer:sleep(TestTimeout),
-
-    ok = mg_utils:stop_wait_all(TestProcesses, shutdown, 1000),
-    ok = wait_machines_unload(UnloadTimeout + 10),
-    ok = stop_workers(WorkersPid).
-
--spec stress_test_start_process(mg_workers_manager:options(), pos_integer()) ->
-    pid().
-stress_test_start_process(Options, WorkersCount) ->
-    erlang:spawn_link(fun() -> stress_test_process(Options, WorkersCount) end).
-
--spec stress_test_process(mg_workers_manager:options(), pos_integer()) ->
-    no_return().
-stress_test_process(Options, WorkersCount) ->
-    ok = stress_test_do_test_call(Options, WorkersCount),
-    stress_test_process(Options, WorkersCount).
+    WorkersCount   = 50,
+    UnloadTimeout  = 0, % чтобы машины выгружались в процессе теста
+    ok = run_load_test(#{
+        duration        => 5 * 1000,
+        runners         => 1000,
+        job             => fun (ManagerOptions, _N) -> stress_test_do_test_call(ManagerOptions, WorkersCount) end,
+        manager_options => workers_options(UnloadTimeout, #{link_pid=>erlang:self()}),
+        unload_timeout  => 10
+    }).
 
 -spec stress_test_do_test_call(mg_workers_manager:options(), pos_integer()) ->
     ok.
@@ -174,6 +160,69 @@ stress_test_do_test_call(Options, WorkersCount) ->
     Call = {hello, erlang:make_ref()},
     Call = mg_workers_manager:call(Options, ID, Call, ?req_ctx, mg_utils:default_deadline()),
     ok.
+
+-spec manager_contention_test(config()) ->
+    _.
+manager_contention_test(_C) ->
+    RunnersCount  = 10000,
+    UnloadTimeout = 0, % чтобы машины выгружались в процессе теста
+    ok = run_load_test(#{
+        duration        => 5 * 1000,
+        runners         => RunnersCount,
+        job             => fun manager_contention_test_call/2,
+        manager_options => workers_options(UnloadTimeout, #{link_pid=>erlang:self()}),
+        unload_timeout  => 100
+    }).
+
+-spec manager_contention_test_call(mg_workers_manager:options(), pos_integer()) ->
+    ok.
+manager_contention_test_call(Options, N) ->
+    % проверим, что отвечают действительно на наш запрос
+    Call = {hello, erlang:make_ref()},
+    case mg_workers_manager:call(Options, N, Call, ?req_ctx, mg_utils:default_deadline()) of
+        Call ->
+            ok;
+        {error, {transient, _}} ->
+            ok
+    end.
+
+-type load_options() :: #{
+    duration        := timeout(),
+    workers         := pos_integer(),
+    runners         := pos_integer(),
+    job             := load_job_fun(),
+    manager_options := mg_workers_manager:options(),
+    unload_timeout  := pos_integer()
+}.
+
+-type load_job_fun() :: fun((load_options(), _N :: pos_integer()) -> _).
+
+-spec run_load_test(load_options()) ->
+    _.
+run_load_test(#{
+    duration        := Duration,
+    runners         := RunnersCount,
+    job             := Job,
+    manager_options := ManagerOptions,
+    unload_timeout  := UnloadTimeout
+}) ->
+    WorkersPid = start_workers(ManagerOptions),
+    RunnersPid = [stress_test_start_process(Job, ManagerOptions, N) || N <- lists:seq(1, RunnersCount)],
+    ok = timer:sleep(Duration),
+    ok = mg_utils:stop_wait_all(RunnersPid, shutdown, 1000),
+    ok = wait_machines_unload(UnloadTimeout),
+    ok = stop_workers(WorkersPid).
+
+-spec stress_test_start_process(load_job_fun(), mg_workers_manager:options(), _N :: pos_integer()) ->
+    pid().
+stress_test_start_process(Job, ManagerOptions, N) ->
+    erlang:spawn_link(fun() -> stress_test_process(Job, ManagerOptions, N) end).
+
+-spec stress_test_process(load_job_fun(), mg_workers_manager:options(), _N :: pos_integer()) ->
+    no_return().
+stress_test_process(Job, ManagerOptions, N) ->
+    _ = Job(ManagerOptions, N),
+    stress_test_process(Job, ManagerOptions, N).
 
 -spec workers_options(non_neg_integer(), worker_params()) ->
     mg_workers_manager:options().
