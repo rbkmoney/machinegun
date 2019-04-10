@@ -271,6 +271,9 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             transport_opts => #{
                 pool => erlang:list_to_atom(NameStr),
                 max_connections => ?C:conf([processor, pool_size], NSYamlConfig, 50)
+            },
+            resolver_opts => #{
+                ip_picker => random
             }
         },
         default_processing_timeout => Timeout(default_processing_timeout, "30S"),
