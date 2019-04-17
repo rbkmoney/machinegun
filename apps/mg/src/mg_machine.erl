@@ -432,7 +432,7 @@ handle_call(Call, CallContext, ReqCtx, Deadline, S=#{options:=Options, storage_m
             % обработка машин в стейте processing идёт без дедлайна
             % машина должна либо упасть, либо перейти в другое состояние
             % MG-157: ретраим с задержкой
-            RetryStrategy = retry_strategy(continuation, Options, undefined), %@wip unsure about the subject name
+            RetryStrategy = retry_strategy(continuation, Options, undefined),
             S1 = process(continuation, undefined, ProcessingReqCtx, undefined, RetryStrategy, S),
             handle_call(Call, CallContext, ReqCtx, Deadline, S1);
 
@@ -653,7 +653,7 @@ process(Impact, ProcessingCtx, ReqCtx, Deadline, RetryStrat, State = #{id := ID,
         process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, RetryStrat, try_init_state(Impact, State))
     catch
         throw:(Reason=({ErrorType, _Details})):ST when ?can_be_retried(ErrorType) ->
-            ok = emit_beat(Opts, #mg_machine_process_transient_error{ %@wip not the correct event now?
+            ok = emit_beat(Opts, #mg_machine_process_transient_error{
                 namespace = NS,
                 machine_id = ID,
                 exception = {throw, Reason, ST},
