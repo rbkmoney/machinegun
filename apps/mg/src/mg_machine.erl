@@ -678,7 +678,7 @@ try_process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, RetryStrategy, State)
             ok = timer:sleep(Timeout),
             process(Impact, ProcessingCtx, ReqCtx, Deadline, NewRetryStrategy, State);
         finish ->
-            State
+            throw({permanent, process_retries_exhausted})
     end.
 
 -spec try_init_state(processor_impact(), state()) ->
