@@ -651,7 +651,12 @@ process(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{id := ID, namespace :
                 request_context = ReqCtx
             }),
             ok = do_reply_action({reply, {error, Reason}}, ProcessingCtx),
-            process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State);
+            case Impact of
+                continuation ->
+                    process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State);
+                _ ->
+                    State
+            end;
         Class:Reason:ST ->
             ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
             handle_exception({Class, Reason, ST}, Impact, ReqCtx, Deadline, State)
@@ -659,24 +664,20 @@ process(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{id := ID, namespace :
 
 -spec process_retry(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
     state().
-process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State) when
-    Impact =:= continuation
-->
+process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
     try
-        do_process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, init_retry_strategy(Impact, Deadline, State))
+        do_process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, try_init_retry_strategy(Impact, Deadline, State))
     catch
         Class:Reason:ST -> %% I miss get_stacktrace
             ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
             handle_exception({Class, Reason, ST}, Impact, ReqCtx, Deadline, State)
-    end;
-process_retry(_Impact, _ProcessingCtx, _ReqCtx, _Deadline, State) ->
-    State.
+    end.
 
--spec init_retry_strategy(processor_impact(), mg_utils:deadline(), state()) ->
+-spec try_init_retry_strategy(processor_impact(), mg_utils:deadline(), state()) ->
     state().
-init_retry_strategy(_, _, State = #{retry_strategy := _}) ->
+try_init_retry_strategy(_, _, State = #{retry_strategy := _}) ->
     State;
-init_retry_strategy(Impact, Deadline, State = #{options := Options}) ->
+try_init_retry_strategy(Impact, Deadline, State = #{options := Options}) ->
     RetryStrategy = retry_strategy({processor_impact, Impact}, Options, Deadline),
     State#{retry_strategy => RetryStrategy}.
 
@@ -692,7 +693,7 @@ do_process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{retry_strate
     end.
 
 -spec clean_retry_strategy(state()) ->
-        state().
+    state().
 clean_retry_strategy(State) ->
     maps:without([retry_strategy], State).
 
