@@ -116,7 +116,7 @@
     limit        => mg_quota_worker:name(),
     share        => mg_quota:share()
 }.
--type retry_subj() :: storage | processor | timers | continuation.
+-type retry_subj() :: storage | processor | timers | {processor_impact, processor_impact()}.
 -type retry_opt() :: #{
     retry_subj()   => mg_retry:policy()
 }.
@@ -201,8 +201,6 @@
     |  processing
     |  failed
 .
-
--type process_retry_strategy() :: mg_retry:strategy() | undefined.
 
 %%
 
@@ -371,7 +369,8 @@ call_(Options, ID, Call, ReqCtx, Deadline) ->
     namespace       => mg:ns(),
     options         => options(),
     storage_machine => storage_machine() | undefined,
-    storage_context => mg_storage:context() | undefined
+    storage_context => mg_storage:context() | undefined,
+    retry_strategy  => mg_retry:strategy()
 }.
 
 -type storage_machine() :: #{
@@ -413,7 +412,7 @@ handle_load(ID, Options, ReqCtx) ->
 
 -spec handle_call(_Call, mg_worker:call_context(), request_context(), mg_utils:deadline(), state()) ->
     {{reply, _Resp} | noreply, state()}.
-handle_call(Call, CallContext, ReqCtx, Deadline, S=#{options:=Options, storage_machine:=StorageMachine}) ->
+handle_call(Call, CallContext, ReqCtx, Deadline, S=#{storage_machine:=StorageMachine}) ->
     PCtx = new_processing_context(CallContext),
 
     % довольно сложное место, тут определяется приоритет реакции на внешние раздражители, нужно быть аккуратнее
@@ -431,9 +430,7 @@ handle_call(Call, CallContext, ReqCtx, Deadline, S=#{options:=Options, storage_m
         {_, #{status := {processing, ProcessingReqCtx}}} ->
             % обработка машин в стейте processing идёт без дедлайна
             % машина должна либо упасть, либо перейти в другое состояние
-            % MG-157: ретраим с задержкой
-            RetryStrategy = retry_strategy(continuation, Options, undefined),
-            S1 = process(continuation, undefined, ProcessingReqCtx, undefined, RetryStrategy, S),
+            S1 = process(continuation, undefined, ProcessingReqCtx, undefined, S),
             handle_call(Call, CallContext, ReqCtx, Deadline, S1);
 
         % ничего не просходит, просто убеждаемся, что машина загружена
@@ -641,16 +638,10 @@ process_simple_repair(ReqCtx, Deadline, State) ->
 
 -spec process(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
     state().
-process(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
-    process(Impact, ProcessingCtx, ReqCtx, Deadline, undefined, State).
-
--spec process(
-    processor_impact(), processing_context(), request_context(), mg_utils:deadline(), process_retry_strategy(), state()
-) ->
-    state().
-process(Impact, ProcessingCtx, ReqCtx, Deadline, RetryStrat, State = #{id := ID, namespace := NS, options := Opts}) ->
+process(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{id := ID, namespace := NS, options := Opts}) ->
     try
-        process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, RetryStrat, try_init_state(Impact, State))
+        NewState = process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, try_init_state(Impact, State)),
+        clean_retry_strategy(NewState)
     catch
         throw:(Reason=({ErrorType, _Details})):ST when ?can_be_retried(ErrorType) ->
             ok = emit_beat(Opts, #mg_machine_process_transient_error{
@@ -660,26 +651,50 @@ process(Impact, ProcessingCtx, ReqCtx, Deadline, RetryStrat, State = #{id := ID,
                 request_context = ReqCtx
             }),
             ok = do_reply_action({reply, {error, Reason}}, ProcessingCtx),
-            try_process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, RetryStrat, State);
+            process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State);
         Class:Reason:ST ->
             ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
             handle_exception({Class, Reason, ST}, Impact, ReqCtx, Deadline, State)
     end.
 
--spec try_process_retry(
-    processor_impact(), processing_context(), request_context(), mg_utils:deadline(), process_retry_strategy(), state()
-) ->
+-spec process_retry(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
     state().
-try_process_retry(_Impact, _ProcessingCtx, _ReqCtx, _Deadline, undefined, State) ->
+process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State) when
+    Impact =:= continuation
+->
+    try
+        do_process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, init_retry_strategy(Impact, Deadline, State))
+    catch
+        Class:Reason:ST -> %% I miss get_stacktrace
+            ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
+            handle_exception({Class, Reason, ST}, Impact, ReqCtx, Deadline, State)
+    end;
+process_retry(_Impact, _ProcessingCtx, _ReqCtx, _Deadline, State) ->
+    State.
+
+-spec init_retry_strategy(processor_impact(), mg_utils:deadline(), state()) ->
+    state().
+init_retry_strategy(_, _, State = #{retry_strategy := _}) ->
     State;
-try_process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, RetryStrategy, State) ->
+init_retry_strategy(Impact, Deadline, State = #{options := Options}) ->
+    RetryStrategy = retry_strategy({processor_impact, Impact}, Options, Deadline),
+    State#{retry_strategy => RetryStrategy}.
+
+-spec do_process_retry(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
+    state().
+do_process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{retry_strategy := RetryStrategy}) ->
     case genlib_retry:next_step(RetryStrategy) of
         {wait, Timeout, NewRetryStrategy} ->
             ok = timer:sleep(Timeout),
-            process(Impact, ProcessingCtx, ReqCtx, Deadline, NewRetryStrategy, State);
+            process(Impact, ProcessingCtx, ReqCtx, Deadline, State#{retry_strategy => NewRetryStrategy});
         finish ->
-            throw({permanent, process_retries_exhausted})
+            throw({permanent, retries_exhausted})
     end.
+
+-spec clean_retry_strategy(state()) ->
+        state().
+clean_retry_strategy(State) ->
+    maps:without([retry_strategy], State).
 
 -spec try_init_state(processor_impact(), state()) ->
     state().
@@ -712,11 +727,9 @@ handle_exception(Exception, Impact, ReqCtx, Deadline, State) ->
             transit_state(ReqCtx, Deadline, NewStorageMachine, State)
     end.
 
--spec process_unsafe(
-    processor_impact(), processing_context(), request_context(), mg_utils:deadline(), process_retry_strategy(), state()
-) ->
+-spec process_unsafe(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
     state().
-process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, RetryStrat, State = #{storage_machine := StorageMachine}) ->
+process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machine := StorageMachine}) ->
     ok = emit_pre_process_beats(Impact, ReqCtx, Deadline, State),
     ProcessStart = erlang:monotonic_time(),
     {ReplyAction, Action, NewMachineState} =
@@ -745,7 +758,7 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, RetryStrat, State = #{st
             % продолжение обработки машины делается без дедлайна
             % предполагается, что машина должна рано или поздно завершить свои дела или упасть
             NewProcessingCtx = ProcessingCtx#{state := NewProcessingSubState},
-            process(continuation, NewProcessingCtx, ReqCtx, undefined, RetryStrat, NewState);
+            process(continuation, NewProcessingCtx, ReqCtx, undefined, NewState);
         _ ->
             NewState
     end.
