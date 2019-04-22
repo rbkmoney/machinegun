@@ -640,8 +640,7 @@ process_simple_repair(ReqCtx, Deadline, State) ->
     state().
 process(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{id := ID, namespace := NS, options := Opts}) ->
     try
-        NewState = process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, try_init_state(Impact, State)),
-        clean_retry_strategy(NewState)
+        process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, try_init_state(Impact, State))
     catch
         throw:(Reason=({ErrorType, _Details})):ST when ?can_be_retried(ErrorType) ->
             ok = emit_beat(Opts, #mg_machine_process_transient_error{
@@ -666,7 +665,9 @@ process(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{id := ID, namespace :
     state().
 process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
     try
-        do_process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, try_init_retry_strategy(Impact, Deadline, State))
+        St0 = try_init_retry_strategy(Impact, Deadline, State),
+        St1 = do_process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, St0),
+        clean_retry_strategy(St1)
     catch
         Class:Reason:ST -> %% I miss get_stacktrace
             ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
