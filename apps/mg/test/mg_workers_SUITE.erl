@@ -37,6 +37,8 @@
 -export([load_error_test /1]).
 -export([call_fail_test  /1]).
 -export([unload_fail_test/1]).
+-export([unload_test/1]).
+-export([unload_loading_test/1]).
 -export([stress_test     /1]).
 -export([manager_contention_test/1]).
 
@@ -60,6 +62,8 @@ all() ->
        load_error_test,
        call_fail_test,
        unload_fail_test,
+       unload_test,
+       unload_loading_test,
        stress_test,
        manager_contention_test
     ].
@@ -138,6 +142,46 @@ unload_fail_test(_C) ->
     hello   = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_utils:default_deadline()),
     ok      = wait_machines_unload(?unload_timeout),
     ok      = stop_workers(Pid).
+
+-spec unload_test(config()) ->
+    _.
+unload_test(_C) ->
+    Options = workers_options(?unload_timeout, #{link_pid => self()}),
+    Pid     = start_workers(Options),
+    hello   = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_utils:default_deadline()),
+    WorkerPid = wait_worker_pid(42),
+    ok      = wait_worker_unload(WorkerPid, ?unload_timeout * 2),
+    ok      = stop_workers(Pid).
+
+-spec unload_loading_test(config()) ->
+    _.
+unload_loading_test(_C) ->
+    LoadLag = 100,
+    Options = workers_options(?unload_timeout, #{link_pid => self(), load_lag => LoadLag}),
+    Pid     = start_workers(Options),
+    {error, {timeout, _}} = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_utils:timeout_to_deadline(LoadLag div 2)),
+    WorkerPid = wait_worker_pid(42),
+    ok      = wait_worker_unload(WorkerPid, LoadLag + ?unload_timeout * 2),
+    ok      = stop_workers(Pid).
+
+-spec wait_worker_pid(_ID) ->
+    pid().
+wait_worker_pid(ID) ->
+    receive
+        {worker, ID, Pid} -> Pid
+    after
+        0 -> erlang:error(no_pid_received)
+    end.
+
+-spec wait_worker_unload(_WorkerPid :: pid(), timeout()) ->
+    ok.
+wait_worker_unload(WorkerPid, Timeout) ->
+    MRef = erlang:monitor(process, WorkerPid),
+    ok = receive
+        {'DOWN', MRef, process, WorkerPid, normal} -> ok
+    after
+        Timeout -> erlang:error(unload_timed_out)
+    end.
 
 -spec stress_test(config()) ->
     _.
@@ -246,6 +290,7 @@ workers_options(UnloadTimeout, WorkerParams) ->
 -type worker_stage() :: load | call | unload.
 -type worker_params() :: #{
     link_pid   => pid(),
+    load_lag   => pos_integer(), % milliseconds
     load_error => term(),
     fail_on    => worker_stage()
 }.
@@ -255,9 +300,10 @@ workers_options(UnloadTimeout, WorkerParams) ->
     {ok, worker_state()} | {error, _}.
 handle_load(_, #{load_error := Reason}, ?req_ctx) ->
     {error, Reason};
-handle_load(_, Params, ?req_ctx) ->
-    ok = try_link(Params),
+handle_load(ID, Params, ?req_ctx) ->
+    ok = try_link(ID, Params),
     ok = try_exit(load, Params),
+    ok = timer:sleep(maps:get(load_lag, Params, 0)),
     {ok, Params}.
 
 -spec handle_call(_Call, _From, _, _, worker_state()) ->
@@ -279,17 +325,20 @@ try_exit(CurrentStage, #{fail_on := FailOnStage}) when CurrentStage =:= FailOnSt
 try_exit(_Stage, #{}) ->
     ok.
 
--spec try_link(worker_params()) ->
+-spec try_link(_ID, worker_params()) ->
     ok.
-try_link(#{link_pid:=Pid}) ->
-    true = erlang:link(Pid), ok;
-try_link(#{}) ->
+try_link(ID, #{link_pid:=Pid}) ->
+    _ = Pid ! {worker, ID, self()},
+    true = erlang:link(Pid),
+    ok;
+try_link(_ID, #{}) ->
     ok.
 
 -spec try_unlink(worker_params()) ->
     ok.
 try_unlink(#{link_pid:=Pid}) ->
-    true = erlang:unlink(Pid), ok;
+    true = erlang:unlink(Pid),
+    ok;
 try_unlink(#{}) ->
     ok.
 

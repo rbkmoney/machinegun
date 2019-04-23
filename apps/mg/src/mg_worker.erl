@@ -166,7 +166,7 @@ init({ID, Options = #{worker := WorkerModOpts}, ReqCtx}) ->
             hibernate_timeout => HibernateTimeout,
             unload_timeout    => UnloadTimeout
         },
-    {ok, State}.
+    {ok, schedule_unload_timer(State)}.
 
 -spec handle_call(_Call, mg_utils:gen_server_from(), state()) ->
     mg_utils:gen_server_handle_call_ret(state()).
@@ -211,7 +211,7 @@ handle_info({timeout, TRef, unload}, State=#{mod:=Mod, unload_tref:=TRef, status
     case Status of
         {working, ModState} ->
             _ = Mod:handle_unload(ModState);
-        {loading, _} ->
+        {loading, _, _} ->
             ok
     end,
     {stop, normal, State};
