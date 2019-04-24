@@ -215,7 +215,9 @@ woody_server(YamlConfig) ->
             max_connections => ?C:conf([woody_server, max_concurrent_connections], YamlConfig, 1024)
         },
         protocol_opts => #{
-            request_timeout => ?C:time_interval(?C:conf([woody_server, request_timeout], YamlConfig, "5S"), 'ms'),
+            request_timeout => ?C:time_interval(
+                ?C:conf([woody_server, http_keep_alive_timeout], YamlConfig, "5S"), 'ms'
+            ),
             idle_timeout    => ?C:time_interval(?C:conf([woody_server, idle_timeout   ], YamlConfig, "5S"), 'ms')
         },
         limits   => genlib_map:compact(#{
@@ -331,6 +333,9 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             transport_opts => #{
                 pool => erlang:list_to_atom(NameStr),
                 max_connections => ?C:conf([processor, pool_size], NSYamlConfig, 50)
+            },
+            resolver_opts => #{
+                ip_picker => random
             }
         },
         worker => #{

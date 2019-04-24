@@ -24,7 +24,7 @@ erlang:
 woody_server:
     ip: "::"
     port: 8022
-    keep_alive_timeout: 60s
+    http_keep_alive_timeout: 60s
 consuela:
     registry:
         nodename: mhost1
