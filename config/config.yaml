@@ -22,7 +22,7 @@ erlang:
 woody_server:
     ip: "::"
     port: 8022
-    keep_alive_timeout: 60s
+    http_keep_alive_timeout: 60s
 limits:
     process_heap: 2M # heap limit
     disk: # uses only for health check
