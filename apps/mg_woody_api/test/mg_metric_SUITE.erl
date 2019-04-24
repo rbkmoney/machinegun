@@ -146,11 +146,9 @@ fraction_and_queue_bin_metric_test(_C) ->
     Samples = lists:seq(0, 200, 1),
     _ = [
         ok = test_beat(#mg_worker_call_attempt{
-            namespace = ?NS,
-            msg_queue_len = Sample,
-            msg_queue_limit = 100
+            namespace = ?NS
         })
-        || Sample <- Samples
+        || _ <- Samples
     ].
 
 -spec duration_bin_metric_test(config()) -> _.
