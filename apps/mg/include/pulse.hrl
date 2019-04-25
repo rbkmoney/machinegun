@@ -187,9 +187,7 @@
     namespace :: mg:ns(),
     machine_id :: mg:id(),
     request_context :: mg:request_context(),
-    deadline :: mg_utils:deadline(),
-    msg_queue_len :: non_neg_integer(),
-    msg_queue_limit :: mg_workers_manager:queue_limit()
+    deadline :: mg_utils:deadline()
 }).
 
 -record(mg_worker_start_attempt, {

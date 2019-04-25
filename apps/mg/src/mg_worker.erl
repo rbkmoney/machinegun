@@ -24,7 +24,7 @@
 
 -export([child_spec    /2]).
 -export([start_link    /4]).
--export([call          /7]).
+-export([call          /6]).
 -export([brutal_kill   /2]).
 -export([reply         /2]).
 -export([get_call_queue/2]).
@@ -58,7 +58,6 @@
 %% Internal types
 
 -type pulse() :: mg_pulse:handler().
--type queue_limit() :: mg_workers_manager:queue_limit().
 
 -define(wrap_id(NS, ID), {?MODULE, {NS, ID}}).
 
@@ -77,28 +76,20 @@ child_spec(ChildID, Options) ->
 start_link(Options, NS, ID, ReqCtx) ->
     gen_server:start_link(self_reg_name(NS, ID), ?MODULE, {ID, Options, ReqCtx}, []).
 
--spec call(mg:ns(), mg:id(), _Call, _ReqCtx, mg_utils:deadline(), queue_limit(), pulse()) ->
+-spec call(mg:ns(), mg:id(), _Call, _ReqCtx, mg_utils:deadline(), pulse()) ->
     _Result | {error, _}.
-call(NS, ID, Call, ReqCtx, Deadline, MaxQueueLength, Pulse) ->
-    QueueLength = mg_utils:msg_queue_len(self_ref(NS, ID)),
+call(NS, ID, Call, ReqCtx, Deadline, Pulse) ->
     ok = mg_pulse:handle_beat(Pulse, #mg_worker_call_attempt{
         namespace = NS,
         machine_id = ID,
         request_context = ReqCtx,
-        deadline = Deadline,
-        msg_queue_len = QueueLength,
-        msg_queue_limit = MaxQueueLength
+        deadline = Deadline
     }),
-    case QueueLength < MaxQueueLength of
-        true ->
-            gen_server:call(
-                self_ref(NS, ID),
-                {call, Deadline, Call, ReqCtx},
-                mg_utils:deadline_to_timeout(Deadline)
-            );
-        false ->
-            {error, {transient, overload}}
-    end.
+    gen_server:call(
+        self_ref(NS, ID),
+        {call, Deadline, Call, ReqCtx},
+        mg_utils:deadline_to_timeout(Deadline)
+    ).
 
 %% for testing
 -spec brutal_kill(mg:ns(), mg:id()) ->

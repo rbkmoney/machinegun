@@ -142,12 +142,9 @@ create_metric(#mg_scheduler_quota_reserved{} = Beat) ->
         create_gauge([mg, scheduler, NS, Name, quota, reserved], Reserved)
     ];
 % Workers management
-create_metric(#mg_worker_call_attempt{namespace = NS, msg_queue_len = QLen, msg_queue_limit = QLimit}) ->
-    QUsage = calc_queue_usage(QLen, QLimit),
+create_metric(#mg_worker_call_attempt{namespace = NS}) ->
     [
-        create_inc([mg, workers, NS, call_attempt]),
-        create_bin_inc([mg, workers, NS, call_attempt, queue_usage], fraction, QUsage),
-        create_bin_inc([mg, workers, NS, call_attempt, queue_len], queue_length, QLen)
+        create_inc([mg, workers, NS, call_attempt])
     ];
 create_metric(#mg_worker_start_attempt{namespace = NS, msg_queue_len = QLen, msg_queue_limit = QLimit}) ->
     QUsage = calc_queue_usage(QLen, QLimit),

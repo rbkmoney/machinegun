@@ -89,10 +89,7 @@ call(Options, ID, Call, ReqCtx, Deadline) ->
     case mg_utils:is_deadline_reached(Deadline) of
         false ->
             #{name := Name, pulse := Pulse} = Options,
-            MsgQueueLimit = message_queue_len_limit(Options),
-            try
-                mg_worker:call(Name, ID, Call, ReqCtx, Deadline, MsgQueueLimit, Pulse)
-            catch
+            try mg_worker:call(Name, ID, Call, ReqCtx, Deadline, Pulse) catch
                 exit:Reason ->
                     handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason)
             end;
