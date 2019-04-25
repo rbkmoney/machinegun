@@ -145,10 +145,12 @@ offset_bin_metric_test(_C) ->
 fraction_and_queue_bin_metric_test(_C) ->
     Samples = lists:seq(0, 200, 1),
     _ = [
-        ok = test_beat(#mg_worker_call_attempt{
-            namespace = ?NS
+        ok = test_beat(#mg_worker_start_attempt{
+            namespace = ?NS,
+            msg_queue_len = Sample,
+            msg_queue_limit = 100
         })
-        || _ <- Samples
+        || Sample <- Samples
     ].
 
 -spec duration_bin_metric_test(config()) -> _.
