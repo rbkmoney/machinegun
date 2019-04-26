@@ -19,6 +19,10 @@
 -behaviour(mg_scheduler).
 -behaviour(mg_scheduler_worker).
 
+
+-export([build_task_info/2]).
+-export([build_task_info/3]).
+
 %% mg_scheduler callbacks
 -export([init/1]).
 -export([search_new_tasks/3]).
@@ -68,6 +72,25 @@
 init(_Options) ->
     {ok, #state{}}.
 
+-spec(build_task_info(mg:id(), genlib_time:ts(), mg_machine:machine_regular_status()) -> task_info()).
+build_task_info(ID, Timestamp, Status) when is_tuple(Status) ->
+    #{payload := Payload} = TaskInfo = build_task_info(ID, Timestamp),
+    TaskInfo#{payload => Payload#{status => Status}}.
+
+-spec(build_task_info(mg:id(), genlib_time:ts()) -> task_info()).
+build_task_info(ID, Timestamp) ->
+    CreateTime = erlang:monotonic_time(),
+    #{
+        id => ID,
+        payload => #{
+            machine_id => ID,
+            target_timestamp => Timestamp
+        },
+        created_at => CreateTime,
+        target_time => Timestamp,
+        machine_id => ID
+    }.
+
 -spec search_new_tasks(Options, Limit, State) -> {ok, Status, Result, State} when
     Options :: options(),
     Limit :: non_neg_integer(),
@@ -78,20 +101,8 @@ search_new_tasks(#{timer_queue := TimerMode} = Options, Limit, State) ->
     MachineOptions = machine_options(Options),
     Query = {TimerMode, 1, genlib_time:unow()},
     {Timers, Continuation} = mg_machine:search(MachineOptions, Query, Limit),
-    CreateTime = erlang:monotonic_time(),
-    %% TODO Make this as  separate method
     Tasks = [
-        #{
-            id => ID,
-            payload => #{
-                machine_id => ID,
-                target_timestamp => Ts
-            },
-            created_at => CreateTime,
-            target_time => Ts,
-            machine_id => ID
-        }
-        || {Ts, ID} <- Timers
+        build_task_info(ID, Ts) || {Ts, ID} <- Timers
     ],
     {ok, get_status(Continuation), Tasks, State}.
 

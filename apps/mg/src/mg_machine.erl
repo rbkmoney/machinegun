@@ -706,7 +706,17 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
                 NewStorageMachine = NewStorageMachine0#{status := sleeping},
                 transit_state(ReqCtx, Deadline, NewStorageMachine, State);
             {wait, Timestamp, HdlReqCtx, HdlTo} ->
-                NewStorageMachine = NewStorageMachine0#{status := {waiting, Timestamp, HdlReqCtx, HdlTo}},
+                Status = {waiting, Timestamp, HdlReqCtx, HdlTo},
+                CurrentTimeSec = erlang:system_time(second),
+                if
+                    Timestamp =< CurrentTimeSec ->
+                        Id = maps:get(id, State),
+                        Ns = maps:get(namespace, State),
+                        TaskInfo = mg_queue_timer:build_task_info(Id, CurrentTimeSec, Status),
+                        mg_scheduler:add_task(Ns, <<"timers">>, TaskInfo);
+                    true -> ok
+                end,
+                NewStorageMachine = NewStorageMachine0#{status := Status},
                 transit_state(ReqCtx, Deadline, NewStorageMachine, State);
             remove ->
                 remove_from_storage(ReqCtx, Deadline, State)
