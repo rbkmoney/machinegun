@@ -49,7 +49,8 @@
 -type task_id() :: mg:id().
 -type task_payload() :: #{
     machine_id := mg:id(),
-    target_timestamp := timestamp_s()
+    target_timestamp := timestamp_s(),
+    status := undefined | mg_machine:machine_regular_status()
 }.
 -type task_info() :: mg_scheduler:task_info(task_id(), task_payload()).
 -type timestamp_s() :: genlib_time:ts().  % in seconds
@@ -78,6 +79,7 @@ search_new_tasks(#{timer_queue := TimerMode} = Options, Limit, State) ->
     Query = {TimerMode, 1, genlib_time:unow()},
     {Timers, Continuation} = mg_machine:search(MachineOptions, Query, Limit),
     CreateTime = erlang:monotonic_time(),
+    %% TODO Make this as  separate method
     Tasks = [
         #{
             id => ID,
@@ -95,15 +97,20 @@ search_new_tasks(#{timer_queue := TimerMode} = Options, Limit, State) ->
 
 -spec execute_task(options(), task_info()) ->
     ok.
-execute_task(#{timer_queue := TimerMode} = Options, TaskInfo) ->
+execute_task(#{timer_queue := TimerMode} = Options, #{payload := Payload}) ->
     MachineOptions = machine_options(Options),
     #{
-        payload := #{
-            machine_id := MachineID,
-            target_timestamp := TargetTimestamp
-        }
-    } = TaskInfo,
-    case {TimerMode, mg_machine:get_status(MachineOptions, MachineID)} of
+         machine_id := MachineID,
+         target_timestamp := TargetTimestamp
+    } = Payload,
+    Status =
+        case maps:get(status, Payload, undefined) of
+            undefined ->
+                mg_machine:get_status(MachineOptions, MachineID);
+            S ->
+                S
+        end,
+    case {TimerMode, Status} of
         {waiting, {waiting, Timestamp, ReqCtx, _Timeout}} when Timestamp =:= TargetTimestamp ->
             call_timeout(Options, MachineID, Timestamp, ReqCtx);
         {retrying, {retrying, Timestamp, _Start, _Attempt, ReqCtx}} when Timestamp =:= TargetTimestamp ->
