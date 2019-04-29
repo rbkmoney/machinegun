@@ -77,8 +77,10 @@ test_timeout(_C) ->
     Options = automaton_options(NS),
     _  = start_automaton(Options),
 
-    ok = mg_machine:start(Options, ID, <<"normal">>, ?req_ctx, mg_utils:default_deadline()),
-    R  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
+    ok = mg_machine:start(Options, ID, 0, ?req_ctx, mg_utils:default_deadline()),
+    0  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
+    ok  = mg_machine:call(Options, ID, force_timeout, ?req_ctx, mg_utils:default_deadline()),
+    1  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
     ok.
 
 %%
@@ -94,18 +96,14 @@ pool_child_spec(_Options, Name) ->
 
 -spec process_machine(_Options, mg:id(), mg_machine:processor_impact(), _, _, _, mg_machine:machine_state()) ->
     mg_machine:processor_result() | no_return().
-process_machine(_, _, {init, Mode}, _, ?req_ctx, _, null) ->
-    {{reply, ok}, build_timer(init), [Mode, 0]};
-process_machine(_, _, {call, get}, _, ?req_ctx, _, [_Mode, Counter] = State) ->
-    {{reply, Counter}, build_timer(call), State};
-process_machine(_, _, {call, {set_mode, NewMode}}, _, ?req_ctx, _, [_Mode, Counter]) ->
-    {{reply, ok}, build_timer(call), [NewMode, Counter]};
-process_machine(_, _, timeout, _, ?req_ctx, _, [<<"normal">>, _Counter] = State) ->
-    {{reply, ok}, build_timer(timeout), State};
-process_machine(_, _, timeout, _, ?req_ctx, _, [<<"counting">> = Mode, Counter]) ->
-    {{reply, ok}, build_timer(timeout), [Mode, Counter + 1]};
-process_machine(_, _, timeout, _, ?req_ctx, _, [<<"failing">>, _Counter]) ->
-    erlang:throw({transient, oops}).
+process_machine(_, _, {init, Counter}, _, ?req_ctx, _, null) ->
+    {{reply, ok}, sleep, Counter};
+process_machine(_, _, {call, get}, _, ?req_ctx, _, Counter) ->
+    {{reply, Counter}, sleep, Counter};
+process_machine(_, _, {call, force_timeout}, _, ?req_ctx, _, Counter) ->
+    {{reply, ok}, {wait, genlib_time:unow() - 1, ?req_ctx, 5000}, Counter + 1};
+process_machine(_, _, timeout, _, ?req_ctx, _, _Counter) ->
+    erlang:throw({force_timeout, error}).
 
 %%
 %% utils
@@ -139,10 +137,3 @@ automaton_options(NS) ->
     ok.
 handle_beat(_, Beat) ->
     ct:pal("~p", [Beat]).
-
--spec build_timer(any()) ->
-    mg_machine:processor_flow_action().
-build_timer(init) ->
-    {wait, genlib_time:unow() + 1, ?req_ctx, 5000};
-build_timer(_) ->
-    {wait, genlib_time:unow() - 1, ?req_ctx, 5000}.

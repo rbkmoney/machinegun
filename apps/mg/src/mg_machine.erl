@@ -107,6 +107,8 @@
 -behaviour(mg_worker).
 -export([handle_load/3, handle_call/5, handle_unload/1]).
 
+-define(TIMERS, <<"timers">>).
+
 %%
 %% API
 %%
@@ -712,8 +714,8 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
                     Timestamp =< CurrentTimeSec ->
                         Id = maps:get(id, State),
                         Ns = maps:get(namespace, State),
-                        TaskInfo = mg_queue_timer:build_task_info(Id, CurrentTimeSec, Status),
-                        mg_scheduler:add_task(Ns, <<"timers">>, TaskInfo);
+                        TaskInfo = mg_queue_timer:build_task_info(Id, Timestamp, Status),
+                        mg_scheduler:add_task(Ns, ?TIMERS, TaskInfo);
                     true -> ok
                 end,
                 NewStorageMachine = NewStorageMachine0#{status := Status},
@@ -1059,7 +1061,7 @@ scheduler_options(timers, Options, Config) ->
         reschedule_timeout => maps:get(reschedule_timeout, Options, undefined),
         timer_queue => waiting
     },
-    scheduler_options(<<"timers">>, mg_queue_timer, Options, HandlerOptions, Config);
+    scheduler_options(?TIMERS, mg_queue_timer, Options, HandlerOptions, Config);
 scheduler_options(timers_retries, Options, Config) ->
     HandlerOptions = #{
         processing_timeout => maps:get(timer_processing_timeout, Options, undefined),
