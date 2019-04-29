@@ -78,9 +78,10 @@ test_timeout(_C) ->
     _  = start_automaton(Options),
 
     ok = mg_machine:start(Options, ID, 0, ?req_ctx, mg_utils:default_deadline()),
-    0  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
-    ok  = mg_machine:call(Options, ID, force_timeout, ?req_ctx, mg_utils:default_deadline()),
-    1  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
+     0 = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
+    ok = mg_machine:call(Options, ID, force_timeout, ?req_ctx, mg_utils:default_deadline()),
+    timer:sleep(timer:seconds(1)),
+     1 = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
     ok.
 
 %%
@@ -101,9 +102,11 @@ process_machine(_, _, {init, Counter}, _, ?req_ctx, _, null) ->
 process_machine(_, _, {call, get}, _, ?req_ctx, _, Counter) ->
     {{reply, Counter}, sleep, Counter};
 process_machine(_, _, {call, force_timeout}, _, ?req_ctx, _, Counter) ->
-    {{reply, ok}, {wait, genlib_time:unow() - 1, ?req_ctx, 5000}, Counter + 1};
-process_machine(_, _, timeout, _, ?req_ctx, _, _Counter) ->
-    erlang:throw({force_timeout, error}).
+    {{reply, ok}, {wait, genlib_time:unow(), ?req_ctx, 5000}, Counter};
+process_machine(_, _, timeout, _, ?req_ctx, _, Counter) ->
+    {{reply, ok}, sleep, Counter + 1};
+process_machine(_, _, _, _, ?req_ctx, _, _Counter) ->
+    erlang:throw(unexpected).
 
 %%
 %% utils
