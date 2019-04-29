@@ -116,7 +116,7 @@
     limit        => mg_quota_worker:name(),
     share        => mg_quota:share()
 }.
--type retry_subj() :: storage | processor | timers | {processor_impact, processor_impact()}.
+-type retry_subj() :: storage | processor | timers | continuation.
 -type retry_opt() :: #{
     retry_subj()   => mg_retry:policy()
 }.
@@ -178,6 +178,8 @@
 .
 -type processor_result() :: {processor_reply_action(), processor_flow_action(), machine_state()}.
 -type request_context() :: mg:request_context().
+
+-type processor_retry() :: mg_retry:strategy() | undefined.
 
 -callback processor_child_spec(_Options) ->
     supervisor:child_spec() | undefined.
@@ -369,8 +371,7 @@ call_(Options, ID, Call, ReqCtx, Deadline) ->
     namespace       => mg:ns(),
     options         => options(),
     storage_machine => storage_machine() | undefined,
-    storage_context => mg_storage:context() | undefined,
-    retry_strategy  => mg_retry:strategy()
+    storage_context => mg_storage:context() | undefined
 }.
 
 -type storage_machine() :: #{
@@ -638,7 +639,25 @@ process_simple_repair(ReqCtx, Deadline, State) ->
 
 -spec process(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
     state().
-process(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{id := ID, namespace := NS, options := Opts}) ->
+process(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
+    RetryStrategy = get_impact_retry_strategy(Impact, Deadline, State),
+    try
+        process_with_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State, RetryStrategy)
+    catch
+        Class:Reason:ST ->
+            ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
+            handle_exception({Class, Reason, ST}, Impact, ReqCtx, Deadline, State)
+    end.
+
+-spec process_with_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State, Retry) -> State when
+    Impact :: processor_impact(),
+    ProcessingCtx :: processing_context(),
+    ReqCtx :: request_context(),
+    Deadline :: mg_utils:deadline(),
+    State :: state(),
+    Retry :: processor_retry().
+process_with_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State, RetryStrategy) ->
+    #{id := ID, namespace := NS, options := Opts} = State,
     try
         process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, try_init_state(Impact, State))
     catch
@@ -650,53 +669,30 @@ process(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{id := ID, namespace :
                 request_context = ReqCtx
             }),
             ok = do_reply_action({reply, {error, Reason}}, ProcessingCtx),
-            case Impact of
-                continuation ->
-                    process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State);
-                _ ->
-                    State
-            end;
-        Class:Reason:ST ->
-            ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
-            handle_exception({Class, Reason, ST}, Impact, ReqCtx, Deadline, State)
+            case process_retry_next_step(RetryStrategy) of
+                ignore ->
+                    State;
+                finish ->
+                    erlang:throw({permanent, {retries_exhausted, Reason}});
+                {wait, Timeout, NewRetryStrategy} ->
+                    ok = timer:sleep(Timeout),
+                    process_with_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State, NewRetryStrategy)
+            end
     end.
 
--spec process_retry(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
-    state().
-process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
-    try
-        St0 = try_init_retry_strategy(Impact, Deadline, State),
-        St1 = do_process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, St0),
-        clean_retry_strategy(St1)
-    catch
-        Class:Reason:ST -> %% I miss get_stacktrace
-            ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
-            handle_exception({Class, Reason, ST}, Impact, ReqCtx, Deadline, State)
-    end.
+-spec process_retry_next_step(processor_retry()) ->
+    {wait, timeout(), mg_retry:strategy()} | finish | ignore.
+process_retry_next_step(undefined) ->
+    ignore;
+process_retry_next_step(RetryStrategy) ->
+    genlib_retry:next_step(RetryStrategy).
 
--spec try_init_retry_strategy(processor_impact(), mg_utils:deadline(), state()) ->
-    state().
-try_init_retry_strategy(_, _, State = #{retry_strategy := _}) ->
-    State;
-try_init_retry_strategy(Impact, Deadline, State = #{options := Options}) ->
-    RetryStrategy = retry_strategy({processor_impact, Impact}, Options, Deadline),
-    State#{retry_strategy => RetryStrategy}.
-
--spec do_process_retry(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
-    state().
-do_process_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{retry_strategy := RetryStrategy}) ->
-    case genlib_retry:next_step(RetryStrategy) of
-        {wait, Timeout, NewRetryStrategy} ->
-            ok = timer:sleep(Timeout),
-            process(Impact, ProcessingCtx, ReqCtx, Deadline, State#{retry_strategy => NewRetryStrategy});
-        finish ->
-            throw({permanent, retries_exhausted})
-    end.
-
--spec clean_retry_strategy(state()) ->
-    state().
-clean_retry_strategy(State) ->
-    maps:without([retry_strategy], State).
+-spec get_impact_retry_strategy(processor_impact(), mg_utils:deadline(), state()) ->
+    processor_retry().
+get_impact_retry_strategy(continuation, Deadline, #{options := Options}) ->
+    retry_strategy(continuation, Options, Deadline);
+get_impact_retry_strategy(_Impact, _Deadline, _State) ->
+    undefined.
 
 -spec try_init_state(processor_impact(), state()) ->
     state().
@@ -759,8 +755,7 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
         {continue, NewProcessingSubState} ->
             % продолжение обработки машины делается без дедлайна
             % предполагается, что машина должна рано или поздно завершить свои дела или упасть
-            NewProcessingCtx = ProcessingCtx#{state := NewProcessingSubState},
-            process(continuation, NewProcessingCtx, ReqCtx, undefined, NewState);
+            process(continuation, ProcessingCtx#{state:=NewProcessingSubState}, ReqCtx, undefined, NewState);
         _ ->
             NewState
     end.
