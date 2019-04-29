@@ -20,7 +20,6 @@
 
 %% tests descriptions
 -export([all           /0]).
--export([groups        /0]).
 -export([init_per_suite/1]).
 -export([end_per_suite /1]).
 
@@ -37,7 +36,6 @@
 %%
 %% tests descriptions
 %%
--type group_name() :: atom().
 -type test_name () :: atom().
 -type config    () :: [{atom(), _}].
 
@@ -45,16 +43,7 @@
     [test_name()].
 all() ->
     [
-        {group, main}
-    ].
-
--spec groups() ->
-    [{group_name(), list(_), test_name()}].
-groups() ->
-    [
-        {main, [sequence], [
-            continuation_delayed_retries_test
-        ]}
+        continuation_delayed_retries_test
     ].
 
 %%
@@ -229,11 +218,6 @@ automaton_options() ->
         pulse     => ?MODULE,
         retries   => #{
             continuation => {intervals, ?TEST_INTERVALS}
-        },
-        schedulers => #{
-            timers         => #{ interval => 1000 },
-            timers_retries => #{ interval => 1000 },
-            overseer       => #{ interval => 1000 }
         }
     }.
 
