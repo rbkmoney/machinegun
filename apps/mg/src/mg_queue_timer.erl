@@ -115,10 +115,10 @@ execute_task(#{timer_queue := TimerMode} = Options, #{payload := Payload}) ->
          target_timestamp := TargetTimestamp
     } = Payload,
     Status =
-        case maps:find(status, Payload) of
-            error ->
+        case maps:get(status, Payload) of
+            undefined ->
                 mg_machine:get_status(MachineOptions, MachineID);
-            {ok, S} ->
+            S ->
                 S
         end,
     case {TimerMode, Status} of
