@@ -711,13 +711,14 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
             {wait, Timestamp, HdlReqCtx, HdlTo} ->
                 Status = {waiting, Timestamp, HdlReqCtx, HdlTo},
                 CurrentTimeSec = erlang:system_time(second),
-                if
-                    Timestamp =< CurrentTimeSec ->
+                case Timestamp =< CurrentTimeSec of
+                    true ->
                         Id = maps:get(id, State),
                         Ns = maps:get(namespace, State),
                         TaskInfo = mg_queue_timer:build_task_info(Id, Timestamp, Status),
                         mg_scheduler:add_task(Ns, ?TIMERS, TaskInfo);
-                    true -> ok
+                    false ->
+                        ok
                 end,
                 NewStorageMachine = NewStorageMachine0#{status := Status},
                 transit_state(ReqCtx, Deadline, NewStorageMachine, State);
