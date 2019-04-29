@@ -1,5 +1,5 @@
 %%%
-%%% Copyright 2018 RBKmoney
+%%% Copyright 2019 RBKmoney
 %%%
 %%% Licensed under the Apache License, Version 2.0 (the "License");
 %%% you may not use this file except in compliance with the License.
@@ -27,7 +27,8 @@
 
 %% mg_machine
 -behaviour(mg_machine).
--export([pool_child_spec/2, process_machine/7]).
+-export([pool_child_spec/2]).
+-export([process_machine/7]).
 
 -export([start/0]).
 
