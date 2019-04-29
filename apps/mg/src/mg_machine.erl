@@ -710,16 +710,7 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
                 transit_state(ReqCtx, Deadline, NewStorageMachine, State);
             {wait, Timestamp, HdlReqCtx, HdlTo} ->
                 Status = {waiting, Timestamp, HdlReqCtx, HdlTo},
-                CurrentTimeSec = erlang:system_time(second),
-                case Timestamp =< CurrentTimeSec of
-                    true ->
-                        Id = maps:get(id, State),
-                        Ns = maps:get(namespace, State),
-                        TaskInfo = mg_queue_timer:build_task_info(Id, Timestamp, Status),
-                        mg_scheduler:add_task(Ns, ?TIMERS, TaskInfo);
-                    false ->
-                        ok
-                end,
+                ok = maybe_force_run_task(Timestamp, State, Status),
                 NewStorageMachine = NewStorageMachine0#{status := Status},
                 transit_state(ReqCtx, Deadline, NewStorageMachine, State);
             remove ->
@@ -733,6 +724,19 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
             process(continuation, ProcessingCtx#{state:=NewProcessingSubState}, ReqCtx, undefined, NewState);
         _ ->
             NewState
+    end.
+
+-spec(maybe_force_run_task(genlib_time:ts(), state(), machine_regular_status()) -> ok).
+maybe_force_run_task(Timestamp, State, Status) ->
+    CurrentTimeSec = genlib_time:unow(),
+    case Timestamp =< CurrentTimeSec of
+        true ->
+            Id = maps:get(id, State),
+            Ns = maps:get(namespace, State),
+            TaskInfo = mg_queue_timer:build_task_info(Id, Timestamp, Status),
+            mg_scheduler:add_task(Ns, ?TIMERS, TaskInfo);
+        false ->
+            ok
     end.
 
 -spec call_processor(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
