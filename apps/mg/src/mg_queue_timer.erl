@@ -84,7 +84,8 @@ build_task_info(ID, Timestamp) ->
         id => ID,
         payload => #{
             machine_id => ID,
-            target_timestamp => Timestamp
+            target_timestamp => Timestamp,
+            status => undefined
         },
         created_at => CreateTime,
         target_time => Timestamp,

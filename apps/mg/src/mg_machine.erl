@@ -76,6 +76,7 @@
 -export_type([processor_reply_action/0]).
 -export_type([processor_flow_action /0]).
 -export_type([search_query          /0]).
+-export_type([machine_regular_status/0]).
 
 -export([child_spec /2]).
 -export([start_link /1]).
