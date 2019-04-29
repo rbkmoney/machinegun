@@ -169,6 +169,8 @@ init(Options) ->
 
 -spec handle_call(Call :: any(), mg_utils:gen_server_from(), state()) ->
     mg_utils:gen_server_handle_call_ret(state()).
+handle_call({add_task, _} = Msg, From, #state{quota_reserved = undefined} = State) ->
+    handle_call(Msg, From, update_reserved(State));
 handle_call({add_task, TaskInfo}, _From, State0) ->
     State1 = add_tasks([TaskInfo], State0),
     State2 = start_new_tasks(State1),
