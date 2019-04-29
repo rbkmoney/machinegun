@@ -73,7 +73,6 @@ end_per_suite(C) ->
 -define(TEST_INTERVALS, [100, 200, 300]).
 -define(TEST_INTERVAL_THRESHOLD, 99).
 -define(REQ_CTX, <<"req_ctx">>).
--define(ES_ID, <<"event_sink_id">>).
 -define(MH_ID, <<"42">>).
 -define(MH_NS, <<"42_ns">>).
 -define(ETS_NS, ?MODULE).
