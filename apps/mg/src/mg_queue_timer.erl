@@ -72,20 +72,19 @@
 init(_Options) ->
     {ok, #state{}}.
 
--spec(build_task_info(mg:id(), genlib_time:ts(), mg_machine:machine_regular_status()) -> task_info()).
-build_task_info(ID, Timestamp, Status) when is_tuple(Status) ->
-    #{payload := Payload} = TaskInfo = build_task_info(ID, Timestamp),
-    TaskInfo#{payload => Payload#{status => Status}}.
-
 -spec(build_task_info(mg:id(), genlib_time:ts()) -> task_info()).
 build_task_info(ID, Timestamp) ->
+    build_task_info(ID, Timestamp, undefined).
+
+-spec(build_task_info(mg:id(), genlib_time:ts(), mg_machine:machine_regular_status()) -> task_info()).
+build_task_info(ID, Timestamp, Status) ->
     CreateTime = erlang:monotonic_time(),
     #{
         id => ID,
         payload => #{
             machine_id => ID,
             target_timestamp => Timestamp,
-            status => undefined
+            status => Status
         },
         created_at => CreateTime,
         target_time => Timestamp,
@@ -116,10 +115,10 @@ execute_task(#{timer_queue := TimerMode} = Options, #{payload := Payload}) ->
          target_timestamp := TargetTimestamp
     } = Payload,
     Status =
-        case maps:get(status, Payload, undefined) of
-            undefined ->
+        case maps:find(status, Payload) of
+            error ->
                 mg_machine:get_status(MachineOptions, MachineID);
-            S ->
+            {ok, S} ->
                 S
         end,
     case {TimerMode, Status} of
