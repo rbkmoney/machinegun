@@ -79,6 +79,7 @@
 
 -export([child_spec /2]).
 -export([start_link /1]).
+-export([start_link /2]).
 
 -export([start               /5]).
 -export([simple_repair       /4]).
@@ -212,25 +213,64 @@
 child_spec(Options, ChildID) ->
     #{
         id       => ChildID,
-        start    => {?MODULE, start_link, [Options]},
+        start    => {?MODULE, start_link, [Options, ChildID]},
         restart  => permanent,
         type     => supervisor
     }.
 
 -spec start_link(options()) ->
     mg_utils:gen_start_ret().
-start_link(Options) ->
+start_link(Options = #{namespace := NS}) ->
+    start_link(Options, {?MODULE, NS}).
+
+-spec start_link(options(), _ChildID) ->
+    mg_utils:gen_start_ret().
+start_link(Options, ChildID) ->
     mg_utils_supervisor_wrapper:start_link(
-        #{strategy => one_for_all},
-        mg_utils:lists_compact([
-            mg_storage:child_spec(storage_options(Options), storage, storage_reg_name(Options)),
-            processor_child_spec(Options),
-            mg_workers_manager:child_spec(manager_options(Options), manager),
-            scheduler_child_spec(timers        , Options),
-            scheduler_child_spec(timers_retries, Options),
-            scheduler_child_spec(overseer      , Options)
-        ])
+        #{strategy => one_for_one},
+        [
+            machine_sup_child_spec(Options, {ChildID, machine_sup}),
+            scheduler_sup_child_spec(Options, {ChildID, scheduler_sup})
+        ]
     ).
+
+-spec machine_sup_child_spec(options(), _ChildID) ->
+    supervisor:child_spec().
+machine_sup_child_spec(Options, ChildID) ->
+    #{
+        id       => ChildID,
+        start    => {mg_utils_supervisor_wrapper, start_link, [
+            #{strategy => rest_for_one},
+            mg_utils:lists_compact([
+                mg_storage:child_spec(storage_options(Options), storage, storage_reg_name(Options)),
+                processor_child_spec(Options),
+                mg_workers_manager:child_spec(manager_options(Options), manager)
+            ])
+        ]},
+        restart  => permanent,
+        type     => supervisor
+    }.
+
+-spec scheduler_sup_child_spec(options(), _ChildID) ->
+    supervisor:child_spec().
+scheduler_sup_child_spec(Options, ChildID) ->
+    #{
+        id       => ChildID,
+        start    => {mg_utils_supervisor_wrapper, start_link, [
+            #{
+                strategy  => one_for_one,
+                intensity => 10,
+                period    => 30
+            },
+            mg_utils:lists_compact([
+                scheduler_child_spec(timers        , Options),
+                scheduler_child_spec(timers_retries, Options),
+                scheduler_child_spec(overseer      , Options)
+            ])
+        ]},
+        restart  => permanent,
+        type     => supervisor
+    }.
 
 -spec start(options(), mg:id(), term(), request_context(), mg_utils:deadline()) ->
     _Resp | throws().
