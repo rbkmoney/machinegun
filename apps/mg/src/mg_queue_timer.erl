@@ -19,6 +19,10 @@
 -behaviour(mg_scheduler).
 -behaviour(mg_scheduler_worker).
 
+
+-export([build_task_info/2]).
+-export([build_task_info/3]).
+
 %% mg_scheduler callbacks
 -export([init/1]).
 -export([search_new_tasks/3]).
@@ -49,7 +53,8 @@
 -type task_id() :: mg:id().
 -type task_payload() :: #{
     machine_id := mg:id(),
-    target_timestamp := timestamp_s()
+    target_timestamp := timestamp_s(),
+    status := undefined | mg_machine:machine_regular_status()
 }.
 -type task_info() :: mg_scheduler:task_info(task_id(), task_payload()).
 -type timestamp_s() :: genlib_time:ts().  % in seconds
@@ -67,6 +72,25 @@
 init(_Options) ->
     {ok, #state{}}.
 
+-spec(build_task_info(mg:id(), genlib_time:ts()) -> task_info()).
+build_task_info(ID, Timestamp) ->
+    build_task_info(ID, Timestamp, undefined).
+
+-spec(build_task_info(mg:id(), genlib_time:ts(), undefined | mg_machine:machine_regular_status()) -> task_info()).
+build_task_info(ID, Timestamp, Status) ->
+    CreateTime = erlang:monotonic_time(),
+    #{
+        id => ID,
+        payload => #{
+            machine_id => ID,
+            target_timestamp => Timestamp,
+            status => Status
+        },
+        created_at => CreateTime,
+        target_time => Timestamp,
+        machine_id => ID
+    }.
+
 -spec search_new_tasks(Options, Limit, State) -> {ok, Status, Result, State} when
     Options :: options(),
     Limit :: non_neg_integer(),
@@ -77,33 +101,27 @@ search_new_tasks(#{timer_queue := TimerMode} = Options, Limit, State) ->
     MachineOptions = machine_options(Options),
     Query = {TimerMode, 1, genlib_time:unow()},
     {Timers, Continuation} = mg_machine:search(MachineOptions, Query, Limit),
-    CreateTime = erlang:monotonic_time(),
     Tasks = [
-        #{
-            id => ID,
-            payload => #{
-                machine_id => ID,
-                target_timestamp => Ts
-            },
-            created_at => CreateTime,
-            target_time => Ts,
-            machine_id => ID
-        }
-        || {Ts, ID} <- Timers
+        build_task_info(ID, Ts) || {Ts, ID} <- Timers
     ],
     {ok, get_status(Continuation), Tasks, State}.
 
 -spec execute_task(options(), task_info()) ->
     ok.
-execute_task(#{timer_queue := TimerMode} = Options, TaskInfo) ->
+execute_task(#{timer_queue := TimerMode} = Options, #{payload := Payload}) ->
     MachineOptions = machine_options(Options),
     #{
-        payload := #{
-            machine_id := MachineID,
-            target_timestamp := TargetTimestamp
-        }
-    } = TaskInfo,
-    case {TimerMode, mg_machine:get_status(MachineOptions, MachineID)} of
+         machine_id := MachineID,
+         target_timestamp := TargetTimestamp
+    } = Payload,
+    Status =
+        case maps:get(status, Payload) of
+            undefined ->
+                mg_machine:get_status(MachineOptions, MachineID);
+            S ->
+                S
+        end,
+    case {TimerMode, Status} of
         {waiting, {waiting, Timestamp, ReqCtx, _Timeout}} when Timestamp =:= TargetTimestamp ->
             call_timeout(Options, MachineID, Timestamp, ReqCtx);
         {retrying, {retrying, Timestamp, _Start, _Attempt, ReqCtx}} when Timestamp =:= TargetTimestamp ->
