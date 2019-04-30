@@ -76,7 +76,7 @@ init(_Options) ->
 build_task_info(ID, Timestamp) ->
     build_task_info(ID, Timestamp, undefined).
 
--spec(build_task_info(mg:id(), genlib_time:ts(), mg_machine:machine_regular_status()) -> task_info()).
+-spec(build_task_info(mg:id(), genlib_time:ts(), undefined | mg_machine:machine_regular_status()) -> task_info()).
 build_task_info(ID, Timestamp, Status) ->
     CreateTime = erlang:monotonic_time(),
     #{
