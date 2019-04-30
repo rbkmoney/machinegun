@@ -20,6 +20,7 @@
 -export([start_applications/1]).
 
 -export([stop_applications/1]).
+-export([assert_wait_expected/4]).
 
 -type appname() :: atom().
 
@@ -53,3 +54,15 @@ start_applications(Apps) ->
 
 stop_applications(AppNames) ->
     lists:foreach(fun application:stop/1, lists:reverse(AppNames)).
+
+-spec(assert_wait_expected(any(), function(), non_neg_integer(), non_neg_integer()) -> ok).
+assert_wait_expected(_Expected, _Fun, Timeout, _Delta) when Timeout =< 0 ->
+    error({assertion_failed, timeout});
+assert_wait_expected(Expected, Fun, Timeout, Delta) when is_function(Fun, 0) ->
+    case Fun() of
+        Expected ->
+            ok;
+        _Other ->
+            timer:sleep(Delta),
+            assert_wait_expected(Expected, Fun, Timeout - Delta, Delta)
+    end.

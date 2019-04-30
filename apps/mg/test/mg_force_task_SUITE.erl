@@ -84,7 +84,7 @@ test_timeout(_C) ->
     F = fun() ->
             mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline())
         end,
-    assertWaitExpected(1, F, timer:seconds(3), timer:seconds(1)).
+    mg_ct_helper:assert_wait_expected(1, F, timer:seconds(3), timer:seconds(1)).
 
 %%
 %% processor
@@ -142,16 +142,3 @@ automaton_options(NS) ->
     ok.
 handle_beat(_, Beat) ->
     ct:pal("~p", [Beat]).
-
-%% TODO Move to common ct helper
--spec(assertWaitExpected(any(), function(), non_neg_integer(), non_neg_integer()) -> ok).
-assertWaitExpected(_Expected, _Fun, Timeout, _Delta) when Timeout =< 0 ->
-    error({assertion_failed, timeout});
-assertWaitExpected(Expected, Fun, Timeout, Delta) when is_function(Fun, 0) ->
-    case Fun() of
-        Expected ->
-            ok;
-        _Other ->
-            timer:sleep(Delta),
-            assertWaitExpected(Expected, Fun, Timeout - Delta, Delta)
-    end.
