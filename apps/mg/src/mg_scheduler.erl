@@ -169,12 +169,11 @@ init(Options) ->
 
 -spec handle_call(Call :: any(), mg_utils:gen_server_from(), state()) ->
     mg_utils:gen_server_handle_call_ret(state()).
-handle_call({add_task, _} = Msg, From, #state{quota_reserved = undefined} = State) ->
-    handle_call(Msg, From, update_reserved(State));
 handle_call({add_task, TaskInfo}, _From, State0) ->
     State1 = add_tasks([TaskInfo], State0),
-    State2 = start_new_tasks(State1),
-    {reply, ok, State2};
+    State2 = maybe_update_reserved(State1),
+    State3 = start_new_tasks(State2),
+    {reply, ok, State3};
 handle_call(Call, From, State) ->
     ok = error_logger:error_msg("unexpected gen_server call received: ~p from ~p", [Call, From]),
     {noreply, State}.
@@ -441,3 +440,9 @@ emit_reserved_beat(Active, Total, Reserved, State) ->
         quota_name = Quota,
         quota_reserved = Reserved
     }).
+
+-spec(maybe_update_reserved(state()) -> state()).
+maybe_update_reserved(#state{quota_reserved = undefined} = State) ->
+    update_reserved(State);
+maybe_update_reserved(State) ->
+    State.
