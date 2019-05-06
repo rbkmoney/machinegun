@@ -282,11 +282,12 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
         timer_processing_timeout => Timeout(timer_processing_timeout, "60S"),
         reschedule_timeout => Timeout(reschedule_timeout, "60S"),
         retries => #{
-            storage   => {exponential, infinity, 2, 10, 60 * 1000},
+            storage      => {exponential, infinity, 2, 10, 60 * 1000},
             %% max_total_timeout not supported for timers yet, see mg_retry:new_strategy/2 comments
             %% actual timers sheduling resolution is one second
-            timers    => {exponential, 100, 2, 1000, 30 * 60 * 1000},
-            processor => {exponential, {max_total_timeout, 24 * 60 * 60 * 1000}, 2, 10, 60 * 1000}
+            timers       => {exponential, 100, 2, 1000, 30 * 60 * 1000},
+            processor    => {exponential, {max_total_timeout, 24 * 60 * 60 * 1000}, 2, 10, 60 * 1000},
+            continuation => {exponential, infinity, 2, 10, 60 * 1000}
         },
         schedulers => #{
             timers         => #{
