@@ -76,6 +76,7 @@
 -export_type([processor_reply_action/0]).
 -export_type([processor_flow_action /0]).
 -export_type([search_query          /0]).
+-export_type([machine_regular_status/0]).
 
 -export([child_spec /2]).
 -export([start_link /1]).
@@ -106,6 +107,8 @@
 %% mg_worker
 -behaviour(mg_worker).
 -export([handle_load/3, handle_call/5, handle_unload/1]).
+
+-define(TIMERS, <<"timers">>).
 
 %%
 %% API
@@ -745,7 +748,9 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
                 NewStorageMachine = NewStorageMachine0#{status := sleeping},
                 transit_state(ReqCtx, Deadline, NewStorageMachine, State);
             {wait, Timestamp, HdlReqCtx, HdlTo} ->
-                NewStorageMachine = NewStorageMachine0#{status := {waiting, Timestamp, HdlReqCtx, HdlTo}},
+                Status = {waiting, Timestamp, HdlReqCtx, HdlTo},
+                ok = maybe_force_run_task(Timestamp, State, Status),
+                NewStorageMachine = NewStorageMachine0#{status := Status},
                 transit_state(ReqCtx, Deadline, NewStorageMachine, State);
             remove ->
                 remove_from_storage(ReqCtx, Deadline, State)
@@ -758,6 +763,19 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
             process(continuation, ProcessingCtx#{state:=NewProcessingSubState}, ReqCtx, undefined, NewState);
         _ ->
             NewState
+    end.
+
+-spec(maybe_force_run_task(genlib_time:ts(), state(), machine_regular_status()) -> ok).
+maybe_force_run_task(Timestamp, State, Status) ->
+    CurrentTimeSec = genlib_time:unow(),
+    case Timestamp =< CurrentTimeSec of
+        true ->
+            Id = maps:get(id, State),
+            Ns = maps:get(namespace, State),
+            TaskInfo = mg_queue_timer:build_task_info(Id, Timestamp, Status),
+            mg_scheduler:add_task(Ns, ?TIMERS, TaskInfo);
+        false ->
+            ok
     end.
 
 -spec call_processor(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
@@ -1088,7 +1106,7 @@ scheduler_options(timers, Options, Config) ->
         reschedule_timeout => maps:get(reschedule_timeout, Options, undefined),
         timer_queue => waiting
     },
-    scheduler_options(<<"timers">>, mg_queue_timer, Options, HandlerOptions, Config);
+    scheduler_options(?TIMERS, mg_queue_timer, Options, HandlerOptions, Config);
 scheduler_options(timers_retries, Options, Config) ->
     HandlerOptions = #{
         processing_timeout => maps:get(timer_processing_timeout, Options, undefined),
