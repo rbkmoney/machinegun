@@ -254,14 +254,14 @@ machine_options(NS, Config) ->
 -spec processor(processor()) ->
     mg_utils:mod_opts().
 processor(Processor) ->
-    {mg_woody_api_processor, Processor#{event_handler => mg_woody_api_event_handler}}.
+    {mg_woody_api_processor, Processor#{event_handler => {mg_woody_api_event_handler, mg_woody_api_pulse}}}.
 
 -spec modernizer_options(modernizer() | undefined) ->
     #{modernizer => mg_events_modernizer:options()}.
 modernizer_options(#{current_format_version := CurrentFormatVersion, handler := WoodyClient}) ->
     #{modernizer => #{
         current_format_version => CurrentFormatVersion,
-        handler => {mg_woody_api_modernizer, WoodyClient#{event_handler => mg_woody_api_event_handler}}
+        handler => {mg_woody_api_modernizer, WoodyClient#{event_handler => {mg_woody_api_event_handler, mg_woody_api_pulse}}}
     }};
 modernizer_options(undefined) ->
     #{}.
