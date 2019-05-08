@@ -15,6 +15,8 @@
 # limitations under the License.
 #
 
+set -e
+
 ROOT="$(dirname $0)/.."
 RELEASE_DIR="${ROOT}/releases/{{release_version}}"
 YAML_CONFIG=${1:-${ROOT}/etc/config.yaml}
