@@ -148,7 +148,7 @@ woody_server_child_spec(Config, ChildID) ->
             port           => maps:get(port           , WoodyConfig),
             transport_opts => maps:get(transport_opts , WoodyConfig, #{}),
             protocol_opts  => maps:get(protocol_opts  , WoodyConfig, #{}),
-            event_handler  => {mg_woody_api_event_handler, mg_woody_api_pulse},
+            event_handler  => {mg_woody_api_event_handler, pulse()},
             handler_limits => maps:get(limits         , WoodyConfig, #{}),
             handlers       => [
                 mg_woody_api_automaton :handler(api_automaton_options (Config)),
@@ -254,14 +254,14 @@ machine_options(NS, Config) ->
 -spec processor(processor()) ->
     mg_utils:mod_opts().
 processor(Processor) ->
-    {mg_woody_api_processor, Processor#{event_handler => {mg_woody_api_event_handler, mg_woody_api_pulse}}}.
+    {mg_woody_api_processor, Processor#{event_handler => {mg_woody_api_event_handler, pulse()}}}.
 
 -spec modernizer_options(modernizer() | undefined) ->
     #{modernizer => mg_events_modernizer:options()}.
 modernizer_options(#{current_format_version := CurrentFormatVersion, handler := WoodyClient}) ->
     #{modernizer => #{
         current_format_version => CurrentFormatVersion,
-        handler => {mg_woody_api_modernizer, WoodyClient#{event_handler => {mg_woody_api_event_handler, mg_woody_api_pulse}}}
+        handler => {mg_woody_api_modernizer, WoodyClient#{event_handler => {mg_woody_api_event_handler, pulse()}}}
     }};
 modernizer_options(undefined) ->
     #{}.
