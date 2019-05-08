@@ -157,9 +157,11 @@ time_interval(TimeStr) ->
     parse_time_interval(TimeStr).
 
 -spec time_interval(maybe(string()), time_interval_unit()) ->
-    maybe(non_neg_integer()).
+    maybe(timeout()).
 time_interval(undefined, _) ->
     undefined;
+time_interval("infinity", _) ->
+    infinity;
 time_interval(TimeStr, Unit) ->
     time_interval_in(parse_time_interval(TimeStr), Unit).
 
