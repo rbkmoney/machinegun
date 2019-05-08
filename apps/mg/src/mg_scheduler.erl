@@ -84,6 +84,7 @@
     quota_name :: mg_quota_worker:name(),
     quota_share :: mg_quota:share(),
     quota_reserved :: mg_quota:resource() | undefined,
+    last_quota_update :: integer() | undefined,  % in native units
     timer :: reference(),
     search_interval :: timeout(),
     completed_search_sleep :: timeout(),
@@ -105,6 +106,7 @@
 -define(DEFAULT_COMPLETED_SLEEP, 1000).  % 1 second
 -define(SEARCH_MESSAGE, search_new_tasks).
 -define(SEARCH_NUMBER, 10).
+-define(MINIMAL_QUOTA_UPDATE_INTERVAL, 100).  % 0.1 second
 
 %%
 %% API
@@ -158,6 +160,7 @@ init(Options) ->
         quota_name = maps:get(quota_name, Options),
         quota_share = maps:get(quota_share, Options, 1),
         quota_reserved = undefined,
+        last_quota_update = undefined,
         search_interval = SearchInterval,
         completed_search_sleep = CompletedSleep,
         active_tasks = #{},
@@ -190,13 +193,14 @@ handle_info(?SEARCH_MESSAGE, State0) ->
     {SearchStatus, State1} = search_new_tasks(State0),
     Timeout = get_timer_timeout(SearchStatus, State1),
     State2 = restart_timer(?SEARCH_MESSAGE, Timeout, State1),
-    State3 = update_reserved(State2),
+    State3 = maybe_update_reserved(State2),
     State4 = start_new_tasks(State3),
     {noreply, State4};
 handle_info({'DOWN', Monitor, process, _Object, _Info}, State0) ->
     State1 = forget_about_task(Monitor, State0),
-    State2 = start_new_tasks(State1),
-    {noreply, State2};
+    State2 = maybe_update_reserved(State1),
+    State3 = start_new_tasks(State2),
+    {noreply, State3};
 handle_info(Info, State) ->
     ok = error_logger:error_msg("unexpected gen_server info received: ~p", [Info]),
     {noreply, State}.
@@ -382,6 +386,18 @@ start_multiple_tasks(N, State) when N > 0 ->
             State
     end.
 
+-spec(maybe_update_reserved(state()) -> state()).
+maybe_update_reserved(#state{quota_reserved = undefined} = State) ->
+    update_reserved(State);
+maybe_update_reserved(#state{last_quota_update = LastUpdate} = State) ->
+    Now = erlang:monotonic_time(),
+    case erlang:convert_time_unit(Now - LastUpdate, native, millisecond) of
+        Diff when Diff > ?MINIMAL_QUOTA_UPDATE_INTERVAL ->
+            update_reserved(State);
+        _Other ->
+            State
+    end.
+
 -spec update_reserved(state()) ->
     state().
 update_reserved(State) ->
@@ -400,7 +416,10 @@ update_reserved(State) ->
         share => QuotaShare
     },
     Reserved = mg_quota_worker:reserve(ClientOptions, TotalActiveTasks, TotalKnownTasks, Quota),
-    NewState = State#state{quota_reserved = Reserved},
+    NewState = State#state{
+        quota_reserved = Reserved,
+        last_quota_update = erlang:monotonic_time()
+    },
     ok = emit_reserved_beat(TotalActiveTasks, TotalKnownTasks, Reserved, NewState),
     NewState.
 
@@ -440,9 +459,3 @@ emit_reserved_beat(Active, Total, Reserved, State) ->
         quota_name = Quota,
         quota_reserved = Reserved
     }).
-
--spec(maybe_update_reserved(state()) -> state()).
-maybe_update_reserved(#state{quota_reserved = undefined} = State) ->
-    update_reserved(State);
-maybe_update_reserved(State) ->
-    State.
