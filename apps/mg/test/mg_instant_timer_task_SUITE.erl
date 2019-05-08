@@ -14,7 +14,7 @@
 %%% limitations under the License.
 %%%
 
--module(mg_force_task_SUITE).
+-module(mg_instant_timer_task_SUITE).
 -include_lib("common_test/include/ct.hrl").
 
 %% tests descriptions
