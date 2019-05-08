@@ -84,11 +84,17 @@ test_timeout(_C) ->
     F = fun() ->
             mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline())
         end,
-    mg_ct_helper:assert_wait_expected(1, F, timer:seconds(3), timer:seconds(1)).
+    mg_ct_helper:assert_wait_expected(1, F, mg_retry:new_strategy({linear, _Retries = 10, _Timeout = 100})).
 
 %%
 %% processor
 %%
+-record(machine_state, {
+    counter = 0 :: integer(),
+    timer = undefined :: {genlib_time:ts(), mg_machine:request_context()} | undefined
+}).
+-type machine_state() :: #machine_state{}.
+
 -spec pool_child_spec(_Options, atom()) ->
     supervisor:child_spec().
 pool_child_spec(_Options, Name) ->
@@ -97,18 +103,54 @@ pool_child_spec(_Options, Name) ->
         start => {?MODULE, start, []}
     }.
 
--spec process_machine(_Options, mg:id(), mg_machine:processor_impact(), _, _, _, mg_machine:machine_state()) ->
-    mg_machine:processor_result() | no_return().
-process_machine(_, _, {init, Counter}, _, ?req_ctx, _, null) ->
-    {{reply, ok}, sleep, Counter};
-process_machine(_, _, {call, get}, _, ?req_ctx, _, Counter) ->
-    {{reply, Counter}, sleep, Counter};
-process_machine(_, _, {call, force_timeout}, _, ?req_ctx, _, Counter) ->
-    {{reply, ok}, {wait, genlib_time:unow(), ?req_ctx, 5000}, Counter};
-process_machine(_, _, timeout, _, ?req_ctx, _, Counter) ->
-    {{reply, ok}, sleep, Counter + 1};
-process_machine(_, _, _, _, ?req_ctx, _, _Counter) ->
-    erlang:throw(unexpected).
+-spec process_machine(Options, ID, Impact, PCtx, ReqCtx, Deadline, MachineState) -> Result when
+    Options :: any(),
+    ID :: mg:id(),
+    Impact :: mg_machine:processor_impact(),
+    PCtx :: mg_machine:processing_context(),
+    ReqCtx :: mg_machine:request_context(),
+    Deadline :: mg_utils:deadline(),
+    MachineState :: mg_machine:machine_state(),
+    Result :: mg_machine:processor_result().
+process_machine(_, _, Impact, _, ReqCtx, _, EncodedState) ->
+    State = decode_state(EncodedState),
+    {Reply, Action, NewState} = do_process_machine(Impact, ReqCtx, State),
+    {Reply, try_set_timer(NewState, Action), encode_state(NewState)}.
+
+-spec do_process_machine(mg_machine:processor_impact(), mg_machine:request_context(), machine_state()) ->
+    mg_machine:processor_result().
+do_process_machine({init, Counter}, ?req_ctx, State) ->
+    {{reply, ok}, sleep, State#machine_state{counter = Counter}};
+do_process_machine({call, get}, ?req_ctx, #machine_state{counter = Counter} = State) ->
+    ct:pal("Counter is ~p", [Counter]),
+    {{reply, Counter}, sleep, State};
+do_process_machine({call, force_timeout}, ?req_ctx = ReqCtx, State) ->
+    TimerTarget = genlib_time:unow(),
+    {{reply, ok}, sleep, State#machine_state{timer = {TimerTarget, ReqCtx}}};
+do_process_machine(timeout, ?req_ctx, #machine_state{counter = Counter} = State) ->
+    ct:pal("Counter updated to ~p", [Counter]),
+    {{reply, ok}, sleep, State#machine_state{counter = Counter + 1, timer = undefined}}.
+
+-spec encode_state(machine_state()) -> mg_machine:machine_state().
+encode_state(#machine_state{counter = Counter, timer = {TimerTarget, ReqCtx}}) ->
+    [Counter, TimerTarget, ReqCtx];
+encode_state(#machine_state{counter = Counter, timer = undefined}) ->
+    [Counter].
+
+-spec decode_state(mg_machine:machine_state()) -> machine_state().
+decode_state(null) ->
+    #machine_state{};
+decode_state([Counter, TimerTarget, ReqCtx]) ->
+    #machine_state{counter = Counter, timer = {TimerTarget, ReqCtx}};
+decode_state([Counter]) ->
+    #machine_state{counter = Counter}.
+
+-spec try_set_timer(machine_state(), mg_machine:processor_flow_action()) ->
+    mg_machine:processor_flow_action().
+try_set_timer(#machine_state{timer = {TimerTarget, ReqCtx}}, sleep) ->
+    {wait, TimerTarget, ReqCtx, 5000};
+try_set_timer(#machine_state{timer = undefined}, Action) ->
+    Action.
 
 %%
 %% utils
@@ -133,8 +175,8 @@ automaton_options(NS) ->
         pulse     => ?MODULE,
         schedulers => #{
             timers         => #{ interval => timer:hours(1) },
-            timers_retries => #{ interval => 100 },
-            overseer       => #{ interval => 100 }
+            timers_retries => #{ interval => timer:hours(1) },
+            overseer       => #{ interval => timer:hours(1) }
         }
     }.
 
