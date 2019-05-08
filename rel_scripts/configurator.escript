@@ -209,7 +209,7 @@ absolute_memory_limit(YamlConfig) ->
     end).
 
 memory_amount("cgroups") -> cg_mem_sup:limit();
-memory_amount("total"  ) -> proplist:get_value(memsup:get_system_memory_data()).
+memory_amount("total"  ) -> proplists:get_value(total_memory, memsup:get_system_memory_data()).
 
 wait_value(_, 0, _, Key) ->
     exit({failed_fetch, Key});
