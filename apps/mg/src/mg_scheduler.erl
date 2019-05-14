@@ -103,7 +103,7 @@
 -type queue_handler() :: mg_utils:mod_opts(queue_options()).
 
 -define(DEFAULT_SEARCH_INTERVAL, 1000).  % 1 second
--define(DEFAULT_COMPLETED_SLEEP, 1000).  % 1 second
+-define(DEFAULT_NO_TASK_WAIT, 1000).  % 1 second
 -define(SEARCH_MESSAGE, search_new_tasks).
 -define(SEARCH_NUMBER, 10).
 -define(MINIMAL_QUOTA_UPDATE_INTERVAL, 100).  % 0.1 second
@@ -145,7 +145,7 @@ add_task(NS, Name, TaskInfo) ->
     mg_utils:gen_server_init_ret(state()).
 init(Options) ->
     SearchInterval = maps:get(search_interval, Options, ?DEFAULT_SEARCH_INTERVAL),
-    NoTaskWait = maps:get(no_task_wait, Options, ?DEFAULT_COMPLETED_SLEEP),
+    NoTaskWait = maps:get(no_task_wait, Options, ?DEFAULT_NO_TASK_WAIT),
     Name = maps:get(name, Options),
     NS = maps:get(namespace, Options),
     QueueHandler = maps:get(queue_handler, Options),
