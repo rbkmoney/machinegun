@@ -76,6 +76,7 @@
 -export_type([processor_reply_action/0]).
 -export_type([processor_flow_action /0]).
 -export_type([search_query          /0]).
+-export_type([machine_regular_status/0]).
 
 -export([child_spec /2]).
 -export([start_link /1]).
@@ -108,6 +109,8 @@
 -behaviour(mg_worker).
 -export([handle_load/3, handle_call/5, handle_unload/1]).
 
+-define(TIMERS, <<"timers">>).
+
 %%
 %% API
 %%
@@ -119,7 +122,7 @@
     limit        => mg_quota_worker:name(),
     share        => mg_quota:share()
 }.
--type retry_subj() :: storage | processor | timers.
+-type retry_subj() :: storage | processor | timers | continuation.
 -type retry_opt() :: #{
     retry_subj()   => mg_retry:policy()
 }.
@@ -182,6 +185,8 @@
 .
 -type processor_result() :: {processor_reply_action(), processor_flow_action(), machine_state()}.
 -type request_context() :: mg:request_context().
+
+-type processor_retry() :: mg_retry:strategy() | undefined.
 
 -callback processor_child_spec(_Options) ->
     supervisor:child_spec() | undefined.
@@ -680,23 +685,60 @@ process_simple_repair(ReqCtx, Deadline, State) ->
 
 -spec process(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
     state().
-process(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{id := ID, namespace := NS, options := Options}) ->
+process(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
+    RetryStrategy = get_impact_retry_strategy(Impact, Deadline, State),
+    try
+        process_with_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State, RetryStrategy)
+    catch
+        Class:Reason:ST ->
+            ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
+            handle_exception({Class, Reason, ST}, Impact, ReqCtx, Deadline, State)
+    end.
+
+-spec process_with_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State, Retry) -> State when
+    Impact :: processor_impact(),
+    ProcessingCtx :: processing_context(),
+    ReqCtx :: request_context(),
+    Deadline :: mg_utils:deadline(),
+    State :: state(),
+    Retry :: processor_retry().
+process_with_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State, RetryStrategy) ->
+    #{id := ID, namespace := NS, options := Opts} = State,
     try
         process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, try_init_state(Impact, State))
     catch
         throw:(Reason=({ErrorType, _Details})):ST when ?can_be_retried(ErrorType) ->
-            ok = emit_beat(Options, #mg_machine_process_transient_error{
+            ok = emit_beat(Opts, #mg_machine_process_transient_error{
                 namespace = NS,
                 machine_id = ID,
                 exception = {throw, Reason, ST},
                 request_context = ReqCtx
             }),
             ok = do_reply_action({reply, {error, Reason}}, ProcessingCtx),
-            State;
-        Class:Reason:ST ->
-            ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
-            handle_exception({Class, Reason, ST}, Impact, ReqCtx, Deadline, State)
+            case process_retry_next_step(RetryStrategy) of
+                ignore ->
+                    State;
+                finish ->
+                    erlang:throw({permanent, {retries_exhausted, Reason}});
+                {wait, Timeout, NewRetryStrategy} ->
+                    ok = timer:sleep(Timeout),
+                    process_with_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State, NewRetryStrategy)
+            end
     end.
+
+-spec process_retry_next_step(processor_retry()) ->
+    {wait, timeout(), mg_retry:strategy()} | finish | ignore.
+process_retry_next_step(undefined) ->
+    ignore;
+process_retry_next_step(RetryStrategy) ->
+    genlib_retry:next_step(RetryStrategy).
+
+-spec get_impact_retry_strategy(processor_impact(), mg_utils:deadline(), state()) ->
+    processor_retry().
+get_impact_retry_strategy(continuation, Deadline, #{options := Options}) ->
+    retry_strategy(continuation, Options, Deadline);
+get_impact_retry_strategy(_Impact, _Deadline, _State) ->
+    undefined.
 
 -spec try_init_state(processor_impact(), state()) ->
     state().
@@ -749,7 +791,9 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
                 NewStorageMachine = NewStorageMachine0#{status := sleeping},
                 transit_state(ReqCtx, Deadline, NewStorageMachine, State);
             {wait, Timestamp, HdlReqCtx, HdlTo} ->
-                NewStorageMachine = NewStorageMachine0#{status := {waiting, Timestamp, HdlReqCtx, HdlTo}},
+                Status = {waiting, Timestamp, HdlReqCtx, HdlTo},
+                ok = maybe_force_run_task(Timestamp, State, Status),
+                NewStorageMachine = NewStorageMachine0#{status := Status},
                 transit_state(ReqCtx, Deadline, NewStorageMachine, State);
             remove ->
                 remove_from_storage(ReqCtx, Deadline, State)
@@ -762,6 +806,19 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
             process(continuation, ProcessingCtx#{state:=NewProcessingSubState}, ReqCtx, undefined, NewState);
         _ ->
             NewState
+    end.
+
+-spec(maybe_force_run_task(genlib_time:ts(), state(), machine_regular_status()) -> ok).
+maybe_force_run_task(Timestamp, State, Status) ->
+    CurrentTimeSec = genlib_time:unow(),
+    case Timestamp =< CurrentTimeSec of
+        true ->
+            Id = maps:get(id, State),
+            Ns = maps:get(namespace, State),
+            TaskInfo = mg_queue_timer:build_task_info(Id, Timestamp, Status),
+            mg_scheduler:add_task(Ns, ?TIMERS, TaskInfo);
+        false ->
+            ok
     end.
 
 -spec call_processor(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
@@ -1104,7 +1161,7 @@ scheduler_options(timers, Options, Config) ->
         reschedule_timeout => maps:get(reschedule_timeout, Options, undefined),
         timer_queue => waiting
     },
-    scheduler_options(<<"timers">>, mg_queue_timer, Options, HandlerOptions, Config);
+    scheduler_options(?TIMERS, mg_queue_timer, Options, HandlerOptions, Config);
 scheduler_options(timers_retries, Options, Config) ->
     HandlerOptions = #{
         processing_timeout => maps:get(timer_processing_timeout, Options, undefined),

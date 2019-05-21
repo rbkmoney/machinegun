@@ -20,6 +20,7 @@
 -export([start_applications/1]).
 
 -export([stop_applications/1]).
+-export([assert_wait_expected/3]).
 
 -export([handle_beat/2]).
 
@@ -68,6 +69,25 @@ start_applications(Apps) ->
 
 stop_applications(AppNames) ->
     lists:foreach(fun application:stop/1, lists:reverse(AppNames)).
+
+%%
+
+-spec assert_wait_expected(any(), function(), mg_retry:strategy()) ->
+    ok.
+
+assert_wait_expected(Expected, Fun, Strategy) when is_function(Fun, 0) ->
+    case Fun() of
+        Expected ->
+            ok;
+        Other ->
+            case genlib_retry:next_step(Strategy) of
+                {wait, Timeout, NextStrategy} ->
+                    timer:sleep(Timeout),
+                    assert_wait_expected(Expected, Fun, NextStrategy);
+                finish ->
+                    error({assertion_failed, Expected, Other})
+            end
+    end.
 
 %%
 

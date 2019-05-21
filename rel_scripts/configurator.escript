@@ -218,7 +218,8 @@ woody_server(YamlConfig) ->
             request_timeout => ?C:time_interval(
                 ?C:conf([woody_server, http_keep_alive_timeout], YamlConfig, "5S"), 'ms'
             ),
-            idle_timeout    => ?C:time_interval(?C:conf([woody_server, idle_timeout   ], YamlConfig, "5S"), 'ms')
+            % idle_timeout must be greater then any possible deadline
+            idle_timeout    => ?C:time_interval(?C:conf([woody_server, idle_timeout], YamlConfig, "infinity"), 'ms')
         },
         limits   => genlib_map:compact(#{
             max_heap_size       => ?C:mem_words(?C:conf([limits, process_heap], YamlConfig, undefined)),
@@ -268,7 +269,7 @@ absolute_memory_limit(YamlConfig) ->
     end).
 
 memory_amount("cgroups") -> cg_mem_sup:limit();
-memory_amount("total"  ) -> proplists:get_value(memsup:get_system_memory_data()).
+memory_amount("total"  ) -> proplists:get_value(total_memory, memsup:get_system_memory_data()).
 
 wait_value(_, 0, _, Key) ->
     exit({failed_fetch, Key});
@@ -346,11 +347,12 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
         timer_processing_timeout => Timeout(timer_processing_timeout, "60S"),
         reschedule_timeout => Timeout(reschedule_timeout, "60S"),
         retries => #{
-            storage   => {exponential, infinity, 2, 10, 60 * 1000},
+            storage      => {exponential, infinity, 2, 10, 60 * 1000},
             %% max_total_timeout not supported for timers yet, see mg_retry:new_strategy/2 comments
             %% actual timers sheduling resolution is one second
-            timers    => {exponential, 100, 2, 1000, 30 * 60 * 1000},
-            processor => {exponential, {max_total_timeout, 24 * 60 * 60 * 1000}, 2, 10, 60 * 1000}
+            timers       => {exponential, 100, 2, 1000, 30 * 60 * 1000},
+            processor    => {exponential, {max_total_timeout, 24 * 60 * 60 * 1000}, 2, 10, 60 * 1000},
+            continuation => {exponential, infinity, 2, 10, 60 * 1000}
         },
         schedulers => #{
             timers         => #{
