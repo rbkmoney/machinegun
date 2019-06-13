@@ -189,7 +189,10 @@ get_machine(Options, Ref, HRange) ->
     % нужно понимать, что эти операции разнесены по времени, и тут могут быть рэйсы
     ID = ref2id(Options, Ref),
     InitialState = opaque_to_state(mg_machine:get(machine_options(Options), ID)),
-    {EffectiveState, ExtraEvents} = mg_utils:throw_if_undefined(try_apply_delayed_actions(InitialState), {logic, machine_not_found}),
+    {EffectiveState, ExtraEvents} = mg_utils:throw_if_undefined(
+        try_apply_delayed_actions(InitialState),
+        {logic, machine_not_found}
+    ),
     machine(Options, ID, EffectiveState, ExtraEvents, HRange).
 
 -spec remove(options(), mg:id(), request_context(), deadline()) ->
