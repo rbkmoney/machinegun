@@ -16,6 +16,9 @@
 
 -module(mg_ct_helper).
 
+-define(CLIENT, mg_kafka_client).
+-define(BROKERS, [{"kafka1", 9092}, {"kafka2", 9092}, {"kafka3", 9092}]).
+
 -export([start_application/1]).
 -export([start_applications/1]).
 
@@ -37,6 +40,15 @@ start_application(lager) ->
             ]}
         ]},
         {async_threshold, undefined}
+    ]);
+start_application(brod) ->
+    genlib_app:start_application_with(brod, [
+        {clients, [
+            {?CLIENT, [
+                {endpoints, ?BROKERS},
+                {auto_start_producers, true}
+            ]}
+        ]}
     ]);
 start_application({AppName, Env}) ->
     genlib_app:start_application_with(AppName, Env);
