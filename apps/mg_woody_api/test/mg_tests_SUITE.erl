@@ -463,15 +463,7 @@ history_changed_atomically(C) ->
         Results
     ),
     AtomicResult = {HistorySeen, AuxState},
-    ?assertMatch(
-        % NOTE
-        % There's obviously a chance that _all_ observations will be either `undefined` or `AtomicResult`.
-        #{
-            undefined    := _,
-            AtomicResult := _
-        },
-        Groups
-    ).
+    ?assertEqual(#{}, maps:without([undefined, AtomicResult], Groups)).
 
 -spec get_simple_history(config(), mg:id(), mg_events:history_range()) ->
     {[{mg_events:id(), mg_storage:opaque()}], mg_storage:opaque()}.
@@ -731,7 +723,7 @@ config_with_multiple_event_sinks(_C) ->
                     {mg_events_sink_kafka, #{
                         name => kafka,
                         topic => <<"mg_event_sink">>,
-                        client => mg_kafka_client % same as ?CLIENT @ mg_ct_helper, but implicilty :(
+                        client => mg_ct_helper:config(kafka_client_name)
                     }}
                 ]
             }
