@@ -16,6 +16,11 @@
 
 -module(mg_ct_helper).
 
+-define(CLIENT, mg_kafka_client).
+-define(BROKERS, [{"kafka1", 9092}, {"kafka2", 9092}, {"kafka3", 9092}]).
+
+-export([config/1]).
+
 -export([start_application/1]).
 -export([start_applications/1]).
 
@@ -25,6 +30,15 @@
 -export([handle_beat/2]).
 
 -type appname() :: atom().
+
+-type option() ::
+    kafka_client_name.
+
+-spec config(option()) ->
+    _.
+
+config(kafka_client_name) ->
+    ?CLIENT.
 
 -spec start_application(appname() | {appname(), [{atom(), _Value}]}) ->
     _Deps :: [appname()].
@@ -52,6 +66,15 @@ start_application(consuela) ->
                 pulse => {?MODULE, {keeper, info}}
             }
         }}
+    ]);
+start_application(brod) ->
+    genlib_app:start_application_with(brod, [
+        {clients, [
+            {config(kafka_client_name), [
+                {endpoints, ?BROKERS},
+                {auto_start_producers, true}
+            ]}
+        ]}
     ]);
 start_application({AppName, Env}) ->
     genlib_app:start_application_with(AppName, Env);
