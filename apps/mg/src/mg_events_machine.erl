@@ -188,8 +188,12 @@ call(Options, Ref, Args, HRange, ReqCtx, Deadline) ->
 get_machine(Options, Ref, HRange) ->
     % нужно понимать, что эти операции разнесены по времени, и тут могут быть рэйсы
     ID = ref2id(Options, Ref),
-    State = opaque_to_state(mg_machine:get(machine_options(Options), ID)),
-    machine(Options, ID, State, HRange).
+    InitialState = opaque_to_state(mg_machine:get(machine_options(Options), ID)),
+    {EffectiveState, ExtraEvents} = mg_utils:throw_if_undefined(
+        try_apply_delayed_actions(InitialState),
+        {logic, machine_not_found}
+    ),
+    machine(Options, ID, EffectiveState, ExtraEvents, HRange).
 
 -spec remove(options(), mg:id(), request_context(), deadline()) ->
     ok.
@@ -531,40 +535,93 @@ get_option(Subj, Options) ->
 
 -spec machine(options(), mg:id(), state(), mg_events:history_range()) ->
     machine().
-machine(Options = #{namespace := Namespace}, ID, State, HRange) ->
+machine(Options, ID, State, HRange) ->
+    machine(Options, ID, State, [], HRange).
+
+-spec machine(options(), mg:id(), state(), [mg_events:event()], mg_events:history_range()) ->
+    machine().
+machine(Options = #{namespace := Namespace}, ID, State, ExtraEvents, HRange) ->
     #{events_range := EventsRange, aux_state := AuxState, timer := Timer} = State,
+    RangeGetters = [RG ||
+        RG = {Range, _Getter} <- [
+            {compute_events_range(ExtraEvents) , extra_event_getter(ExtraEvents)},
+            {EventsRange                       , storage_event_getter(Options, ID)}
+        ],
+        Range /= undefined
+    ],
     #{
         ns            => Namespace,
         id            => ID,
-        history       => get_events(Options, ID, EventsRange, HRange),
+        history       => get_events(RangeGetters, EventsRange, HRange),
         history_range => HRange,
         aux_state     => AuxState,
         timer         => Timer
     }.
 
--spec get_events(options(), mg:id(), mg_events:events_range(), mg_events:history_range()) ->
+-type event_getter() :: fun((mg_events:id()) -> mg_events:event()).
+-type range_getter() :: {mg_events:events_range(), event_getter()}.
+
+-spec get_events([range_getter(), ...], mg_events:events_range(), mg_events:history_range()) ->
     [mg_events:event()].
-get_events(Options, ID, EventsRange, HRange) ->
-    EventsKeys = get_events_keys(ID, EventsRange, HRange),
+get_events(RangeGetters, EventsRange, HRange) ->
+    EventIDs = mg_events:get_event_ids(EventsRange, HRange),
+    genlib_pmap:map(
+        fun (EventID) ->
+            Getter = find_event_getter(RangeGetters, EventID),
+            Getter(EventID)
+        end,
+        EventIDs
+    ).
+
+-spec find_event_getter([range_getter(), ...], mg_events:id()) ->
+    event_getter().
+find_event_getter([{{First, Last}, Getter} | _], EventID) when First =< EventID, EventID =< Last ->
+    Getter;
+find_event_getter([_ | [_ | _] = Rest], EventID) ->
+    find_event_getter(Rest, EventID);
+find_event_getter([{_, Getter}], _) ->
+    % сознательно игнорируем последний range
+    Getter.
+
+-spec storage_event_getter(options(), mg:id()) ->
+    event_getter().
+storage_event_getter(Options, ID) ->
     StorageOptions = events_storage_options(Options),
     StorageRef = events_storage_ref(Options),
-    Kvs = genlib_pmap:map(
-        fun(Key) ->
-            {_Context, Value} = mg_storage:get(StorageOptions, StorageRef, Key),
-            {Key, Value}
-        end,
-        EventsKeys
-    ),
-    kvs_to_events(ID, Kvs).
+    fun (EventID) ->
+        Key = mg_events:add_machine_id(ID, mg_events:event_id_to_key(EventID)),
+        {_Context, Value} = mg_storage:get(StorageOptions, StorageRef, Key),
+        kv_to_event(ID, {Key, Value})
+    end.
 
--spec get_events_keys(mg:id(), mg_events:events_range(), mg_events:history_range()) ->
-    [mg_storage:key()].
-get_events_keys(ID, EventsRange, HRange) ->
-    [
-        mg_events:add_machine_id(ID, mg_events:event_id_to_key(EventID))
-        ||
-        EventID <- mg_events:get_event_ids(EventsRange, HRange)
-    ].
+-spec extra_event_getter([mg_events:event()]) ->
+    event_getter().
+extra_event_getter(Events) ->
+    fun (EventID) ->
+        erlang:hd(lists:dropwhile(
+            fun (#{id := ID}) -> ID /= EventID end,
+            Events
+        ))
+    end.
+
+-spec try_apply_delayed_actions(state()) ->
+    {state(), [mg_events:event()]} | undefined.
+try_apply_delayed_actions(#{delayed_actions := undefined} = State) ->
+    {State, []};
+try_apply_delayed_actions(#{delayed_actions := DA = #{add_events := NewEvents}} = State) ->
+    case apply_delayed_actions_to_state(DA, State) of
+        NewState = #{} ->
+            {NewState, NewEvents};
+        remove ->
+            undefined
+    end.
+
+-spec compute_events_range([mg_events:event()]) ->
+    mg_events:events_range().
+compute_events_range([]) ->
+    undefined;
+compute_events_range([#{id := ID} | _] = Events) ->
+    {ID, ID + erlang:length(Events) - 1}.
 
 %%
 %% packer to opaque
@@ -616,10 +673,10 @@ opaque_to_state([3, EventsRange, AuxState, DelayedActions, Timer]) ->
 events_to_kvs(MachineID, Events) ->
     mg_events:add_machine_id(MachineID, mg_events:events_to_kvs(Events)).
 
--spec kvs_to_events(mg:id(), [mg_storage:kv()]) ->
-    [mg_events:event()].
-kvs_to_events(MachineID, Kvs) ->
-    mg_events:kvs_to_events(mg_events:remove_machine_id(MachineID, Kvs)).
+-spec kv_to_event(mg:id(), mg_storage:kv()) ->
+    mg_events:event().
+kv_to_event(MachineID, Kv) ->
+    mg_events:kv_to_event(mg_events:remove_machine_id(MachineID, Kv)).
 
 -spec delayed_actions_to_opaque(delayed_actions()) ->
     mg_storage:opaque().

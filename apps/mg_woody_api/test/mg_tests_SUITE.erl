@@ -45,6 +45,9 @@
 -export([machine_remove             /1]).
 -export([machine_remove_by_action   /1]).
 
+%% history group tests
+-export([history_changed_atomically/1]).
+
 %% repair group tests
 -export([failed_machine_start        /1]).
 -export([machine_start_timeout       /1]).
@@ -102,6 +105,7 @@
 all() ->
     [
         {group, base      },
+        {group, history   },
         {group, repair    },
         {group, timers    },
         {group, event_sink},
@@ -133,6 +137,10 @@ groups() ->
             machine_start,
             machine_remove_by_action,
             machine_id_not_found
+        ]},
+
+        {history, [sequence, {repeat, 5}], [
+            history_changed_atomically
         ]},
 
         {repair, [sequence], [
@@ -206,6 +214,8 @@ end_per_suite(_C) ->
     config().
 init_per_group(mwc, C) ->
     init_per_group([{storage, mg_storage_memory} | C]);
+init_per_group(history, C) ->
+    init_per_group([{storage, mg_storage_memory} | C]);
 init_per_group(_, C) ->
     % NOTE
     % Даже такой небольшой шанс может сработать в ситуациях, когда мы в процессоре выгребаем большой кусок
@@ -245,11 +255,21 @@ init_per_group(C) ->
 -spec default_signal_handler(mg:signal_args()) -> mg:signal_result().
 default_signal_handler({Args, _Machine}) ->
     case Args of
-        {init  , <<"fail" >>}   -> erlang:error(fail);
-        {init  , <<"timeout">>} -> timer:sleep(infinity);
-        {repair, <<"error">>}   -> erlang:error(error);
-         timeout                -> {{null(), [content(<<"handle_timer_body">>)]}, #{timer => undefined, tag => undefined}};
-        _ -> mg_test_processor:default_result(signal, Args)
+        {init, <<"fail" >>} ->
+            erlang:error(fail);
+        {init, <<"timeout">>} ->
+            timer:sleep(infinity);
+        {init, [<<"fire">>, HistoryLen, EventBody, AuxState]} ->
+            {
+                {content(AuxState), [content(EventBody) || _ <- lists:seq(1, HistoryLen)]},
+                #{timer => undefined, tag => undefined}
+            };
+        {repair, <<"error">>} ->
+            erlang:error(error);
+         timeout ->
+             {{null(), [content(<<"handle_timer_body">>)]}, #{timer => undefined, tag => undefined}};
+        _ ->
+            mg_test_processor:default_result(signal, Args)
     end.
 
 -spec default_call_handler(mg:call_args()) -> mg:call_result().
@@ -402,6 +422,61 @@ machine_remove_by_action(C) ->
         throw:#mg_stateproc_MachineNotFound{} ->
             % The request had been retried
             <<"remove">>
+    end.
+
+%%
+%% history group tests
+%%
+-spec history_changed_atomically(config()) ->
+    _.
+history_changed_atomically(C) ->
+    ID = genlib:unique(),
+    HistoryLen = 1000,
+    AuxState = <<"see?!">>,
+    EventBody = <<"welcome">>,
+    HistoryLimit = 5,
+    HistoryRange = {undefined, HistoryLimit, backward},
+    HistorySeen = [
+        {EventID, EventBody} ||
+            EventID <- lists:seq(HistoryLen, HistoryLen - HistoryLimit + 1, -1)
+    ],
+    Concurrency = 50,
+    MaxDelay = 500,
+    % concurrently ...
+    [ok | Results] = genlib_pmap:map(
+        fun
+            (0) ->
+                % ... start machine emitting HistoryLen events at once ...
+                start_machine(C, ID, [<<"fire">>, HistoryLen, EventBody, AuxState]);
+            (_) ->
+                % ... and try to observe its history in the meantime
+                ok = timer:sleep(rand:uniform(MaxDelay)),
+                get_simple_history(C, ID, HistoryRange)
+        end,
+        lists:seq(0, Concurrency)
+    ),
+    Groups = lists:foldl(
+        fun (R, Acc) ->
+            maps:update_with(R, fun (N) -> N + 1 end, 1, Acc)
+        end,
+        #{},
+        Results
+    ),
+    AtomicResult = {HistorySeen, AuxState},
+    ?assertEqual(#{}, maps:without([undefined, AtomicResult], Groups)).
+
+-spec get_simple_history(config(), mg:id(), mg_events:history_range()) ->
+    {[{mg_events:id(), mg_storage:opaque()}], mg_storage:opaque()}.
+get_simple_history(C, ID, HRange) ->
+    try mg_automaton_client:get_machine(automaton_options(C), {id, ID}, HRange) of
+        #{history := History, aux_state := {#{}, AuxState}} ->
+            {
+                [{EventID, Body} || #{id := EventID, body := {#{}, Body}} <- History],
+                AuxState
+            }
+    catch
+        #mg_stateproc_MachineNotFound{} ->
+            undefined
     end.
 
 %%
@@ -648,7 +723,7 @@ config_with_multiple_event_sinks(_C) ->
                     {mg_events_sink_kafka, #{
                         name => kafka,
                         topic => <<"mg_event_sink">>,
-                        client => mg_kafka_client
+                        client => mg_ct_helper:config(kafka_client_name)
                     }}
                 ]
             }
@@ -667,7 +742,12 @@ config_with_multiple_event_sinks(_C) ->
 -spec start_machine(config(), mg:id()) ->
     ok.
 start_machine(C, ID) ->
-    case catch mg_automaton_client:start(automaton_options(C), ID, ID) of
+    start_machine(C, ID, ID).
+
+-spec start_machine(config(), mg:id(), mg_event_machine:args()) ->
+    ok.
+start_machine(C, ID, Args) ->
+    case catch mg_automaton_client:start(automaton_options(C), ID, Args) of
         ok ->
             ok;
         #mg_stateproc_MachineAlreadyExists{} ->
