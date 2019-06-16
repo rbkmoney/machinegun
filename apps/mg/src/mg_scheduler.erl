@@ -53,7 +53,7 @@
     pulse := mg_pulse:handler(),
     quota_name := mg_quota_worker:name(),
     quota_share => mg_quota:share(),
-    completed_search_sleep => timeout(),
+    no_task_wait => timeout(),
     search_interval => timeout()
 }.
 -type task_info(TaskID, TaskPayload) :: #{
@@ -86,7 +86,7 @@
     quota_reserved :: mg_quota:resource() | undefined,
     timer :: reference(),
     search_interval :: timeout(),
-    completed_search_sleep :: timeout(),
+    no_task_wait :: timeout(),
     active_tasks :: #{task_id() => pid()},
     waiting_tasks :: queue:queue(task_id()),
     tasks_info :: #{task_id() => task_info()},
@@ -102,7 +102,7 @@
 -type queue_handler() :: mg_utils:mod_opts(queue_options()).
 
 -define(DEFAULT_SEARCH_INTERVAL, 1000).  % 1 second
--define(DEFAULT_COMPLETED_SLEEP, 1000).  % 1 second
+-define(DEFAULT_NO_TASK_WAIT, 1000).  % 1 second
 -define(SEARCH_MESSAGE, search_new_tasks).
 -define(SEARCH_NUMBER, 10).
 
@@ -146,7 +146,7 @@ add_task(NS, Name, TaskInfo) ->
     mg_utils:gen_server_init_ret(state()).
 init(Options) ->
     SearchInterval = maps:get(search_interval, Options, ?DEFAULT_SEARCH_INTERVAL),
-    CompletedSleep = maps:get(completed_search_sleep, Options, ?DEFAULT_COMPLETED_SLEEP),
+    NoTaskWait = maps:get(no_task_wait, Options, ?DEFAULT_NO_TASK_WAIT),
     Name = maps:get(name, Options),
     NS = maps:get(namespace, Options),
     QueueHandler = maps:get(queue_handler, Options),
@@ -162,7 +162,7 @@ init(Options) ->
         quota_share = maps:get(quota_share, Options, 1),
         quota_reserved = undefined,
         search_interval = SearchInterval,
-        completed_search_sleep = CompletedSleep,
+        no_task_wait = NoTaskWait,
         active_tasks = #{},
         task_monitors = #{},
         tasks_info = #{},
@@ -276,7 +276,7 @@ restart_timer(Message, Timeout, #state{timer = TimerRef} = State) ->
 get_timer_timeout(continue, State) ->
     State#state.search_interval;
 get_timer_timeout(completed, State) ->
-    State#state.completed_search_sleep.
+    State#state.no_task_wait.
 
 % Helpers
 
