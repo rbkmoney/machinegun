@@ -24,6 +24,7 @@
 -export([print_erl_inetrc /1]).
 
 -export([guess_host_address/1]).
+-export([hostname/0]).
 
 -export([filename         /1]).
 -export([log_level        /1]).
@@ -159,6 +160,12 @@ get_iface_prio("tun" ++ _) -> 3;
 get_iface_prio("lo"  ++ _) -> 4;
 get_iface_prio(_)          -> 100.
 
+
+-spec hostname() ->
+    inet:hostname().
+hostname() ->
+    {ok, Name} = inet:gethostname(),
+    Name.
 
 -spec
 log_level(string()  ) -> atom().

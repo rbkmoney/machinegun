@@ -71,7 +71,7 @@ consuela(YamlConfig) ->
     lists:append(
         conf_with([consuela, registry], YamlConfig, fun (RegConfig) -> [
             {registry, #{
-                nodename  => ?C:conf([nodename], RegConfig),
+                nodename  => ?C:conf([nodename], RegConfig, ?C:hostname()),
                 namespace => ?C:utf_bin(?C:conf([namespace], RegConfig, "mg")),
                 consul    => consul_client(mg_consuela_registry, YamlConfig),
                 shutdown  => ?C:time_interval(?C:conf([shutdown_timeout], RegConfig, "5s"), 'ms'),
