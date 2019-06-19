@@ -185,12 +185,11 @@ format_consuela_beat({session_keeper, {session, {renewal, Status}}}) ->
                 {mg_pulse_event_id, consuela_session_renewal_succeeded},
                 {time_left, Deadline - os:system_time(second)}
             ]};
-        {failed, Reason, Stacktrace} ->
+        {failed, Reason} ->
             {error, {"session renewal failed", []}, [
                 {mg_pulse_event_id, consuela_session_renewal_failed},
                 {error, [
-                    {reason, genlib:print(Reason, 500)},
-                    {stack_trace, genlib_format:format_stacktrace(Stacktrace)}
+                    {reason, genlib:print(Reason, 500)}
                 ]}
             ]}
     end;
