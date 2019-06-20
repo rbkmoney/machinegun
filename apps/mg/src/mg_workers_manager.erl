@@ -88,27 +88,43 @@ start_link(Options) ->
 call(Options, ID, Call, ReqCtx, Deadline) ->
     case mg_utils:is_deadline_reached(Deadline) of
         false ->
-            #{name := Name, pulse := Pulse} = Options,
-            try mg_worker:call(Name, ID, Call, ReqCtx, Deadline, Pulse) catch
-                exit:Reason ->
-                    handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason)
-            end;
+            call(Options, ID, Call, ReqCtx, Deadline, true);
         true ->
-            {error, {timeout, worker_call_deadline_reached}}
+            {error, {transient, worker_call_deadline_reached}}
     end.
 
--spec handle_worker_exit(options(), id(), _Call, req_ctx(), mg_utils:deadline(), _Reason) ->
+-spec call(options(), id(), _Call, req_ctx(), mg_utils:deadline(), boolean()) ->
     _Reply | {error, _}.
-handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason) ->
+call(Options, ID, Call, ReqCtx, Deadline, Retry) ->
+    #{name := Name, pulse := Pulse} = Options,
+    try mg_worker:call(Name, ID, Call, ReqCtx, Deadline, Pulse) catch
+        exit:Reason ->
+            handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason, Retry)
+    end.
+
+-spec handle_worker_exit(options(), id(), _Call, req_ctx(), mg_utils:deadline(), _Reason, boolean()) ->
+    _Reply | {error, _}.
+handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason, Retry) ->
+    MaybeRetry = case Retry of
+        true ->
+            fun (_Details) -> start_and_retry_call(Options, ID, Call, ReqCtx, Deadline) end;
+        false ->
+            fun (Details) -> {error, {transient, Details}} end
+    end,
     case Reason of
-         noproc         -> start_and_retry_call(Options, ID, Call, ReqCtx, Deadline);
-        {noproc    , _} -> start_and_retry_call(Options, ID, Call, ReqCtx, Deadline);
-        {normal    , _} -> start_and_retry_call(Options, ID, Call, ReqCtx, Deadline);
-        {shutdown  , _} -> start_and_retry_call(Options, ID, Call, ReqCtx, Deadline);
-        {timeout   , _} -> {error, Reason};
-        {killed    , _} -> {error, {transient, unavailable}};
-        {consuela  , _} -> {error, {transient, {registry_unavailable, Reason}}};
-         Unknown        -> {error, {unexpected_exit, Unknown}}
+        % We have to take into account that `gen_server:call/2` wraps exception details in a
+        % tuple with original call MFA attached.
+        % > https://github.com/erlang/otp/blob/OTP-21.3/lib/stdlib/src/gen_server.erl#L215
+        noproc             -> MaybeRetry(noproc);
+        {noproc    , _MFA} -> MaybeRetry(noproc);
+        {normal    , _MFA} -> MaybeRetry(normal);
+        {shutdown  , _MFA} -> MaybeRetry(shutdown);
+        {timeout   , _MFA} -> {error, Reason};
+        {killed    , _MFA} -> {error, {transient, unavailable}};
+        {{consuela , Details}, _MFA} ->
+            {error, {transient, {registry_unavailable, Details}}};
+        Unknown ->
+            {error, {unexpected_exit, Unknown}}
     end.
 
 -spec start_and_retry_call(options(), id(), _Call, req_ctx(), mg_utils:deadline()) ->
@@ -122,10 +138,13 @@ start_and_retry_call(Options, ID, Call, ReqCtx, Deadline) ->
     %
     case start_child(Options, ID, ReqCtx) of
         {ok, _} ->
-            call(Options, ID, Call, ReqCtx, Deadline);
+            call(Options, ID, Call, ReqCtx, Deadline, false);
         {error, {already_started, _}} ->
-            call(Options, ID, Call, ReqCtx, Deadline);
-        {error, {consuela, Reason}} ->
+            call(Options, ID, Call, ReqCtx, Deadline, false);
+        % When a child exits with `Reason` during startup the supervisor will give us
+        % `{error, {Reason, Child}}` as a result
+        % > https://github.com/erlang/otp/blob/OTP-21.3/lib/stdlib/src/supervisor.erl#L679
+        {error, {{consuela, Reason}, _Child}} ->
             {error, {transient, {registry_unavailable, Reason}}};
         Error = {error, _} ->
             Error
