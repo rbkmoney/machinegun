@@ -142,10 +142,7 @@ start_and_retry_call(Options, ID, Call, ReqCtx, Deadline, Retries) ->
             call(Options, ID, Call, ReqCtx, Deadline, Retries);
         {error, {already_started, _}} ->
             call(Options, ID, Call, ReqCtx, Deadline, Retries);
-        % When a child exits with `Reason` during startup the supervisor will give us
-        % `{error, {Reason, Child}}` as a result
-        % > https://github.com/erlang/otp/blob/OTP-21.3/lib/stdlib/src/supervisor.erl#L679
-        {error, {{consuela, Reason}, _Child}} ->
+        {error, {consuela, Reason}} ->
             {error, {transient, {registry_unavailable, Reason}}};
         Error = {error, _} ->
             Error
