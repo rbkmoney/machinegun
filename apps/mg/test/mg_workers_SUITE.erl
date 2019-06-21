@@ -187,7 +187,7 @@ wait_worker_unload(WorkerPid, Timeout) ->
     _.
 stress_test(_C) ->
     WorkersCount  = 50,
-    UnloadTimeout = 200, % чтобы машины выгружались в процессе теста
+    UnloadTimeout = 1000, % чтобы машины выгружались в процессе теста
     ok = run_load_test(#{
         duration        => 5 * 1000,
         runners         => 1000,
@@ -209,7 +209,7 @@ stress_test_do_test_call(Options, WorkersCount) ->
     _.
 manager_contention_test(_C) ->
     RunnersCount  = 10000,
-    UnloadTimeout = 200, % чтобы машины выгружались в процессе теста
+    UnloadTimeout = 1000, % чтобы машины выгружались в процессе теста
     ok = run_load_test(#{
         duration        => 5 * 1000,
         runners         => RunnersCount,
