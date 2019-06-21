@@ -88,7 +88,7 @@ end_per_suite(C) ->
 %%
 %% base group tests
 %%
--define(unload_timeout, 10).
+-define(unload_timeout, 200).
 -define(req_ctx, <<"req_ctx">>).
 
 -spec base_test(config()) ->
