@@ -9,7 +9,7 @@
   0},
  {<<"consuela">>,
   {git,"https://github.com/rbkmoney/consuela",
-       {ref,"52eb079293a6085d053da04fae39ea55d837ec8a"}},
+       {ref,"d75bf06c8577d8ff230001bd1f0d64a941386a0a"}},
   0},
  {<<"cowboy">>,{pkg,<<"cowboy">>,<<"2.5.0">>},1},
  {<<"cowlib">>,{pkg,<<"cowlib">>,<<"2.7.3">>},1},

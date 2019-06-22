@@ -88,7 +88,7 @@ end_per_suite(C) ->
 %%
 %% base group tests
 %%
--define(unload_timeout, 10).
+-define(unload_timeout, 200).
 -define(req_ctx, <<"req_ctx">>).
 
 -spec base_test(config()) ->
@@ -186,14 +186,14 @@ wait_worker_unload(WorkerPid, Timeout) ->
 -spec stress_test(config()) ->
     _.
 stress_test(_C) ->
-    WorkersCount   = 50,
-    UnloadTimeout  = 0, % чтобы машины выгружались в процессе теста
+    WorkersCount  = 50,
+    UnloadTimeout = 1000, % чтобы машины выгружались в процессе теста
     ok = run_load_test(#{
         duration        => 5 * 1000,
         runners         => 1000,
         job             => fun (ManagerOptions, _N) -> stress_test_do_test_call(ManagerOptions, WorkersCount) end,
         manager_options => workers_options(UnloadTimeout, #{link_pid=>erlang:self()}),
-        unload_timeout  => 10
+        unload_timeout  => UnloadTimeout * 2
     }).
 
 -spec stress_test_do_test_call(mg_workers_manager:options(), pos_integer()) ->
@@ -209,13 +209,13 @@ stress_test_do_test_call(Options, WorkersCount) ->
     _.
 manager_contention_test(_C) ->
     RunnersCount  = 10000,
-    UnloadTimeout = 0, % чтобы машины выгружались в процессе теста
+    UnloadTimeout = 1000, % чтобы машины выгружались в процессе теста
     ok = run_load_test(#{
         duration        => 5 * 1000,
         runners         => RunnersCount,
         job             => fun manager_contention_test_call/2,
         manager_options => workers_options(UnloadTimeout, #{link_pid=>erlang:self()}),
-        unload_timeout  => 100
+        unload_timeout  => UnloadTimeout * 2
     }).
 
 -spec manager_contention_test_call(mg_workers_manager:options(), pos_integer()) ->
