@@ -25,7 +25,7 @@
 
 %% internal types
 -type log_msg() :: mg_woody_api_log:log_msg().
--type meta() :: mg_woody_api_log:meta().
+-type meta() :: logger:metadata().
 -type beat() :: mg_woody_api_pulse:beat().
 
 %%
