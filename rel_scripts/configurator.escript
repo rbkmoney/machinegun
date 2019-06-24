@@ -22,6 +22,8 @@
 %% main
 %%
 main([YamlConfigFilename, ConfigsPath]) ->
+    {ok, _} = application:ensure_all_started(os_mon),
+    {ok, _} = application:ensure_all_started(cg_mon),
     YamlConfig = ?C:parse_yaml_config(YamlConfigFilename),
     ERLInetrcFilename = filename:join(ConfigsPath, "erl_inetrc"),
     ?C:write_files([
@@ -35,12 +37,15 @@ main([YamlConfigFilename, ConfigsPath]) ->
 %%
 sys_config(YamlConfig) ->
     [
-        {os_mon      , os_mon      (YamlConfig)},
-        {lager       , lager       (YamlConfig)},
-        {how_are_you , how_are_you (YamlConfig)},
-        {snowflake   , snowflake   (YamlConfig)},
-        {brod        , brod        (YamlConfig)},
-        {mg_woody_api, mg_woody_api(YamlConfig)}
+        {os_mon        , os_mon      (YamlConfig)},
+        {kernel, [
+            {log_level , log_level   (YamlConfig)},
+            {logger    , logger      (YamlConfig)}
+        ]},
+        {how_are_you   , how_are_you (YamlConfig)},
+        {snowflake     , snowflake   (YamlConfig)},
+        {brod          , brod        (YamlConfig)},
+        {mg_woody_api  , mg_woody_api(YamlConfig)}
     ].
 
 os_mon(_YamlConfig) ->
@@ -49,21 +54,31 @@ os_mon(_YamlConfig) ->
         {disksup_posix_only, true}
     ].
 
-lager(YamlConfig) ->
+log_level(YamlConfig) ->
+    ?C:conf([logging, level], YamlConfig, "info").
+
+logger(YamlConfig) ->
+    Root = ?C:filename(?C:conf([logging, root], YamlConfig, "/var/log/machinegun")),
+    LogfileName = ?C:filename (?C:conf([logging, json_log], YamlConfig, "log.json")),
+    FullLogname = filename:join(Root, LogfileName),
     [
-        {error_logger_hwm, 600},
-        {log_root , ?C:filename(?C:conf([logging, root     ], YamlConfig, "/var/log/machinegun"))},
-        {crash_log, ?C:filename(?C:conf([logging, crash_log], YamlConfig, "crash.json"         ))},
-        {handlers, [
-            {lager_file_backend, [
-                {file     , ?C:filename (?C:conf([logging, json_log], YamlConfig, "log.json"))},
-                {level    , ?C:log_level(?C:conf([logging, level   ], YamlConfig, "info"    ))},
-                {formatter, lager_logstash_formatter},
-                %% disable log rotation
-                {size, 0},
-                {date, ""}
-            ]}
-        ]}
+        {handler, default, logger_std_h, #{
+            level => error,
+            config => #{
+                type => standard_error
+            },
+            formatter => {logger_formatter, #{
+                depth => 30
+            }}
+        }},
+        {handler, console_logger, logger_std_h, #{
+            level => debug,
+            config => #{
+                type => {file, FullLogname},
+                sync_mode_qlen => ?C:conf([logging, sync_mode_qlen], YamlConfig, "20")
+            },
+            formatter => {logger_logstash_formatter, #{}}
+        }}
     ].
 
 how_are_you(YamlConfig) ->
