@@ -22,8 +22,6 @@
 %% main
 %%
 main([YamlConfigFilename, ConfigsPath]) ->
-    {ok, _} = application:ensure_all_started(os_mon),
-    {ok, _} = application:ensure_all_started(cg_mon),
     YamlConfig = ?C:parse_yaml_config(YamlConfigFilename),
     ERLInetrcFilename = filename:join(ConfigsPath, "erl_inetrc"),
     ?C:write_files([
@@ -62,19 +60,11 @@ logger(YamlConfig) ->
     LogfileName = ?C:filename (?C:conf([logging, json_log], YamlConfig, "log.json")),
     FullLogname = filename:join(Root, LogfileName),
     [
-        {handler, default, logger_std_h, #{
-            level => error,
-            config => #{
-                type => standard_error
-            },
-            formatter => {logger_formatter, #{
-                depth => 30
-            }}
-        }},
         {handler, console_logger, logger_std_h, #{
             level => debug,
             config => #{
-                type => {file, FullLogname},
+                type => file,
+                file => FullLogname,
                 sync_mode_qlen => ?C:conf([logging, sync_mode_qlen], YamlConfig, "20")
             },
             formatter => {logger_logstash_formatter, #{}}
