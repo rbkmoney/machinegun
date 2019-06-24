@@ -141,7 +141,7 @@ extract_meta(Name, Value) ->
     {Name, Value}.
 
 -spec extract_woody_meta(woody_event_handler:event_meta()) ->
-    [meta()] | meta().
+    meta().
 extract_woody_meta(#{role := server} = Meta) ->
     [{'rpc.server', Meta}];
 extract_woody_meta(#{role := client} = Meta) ->

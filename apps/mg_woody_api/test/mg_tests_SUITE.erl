@@ -217,7 +217,6 @@ init_per_group(_, C) ->
 init_per_group(C) ->
     %% TODO сделать нормальную генерацию урлов
     Apps = mg_ct_helper:start_applications([
-        lager,
         brod,
         {mg_woody_api, mg_woody_api_config(C)}
     ]),

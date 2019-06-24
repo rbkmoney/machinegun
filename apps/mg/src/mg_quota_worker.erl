@@ -122,13 +122,13 @@ handle_call({reserve, ClientOptions, Usage, Expectation}, {Pid, _Tag}, State0) -
     {ok, NewReserved, NewQuota} = mg_quota:reserve(ClientOptions, Usage, Expectation, State1#state.quota),
     {reply, NewReserved, State1#state{quota = NewQuota}};
 handle_call(Call, From, State) ->
-    ok = error_logger:error_msg("unexpected gen_server call received: ~p from ~p", [Call, From]),
+    ok = logger:error("unexpected gen_server call received: ~p from ~p", [Call, From]),
     {noreply, State}.
 
 -spec handle_cast(Cast :: any(), state()) ->
     mg_utils:gen_server_handle_cast_ret(state()).
 handle_cast(Cast, State) ->
-    ok = error_logger:error_msg("unexpected gen_server cast received: ~p", [Cast]),
+    ok = logger:error("unexpected gen_server cast received: ~p", [Cast]),
     {noreply, State}.
 
 -spec handle_info(Info :: any(), state()) ->
@@ -139,7 +139,7 @@ handle_info(?UPDATE_MESSAGE, State) ->
 handle_info({'DOWN', Monitor, process, _Object, _Info}, State) ->
     {noreply, forget_about_client(Monitor, State)};
 handle_info(Info, State) ->
-    ok = error_logger:error_msg("unexpected gen_server info received: ~p", [Info]),
+    ok = logger:error("unexpected gen_server info received: ~p", [Info]),
     {noreply, State}.
 
 -spec code_change(OldVsn :: any(), state(), Extra :: any()) ->

@@ -27,17 +27,6 @@
 -spec start_application(appname() | {appname(), [{atom(), _Value}]}) ->
     _Deps :: [appname()].
 
-start_application(lager) ->
-    genlib_app:start_application_with(lager, [
-        {error_logger_hwm, 1000},
-        {handlers, [
-            {lager_common_test_backend, [
-                info,
-                {lager_default_formatter, [time, " ", severity, " ", metadata, " ", message]}
-            ]}
-        ]},
-        {async_threshold, undefined}
-    ]);
 start_application({AppName, Env}) ->
     genlib_app:start_application_with(AppName, Env);
 start_application(AppName) ->

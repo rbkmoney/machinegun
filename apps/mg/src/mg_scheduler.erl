@@ -175,13 +175,13 @@ handle_call({add_task, TaskInfo}, _From, State0) ->
     State3 = start_new_tasks(State2),
     {reply, ok, State3};
 handle_call(Call, From, State) ->
-    ok = error_logger:error_msg("unexpected gen_server call received: ~p from ~p", [Call, From]),
+    ok = logger:error("unexpected gen_server call received: ~p from ~p", [Call, From]),
     {noreply, State}.
 
 -spec handle_cast(Cast :: any(), state()) ->
     mg_utils:gen_server_handle_cast_ret(state()).
 handle_cast(Cast, State) ->
-    ok = error_logger:error_msg("unexpected gen_server cast received: ~p", [Cast]),
+    ok = logger:error("unexpected gen_server cast received: ~p", [Cast]),
     {noreply, State}.
 
 -spec handle_info(Info :: any(), state()) ->
@@ -198,7 +198,7 @@ handle_info({'DOWN', Monitor, process, _Object, _Info}, State0) ->
     State2 = start_new_tasks(State1),
     {noreply, State2};
 handle_info(Info, State) ->
-    ok = error_logger:error_msg("unexpected gen_server info received: ~p", [Info]),
+    ok = logger:error("unexpected gen_server info received: ~p", [Info]),
     {noreply, State}.
 
 -spec code_change(OldVsn :: any(), state(), Extra :: any()) ->

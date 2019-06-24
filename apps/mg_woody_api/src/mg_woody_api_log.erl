@@ -20,15 +20,13 @@
 -export([log/1]).
 
 %% logging types
--type log_msg() :: {level(), msg(), meta()}.
+-type log_msg() :: {logger:level(), msg(), meta()}.
 -type msg() :: expanded_msg() | string().
--type meta() :: [{atom(), any()}]. % there is no such exported type in lager
--type level() :: lager:log_level().
+-type meta() :: [{atom(), any()}].
 
 -export_type([log_msg/0]).
 -export_type([msg    /0]).
 -export_type([meta   /0]).
--export_type([level  /0]).
 
 %% internal types
 -type expanded_msg() :: {Format::string(), Args::list()}.
@@ -42,7 +40,7 @@ log(undefined) ->
     ok;
 log({Level, Msg, Meta}) ->
     {MsgFormat, MsgArgs} = expand_msg(Msg),
-    ok = lager:log(Level, [{pid, erlang:self()} | Meta], MsgFormat, MsgArgs).
+    ok = logger:log(Level, MsgFormat, MsgArgs, maps:from_list(Meta)).
 
 -spec expand_msg(msg()) ->
     expanded_msg().
