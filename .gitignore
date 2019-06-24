@@ -16,3 +16,4 @@ config/sys.config
 config/vm.args
 config/erl_inetrc
 _checkouts/
+apps/mg_woody_api/_build
