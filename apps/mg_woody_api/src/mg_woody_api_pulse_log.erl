@@ -25,7 +25,7 @@
 
 %% internal types
 -type log_msg() :: mg_woody_api_log:log_msg().
--type meta() :: logger:metadata().
+-type meta() :: mg_woody_api_log:meta().
 -type beat() :: mg_woody_api_pulse:beat().
 
 %%
@@ -141,7 +141,7 @@ extract_meta(Name, Value) ->
     {Name, Value}.
 
 -spec extract_woody_meta(woody_event_handler:event_meta()) ->
-    [meta()] | meta().
+    meta().
 extract_woody_meta(#{role := server} = Meta) ->
     [{'rpc.server', Meta}];
 extract_woody_meta(#{role := client} = Meta) ->
