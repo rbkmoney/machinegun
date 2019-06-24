@@ -34,7 +34,7 @@ limits:
     scheduler_tasks: 5000
 logging:
     root: /var/log/machinegun
-    crash_log: crash.log
+    sync_mode_qlen: 20
     json_log: log.json
     level: info
 metrics:

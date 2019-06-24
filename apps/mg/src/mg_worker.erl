@@ -188,17 +188,17 @@ handle_call({call, Deadline, Call, ReqCtx}, From, State=#{mod:=Mod, status:={wor
                 noreply        -> {noreply, schedule_unload_timer(NewState), hibernate_timeout(NewState)}
             end;
         true ->
-            ok = error_logger:warning_msg("rancid worker call received: ~p from ~p", [Call, From]),
+            ok = logger:warning("rancid worker call received: ~p from ~p", [Call, From]),
             {noreply, schedule_unload_timer(State), hibernate_timeout(State)}
     end;
 handle_call(Call, From, State) ->
-    ok = error_logger:error_msg("unexpected gen_server call received: ~p from ~p", [Call, From]),
+    ok = logger:error("unexpected gen_server call received: ~p from ~p", [Call, From]),
     {noreply, State, hibernate_timeout(State)}.
 
 -spec handle_cast(_Cast, state()) ->
     mg_utils:gen_server_handle_cast_ret(state()).
 handle_cast(Cast, State) ->
-    ok = error_logger:error_msg("unexpected gen_server cast received: ~p", [Cast]),
+    ok = logger:error("unexpected gen_server cast received: ~p", [Cast]),
     {noreply, State, hibernate_timeout(State)}.
 
 -spec handle_info(_Info, state()) ->
@@ -217,7 +217,7 @@ handle_info({timeout, _, unload}, State=#{}) ->
     % А кто-то опаздал!
     {noreply, schedule_unload_timer(State), hibernate_timeout(State)};
 handle_info(Info, State) ->
-    ok = error_logger:error_msg("unexpected gen_server info ~p", [Info]),
+    ok = logger:error("unexpected gen_server info ~p", [Info]),
     {noreply, State, hibernate_timeout(State)}.
 
 -spec code_change(_, state(), _) ->

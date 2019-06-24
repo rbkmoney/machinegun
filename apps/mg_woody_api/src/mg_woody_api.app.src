@@ -20,10 +20,10 @@
     {registered, []},
     {mod, {mg_woody_api, []}},
     {applications, [
+        logger_logstash_formatter,
         kernel,
         stdlib,
         genlib,
-        lager,
         rfc3339,
         mg_proto,
         mg,
