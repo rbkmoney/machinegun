@@ -60,7 +60,7 @@ logger(YamlConfig) ->
     LogfileName = ?C:filename (?C:conf([logging, json_log], YamlConfig, "log.json")),
     FullLogname = filename:join(Root, LogfileName),
     [
-        {handler, console_logger, logger_std_h, #{
+        {handler, default, logger_std_h, #{
             level => debug,
             config => #{
                 type => file,
