@@ -65,7 +65,7 @@ logger(YamlConfig) ->
             config => #{
                 type => file,
                 file => FullLogname,
-                sync_mode_qlen => ?C:conf([logging, sync_mode_qlen], YamlConfig, "20")
+                sync_mode_qlen => ?C:conf([logging, sync_mode_qlen], YamlConfig, 20)
             },
             formatter => {logger_logstash_formatter, #{}}
         }}
