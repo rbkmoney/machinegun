@@ -20,7 +20,6 @@
     {registered, []},
     {mod, {mg_woody_api, []}},
     {applications, [
-        logger_logstash_formatter,
         kernel,
         stdlib,
         genlib,
