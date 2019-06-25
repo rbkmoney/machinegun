@@ -53,7 +53,7 @@ os_mon(_YamlConfig) ->
     ].
 
 log_level(YamlConfig) ->
-    ?C:log_level([logging, level], YamlConfig, info).
+    ?C:log_level(?C:conf([logging, level], YamlConfig, "info")).
 
 logger(YamlConfig) ->
     Root = ?C:filename(?C:conf([logging, root], YamlConfig, "/var/log/machinegun")),
