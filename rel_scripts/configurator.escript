@@ -53,7 +53,7 @@ os_mon(_YamlConfig) ->
     ].
 
 log_level(YamlConfig) ->
-    ?C:conf([logging, level], YamlConfig, "info").
+    ?C:log_level(?C:conf([logging, level], YamlConfig, "info")).
 
 logger(YamlConfig) ->
     Root = ?C:filename(?C:conf([logging, root], YamlConfig, "/var/log/machinegun")),
@@ -65,7 +65,7 @@ logger(YamlConfig) ->
             config => #{
                 type => file,
                 file => FullLogname,
-                sync_mode_qlen => ?C:conf([logging, sync_mode_qlen], YamlConfig, "20")
+                sync_mode_qlen => ?C:conf([logging, sync_mode_qlen], YamlConfig, 20)
             },
             formatter => {logger_logstash_formatter, #{}}
         }}
