@@ -277,7 +277,8 @@ process_machine_(_, _, {call, remove}, _, _, _, State) ->
     {{reply, ok}, remove, State};
 process_machine_(Options, ID, {Subj, {Args, HRange}}, _, ReqCtx, Deadline, State = #{events_range := EventsRange}) ->
     % обработка стандартных запросов
-    Machine = machine(Options, ID, State, HRange),
+    {EffectiveState, ExtraEvents} = try_apply_delayed_actions(State),
+    Machine = machine(Options, ID, EffectiveState, ExtraEvents, HRange),
     {Reply, DelayedActions} =
         case Subj of
             init    -> process_signal(Options, ReqCtx, Deadline, {init  , Args}, Machine, EventsRange);
@@ -285,7 +286,8 @@ process_machine_(Options, ID, {Subj, {Args, HRange}}, _, ReqCtx, Deadline, State
             timeout -> process_signal(Options, ReqCtx, Deadline,  timeout      , Machine, EventsRange);
             call    -> process_call  (Options, ReqCtx, Deadline,          Args , Machine, EventsRange)
         end,
-    {noreply, {continue, Reply}, State#{delayed_actions := DelayedActions}};
+    NewState = add_delayed_actions(DelayedActions, State),
+    {noreply, {continue, Reply}, NewState};
 process_machine_(Options, ID, continuation, PCtx, ReqCtx, Deadline, State = #{delayed_actions := DelayedActions}) ->
     % отложенные действия (эвент синк, тэг)
     %
@@ -533,11 +535,6 @@ get_option(Subj, Options) ->
 
 %%
 
--spec machine(options(), mg:id(), state(), mg_events:history_range()) ->
-    machine().
-machine(Options, ID, State, HRange) ->
-    machine(Options, ID, State, [], HRange).
-
 -spec machine(options(), mg:id(), state(), [mg_events:event()], mg_events:history_range()) ->
     machine().
 machine(Options = #{namespace := Namespace}, ID, State, ExtraEvents, HRange) ->
@@ -615,6 +612,41 @@ try_apply_delayed_actions(#{delayed_actions := DA = #{add_events := NewEvents}} 
         remove ->
             undefined
     end.
+
+-spec add_delayed_actions(delayed_actions(), state()) ->
+    state().
+add_delayed_actions(DelayedActions, #{delayed_actions := undefined} = State) ->
+    State#{delayed_actions => DelayedActions};
+add_delayed_actions(NewDelayedActions, #{delayed_actions := OldDelayedActions} = State) ->
+    MergedActions = maps:fold(fun add_delayed_action/3, OldDelayedActions, NewDelayedActions),
+    State#{delayed_actions => MergedActions}.
+
+-spec add_delayed_action(Field :: atom(), Value :: term(), delayed_actions()) ->
+    delayed_actions().
+%% Tag
+add_delayed_action(add_tag, undefined, DelayedActions) ->
+    DelayedActions;
+add_delayed_action(add_tag, Tag, DelayedActions) ->
+    DelayedActions#{add_tag => Tag};
+%% Timer
+add_delayed_action(new_timer, unchanged, DelayedActions) ->
+    DelayedActions;
+add_delayed_action(new_timer, Timer, DelayedActions) ->
+    DelayedActions#{new_timer => Timer};
+%% Removing
+add_delayed_action(remove, undefined, DelayedActions) ->
+    DelayedActions;
+add_delayed_action(remove, Remove, DelayedActions) ->
+    DelayedActions#{remove => Remove};
+%% New events
+add_delayed_action(add_events, NewEvents, #{add_events := OldEvents} = DelayedActions) ->
+    DelayedActions#{add_events => OldEvents ++ NewEvents};
+%% AuxState changing
+add_delayed_action(new_aux_state, AuxState, DelayedActions) ->
+    DelayedActions#{new_aux_state => AuxState};
+%% Events range changing
+add_delayed_action(new_events_range, Range, DelayedActions) ->
+    DelayedActions#{new_events_range => Range}.
 
 -spec compute_events_range([mg_events:event()]) ->
     mg_events:events_range().
