@@ -36,7 +36,10 @@ main([YamlConfigFilename, ConfigsPath]) ->
 sys_config(YamlConfig) ->
     [
         {os_mon      , os_mon      (YamlConfig)},
-        {lager       , lager       (YamlConfig)},
+        {kernel, [
+            {log_level , log_level   (YamlConfig)},
+            {logger    , logger      (YamlConfig)}
+        ]},
         {consuela    , consuela    (YamlConfig)},
         {how_are_you , how_are_you (YamlConfig)},
         {snowflake   , snowflake   (YamlConfig)},
@@ -50,21 +53,23 @@ os_mon(_YamlConfig) ->
         {disksup_posix_only, true}
     ].
 
-lager(YamlConfig) ->
+log_level(YamlConfig) ->
+    ?C:log_level(?C:conf([logging, level], YamlConfig, "info")).
+
+logger(YamlConfig) ->
+    Root = ?C:filename(?C:conf([logging, root], YamlConfig, "/var/log/machinegun")),
+    LogfileName = ?C:filename (?C:conf([logging, json_log], YamlConfig, "log.json")),
+    FullLogname = filename:join(Root, LogfileName),
     [
-        {error_logger_hwm, 600},
-        {log_root , ?C:filename(?C:conf([logging, root     ], YamlConfig, "/var/log/machinegun"))},
-        {crash_log, ?C:filename(?C:conf([logging, crash_log], YamlConfig, "crash.json"         ))},
-        {handlers, [
-            {lager_file_backend, [
-                {file     , ?C:filename (?C:conf([logging, json_log], YamlConfig, "log.json"))},
-                {level    , ?C:log_level(?C:conf([logging, level   ], YamlConfig, "info"    ))},
-                {formatter, lager_logstash_formatter},
-                %% disable log rotation
-                {size, 0},
-                {date, ""}
-            ]}
-        ]}
+        {handler, default, logger_std_h, #{
+            level => debug,
+            config => #{
+                type => file,
+                file => FullLogname,
+                sync_mode_qlen => ?C:conf([logging, sync_mode_qlen], YamlConfig, 20)
+            },
+            formatter => {logger_logstash_formatter, #{}}
+        }}
     ].
 
 consuela(YamlConfig) ->

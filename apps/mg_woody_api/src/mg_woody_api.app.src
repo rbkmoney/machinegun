@@ -23,7 +23,6 @@
         kernel,
         stdlib,
         genlib,
-        lager,
         rfc3339,
         mg_proto,
         mg,
