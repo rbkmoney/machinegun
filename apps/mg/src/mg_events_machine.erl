@@ -275,9 +275,10 @@ process_machine_(Options, ID, Subj=timeout, PCtx, ReqCtx, Deadline, State=#{time
 process_machine_(_, _, {call, remove}, _, _, _, State) ->
     % TODO удалить эвенты (?)
     {{reply, ok}, remove, State};
-process_machine_(Options, ID, {Subj, {Args, HRange}}, _, ReqCtx, Deadline, State = #{events_range := EventsRange}) ->
+process_machine_(Options, ID, {Subj, {Args, HRange}}, _, ReqCtx, Deadline, State) ->
     % обработка стандартных запросов
     {EffectiveState, ExtraEvents} = try_apply_delayed_actions(State),
+    #{events_range := EventsRange} = EffectiveState,
     Machine = machine(Options, ID, EffectiveState, ExtraEvents, HRange),
     {Reply, DelayedActions} =
         case Subj of
