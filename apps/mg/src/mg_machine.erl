@@ -749,7 +749,7 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
                 transit_state(ReqCtx, Deadline, NewStorageMachine, State);
             {wait, Timestamp, HdlReqCtx, HdlTo} ->
                 Status = {waiting, Timestamp, HdlReqCtx, HdlTo},
-                ok = maybe_force_run_task(Timestamp, State, Status),
+                ok = try_start_timer_task(Timestamp, Status, ReqCtx, State),
                 NewStorageMachine = NewStorageMachine0#{status := Status},
                 transit_state(ReqCtx, Deadline, NewStorageMachine, State);
             remove ->
@@ -765,16 +765,38 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
             NewState
     end.
 
--spec(maybe_force_run_task(genlib_time:ts(), state(), machine_regular_status()) -> ok).
-maybe_force_run_task(Timestamp, State, Status) ->
+-spec try_start_timer_task(genlib_time:ts(), machine_regular_status(), request_context(), state()) ->
+    ok.
+try_start_timer_task(Timestamp, Status, ReqCtx, State) ->
     CurrentTimeSec = genlib_time:unow(),
     case Timestamp =< CurrentTimeSec of
         true ->
-            Id = maps:get(id, State),
-            Ns = maps:get(namespace, State),
-            TaskInfo = mg_queue_timer:build_task_info(Id, Timestamp, Status),
-            mg_scheduler:add_task(Ns, ?TIMERS, TaskInfo);
+            ID = maps:get(id, State),
+            NS = maps:get(namespace, State),
+            TaskInfo = mg_queue_timer:build_task_info(ID, Timestamp, Status),
+            try_add_scheduler_task(NS, ID, ?TIMERS, TaskInfo, ReqCtx, State);
         false ->
+            ok
+    end.
+
+-spec try_add_scheduler_task(mg:ns(), mg:id(), Sheduler, TaskInfo, ReqCtx, State) -> ok when
+    Sheduler :: mg_scheduler:name(),
+    ReqCtx :: request_context(),
+    TaskInfo :: mg_scheduler:task_info(),
+    State :: state().
+try_add_scheduler_task(NS, ID, Scheduler, TaskInfo, ReqCtx, State) ->
+    try
+        mg_scheduler:add_task(NS, Scheduler, TaskInfo)
+    catch
+        throw:({transient, {scheduler_unavailable, _Details}} = Reason):Stacktrace ->
+            #{options := Options} = State,
+            ok = emit_beat(Options, #mg_scheduler_task_add_error{
+                namespace = NS,
+                machine_id = ID,
+                request_context = ReqCtx,
+                scheduler_name = Scheduler,
+                exception = {throw, Reason, Stacktrace}
+            }),
             ok
     end.
 

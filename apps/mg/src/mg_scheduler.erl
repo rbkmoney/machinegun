@@ -135,7 +135,12 @@ start_link(#{queue_handler := Handler} = Options) ->
 -spec add_task(mg:ns(), name(), task_info()) ->
     ok.
 add_task(NS, Name, TaskInfo) ->
-    gen_server:call(self_ref({NS, Name}), {add_task, TaskInfo}).
+    try
+        gen_server:call(self_ref({NS, Name}), {add_task, TaskInfo})
+    catch
+        exit:Reason ->
+            erlang:throw({transient, {scheduler_unavailable, Reason}})
+    end.
 
 %% gen_server callbacks
 

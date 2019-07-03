@@ -67,6 +67,14 @@
     machine_id :: mg:id() | undefined
 }).
 
+-record(mg_scheduler_task_add_error, {
+    namespace :: mg:ns(),
+    scheduler_name :: mg_scheduler:name(),
+    exception :: mg_utils:exception(),
+    machine_id :: mg:id(),
+    request_context :: mg:request_context()
+}).
+
 -record(mg_scheduler_new_tasks, {
     namespace :: mg:ns(),
     scheduler_name :: mg_scheduler:name(),
