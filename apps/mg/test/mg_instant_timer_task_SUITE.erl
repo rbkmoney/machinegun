@@ -23,7 +23,8 @@
 -export([end_per_suite /1]).
 
 %% tests
--export([test_timeout/1]).
+-export([instant_start_test/1]).
+-export([without_shedulers_test/1]).
 
 %% mg_machine
 -behaviour(mg_machine).
@@ -45,7 +46,8 @@
     [test_name()] | {group, atom()}.
 all() ->
     [
-       test_timeout
+       instant_start_test,
+       without_shedulers_test
     ].
 
 %%
@@ -69,12 +71,11 @@ end_per_suite(C) ->
 %%
 -define(req_ctx, <<"req_ctx">>).
 
--spec test_timeout(config()) ->
+-spec instant_start_test(config()) ->
     _.
-test_timeout(_C) ->
-    BinTestName = genlib:to_binary(expired_task),
-    NS = BinTestName,
-    ID = BinTestName,
+instant_start_test(_C) ->
+    NS = <<"test">>,
+    ID = <<"machine">>,
     Options = automaton_options(NS),
     _  = start_automaton(Options),
 
@@ -85,6 +86,20 @@ test_timeout(_C) ->
             mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline())
         end,
     mg_ct_helper:assert_wait_expected(1, F, mg_retry:new_strategy({linear, _Retries = 10, _Timeout = 100})).
+
+-spec without_shedulers_test(config()) ->
+    _.
+without_shedulers_test(_C) ->
+    NS = <<"test">>,
+    ID = <<"machine">>,
+    Options = automaton_options_wo_shedulers(NS),
+    _  = start_automaton(Options),
+
+    ok = mg_machine:start(Options, ID, 0, ?req_ctx, mg_utils:default_deadline()),
+     0 = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
+    ok = mg_machine:call(Options, ID, force_timeout, ?req_ctx, mg_utils:default_deadline()),
+    % machine is still alive
+    _  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()).
 
 %%
 %% processor
@@ -177,6 +192,18 @@ automaton_options(NS) ->
             timers         => #{ interval => timer:hours(1) },
             timers_retries => #{ interval => timer:hours(1) },
             overseer       => #{ interval => timer:hours(1) }
+        }
+    }.
+
+-spec automaton_options_wo_shedulers(mg:ns()) ->
+    mg_machine:options().
+automaton_options_wo_shedulers(NS) ->
+    #{
+        namespace => NS,
+        processor => ?MODULE,
+        storage   => mg_storage_memory,
+        pulse     => ?MODULE,
+        schedulers => #{
         }
     }.
 
