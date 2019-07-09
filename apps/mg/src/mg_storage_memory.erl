@@ -68,9 +68,10 @@ child_spec(Options, ChildID, RegName) ->
 -spec do_request(options(), self_ref(), mg_storage:request()) ->
     mg_storage:response().
 do_request(Options, SelfRef, Req) ->
-    ok = random_fail(Options),
-    Ref = get_ref(Options, SelfRef),
-    gen_server:call(Ref, Req).
+    random_fail(Options, fun() ->
+        Ref = get_ref(Options, SelfRef),
+        gen_server:call(Ref, Req)
+    end).
 
 -spec get_ref(options(), self_ref()) -> self_ref().
 get_ref(#{existing_storage_ref := SelfRef}, _) ->
@@ -347,16 +348,21 @@ do_cleanup_index(Key, Index) ->
         Index
     ).
 
--spec random_fail(options()) ->
-    ok | no_return().
-random_fail(#{random_transient_fail := Prob}) ->
-    case rand:uniform() < Prob of
-        true ->
-            erlang:throw({transient, {storage_unavailable, random_fail}});
-        false ->
-            ok
-    end;
-random_fail(_) ->
+-spec random_fail(options(), fun(() -> T)) -> T | no_return() when
+    T :: any().
+random_fail(#{random_transient_fail := Border}, Fun) ->
+    Prob = rand:uniform(),
+    ok = try_fail(Prob, (Border / 2), {transient, {storage_unavailable, random_fail}}),
+    Result = Fun(),
+    ok = try_fail(Prob, Border, {transient, {storage_unavailable, random_fail}}),
+    Result;
+random_fail(_, Fun) ->
+    Fun().
+
+-spec try_fail(float(), float(), Error :: any()) -> ok | no_return().
+try_fail(Prob, Border, Error) when Prob < Border ->
+    erlang:throw(Error);
+try_fail(_Prob, _Border, _Error) ->
     ok.
 
 %% utils
