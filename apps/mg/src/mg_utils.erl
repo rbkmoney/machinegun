@@ -55,6 +55,7 @@
 -export([deadline_to_unixtime_ms/1]).
 -export([is_deadline_reached/1]).
 -export([default_deadline   /0]).
+-export([format_deadline/1]).
 
 %% Woody
 -export_type([woody_handlers/0]).
@@ -233,7 +234,7 @@ supervisor_old_child_spec(ChildSpec = #{id := ChildID, start := Start = {M, _, _
 %%
 %% deadlines
 %%
--type deadline() :: undefined | pos_integer().
+-type deadline() :: undefined | pos_integer(). % milliseconds since unix epoch
 
 -spec timeout_to_deadline(timeout()) ->
     deadline().
@@ -280,12 +281,18 @@ default_deadline() ->
     %% For testing purposes only
     timeout_to_deadline(30000).
 
+-spec format_deadline(mg_utils:deadline()) ->
+    binary().
+format_deadline(Deadline) ->
+    {ok, Bin} = rfc3339:format(Deadline, millisecond),
+    Bin.
+
 %%
 
 -spec now_ms() ->
     pos_integer().
 now_ms() ->
-    erlang:system_time(1000).
+    erlang:system_time(millisecond).
 
 %%
 %% Woody
