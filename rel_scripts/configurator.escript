@@ -262,7 +262,8 @@ woody_server(YamlConfig) ->
                 ?C:conf([woody_server, http_keep_alive_timeout], YamlConfig, "5S"), 'ms'
             ),
             % idle_timeout must be greater then any possible deadline
-            idle_timeout    => ?C:time_interval(?C:conf([woody_server, idle_timeout], YamlConfig, "infinity"), 'ms')
+            idle_timeout    => ?C:time_interval(?C:conf([woody_server, idle_timeout], YamlConfig, "infinity"), 'ms'),
+            logger          => logger
         },
         limits   => genlib_map:compact(#{
             max_heap_size       => ?C:mem_words(?C:conf([limits, process_heap], YamlConfig, undefined)),
