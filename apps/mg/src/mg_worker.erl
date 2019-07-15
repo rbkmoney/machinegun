@@ -181,7 +181,10 @@ handle_call({call, Deadline, Call, ReqCtx}, From, State=#{mod:=Mod, status:={wor
                 noreply        -> {noreply, schedule_unload_timer(NewState), hibernate_timeout(NewState)}
             end;
         true ->
-            ok = logger:warning("rancid worker call received: ~p from ~p", [Call, From]),
+            ok = logger:warning(
+                "rancid worker call received: ~p from: ~p deadline: ~s reqctx: ~p",
+                [Call, From, mg_utils:format_deadline(Deadline), ReqCtx]
+            ),
             {noreply, schedule_unload_timer(State), hibernate_timeout(State)}
     end;
 handle_call(Call, From, State) ->
