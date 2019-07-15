@@ -38,7 +38,6 @@
 %%    - сервис перегружен —- overload
 %%    - хранилище недоступно -- {storage_unavailable, Details}
 %%    - процессор недоступен -- {processor_unavailable, Details}
-%%    - исчерпаны попытки повтора -- {retries_exhausted, Error}
 %%   - таймауты -- {timeout, Details}
 %%   - окончательные -- permanent
 %%    - исчерпаны попытки повтора обработки таймера -- timer_retries_exhausted
@@ -373,7 +372,7 @@ call_(Options, ID, Call, ReqCtx, Deadline) ->
     id              => mg:id(),
     namespace       => mg:ns(),
     options         => options(),
-    storage_machine => storage_machine() | undefined,
+    storage_machine => storage_machine() | nonexistent | unknown,
     storage_context => mg_storage:context() | undefined
 }.
 
@@ -382,37 +381,18 @@ call_(Options, ID, Call, ReqCtx, Deadline) ->
     state  => machine_state()
 }.
 
--spec handle_load(_ID, options(), request_context()) ->
+-spec handle_load(mg:id(), options(), request_context()) ->
     {ok, state()}.
 handle_load(ID, Options, ReqCtx) ->
     Namespace = maps:get(namespace, Options),
-    try
-        {StorageContext, StorageMachine} =
-            case get_storage_machine(Options, ID) of
-                undefined -> {undefined, undefined};
-                V         -> V
-            end,
-
-        State =
-            #{
-                id              => ID,
-                namespace       => Namespace,
-                options         => Options,
-                storage_machine => StorageMachine,
-                storage_context => StorageContext
-            },
-        ok = emit_machine_load_beat(Options, Namespace, ID, ReqCtx, StorageMachine),
-        {ok, State}
-    catch throw:Reason:ST ->
-        Exception = {throw, Reason, ST},
-        ok = emit_beat(Options, #mg_machine_lifecycle_loading_error{
-            namespace = Namespace,
-            machine_id = ID,
-            request_context = ReqCtx,
-            exception = Exception
-        }),
-        {error, Reason}
-    end.
+    State = #{
+        id              => ID,
+        namespace       => Namespace,
+        options         => Options,
+        storage_machine => unknown,
+        storage_context => undefined
+    },
+    load_storage_machine(ReqCtx, State).
 
 -spec handle_call(_Call, mg_worker:call_context(), request_context(), mg_utils:deadline(), state()) ->
     {{reply, _Resp} | noreply, state()}.
@@ -421,9 +401,14 @@ handle_call(Call, CallContext, ReqCtx, Deadline, S=#{storage_machine:=StorageMac
 
     % довольно сложное место, тут определяется приоритет реакции на внешние раздражители, нужно быть аккуратнее
     case {Call, StorageMachine} of
+        % восстановление после ошибок обращения в хранилище
+        {Call         , unknown     } ->
+            {ok, S1} = load_storage_machine(ReqCtx, S),
+            handle_call(Call, CallContext, ReqCtx, Deadline, S1);
+
         % start
-        {{start, Args}, undefined   } -> {noreply, process({init, Args}, PCtx, ReqCtx, Deadline, S)};
-        { _           , undefined   } -> {{reply, {error, {logic, machine_not_found    }}}, S};
+        {{start, Args}, nonexistent } -> {noreply, process({init, Args}, PCtx, ReqCtx, Deadline, S)};
+        { _           , nonexistent } -> {{reply, {error, {logic, machine_not_found    }}}, S};
         {{start, _   }, #{status:=_}} -> {{reply, {error, {logic, machine_already_exist}}}, S};
 
         % fail
@@ -519,6 +504,34 @@ get_storage_machine(Options, ID) ->
     catch
         throw:{logic, {invalid_key, _StorageDetails} = Details} ->
             throw({logic, {invalid_machine_id, Details}})
+    end.
+
+-spec load_storage_machine(request_context(), state()) ->
+    {ok, state()} | {error, Reason :: any()}.
+load_storage_machine(ReqCtx, State) ->
+    #{options := Options, id := ID, namespace := Namespace} = State,
+    try
+        {StorageContext, StorageMachine} =
+            case get_storage_machine(Options, ID) of
+                undefined -> {undefined, nonexistent};
+                V         -> V
+            end,
+
+        NewState = State#{
+            storage_machine => StorageMachine,
+            storage_context => StorageContext
+        },
+        ok = emit_machine_load_beat(Options, Namespace, ID, ReqCtx, StorageMachine),
+        {ok, NewState}
+    catch throw:Reason:ST ->
+        Exception = {throw, Reason, ST},
+        ok = emit_beat(Options, #mg_machine_lifecycle_loading_error{
+            namespace = Namespace,
+            machine_id = ID,
+            request_context = ReqCtx,
+            exception = Exception
+        }),
+        {error, Reason}
     end.
 
 %%
@@ -659,6 +672,10 @@ process(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
     Deadline :: mg_utils:deadline(),
     State :: state(),
     Retry :: processor_retry().
+process_with_retry(_, _, _, _, #{storage_machine := unknown} = State, _) ->
+    % После попыток обработать вызов пришли в неопредленное состояние.
+    % На этом уровне больше ничего не сделать, пусть разбираются выше.
+    State;
 process_with_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State, RetryStrategy) ->
     #{id := ID, namespace := NS, options := Opts} = State,
     try
@@ -672,14 +689,15 @@ process_with_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State, RetryStrategy
                 request_context = ReqCtx
             }),
             ok = do_reply_action({reply, {error, Reason}}, ProcessingCtx),
+            NewState = handle_transient_exception(Reason, State),
             case process_retry_next_step(RetryStrategy) of
                 ignore ->
-                    State;
+                    NewState;
                 finish ->
                     erlang:throw({permanent, {retries_exhausted, Reason}});
                 {wait, Timeout, NewRetryStrategy} ->
                     ok = timer:sleep(Timeout),
-                    process_with_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State, NewRetryStrategy)
+                    process_with_retry(Impact, ProcessingCtx, ReqCtx, Deadline, NewState, NewRetryStrategy)
             end
     end.
 
@@ -704,6 +722,12 @@ try_init_state({init, _}, State) ->
 try_init_state(_Impact, State) ->
     State.
 
+-spec handle_transient_exception(transient_error(), state()) -> state().
+handle_transient_exception({storage_unavailable, _Details}, State) ->
+    State#{storage_machine := unknown};
+handle_transient_exception(_Reason, State) ->
+    State.
+
 -spec handle_exception(Exception, Impact, ReqCtx, Deadline, state()) -> state() when
     Exception :: mg_utils:exception(),
     Impact :: processor_impact() | undefined,
@@ -719,7 +743,7 @@ handle_exception(Exception, Impact, ReqCtx, Deadline, State) ->
         exception = Exception
     }),
     case {Impact, StorageMachine} of
-        {_, undefined} ->
+        {_, nonexistent} ->
             State;
         {_, #{status := {error, _, _}}} ->
             State;
@@ -844,7 +868,7 @@ reschedule(ProcessingCtx, ReqCtx, Deadline, State) ->
                 exception = Exception
             }),
             ok = do_reply_action({reply, {error, Reason}}, ProcessingCtx),
-            State;
+            handle_transient_exception(Reason, State);
         Class:Reason:ST ->
             Exception = {Class, Reason, ST},
             ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
@@ -956,7 +980,7 @@ remove_from_storage(ReqCtx, Deadline, State) ->
         machine_id = ID,
         request_context = ReqCtx
     }),
-    State#{storage_machine := undefined, storage_context := undefined}.
+    State#{storage_machine := nonexistent, storage_context := undefined}.
 
 -spec retry_strategy(retry_subj(), options(), mg_utils:deadline()) ->
     mg_retry:strategy().
@@ -1062,9 +1086,9 @@ extract_timer_queue_info({retrying, Timestamp, _, _, _}) ->
 extract_timer_queue_info(_Other) ->
     {error, not_timer}.
 
--spec emit_machine_load_beat(options(), mg:ns(), mg:id(), request_context(), storage_machine() | undefined) ->
-    ok.
-emit_machine_load_beat(Options, Namespace, ID, ReqCtx, undefined) ->
+-spec emit_machine_load_beat(options(), mg:ns(), mg:id(), request_context(), StorageMachine) -> ok when
+    StorageMachine :: storage_machine() | unknown | nonexistent.
+emit_machine_load_beat(Options, Namespace, ID, ReqCtx, nonexistent) ->
     ok = emit_beat(Options, #mg_machine_lifecycle_created{
         namespace = Namespace,
         machine_id = ID,
@@ -1217,7 +1241,7 @@ do_with_retry(Options = #{namespace := NS}, ID, Fun, RetryStrategy, ReqCtx, Beat
                 ok = timer:sleep(Timeout),
                 do_with_retry(Options, ID, Fun, NewRetryStrategy, ReqCtx, BeatCtx);
             finish ->
-                throw({transient, {retries_exhausted, Reason}})
+                throw(Reason)
         end
     end.
 
