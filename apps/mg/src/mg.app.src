@@ -26,7 +26,8 @@
         consuela,
         riakc,
         brod,
-        msgpack
+        msgpack,
+        rfc3339
     ]},
     {env, []},
     {modules, []},
