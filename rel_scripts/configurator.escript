@@ -37,7 +37,7 @@ sys_config(YamlConfig) ->
     [
         {os_mon        , os_mon      (YamlConfig)},
         {kernel, [
-            {logger_level, logger_level   (YamlConfig)},
+            {logger_level, logger_level(YamlConfig)},
             {logger      , logger      (YamlConfig)}
         ]},
         {how_are_you   , how_are_you (YamlConfig)},
