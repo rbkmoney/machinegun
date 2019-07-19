@@ -37,8 +37,8 @@ sys_config(YamlConfig) ->
     [
         {os_mon        , os_mon      (YamlConfig)},
         {kernel, [
-            {log_level , log_level   (YamlConfig)},
-            {logger    , logger      (YamlConfig)}
+            {logger_level, logger_level   (YamlConfig)},
+            {logger      , logger      (YamlConfig)}
         ]},
         {how_are_you   , how_are_you (YamlConfig)},
         {snowflake     , snowflake   (YamlConfig)},
@@ -52,7 +52,7 @@ os_mon(_YamlConfig) ->
         {disksup_posix_only, true}
     ].
 
-log_level(YamlConfig) ->
+logger_level(YamlConfig) ->
     ?C:log_level(?C:conf([logging, level], YamlConfig, "info")).
 
 logger(YamlConfig) ->
