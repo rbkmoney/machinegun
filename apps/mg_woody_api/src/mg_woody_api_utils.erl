@@ -51,22 +51,22 @@ handle_error(Ctx, F, Pulse) ->
             deadline = Deadline,
             exception = Exception
         }),
-        handle_error(Error)
+        handle_error(Error, ST)
     end.
 
--spec handle_error(mg_machine:thrown_error() | {logic, namespace_not_found}) ->
+-spec handle_error(mg_machine:thrown_error() | {logic, namespace_not_found}, [_StackItem]) ->
     no_return().
-handle_error({logic, Reason}) ->
+handle_error({logic, Reason}, _ST) ->
     erlang:throw(handle_logic_error(Reason));
 % TODO может Reason не прокидывать дальше?
-handle_error({transient, Reason}) ->
+handle_error({transient, Reason}, _ST) ->
     BinaryDescription = erlang:list_to_binary(io_lib:format("~9999p", [Reason])),
     woody_error:raise(system, {internal, resource_unavailable, BinaryDescription});
-handle_error({timeout, _} = Reason) ->
+handle_error({timeout, _} = Reason, _ST) ->
     BinaryDescription = erlang:list_to_binary(io_lib:format("~9999p", [Reason])),
     woody_error:raise(system, {internal, result_unknown, BinaryDescription});
-handle_error(UnknownError) ->
-    erlang:error(badarg, [UnknownError]).
+handle_error(UnknownError, ST) ->
+    erlang:raise(error, UnknownError, ST).
 
 -spec handle_logic_error(_) -> _.
 handle_logic_error(machine_not_found)       -> #mg_stateproc_MachineNotFound      {};
