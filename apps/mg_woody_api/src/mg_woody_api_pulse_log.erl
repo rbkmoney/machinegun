@@ -122,8 +122,7 @@ format_consuela_beat({client, {request, Request = {Method, Url, _Headers, Body}}
 format_consuela_beat({client, {result, Response = {ok, Status, _Headers, _Body}}}) ->
     {Method, Url, _, Body} = erlang:get({?MODULE, consuela_request}),
     Level = case Status of
-        S when S < 400 -> debug;
-        S when S < 500 -> info;
+        S when S < 500 -> debug;
         _              -> warning
     end,
     {Level, {"consul response: ~p for: ~s ~s ~p", [Response, Method, Url, Body]}, [
@@ -288,7 +287,11 @@ format_consuela_beat({discovery_server, {{node, Node}, Status}}) ->
                 {mg_pulse_event_id, consuela_distnode_online}
             ]};
         {down, Reason} ->
-            {error, {"~p gone offline", [Node]}, [
+            Level = case Reason of
+                shutdown -> info;
+                _        -> warning
+            end,
+            {Level, {"~p gone offline", [Node]}, [
                 {mg_pulse_event_id, consuela_distnode_offline},
                 {error, [{reason, genlib:print(Reason, 500)}]}
             ]}
@@ -302,7 +305,7 @@ format_consuela_beat({presence_session, {{presence, Name}, Status}}) ->
                 {mg_pulse_event_id, consuela_presence_session_started}
             ]};
         {stopped, Reason} ->
-            {info, {"stoped '~s' presence session: ~p", [Name, Reason]}, [
+            {info, {"stopped '~s' presence session: ~p", [Name, Reason]}, [
                 {mg_pulse_event_id, consuela_presence_session_stopped}
             ]}
     end;
@@ -379,12 +382,12 @@ extract_meta(deadline, Deadline) when is_integer(Deadline) ->
     {deadline, mg_utils:format_deadline(Deadline)};
 extract_meta(target_timestamp, Timestamp) ->
     {target_timestamp, format_timestamp(Timestamp)};
-extract_meta(exception, {Class, Reason, StackStrace}) ->
+extract_meta(exception, {Class, Reason, Stacktrace}) ->
     [
         {error, [
             {class, genlib:to_binary(Class)},
             {reason, genlib:format(Reason)},
-            {stack_trace, genlib_format:format_stacktrace(StackStrace)}
+            {stack_trace, genlib_format:format_stacktrace(Stacktrace)}
         ]}
     ];
 extract_meta(retry_action, {wait, Timeout, NextStrategy}) ->
