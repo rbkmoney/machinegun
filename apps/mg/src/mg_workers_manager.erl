@@ -141,11 +141,19 @@ start_and_retry_call(Options, ID, Call, ReqCtx, Deadline) ->
             call(Options, ID, Call, ReqCtx, Deadline, false);
         {error, {already_started, _}} ->
             call(Options, ID, Call, ReqCtx, Deadline, false);
-        {error, {consuela, Reason}} ->
-            {error, {transient, {registry_unavailable, Reason}}};
-        Error = {error, _} ->
-            Error
+        {error, Reason} ->
+            handle_start_error(Reason)
     end.
+
+-spec handle_start_error(_Reason) ->
+    {error, _}.
+handle_start_error({'EXIT', Reason}) ->
+    % When server process startup exits in the context of `start_link/4` function
+    handle_start_error(Reason);
+handle_start_error({consuela, Reason}) ->
+    {error, {transient, {registry_unavailable, Reason}}};
+handle_start_error(Reason) ->
+    {error, Reason}.
 
 -spec get_call_queue(options(), id()) ->
     [_Call].
