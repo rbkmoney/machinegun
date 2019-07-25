@@ -62,7 +62,7 @@ format_beat(#woody_request_handle_error{exception = {_, Reason, _}} = Beat) ->
     end,
     {LogLevel, {"request handling failed ~p", [Reason]}, Context};
 format_beat(#woody_event{event = Event, rpc_id = RPCID, event_meta = EventMeta}) ->
-    WoodyMetaFields = [event, service, function, type, metadata, url, deadline, role],
+    WoodyMetaFields = [event, service, function, type, metadata, url, deadline, role, execution_duration_ms],
     {Level, Msg, WoodyMeta} = woody_event_handler:format_event_and_meta(Event, EventMeta, RPCID, WoodyMetaFields),
     Meta = lists:flatten([extract_woody_meta(WoodyMeta), extract_meta(rpc_id, RPCID)]),
     {Level, Msg, Meta};
