@@ -43,6 +43,7 @@ sys_config(YamlConfig) ->
         {how_are_you   , how_are_you (YamlConfig)},
         {snowflake     , snowflake   (YamlConfig)},
         {brod          , brod        (YamlConfig)},
+        {hackney       , hackney     (YamlConfig)},
         {mg_woody_api  , mg_woody_api(YamlConfig)}
     ].
 
@@ -78,6 +79,7 @@ how_are_you(YamlConfig) ->
         {metrics_handlers, [
             hay_vm_handler,
             hay_cgroup_handler,
+            woody_api_hay,
             {mg_woody_api_hay, #{
                 namespaces => namespaces_list(YamlConfig)
             }}
@@ -141,6 +143,11 @@ brod_client_ssl(SslConfig) ->
         {cacertfile, ?C:conf([cacertfile], SslConfig, undefined)}
     ],
     [Opt || Opt = {_Key, Value} <- Opts, Value =/= undefined].
+
+hackney(_YamlConfig) ->
+    [
+        {mod_metrics, woody_client_metrics}
+    ].
 
 mg_woody_api(YamlConfig) ->
     [
