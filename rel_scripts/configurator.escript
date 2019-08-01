@@ -66,6 +66,9 @@ logger(YamlConfig) ->
             config => #{
                 type => file,
                 file => FullLogname,
+                file_check => ?C:conf([logging, file_check], YamlConfig, 1000),
+                max_no_bytes => ?C:conf([logging, max_no_bytes], YamlConfig, 1073741824),
+                max_no_files => ?C:conf([logging, max_no_files], YamlConfig, 50),
                 sync_mode_qlen => ?C:conf([logging, sync_mode_qlen], YamlConfig, 20)
             },
             formatter => {logger_logstash_formatter, #{}}
