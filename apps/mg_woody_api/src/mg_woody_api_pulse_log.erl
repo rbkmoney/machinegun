@@ -382,12 +382,12 @@ extract_meta(deadline, Deadline) when is_integer(Deadline) ->
     {deadline, mg_utils:format_deadline(Deadline)};
 extract_meta(target_timestamp, Timestamp) ->
     {target_timestamp, format_timestamp(Timestamp)};
-extract_meta(exception, {Class, Reason, StackStrace}) ->
+extract_meta(exception, {Class, Reason, Stacktrace}) ->
     [
         {error, [
             {class, genlib:to_binary(Class)},
             {reason, genlib:format(Reason)},
-            {stack_trace, genlib_format:format_stacktrace(StackStrace)}
+            {stack_trace, genlib_format:format_stacktrace(Stacktrace)}
         ]}
     ];
 extract_meta(retry_action, {wait, Timeout, NextStrategy}) ->
