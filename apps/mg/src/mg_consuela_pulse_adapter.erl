@@ -25,6 +25,7 @@
     | zombie_reaper
     | leader
     | discovery_server
+    | presence_session
     .
 
 -type beat() ::
@@ -35,6 +36,7 @@
         | {zombie_reaper    , consuela_zombie_reaper:beat()}
         | {leader           , consuela_leader_supervisor:beat()}
         | {discovery_server , consuela_discovery_server:beat()}
+        | {presence_session , consuela_presence_session:beat()}
     }.
 
 -export_type([beat/0]).
@@ -57,7 +59,8 @@ pulse(Producer, Handler) ->
     (consuela_session_keeper:beat()    , {session_keeper   , mg_pulse:handler()}) -> _;
     (consuela_zombie_reaper:beat()     , {zombie_reaper    , mg_pulse:handler()}) -> _;
     (consuela_leader_supervisor:beat() , {leader           , mg_pulse:handler()}) -> _;
-    (consuela_discovery_server:beat()  , {discovery_server , mg_pulse:handler()}) -> _.
+    (consuela_discovery_server:beat()  , {discovery_server , mg_pulse:handler()}) -> _;
+    (consuela_presence_session:beat()  , {presence_session , mg_pulse:handler()}) -> _.
 
 handle_beat(Beat, {Producer, Handler}) ->
     mg_pulse:handle_beat(Handler, {consuela, {Producer, Beat}}).

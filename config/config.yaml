@@ -26,10 +26,13 @@ woody_server:
     port: 8022
     http_keep_alive_timeout: 60s
 consuela:
+    presence:
+        check_interval: 5s
     registry:
         nodename: mhost1
+        session_ttl: 30s
+        session_renewal_interval: 10s
     discovery:
-        name: machinegun
         tags:
             - production
 consul:

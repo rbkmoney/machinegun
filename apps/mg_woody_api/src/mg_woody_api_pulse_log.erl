@@ -114,22 +114,25 @@ format_beat(_Beat) ->
     log_msg() | undefined.
 
 %% consul client
-format_consuela_beat({client, {request, {Method, Url, _Headers, Body}}}) ->
+format_consuela_beat({client, {request, Request = {Method, Url, _Headers, Body}}}) ->
+    _ = erlang:put({?MODULE, consuela_request}, Request),
     {debug, {"consul request: ~s ~s ~p", [Method, Url, Body]}, [
         {mg_pulse_event_id, consuela_client_request}
     ]};
 format_consuela_beat({client, {result, Response = {ok, Status, _Headers, _Body}}}) ->
+    {Method, Url, _, Body} = erlang:get({?MODULE, consuela_request}),
     Level = case Status of
         S when S < 400 -> debug;
         S when S < 500 -> info;
         _              -> warning
     end,
-    {Level, {"consul response: ~p", [Response]}, [
+    {Level, {"consul response: ~p for: ~s ~s ~p", [Response, Method, Url, Body]}, [
         {mg_pulse_event_id, consuela_client_response},
         {status, Status}
     ]};
 format_consuela_beat({client, {result, Error = {error, Reason}}}) ->
-    {warning, {"consul request failed: ~p", [Error]}, [
+    {Method, Url, _, Body} = erlang:get({?MODULE, consuela_request}),
+    {warning, {"consul request failed: ~p for: ~s ~s ~p", [Error, Method, Url, Body]}, [
         {mg_pulse_event_id, consuela_client_request_failed},
         {error, [{reason, genlib:print(Reason, 500)}]}
     ]};
@@ -288,6 +291,19 @@ format_consuela_beat({discovery_server, {{node, Node}, Status}}) ->
             {error, {"~p gone offline", [Node]}, [
                 {mg_pulse_event_id, consuela_distnode_offline},
                 {error, [{reason, genlib:print(Reason, 500)}]}
+            ]}
+    end;
+
+%% presence
+format_consuela_beat({presence_session, {{presence, Name}, Status}}) ->
+    case Status of
+        started ->
+            {info, {"started '~s' presence session", [Name]}, [
+                {mg_pulse_event_id, consuela_presence_session_started}
+            ]};
+        {stopped, Reason} ->
+            {info, {"stoped '~s' presence session: ~p", [Name, Reason]}, [
+                {mg_pulse_event_id, consuela_presence_session_stopped}
             ]}
     end;
 

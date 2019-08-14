@@ -77,16 +77,41 @@ logger(YamlConfig) ->
     ].
 
 consuela(YamlConfig) ->
-    lists:append(
+    lists:append([
+        conf_with([consuela, presence], YamlConfig, [], fun (PresenceConfig) -> [
+            {presence, #{
+                name      => service_presence_name(YamlConfig),
+                consul    => consul_client(mg_consuela_presence, YamlConfig),
+                shutdown  => ?C:time_interval(?C:conf([shutdown_timeout], PresenceConfig, "5s"), 'ms'),
+                session_opts => #{
+                    interval => ?C:time_interval(?C:conf([check_interval], PresenceConfig, "5s"), 'sec'),
+                    pulse    => mg_consuela_pulse_adapter:pulse(presence_session, mg_woody_api_pulse)
+                }
+            }}
+        ] end),
         conf_with([consuela, registry], YamlConfig, fun (RegConfig) -> [
             {registry, #{
                 nodename  => ?C:conf([nodename], RegConfig, ?C:hostname()),
                 namespace => ?C:utf_bin(?C:conf([namespace], RegConfig, "mg")),
+                session   => maps:merge(
+                    #{
+                        ttl        => ?C:time_interval(?C:conf([session_ttl], RegConfig, "30s"), 'sec'),
+                        lock_delay => ?C:time_interval(?C:conf([session_lock_delay], RegConfig, "10s"), 'sec')
+                    },
+                    conf_with([consuela, presence], YamlConfig, #{}, fun (_) -> #{
+                        presence => service_presence_name(YamlConfig)
+                    } end)
+                ),
                 consul    => consul_client(mg_consuela_registry, YamlConfig),
                 shutdown  => ?C:time_interval(?C:conf([shutdown_timeout], RegConfig, "5s"), 'ms'),
-                keeper    => #{
+                keeper    => maps:merge(
+                    #{
                     pulse => mg_consuela_pulse_adapter:pulse(session_keeper, mg_woody_api_pulse)
                 },
+                    conf_with([session_renewal_interval], RegConfig, #{}, fun (V) -> #{
+                        interval => ?C:time_interval(V, 'sec')
+                    } end)
+                ),
                 reaper    => #{
                     pulse => mg_consuela_pulse_adapter:pulse(zombie_reaper, mg_woody_api_pulse)
                 },
@@ -97,7 +122,7 @@ consuela(YamlConfig) ->
         ] end),
         conf_with([consuela, discovery], YamlConfig, [], fun (DiscoveryConfig) -> [
             {discovery, #{
-                name      => service_name(YamlConfig),
+                name      => service_presence_name(YamlConfig),
                 tags      => [?C:utf_bin(T) || T <- ?C:conf([tags], DiscoveryConfig, [])],
                 consul    => consul_client(mg_consuela_discovery, YamlConfig),
                 opts      => #{
@@ -109,7 +134,10 @@ consuela(YamlConfig) ->
                 }
             }}
         ] end)
-    ).
+    ]).
+
+service_presence_name(YamlConfig) ->
+    erlang:iolist_to_binary([service_name(YamlConfig), "-consuela"]).
 
 consul_client(Name, YamlConfig) ->
     #{
