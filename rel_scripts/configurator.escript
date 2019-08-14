@@ -37,13 +37,14 @@ sys_config(YamlConfig) ->
     [
         {os_mon      , os_mon      (YamlConfig)},
         {kernel, [
-            {log_level , log_level   (YamlConfig)},
-            {logger    , logger      (YamlConfig)}
+            {logger_level, logger_level(YamlConfig)},
+            {logger      , logger      (YamlConfig)}
         ]},
         {consuela    , consuela    (YamlConfig)},
         {how_are_you , how_are_you (YamlConfig)},
         {snowflake   , snowflake   (YamlConfig)},
         {brod        , brod        (YamlConfig)},
+        {hackney     , hackney     (YamlConfig)},
         {mg_woody_api, mg_woody_api(YamlConfig)}
     ].
 
@@ -53,7 +54,7 @@ os_mon(_YamlConfig) ->
         {disksup_posix_only, true}
     ].
 
-log_level(YamlConfig) ->
+logger_level(YamlConfig) ->
     ?C:log_level(?C:conf([logging, level], YamlConfig, "info")).
 
 logger(YamlConfig) ->
@@ -66,6 +67,9 @@ logger(YamlConfig) ->
             config => #{
                 type => file,
                 file => FullLogname,
+                file_check => ?C:conf([logging, file_check], YamlConfig, 1000),
+                max_no_bytes => ?C:conf([logging, max_no_bytes], YamlConfig, 1073741824),
+                max_no_files => ?C:conf([logging, max_no_files], YamlConfig, 50),
                 sync_mode_qlen => ?C:conf([logging, sync_mode_qlen], YamlConfig, 20)
             },
             formatter => {logger_logstash_formatter, #{}}
@@ -138,6 +142,7 @@ how_are_you(YamlConfig) ->
         {metrics_handlers, [
             hay_vm_handler,
             hay_cgroup_handler,
+            woody_api_hay,
             {mg_woody_api_hay, #{
                 namespaces => namespaces_list(YamlConfig)
             }}
@@ -201,6 +206,11 @@ brod_client_ssl(SslConfig) ->
         {cacertfile, ?C:conf([cacertfile], SslConfig, undefined)}
     ],
     [Opt || Opt = {_Key, Value} <- Opts, Value =/= undefined].
+
+hackney(_YamlConfig) ->
+    [
+        {mod_metrics, woody_client_metrics}
+    ].
 
 mg_woody_api(YamlConfig) ->
     [
