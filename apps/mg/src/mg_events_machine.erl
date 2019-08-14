@@ -99,7 +99,7 @@
 .
 -type timer       () :: {timeout, timeout_()} | {deadline, calendar:datetime()}.
 -type timeout_    () :: non_neg_integer().
--type deadline    () :: mg_utils:deadline().
+-type deadline    () :: mg_deadline:deadline().
 
 -type ref() :: {id, mg:id()} | {tag, mg_machine_tags:tag()}.
 -type options() :: #{

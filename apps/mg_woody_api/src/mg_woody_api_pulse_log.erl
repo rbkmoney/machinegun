@@ -379,7 +379,7 @@ extract_meta(request_context, ReqCtx) ->
 extract_meta(rpc_id, RPCID) ->
     maps:to_list(RPCID);
 extract_meta(deadline, Deadline) when is_integer(Deadline) ->
-    {deadline, mg_utils:format_deadline(Deadline)};
+    {deadline, mg_deadline:format(Deadline)};
 extract_meta(target_timestamp, Timestamp) ->
     {target_timestamp, format_timestamp(Timestamp)};
 extract_meta(exception, {Class, Reason, Stacktrace}) ->

@@ -44,7 +44,7 @@
 -callback handle_unload(_State) ->
     ok.
 
--callback handle_call(_Call, call_context(), _ReqCtx, mg_utils:deadline(), _State) ->
+-callback handle_call(_Call, call_context(), _ReqCtx, mg_deadline:deadline(), _State) ->
     {{reply, _Reply} | noreply, _State}.
 
 
@@ -76,7 +76,7 @@ child_spec(ChildID, Options) ->
 start_link(Options, NS, ID, ReqCtx) ->
     gen_server:start_link(self_reg_name(NS, ID), ?MODULE, {ID, Options, ReqCtx}, []).
 
--spec call(mg:ns(), mg:id(), _Call, _ReqCtx, mg_utils:deadline(), pulse()) ->
+-spec call(mg:ns(), mg:id(), _Call, _ReqCtx, mg_deadline:deadline(), pulse()) ->
     _Result | {error, _}.
 call(NS, ID, Call, ReqCtx, Deadline, Pulse) ->
     ok = mg_pulse:handle_beat(Pulse, #mg_worker_call_attempt{
@@ -88,7 +88,7 @@ call(NS, ID, Call, ReqCtx, Deadline, Pulse) ->
     gen_server:call(
         self_ref(NS, ID),
         {call, Deadline, Call, ReqCtx},
-        mg_utils:deadline_to_timeout(Deadline)
+        mg_deadline:to_timeout(Deadline)
     ).
 
 %% for testing
@@ -172,7 +172,7 @@ handle_call(Call={call, _, _, _}, From, State=#{id:=ID, mod:=Mod, status:={loadi
             {stop, normal, Error, State}
     end;
 handle_call({call, Deadline, Call, ReqCtx}, From, State=#{mod:=Mod, status:={working, ModState}}) ->
-    case mg_utils:is_deadline_reached(Deadline) of
+    case mg_deadline:is_reached(Deadline) of
         false ->
             {ReplyAction, NewModState} = Mod:handle_call(Call, From, ReqCtx, Deadline, ModState),
             NewState = State#{status:={working, NewModState}},
@@ -183,7 +183,7 @@ handle_call({call, Deadline, Call, ReqCtx}, From, State=#{mod:=Mod, status:={wor
         true ->
             ok = logger:warning(
                 "rancid worker call received: ~p from: ~p deadline: ~s reqctx: ~p",
-                [Call, From, mg_utils:format_deadline(Deadline), ReqCtx]
+                [Call, From, mg_deadline:format(Deadline), ReqCtx]
             ),
             {noreply, schedule_unload_timer(State), hibernate_timeout(State)}
     end;

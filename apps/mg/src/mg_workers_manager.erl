@@ -83,17 +83,17 @@ start_link(Options) ->
     ).
 
 % sync
--spec call(options(), id(), _Call, req_ctx(), mg_utils:deadline()) ->
+-spec call(options(), id(), _Call, req_ctx(), mg_deadline:deadline()) ->
     _Reply | {error, _}.
 call(Options, ID, Call, ReqCtx, Deadline) ->
-    case mg_utils:is_deadline_reached(Deadline) of
+    case mg_deadline:is_reached(Deadline) of
         false ->
             call(Options, ID, Call, ReqCtx, Deadline, true);
         true ->
             {error, {transient, worker_call_deadline_reached}}
     end.
 
--spec call(options(), id(), _Call, req_ctx(), mg_utils:deadline(), boolean()) ->
+-spec call(options(), id(), _Call, req_ctx(), mg_deadline:deadline(), boolean()) ->
     _Reply | {error, _}.
 call(Options, ID, Call, ReqCtx, Deadline, CanRetry) ->
     #{name := Name, pulse := Pulse} = Options,
@@ -102,7 +102,7 @@ call(Options, ID, Call, ReqCtx, Deadline, CanRetry) ->
             handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason, CanRetry)
     end.
 
--spec handle_worker_exit(options(), id(), _Call, req_ctx(), mg_utils:deadline(), _Reason, boolean()) ->
+-spec handle_worker_exit(options(), id(), _Call, req_ctx(), mg_deadline:deadline(), _Reason, boolean()) ->
     _Reply | {error, _}.
 handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason, CanRetry) ->
     MaybeRetry = case CanRetry of
@@ -127,7 +127,7 @@ handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason, CanRetry) ->
             {error, {unexpected_exit, Unknown}}
     end.
 
--spec start_and_retry_call(options(), id(), _Call, req_ctx(), mg_utils:deadline()) ->
+-spec start_and_retry_call(options(), id(), _Call, req_ctx(), mg_deadline:deadline()) ->
     _Reply | {error, _}.
 start_and_retry_call(Options, ID, Call, ReqCtx, Deadline) ->
     %

@@ -50,7 +50,7 @@
 -type event() :: term().
 -type aux_state() :: term().
 -type req_ctx() :: mg:request_context().
--type deadline() :: mg_utils:deadline().
+-type deadline() :: mg_deadline:deadline().
 
 -type options() :: #{
     signal_handler => fun((signal(), aux_state(), [event()]) -> {aux_state(), [event()], action()}),

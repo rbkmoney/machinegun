@@ -3,7 +3,7 @@
     namespace :: mg:ns(),
     machine_ref :: mg_events_machine:ref(),
     request_context :: mg:request_context(),
-    deadline :: mg_utils:deadline(),
+    deadline :: mg_deadline:deadline(),
     exception :: mg_utils:exception()
 }).
 

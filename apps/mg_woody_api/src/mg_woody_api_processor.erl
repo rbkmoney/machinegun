@@ -35,7 +35,7 @@ processor_child_spec(Options) ->
 -spec process_signal(Options, ReqCtx, Deadline, SignalArgs) -> Result when
     Options :: options(),
     ReqCtx :: mg_events_machine:request_context(),
-    Deadline :: mg_utils:deadline(),
+    Deadline :: mg_deadline:deadline(),
     SignalArgs :: mg_events_machine:signal_args(),
     Result :: mg_events_machine:signal_result().
 process_signal(Options, ReqCtx, Deadline, {Signal, Machine}) ->
@@ -52,7 +52,7 @@ process_signal(Options, ReqCtx, Deadline, {Signal, Machine}) ->
 -spec process_call(Options, ReqCtx, Deadline, CallArgs) -> mg_events_machine:call_result() when
     Options :: options(),
     ReqCtx :: mg_events_machine:request_context(),
-    Deadline :: mg_utils:deadline(),
+    Deadline :: mg_deadline:deadline(),
     CallArgs :: mg_events_machine:call_args().
 process_call(Options, ReqCtx, Deadline, {Call, Machine}) ->
     CallResult =
@@ -65,7 +65,7 @@ process_call(Options, ReqCtx, Deadline, {Call, Machine}) ->
         ),
     mg_woody_api_packer:unpack(call_result, CallResult).
 
--spec call_processor(options(), mg_events_machine:request_context(), mg_utils:deadline(), atom(), list(_)) ->
+-spec call_processor(options(), mg_events_machine:request_context(), mg_deadline:deadline(), atom(), list(_)) ->
     _Result.
 call_processor(Options, ReqCtx, Deadline, Function, Args) ->
     % TODO сделать нормально!
@@ -95,7 +95,7 @@ request_context_to_woody_context(null) ->
 request_context_to_woody_context(ReqCtx) ->
     mg_woody_api_utils:opaque_to_woody_context(ReqCtx).
 
--spec call_duration_limit(options(), mg_utils:deadline()) -> timeout().
+-spec call_duration_limit(options(), mg_deadline:deadline()) -> timeout().
 call_duration_limit(Options, undefined) ->
     TransportOptions = maps:get(transport_opts, Options, #{}),
     %% use default values from hackney:request/5 options
@@ -104,4 +104,4 @@ call_duration_limit(Options, undefined) ->
     RecvTimeout = proplists:get_value(recv_timeout, TransportOptions, 5000),
     RecvTimeout + ConnectTimeout + SendTimeout;
 call_duration_limit(_Options, Deadline) ->
-    mg_utils:deadline_to_timeout(Deadline).
+    mg_deadline:to_timeout(Deadline).

@@ -31,7 +31,7 @@
 -type ctx() :: #{
     namespace := mg:ns() | undefined,
     machine_ref := mg_events_machine:ref(),
-    deadline := mg_utils:deadline(),
+    deadline := mg_deadline:deadline(),
     request_context := mg:request_context()
 }.
 -type pulse() :: mg_pulse:handler().
@@ -115,21 +115,21 @@ opaque_to_woody_rpc_id([SpanID, TraceID, ParentID]) ->
 %%
 %% Woody deadline utils
 %%
--spec get_deadline(woody_context:ctx(), mg_utils:deadline()) ->
-    mg_utils:deadline() | no_return().
+-spec get_deadline(woody_context:ctx(), mg_deadline:deadline()) ->
+    mg_deadline:deadline() | no_return().
 get_deadline(Context, Default) ->
     case woody_context:get_deadline(Context) of
         undefined ->
             Default;
         Deadline ->
             %% MG and woody deadline formats are different
-            mg_utils:unixtime_ms_to_deadline(woody_deadline:to_unixtime_ms(Deadline))
+            mg_deadline:from_unixtime_ms(woody_deadline:to_unixtime_ms(Deadline))
     end.
 
--spec set_deadline(mg_utils:deadline(), woody_context:ctx()) ->
+-spec set_deadline(mg_deadline:deadline(), woody_context:ctx()) ->
     woody_context:ctx().
 set_deadline(undefined, Context) ->
     Context;
 set_deadline(Deadline, Context) ->
-    WoodyDeadline = woody_deadline:from_unixtime_ms(mg_utils:deadline_to_unixtime_ms(Deadline)),
+    WoodyDeadline = woody_deadline:from_unixtime_ms(mg_deadline:to_unixtime_ms(Deadline)),
     woody_context:set_deadline(WoodyDeadline, Context).

@@ -124,7 +124,7 @@ pool_child_spec(_Options, Name) ->
     Impact :: mg_machine:processor_impact(),
     PCtx :: mg_machine:processing_context(),
     ReqCtx :: mg_machine:request_context(),
-    Deadline :: mg_utils:deadline(),
+    Deadline :: mg_deadline:deadline(),
     MachineState :: mg_machine:machine_state(),
     Result :: mg_machine:processor_result().
 process_machine(_, _, Impact, _, ReqCtx, _, EncodedState) ->

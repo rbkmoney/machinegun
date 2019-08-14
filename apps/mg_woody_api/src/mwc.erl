@@ -60,9 +60,9 @@ status_count(Namespace, StatusQuery) ->
 -spec simple_repair(scalar(), scalar()) ->
     woody_context:ctx() | no_return().
 simple_repair(Namespace, ID) ->
-    simple_repair(Namespace, ID, mg_utils:default_deadline()).
+    simple_repair(Namespace, ID, mg_deadline:default()).
 
--spec simple_repair(scalar(), scalar(), mg_utils:deadline()) ->
+-spec simple_repair(scalar(), scalar(), mg_deadline:deadline()) ->
     woody_context:ctx() | no_return().
 simple_repair(Namespace, ID, Deadline) ->
     WoodyCtx = woody_context:new(),
@@ -81,7 +81,7 @@ resume_interrupted_one(Namespace, ID) ->WoodyCtx = woody_context:new(),
         m_opts(Namespace),
         id(ID),
         mg_woody_api_utils:woody_context_to_opaque(WoodyCtx),
-        mg_utils:timeout_to_deadline(5000)
+        mg_deadline:from_timeout(5000)
     ).
 
 % убийство машины

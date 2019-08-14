@@ -100,7 +100,7 @@ execute_task(Options, TaskInfo) ->
     case mg_machine:get_status(MachineOptions, MachineID) of
         {processing, ReqCtx} ->
             Timeout = maps:get(processing_timeout, Options, ?DEFAULT_PROCESSING_TIMEOUT),
-            Deadline = mg_utils:timeout_to_deadline(Timeout),
+            Deadline = mg_deadline:from_timeout(Timeout),
             ok = mg_machine:resume_interrupted(MachineOptions, MachineID, ReqCtx, Deadline);
         _Other ->
             ok

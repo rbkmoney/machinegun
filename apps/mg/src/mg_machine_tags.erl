@@ -42,12 +42,12 @@
 child_spec(Options, ChildID) ->
     mg_machine:child_spec(machine_options(Options), ChildID).
 
--spec add(options(), tag(), mg:id(), mg:request_context(), mg_utils:deadline()) ->
+-spec add(options(), tag(), mg:id(), mg:request_context(), mg_deadline:deadline()) ->
     ok | {already_exists, mg:id()} | no_return().
 add(Options, Tag, ID, ReqCtx, Deadline) ->
     mg_machine:call_with_lazy_start(machine_options(Options), Tag, {add, ID}, ReqCtx, Deadline, undefined).
 
--spec replace(options(), tag(), mg:id(), mg:request_context(), mg_utils:deadline()) ->
+-spec replace(options(), tag(), mg:id(), mg:request_context(), mg_deadline:deadline()) ->
     ok | no_return().
 replace(Options, Tag, ID, ReqCtx, Deadline) ->
     mg_machine:call_with_lazy_start(machine_options(Options), Tag, {replace, ID}, ReqCtx, Deadline, undefined).

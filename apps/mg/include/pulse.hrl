@@ -18,7 +18,7 @@
     namespace :: mg:ns(),
     machine_id :: mg:id(),
     request_context :: mg:request_context(),
-    deadline :: mg_utils:deadline(),
+    deadline :: mg_deadline:deadline(),
     target_timestamp :: genlib_time:ts(),
     attempt :: non_neg_integer()
 }).
@@ -27,7 +27,7 @@
     namespace :: mg:ns(),
     machine_id :: mg:id(),
     request_context :: mg:request_context(),
-    deadline :: mg_utils:deadline(),
+    deadline :: mg_deadline:deadline(),
     exception :: mg_utils:exception()
 }).
 
@@ -39,7 +39,7 @@
     machine_id :: mg:id(),
     request_context :: mg:request_context(),
     target_timestamp :: genlib_time:ts(),
-    deadline :: mg_utils:deadline()
+    deadline :: mg_deadline:deadline()
 }).
 
 -record(mg_timer_process_finished, {
@@ -48,7 +48,7 @@
     machine_id :: mg:id(),
     request_context :: mg:request_context(),
     target_timestamp :: genlib_time:ts(),
-    deadline :: mg_utils:deadline(),
+    deadline :: mg_deadline:deadline(),
     duration :: non_neg_integer()  % in native units
 }).
 
@@ -120,7 +120,7 @@
     namespace :: mg:ns(),
     machine_id :: mg:id(),
     request_context :: mg:request_context(),
-    deadline :: mg_utils:deadline()
+    deadline :: mg_deadline:deadline()
 }).
 
 -record(mg_machine_process_finished, {
@@ -128,7 +128,7 @@
     namespace :: mg:ns(),
     machine_id :: mg:id(),
     request_context :: mg:request_context(),
-    deadline :: mg_utils:deadline(),
+    deadline :: mg_deadline:deadline(),
     duration :: non_neg_integer()  % in native units
 }).
 
@@ -168,7 +168,7 @@
     namespace :: mg:ns(),
     machine_id :: mg:id(),
     request_context :: mg:request_context(),
-    deadline :: mg_utils:deadline(),
+    deadline :: mg_deadline:deadline(),
     exception :: mg_utils:exception()
 }).
 
@@ -195,7 +195,7 @@
     namespace :: mg:ns(),
     machine_id :: mg:id(),
     request_context :: mg:request_context(),
-    deadline :: mg_utils:deadline()
+    deadline :: mg_deadline:deadline()
 }).
 
 -record(mg_worker_start_attempt, {
@@ -213,7 +213,7 @@
     namespace :: mg:ns(),
     machine_id :: mg:id(),
     request_context :: mg:request_context(),
-    deadline :: mg_utils:deadline(),
+    deadline :: mg_deadline:deadline(),
     encode_duration :: non_neg_integer(),  % in native units
     send_duration :: non_neg_integer(),  % in native units
     data_size :: non_neg_integer(),  % in bytes
