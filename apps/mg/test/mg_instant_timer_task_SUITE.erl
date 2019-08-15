@@ -58,7 +58,7 @@ all() ->
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
     % dbg:tpl({mg_machine, '_', '_'}, x),
-    Apps = mg_ct_helper:start_applications([mg]),
+    Apps = mg_ct_helper:start_applications([consuela, mg]),
     [{apps, Apps} | C].
 
 -spec end_per_suite(config()) ->
@@ -75,7 +75,7 @@ end_per_suite(C) ->
     _.
 instant_start_test(_C) ->
     NS = <<"test">>,
-    ID = <<"machine">>,
+    ID = genlib:to_binary(?FUNCTION_NAME),
     Options = automaton_options(NS),
     _  = start_automaton(Options),
 
@@ -91,7 +91,7 @@ instant_start_test(_C) ->
     _.
 without_shedulers_test(_C) ->
     NS = <<"test">>,
-    ID = <<"machine">>,
+    ID = genlib:to_binary(?FUNCTION_NAME),
     Options = automaton_options_wo_shedulers(NS),
     _  = start_automaton(Options),
 
