@@ -79,11 +79,11 @@ instant_start_test(_C) ->
     Options = automaton_options(NS),
     _  = start_automaton(Options),
 
-    ok = mg_machine:start(Options, ID, 0, ?req_ctx, mg_utils:default_deadline()),
-     0 = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
-    ok = mg_machine:call(Options, ID, force_timeout, ?req_ctx, mg_utils:default_deadline()),
+    ok = mg_machine:start(Options, ID, 0, ?req_ctx, mg_deadline:default()),
+     0 = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
+    ok = mg_machine:call(Options, ID, force_timeout, ?req_ctx, mg_deadline:default()),
     F = fun() ->
-            mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline())
+            mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default())
         end,
     mg_ct_helper:assert_wait_expected(1, F, mg_retry:new_strategy({linear, _Retries = 10, _Timeout = 100})).
 
@@ -95,11 +95,11 @@ without_shedulers_test(_C) ->
     Options = automaton_options_wo_shedulers(NS),
     _  = start_automaton(Options),
 
-    ok = mg_machine:start(Options, ID, 0, ?req_ctx, mg_utils:default_deadline()),
-     0 = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
-    ok = mg_machine:call(Options, ID, force_timeout, ?req_ctx, mg_utils:default_deadline()),
+    ok = mg_machine:start(Options, ID, 0, ?req_ctx, mg_deadline:default()),
+     0 = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
+    ok = mg_machine:call(Options, ID, force_timeout, ?req_ctx, mg_deadline:default()),
     % machine is still alive
-    _  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()).
+    _  = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()).
 
 %%
 %% processor

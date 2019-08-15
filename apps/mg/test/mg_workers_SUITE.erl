@@ -97,7 +97,7 @@ base_test(_C) ->
     % чтобы увидеть падение воркера линкуемся к нему
     Options = workers_options(?unload_timeout, #{link_pid=>erlang:self()}),
     Pid     = start_workers(Options),
-    hello   = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_utils:default_deadline()),
+    hello   = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_deadline:default()),
     ok      = wait_machines_unload(?unload_timeout),
     ok      = stop_workers(Pid).
 
@@ -108,7 +108,7 @@ load_fail_test(_C) ->
     Options = workers_options(?unload_timeout, #{fail_on=>load}),
     Pid     = start_workers(Options),
     {error, {unexpected_exit, _}} =
-        mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_utils:default_deadline()),
+        mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_deadline:default()),
     ok      = wait_machines_unload(?unload_timeout),
     ok      = stop_workers(Pid).
 
@@ -118,7 +118,7 @@ load_error_test(_C) ->
     % чтобы увидеть падение воркера линкуемся к нему
     Options = workers_options(?unload_timeout, #{load_error=>test_error, link_pid=>erlang:self()}),
     Pid     = start_workers(Options),
-    {error, test_error} = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_utils:default_deadline()),
+    {error, test_error} = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_deadline:default()),
     ok      = wait_machines_unload(?unload_timeout),
     ok      = stop_workers(Pid).
 
@@ -129,7 +129,7 @@ call_fail_test(_C) ->
     Options = workers_options(?unload_timeout, #{fail_on=>call}),
     Pid     = start_workers(Options),
     {error, {unexpected_exit, _}} =
-        mg_workers_manager:call(Options, 43, hello, ?req_ctx, mg_utils:default_deadline()),
+        mg_workers_manager:call(Options, 43, hello, ?req_ctx, mg_deadline:default()),
     ok      = wait_machines_unload(?unload_timeout),
     ok      = stop_workers(Pid).
 
@@ -139,7 +139,7 @@ unload_fail_test(_C) ->
     % падение при unload'е мы не замечаем :(
     Options = workers_options(?unload_timeout, #{fail_on=>unload}),
     Pid     = start_workers(Options),
-    hello   = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_utils:default_deadline()),
+    hello   = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_deadline:default()),
     ok      = wait_machines_unload(?unload_timeout),
     ok      = stop_workers(Pid).
 
@@ -148,7 +148,7 @@ unload_fail_test(_C) ->
 unload_test(_C) ->
     Options = workers_options(?unload_timeout, #{link_pid => self()}),
     Pid     = start_workers(Options),
-    hello   = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_utils:default_deadline()),
+    hello   = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_deadline:default()),
     WorkerPid = wait_worker_pid(42),
     ok      = wait_worker_unload(WorkerPid, ?unload_timeout * 2),
     ok      = stop_workers(Pid).
@@ -159,7 +159,7 @@ unload_loading_test(_C) ->
     LoadLag = 100,
     Options = workers_options(?unload_timeout, #{link_pid => self(), load_lag => LoadLag}),
     Pid     = start_workers(Options),
-    {error, {timeout, _}} = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_utils:timeout_to_deadline(LoadLag div 2)),
+    {error, {timeout, _}} = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_deadline:from_timeout(LoadLag div 2)),
     WorkerPid = wait_worker_pid(42),
     ok      = wait_worker_unload(WorkerPid, LoadLag + ?unload_timeout * 2),
     ok      = stop_workers(Pid).
@@ -202,7 +202,7 @@ stress_test_do_test_call(Options, WorkersCount) ->
     ID = rand:uniform(WorkersCount),
     % проверим, что отвечают действительно на наш запрос
     Call = {hello, erlang:make_ref()},
-    Call = mg_workers_manager:call(Options, ID, Call, ?req_ctx, mg_utils:default_deadline()),
+    Call = mg_workers_manager:call(Options, ID, Call, ?req_ctx, mg_deadline:default()),
     ok.
 
 -spec manager_contention_test(config()) ->
@@ -223,7 +223,7 @@ manager_contention_test(_C) ->
 manager_contention_test_call(Options, N) ->
     % проверим, что отвечают действительно на наш запрос
     Call = {hello, erlang:make_ref()},
-    case mg_workers_manager:call(Options, N, Call, ?req_ctx, mg_utils:default_deadline()) of
+    case mg_workers_manager:call(Options, N, Call, ?req_ctx, mg_deadline:default()) of
         Call ->
             ok;
         {error, {transient, _}} ->

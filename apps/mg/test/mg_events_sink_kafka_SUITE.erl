@@ -112,7 +112,7 @@ add_events(C) ->
             ?SOURCE_ID,
             ?config(events, C),
             null,
-            mg_utils:default_deadline()
+            mg_deadline:default()
         )
     end,
     call_with_retry(F, mg_retry:new_strategy({linear, 10, 500})).

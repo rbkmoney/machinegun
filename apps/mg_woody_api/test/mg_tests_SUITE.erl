@@ -493,7 +493,7 @@ failed_machine_start(C) ->
     _.
 machine_start_timeout(C) ->
     {'EXIT', {{woody_error, _}, _}} =
-        (catch mg_automaton_client:start(automaton_options(C), ?ID, <<"timeout">>, mg_utils:timeout_to_deadline(1000))),
+        (catch mg_automaton_client:start(automaton_options(C), ?ID, <<"timeout">>, mg_deadline:from_timeout(1000))),
     #mg_stateproc_MachineNotFound{} =
         (catch mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"nop">>)).
 
@@ -569,7 +569,7 @@ abort_timer(C) ->
 -spec timeout_call_with_deadline(config()) ->
     _.
 timeout_call_with_deadline(C) ->
-    DeadlineFn = fun() -> mg_utils:timeout_to_deadline(?DEADLINE_TIMEOUT) end,
+    DeadlineFn = fun() -> mg_deadline:from_timeout(?DEADLINE_TIMEOUT) end,
     Options0 = no_timeout_automaton_options(C),
     Options1 = maps:remove(retry_strategy, Options0),
     {'EXIT', {{woody_error, {external, result_unknown, <<"{timeout", _/binary>>}}, _Stack}} =
@@ -579,7 +579,7 @@ timeout_call_with_deadline(C) ->
 -spec success_call_with_deadline(config()) ->
     _.
 success_call_with_deadline(C) ->
-    Deadline = mg_utils:timeout_to_deadline(?DEADLINE_TIMEOUT * 3),
+    Deadline = mg_deadline:from_timeout(?DEADLINE_TIMEOUT * 3),
     Options = no_timeout_automaton_options(C),
     <<"sleep">> = mg_automaton_client:call(Options, {id, ?ID}, <<"sleep">>, Deadline).
 

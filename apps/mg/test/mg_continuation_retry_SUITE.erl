@@ -78,8 +78,8 @@ continuation_delayed_retries_test(_C) ->
     Options = automaton_options(),
     _  = start_automaton(Options),
     ID = ?MH_ID,
-    ok = mg_machine:start(Options, ID, #{},  ?REQ_CTX, mg_utils:default_deadline()),
-    ok = mg_machine:call (Options, ID, test, ?REQ_CTX, mg_utils:default_deadline()),
+    ok = mg_machine:start(Options, ID, #{},  ?REQ_CTX, mg_deadline:default()),
+    ok = mg_machine:call (Options, ID, test, ?REQ_CTX, mg_deadline:default()),
     ok = timer:sleep(?TEST_SLEEP),
     2  = get_fail_count().
 

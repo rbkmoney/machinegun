@@ -77,42 +77,42 @@ simple_test(_) ->
     _  = start_automaton(Options),
 
     {logic, machine_not_found} =
-        (catch mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline())),
+        (catch mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default())),
 
-    ok = mg_machine:start(Options, ID, {TestKey, 0}, ?req_ctx, mg_utils:default_deadline()),
+    ok = mg_machine:start(Options, ID, {TestKey, 0}, ?req_ctx, mg_deadline:default()),
     {logic, machine_already_exist} =
-        (catch mg_machine:start(Options, ID, {TestKey, 0}, ?req_ctx, mg_utils:default_deadline())),
+        (catch mg_machine:start(Options, ID, {TestKey, 0}, ?req_ctx, mg_deadline:default())),
 
-    0  = mg_machine:call (Options, ID, get              , ?req_ctx, mg_utils:default_deadline()),
-    ok = mg_machine:call (Options, ID, increment        , ?req_ctx, mg_utils:default_deadline()),
-    1  = mg_machine:call (Options, ID, get              , ?req_ctx, mg_utils:default_deadline()),
-    ok = mg_machine:call (Options, ID, delayed_increment, ?req_ctx, mg_utils:default_deadline()),
+    0  = mg_machine:call (Options, ID, get              , ?req_ctx, mg_deadline:default()),
+    ok = mg_machine:call (Options, ID, increment        , ?req_ctx, mg_deadline:default()),
+    1  = mg_machine:call (Options, ID, get              , ?req_ctx, mg_deadline:default()),
+    ok = mg_machine:call (Options, ID, delayed_increment, ?req_ctx, mg_deadline:default()),
     ok = timer:sleep(2000),
-    2  = mg_machine:call (Options, ID, get              , ?req_ctx, mg_utils:default_deadline()),
+    2  = mg_machine:call (Options, ID, get              , ?req_ctx, mg_deadline:default()),
 
     % call fail/simple_repair
     {logic, machine_failed} =
-        (catch mg_machine:call         (Options, ID, fail, ?req_ctx, mg_utils:default_deadline())),
-    ok             =        mg_machine:simple_repair(Options, ID,       ?req_ctx, mg_utils:default_deadline()),
-    2              =        mg_machine:call         (Options, ID, get , ?req_ctx, mg_utils:default_deadline()),
+        (catch mg_machine:call         (Options, ID, fail, ?req_ctx, mg_deadline:default())),
+    ok             =        mg_machine:simple_repair(Options, ID,       ?req_ctx, mg_deadline:default()),
+    2              =        mg_machine:call         (Options, ID, get , ?req_ctx, mg_deadline:default()),
 
     % call fail/repair
-    {logic, machine_failed} = (catch mg_machine:call  (Options, ID, fail      , ?req_ctx, mg_utils:default_deadline())),
-    repaired                =        mg_machine:repair(Options, ID, repair_arg, ?req_ctx, mg_utils:default_deadline()),
-    2                       =        mg_machine:call  (Options, ID, get       , ?req_ctx, mg_utils:default_deadline()),
+    {logic, machine_failed} = (catch mg_machine:call  (Options, ID, fail      , ?req_ctx, mg_deadline:default())),
+    repaired                =        mg_machine:repair(Options, ID, repair_arg, ?req_ctx, mg_deadline:default()),
+    2                       =        mg_machine:call  (Options, ID, get       , ?req_ctx, mg_deadline:default()),
 
     % call fail/repair fail/repair
-    {logic, machine_failed} = (catch mg_machine:call(Options, ID, fail, ?req_ctx, mg_utils:default_deadline())),
-    {logic, machine_failed} = (catch mg_machine:repair(Options, ID, fail, ?req_ctx, mg_utils:default_deadline())),
-    repaired = mg_machine:repair(Options, ID, repair_arg, ?req_ctx, mg_utils:default_deadline()),
+    {logic, machine_failed} = (catch mg_machine:call(Options, ID, fail, ?req_ctx, mg_deadline:default())),
+    {logic, machine_failed} = (catch mg_machine:repair(Options, ID, fail, ?req_ctx, mg_deadline:default())),
+    repaired = mg_machine:repair(Options, ID, repair_arg, ?req_ctx, mg_deadline:default()),
     {logic, machine_already_working} =
-        (catch mg_machine:repair(Options, ID, repair_arg, ?req_ctx, mg_utils:default_deadline())),
-    2  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
+        (catch mg_machine:repair(Options, ID, repair_arg, ?req_ctx, mg_deadline:default())),
+    2  = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
 
-    ok  = mg_machine:call(Options, ID, remove, ?req_ctx, mg_utils:default_deadline()),
+    ok  = mg_machine:call(Options, ID, remove, ?req_ctx, mg_deadline:default()),
 
     {logic, machine_not_found} =
-        (catch mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline())),
+        (catch mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default())),
 
     ok.
 

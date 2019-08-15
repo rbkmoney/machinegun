@@ -102,14 +102,14 @@ transient_fail(_C) ->
     Options = automaton_options(NS, {intervals, [1000, 1000, 1000, 1000, 1000, 1000, 1000]}),
     _  = start_automaton(Options),
 
-    ok = mg_machine:start(Options, ID, <<"normal">>, ?req_ctx, mg_utils:default_deadline()),
-    0  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
-    ok = mg_machine:call(Options, ID, {set_mode, <<"failing">>}, ?req_ctx, mg_utils:default_deadline()),
+    ok = mg_machine:start(Options, ID, <<"normal">>, ?req_ctx, mg_deadline:default()),
+    0  = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
+    ok = mg_machine:call(Options, ID, {set_mode, <<"failing">>}, ?req_ctx, mg_deadline:default()),
     ok = timer:sleep(3000),
-    0  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
-    ok = mg_machine:call(Options, ID, {set_mode, <<"counting">>}, ?req_ctx, mg_utils:default_deadline()),
+    0  = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
+    ok = mg_machine:call(Options, ID, {set_mode, <<"counting">>}, ?req_ctx, mg_deadline:default()),
     ok = timer:sleep(3000),
-    I  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
+    I  = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
     true = I > 0,
     ok.
 
@@ -122,11 +122,11 @@ permament_fail(_C) ->
     Options = automaton_options(NS, {intervals, [1000]}),
     _  = start_automaton(Options),
 
-    ok = mg_machine:start(Options, ID, <<"normal">>, ?req_ctx, mg_utils:default_deadline()),
-    0  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
-    ok = mg_machine:call(Options, ID, {set_mode, <<"failing">>}, ?req_ctx, mg_utils:default_deadline()),
+    ok = mg_machine:start(Options, ID, <<"normal">>, ?req_ctx, mg_deadline:default()),
+    0  = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
+    ok = mg_machine:call(Options, ID, {set_mode, <<"failing">>}, ?req_ctx, mg_deadline:default()),
     ok = timer:sleep(4000),
-    {logic, machine_failed} = (catch mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline())),
+    {logic, machine_failed} = (catch mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default())),
     ok.
 
 %%

@@ -131,13 +131,13 @@ do_action(Options, ID, Seq, Action) ->
     try
         case Action of
             {start, ResultAction} ->
-                mg_machine:start(Options, id(ID), ResultAction, req_ctx(ID, Seq), mg_utils:default_deadline());
+                mg_machine:start(Options, id(ID), ResultAction, req_ctx(ID, Seq), mg_deadline:default());
             fail ->
-                mg_machine:fail(Options, id(ID), req_ctx(ID, Seq), mg_utils:default_deadline());
+                mg_machine:fail(Options, id(ID), req_ctx(ID, Seq), mg_deadline:default());
             {repair, ResultAction} ->
-                mg_machine:repair(Options, id(ID), ResultAction, req_ctx(ID, Seq), mg_utils:default_deadline());
+                mg_machine:repair(Options, id(ID), ResultAction, req_ctx(ID, Seq), mg_deadline:default());
             {call, ResultAction} ->
-                mg_machine:call(Options, id(ID), ResultAction, req_ctx(ID, Seq), mg_utils:default_deadline())
+                mg_machine:call(Options, id(ID), ResultAction, req_ctx(ID, Seq), mg_deadline:default())
         end
     catch
         throw:{logic, machine_failed         } -> failed;

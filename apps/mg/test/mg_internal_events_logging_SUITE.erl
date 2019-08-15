@@ -78,7 +78,7 @@ robust_handling(_C) ->
     Options = automaton_options(NS),
     _  = start_automaton(Options),
 
-    ok = mg_machine:start(Options, ID, undefined, ?req_ctx, mg_utils:default_deadline()),
+    ok = mg_machine:start(Options, ID, undefined, ?req_ctx, mg_deadline:default()),
     ok = timer:sleep(2000),
     {retrying, _, _, _, _} = mg_machine:get_status(Options, ID).
 

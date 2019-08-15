@@ -197,7 +197,7 @@ events_machine_options(Options, NS) ->
 -spec start(options(), mg:ns(), mg:id(), term()) ->
     ok.
 start(Options, NS, MachineID, Args) ->
-    Deadline = mg_utils:timeout_to_deadline(3000),
+    Deadline = mg_deadline:from_timeout(3000),
     MgOptions = events_machine_options(Options, NS),
     mg_events_machine:start(MgOptions, MachineID, encode(Args), <<>>, Deadline).
 
@@ -205,7 +205,7 @@ start(Options, NS, MachineID, Args) ->
     term().
 call(Options, NS, MachineID, Args) ->
     HRange = {undefined, undefined, forward},
-    Deadline = mg_utils:timeout_to_deadline(3000),
+    Deadline = mg_deadline:from_timeout(3000),
     MgOptions = events_machine_options(Options, NS),
     mg_events_machine:call(MgOptions, {id, MachineID}, encode(Args), HRange, <<>>, Deadline).
 
@@ -213,7 +213,7 @@ call(Options, NS, MachineID, Args) ->
     ok.
 repair(Options, NS, MachineID, Args) ->
     HRange = {undefined, undefined, forward},
-    Deadline = mg_utils:timeout_to_deadline(3000),
+    Deadline = mg_deadline:from_timeout(3000),
     MgOptions = events_machine_options(Options, NS),
     mg_events_machine:repair(MgOptions, {id, MachineID}, encode(Args), HRange, <<>>, Deadline).
 
