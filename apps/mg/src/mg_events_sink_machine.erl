@@ -47,6 +47,7 @@
     namespace                  := mg:ns(),
     machine_id                 := mg:id(),
     storage                    := mg_storage:options(),
+    worker                     := mg_worker:options(),
     pulse                      := mg_pulse:handler(),
     events_storage             := mg_storage:options(),
     default_processing_timeout := timeout()
@@ -54,6 +55,7 @@
 -type ns_options() :: #{
     namespace                  := mg:ns(),
     storage                    := mg_storage:options(),
+    worker                     := mg_worker:options(),
     pulse                      := mg_pulse:handler(),
     events_storage             := mg_storage:options(),
     default_processing_timeout := timeout()
@@ -200,11 +202,12 @@ new_state() ->
 
 -spec machine_options(ns_options()) ->
     mg_machine:options().
-machine_options(Options = #{namespace := Namespace, storage := Storage, pulse := Pulse}) ->
+machine_options(Options = #{namespace := Namespace, storage := Storage, worker := Worker, pulse := Pulse}) ->
     #{
         namespace       => mg_utils:concatenate_namespaces(Namespace, <<"machines">>),
         processor       => {?MODULE, Options},
         storage         => Storage,
+        worker          => Worker,
         pulse           => Pulse
     }.
 

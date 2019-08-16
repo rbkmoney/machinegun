@@ -371,6 +371,11 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
     Timeout = fun(TimeoutName, Default) ->
         ?C:time_interval(?C:conf([TimeoutName], NSYamlConfig, Default), ms)
     end,
+    SchedulerConfig = #{
+        registry     => registry(YamlConfig),
+        interval     => 1000,
+        limit        => <<"scheduler_tasks_total">>
+    },
     {Name, #{
         storage   => storage(Name, YamlConfig),
         processor => #{
@@ -384,6 +389,7 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             }
         },
         worker => #{
+            registry          => registry(YamlConfig),
             hibernate_timeout => Timeout(hibernate_timeout,  "5S"),
             unload_timeout    => Timeout(unload_timeout   , "60S")
         },
@@ -398,31 +404,41 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             processor    => {exponential, {max_total_timeout, 24 * 60 * 60 * 1000}, 2, 10, 60 * 1000},
             continuation => {exponential, infinity, 2, 10, 60 * 1000}
         },
-        schedulers => #{
-            timers         => #{
-                interval     => 1000,
-                limit        => <<"scheduler_tasks_total">>,
-                share        => 2
-            },
-            timers_retries => #{
-                interval     => 1000,
-                limit        => <<"scheduler_tasks_total">>,
-                share        => 1
-            },
-            overseer       => #{
-                interval     => 1000,
-                limit        => <<"scheduler_tasks_total">>,
-                no_task_wait => 10 * 60 * 1000,  % 10 min
-                share        => 0
-            }
-        },
+        schedulers => maps:merge(
+            conf_with([timers], NSYamlConfig,
+                fun
+                    ("disabled") ->
+                        #{};
+                    (_) ->
+                        #{
+                            timers         => SchedulerConfig#{share => 2},
+                            timers_retries => SchedulerConfig#{share => 1}
+                        }
+                end
+            ),
+            conf_with([overseer], NSYamlConfig,
+                fun
+                    ("disabled") ->
+                        #{};
+                    (_) ->
+                        #{
+                            overseer => SchedulerConfig#{
+                                no_task_wait => 10 * 60 * 1000,  % 10 min
+                                share        => 0
+                            }
+                        }
+                end
+            )
+        ),
         event_sinks => [event_sink(ES) || ES <- ?C:conf([event_sinks], NSYamlConfig, [])],
         suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0))
     }}.
 
 event_sink_ns(YamlConfig) ->
     #{
+        registry                   => registry(YamlConfig),
         storage                    => storage(<<"_event_sinks">>, YamlConfig),
+        worker                     => #{registry => registry(YamlConfig)},
         duplicate_search_batch     => 1000,
         default_processing_timeout => ?C:time_interval("30S", ms)
     }.
@@ -441,6 +457,10 @@ event_sink(kafka, Name, ESYamlConfig) ->
         client     => ?C:atom(?C:conf([client], ESYamlConfig)),
         topic      => ?C:utf_bin(?C:conf([topic], ESYamlConfig))
     }}.
+
+registry(YamlConfig) ->
+    % Use consuela if it's set up, gproc otherwise
+    conf_with([consuela], YamlConfig, gproc, consuela).
 
 %%
 %% vm.args
@@ -506,8 +526,9 @@ conf_if(YamlConfigPath, YamlConfig, Value) ->
 conf_with(YamlConfigPath, YamlConfig, Fun) ->
     Fun(?C:conf(YamlConfigPath, YamlConfig)).
 
-conf_with(YamlConfigPath, YamlConfig, Default, Fun) ->
+conf_with(YamlConfigPath, YamlConfig, Default, FunOrVal) ->
     case ?C:conf(YamlConfigPath, YamlConfig, undefined) of
         undefined -> Default;
-        Value     -> Fun(Value)
+        Value when is_function(FunOrVal) -> FunOrVal(Value);
+        _Value -> FunOrVal
     end.

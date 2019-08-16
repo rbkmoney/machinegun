@@ -183,15 +183,19 @@ start_automaton(Options) ->
 -spec automaton_options(mg:ns()) ->
     mg_machine:options().
 automaton_options(NS) ->
+    Scheduler = #{registry => gproc, interval => timer:hours(1)},
     #{
         namespace => NS,
         processor => ?MODULE,
         storage   => mg_storage_memory,
+        worker    => #{
+            registry => gproc
+        },
         pulse     => ?MODULE,
         schedulers => #{
-            timers         => #{ interval => timer:hours(1) },
-            timers_retries => #{ interval => timer:hours(1) },
-            overseer       => #{ interval => timer:hours(1) }
+            timers         => Scheduler,
+            timers_retries => Scheduler,
+            overseer       => Scheduler
         }
     }.
 
@@ -202,8 +206,12 @@ automaton_options_wo_shedulers(NS) ->
         namespace => NS,
         processor => ?MODULE,
         storage   => mg_storage_memory,
+        worker    => #{
+            registry => gproc
+        },
         pulse     => ?MODULE,
         schedulers => #{
+            % none
         }
     }.
 

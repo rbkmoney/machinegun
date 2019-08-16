@@ -146,6 +146,7 @@ event_sink_options() ->
         machine_id             => ?ES_ID,
         namespace              => ?ES_ID,
         storage                => mg_storage_memory,
+        worker                 => #{registry => gproc},
         pulse                  => ?MODULE,
         duplicate_search_batch => 1000,
         events_storage         => mg_storage_memory

@@ -78,7 +78,7 @@ start_link(Options) ->
         self_reg_name(Options),
         #{strategy => simple_one_for_one},
         [
-            mg_worker:child_spec(worker, maps:get(worker_options, Options))
+            mg_worker:child_spec(worker, worker_options(Options))
         ]
     ).
 
@@ -97,7 +97,7 @@ call(Options, ID, Call, ReqCtx, Deadline) ->
     _Reply | {error, _}.
 call(Options, ID, Call, ReqCtx, Deadline, CanRetry) ->
     #{name := Name, pulse := Pulse} = Options,
-    try mg_worker:call(Name, ID, Call, ReqCtx, Deadline, Pulse) catch
+    try mg_worker:call(worker_options(Options), Name, ID, Call, ReqCtx, Deadline, Pulse) catch
         exit:Reason ->
             handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason, CanRetry)
     end.
@@ -159,7 +159,7 @@ handle_start_error(Reason) ->
     [_Call].
 get_call_queue(Options, ID) ->
     try
-        mg_worker:get_call_queue(maps:get(name, Options), ID)
+        mg_worker:get_call_queue(worker_options(Options), maps:get(name, Options), ID)
     catch exit:noproc ->
         []
     end.
@@ -168,7 +168,7 @@ get_call_queue(Options, ID) ->
     ok.
 brutal_kill(Options, ID) ->
     try
-        mg_worker:brutal_kill(maps:get(name, Options), ID)
+        mg_worker:brutal_kill(worker_options(Options), maps:get(name, Options), ID)
     catch exit:noproc ->
         ok
     end.
@@ -176,8 +176,12 @@ brutal_kill(Options, ID) ->
 -spec is_alive(options(), id()) ->
     boolean().
 is_alive(Options, ID) ->
-    mg_worker:is_alive(maps:get(name, Options), ID).
+    mg_worker:is_alive(worker_options(Options), maps:get(name, Options), ID).
 
+-spec worker_options(options()) ->
+    mg_worker:options().
+worker_options(#{worker_options := WorkerOptions}) ->
+    WorkerOptions.
 
 %%
 %% local

@@ -120,15 +120,15 @@ automaton_options(NS) ->
         namespace => NS,
         processor => ?MODULE,
         storage   => mg_storage_memory,
+        worker    => #{registry => gproc},
         pulse     => ?MODULE,
         retries   => #{
             timers         => {intervals, [1000, 1000, 1000, 1000, 1000]},
             processor      => {intervals, [1]}
         },
         schedulers => #{
-            timers         => #{ interval => 100 },
-            timers_retries => #{ interval => 100 },
-            overseer       => #{ interval => 100 }
+            timers         => #{registry => gproc, interval => 100},
+            timers_retries => #{registry => gproc, interval => 100}
         }
     }.
 
