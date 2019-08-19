@@ -258,7 +258,7 @@ self_ref(ID) ->
 self_reg_name(#{registry := consuela} = Options) ->
     {via, consuela, wrap_id(Options)};
 self_reg_name(#{registry := gproc} = Options) ->
-    {via, consuela, {n, l, wrap_id(Options)}}.
+    {via, gproc, {n, l, wrap_id(Options)}}.
 
 -spec wrap_id(options() | ref_options()) ->
     term().
