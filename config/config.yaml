@@ -20,7 +20,7 @@ service_name: machinegun
 
 # Name of the node for Erlang distribution.
 # Defaults to: '{service_name}@{primary_netif_ip}'.
-dist_node_name: machinegun@10.0.0.42
+# dist_node_name: machinegun@10.0.0.42
 
 # Erlang VM options.
 erlang:
