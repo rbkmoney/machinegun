@@ -237,7 +237,7 @@ stress_test_do_test_call(Options, WorkersCount) ->
 -spec manager_contention_test(config()) ->
     _.
 manager_contention_test(C) ->
-    RunnersCount  = 5000,
+    RunnersCount  = 2000,
     UnloadTimeout = 1000, % чтобы машины выгружались в процессе теста
     ok = run_load_test(#{
         duration        => 5 * 1000,
@@ -303,7 +303,7 @@ workers_options(UnloadTimeout, WorkerParams, C) ->
     #{
         name => base_test_workers,
         pulse => undefined,
-        message_queue_len_limit => 1000,
+        message_queue_len_limit => 500,
         worker_options => #{
             worker            => {?MODULE, WorkerParams},
             registry          => ?config(registry, C),
