@@ -383,8 +383,7 @@ start_workers(Options) ->
 -spec stop_workers(pid()) ->
     ok.
 stop_workers(Pid) ->
-    true = erlang:unlink(Pid),
-    true = erlang:exit(Pid, kill),
+    ok = proc_lib:stop(Pid, normal, 10000),
     ok.
 
 -spec wait_machines_unload(pos_integer()) ->
