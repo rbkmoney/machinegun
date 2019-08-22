@@ -303,7 +303,7 @@ workers_options(UnloadTimeout, WorkerParams, C) ->
     #{
         name => base_test_workers,
         pulse => undefined,
-        message_queue_len_limit => 10000,
+        message_queue_len_limit => 1000,
         worker_options => #{
             worker            => {?MODULE, WorkerParams},
             registry          => ?config(registry, C),
