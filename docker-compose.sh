@@ -46,7 +46,8 @@ services:
     volumes:
       - ./riak_user.conf:/etc/riak/user.conf:ro
       - schemas:/etc/riak/schemas
-  member:
+  member1:
+    &member-node
     image: dr.rbkmoney.com/basho/riak-kv:ubuntu-2.1.4-1
     labels:
       - "com.basho.riak.cluster.name=riakkv"
@@ -59,6 +60,8 @@ services:
       - COORDINATOR_NODE=riakdb
     volumes:
       - ./riak_user.conf:/etc/riak/user.conf:ro
+  member2:
+    <<: *member-node
 
   zookeeper:
     image: confluentinc/cp-zookeeper:${CONFLUENT_PLATFORM_VERSION}
