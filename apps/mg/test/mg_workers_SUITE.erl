@@ -237,13 +237,13 @@ stress_test_do_test_call(Options, WorkersCount) ->
 -spec manager_contention_test(config()) ->
     _.
 manager_contention_test(C) ->
-    RunnersCount  = 2000,
+    RunnersCount  = 1000,
     UnloadTimeout = 1000, % чтобы машины выгружались в процессе теста
     ok = run_load_test(#{
         duration        => 5 * 1000,
         runners         => RunnersCount,
         job             => fun manager_contention_test_call/2,
-        manager_options => workers_options(UnloadTimeout, #{link_pid=>erlang:self()}, C),
+        manager_options => workers_options(UnloadTimeout, 200, #{link_pid=>erlang:self()}, C),
         unload_timeout  => UnloadTimeout * 2
     }).
 
@@ -300,10 +300,15 @@ stress_test_process(Job, ManagerOptions, N) ->
 -spec workers_options(non_neg_integer(), worker_params(), config()) ->
     mg_workers_manager:options().
 workers_options(UnloadTimeout, WorkerParams, C) ->
+    workers_options(UnloadTimeout, 5000, WorkerParams, C).
+
+-spec workers_options(non_neg_integer(), non_neg_integer(), worker_params(), config()) ->
+    mg_workers_manager:options().
+workers_options(UnloadTimeout, MsgQueueLen, WorkerParams, C) ->
     #{
         name => base_test_workers,
         pulse => undefined,
-        message_queue_len_limit => 500,
+        message_queue_len_limit => MsgQueueLen,
         worker_options => #{
             worker            => {?MODULE, WorkerParams},
             registry          => ?config(registry, C),
