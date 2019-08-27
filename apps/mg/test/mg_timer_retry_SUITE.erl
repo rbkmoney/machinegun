@@ -172,7 +172,7 @@ start_automaton(Options) ->
     mg_machine:options().
 automaton_options(NS, RetryPolicy) ->
     Scheduler = #{
-        registry => gproc,
+        registry => mg_procreg_gproc,
         interval => 1000
     },
     #{
@@ -180,7 +180,7 @@ automaton_options(NS, RetryPolicy) ->
         processor => ?MODULE,
         storage   => mg_storage_memory,
         worker    => #{
-            registry => gproc
+            registry => mg_procreg_gproc
         },
         pulse     => ?MODULE,
         retries   => #{

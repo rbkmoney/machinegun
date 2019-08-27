@@ -115,7 +115,7 @@
 -type scheduler_id() :: overseer | timers | timers_retries.
 
 -type scheduler_opt() :: disable | #{
-    registry     => mg_scheduler:process_registry(),
+    registry     => mg_procreg:options(),
     interval     => pos_integer(),
     no_task_wait => pos_integer(),
     limit        => mg_quota_worker:name(),

@@ -48,7 +48,7 @@
 -type options() :: #{
     namespace := mg:ns(),
     name := name(),
-    registry := process_registry(),
+    registry := mg_procreg:options(),
     queue_handler := queue_handler(),
     task_handler := mg_utils:mod_opts(),
     pulse := mg_pulse:handler(),
@@ -67,17 +67,15 @@
 -type ref_options() :: #{
     namespace := mg:ns(),
     name      := name(),
-    registry  := process_registry()
+    registry  := mg_procreg:options()
 }.
 -type task_info() :: task_info(task_id(), task_payload()).
 -type search_status() :: continue | completed.
--type process_registry() :: gproc | consuela.
 -type name() :: atom().
 
 -export_type([name/0]).
 -export_type([options/0]).
 -export_type([ref_options/0]).
--export_type([process_registry/0]).
 -export_type([task_info/0]).
 -export_type([task_info/2]).
 -export_type([search_status/0]).
@@ -130,31 +128,24 @@ child_spec(RegName, Options, ChildID) ->
 
 -spec start_link(_RegName, options()) ->
     mg_utils:gen_start_ret().
-start_link(RegName, #{queue_handler := Handler} = Options) ->
-    do_start_link(
+start_link(RegName, #{registry := ProcregOptions, queue_handler := Handler} = Options) ->
+    mg_procreg:start_supervisor(
+        ProcregOptions,
         RegName,
         #{strategy => one_for_all},
         mg_utils:lists_compact([
             mg_scheduler_worker:child_spec(Options, tasks),
             handler_child_spec(Handler, queue_handler),
             manager_child_spec(Options, manager)
-        ]),
-        Options
+        ])
     ).
 
--spec do_start_link(_RegName, supervisor:sup_flags(), [supervisor:child_spec()], options()) ->
-    mg_utils:gen_start_ret().
-do_start_link(RegName, Flags, ChildSpecs, #{registry := consuela, pulse := Pulse}) ->
-    LeaderOpts = #{pulse => mg_consuela_pulse_adapter:pulse(leader, Pulse)},
-    consuela_leader_supervisor:start_link(RegName, mg_utils_supervisor_wrapper, {Flags, ChildSpecs}, LeaderOpts);
-do_start_link(_RegName, Flags, ChildSpecs, #{registry := gproc}) ->
-    mg_utils_supervisor_wrapper:start_link(Flags, ChildSpecs).
 
 -spec add_task(ref_options(), task_info()) ->
     ok.
-add_task(Options, TaskInfo) ->
+add_task(Options = #{registry := ProcregOptions}, TaskInfo) ->
     try
-        gen_server:call(self_ref(Options), {add_task, TaskInfo})
+        mg_procreg:call(ProcregOptions, wrap_id(Options), {add_task, TaskInfo})
     catch
         exit:Reason ->
             erlang:throw({transient, {scheduler_unavailable, Reason}})
@@ -238,27 +229,15 @@ terminate(_Reason, _State) ->
 
 -spec manager_child_spec(options(), atom()) ->
     supervisor:child_spec().
-manager_child_spec(Options, ChildID) ->
+manager_child_spec(Options = #{registry := ProcregOptions}, ChildID) ->
     #{
         id       => ChildID,
-        start    => {gen_server, start_link, [self_reg_name(Options), ?MODULE, Options, []]},
+        start    => {mg_procreg, start_link, [ProcregOptions, wrap_id(Options), ?MODULE, Options, []]},
         restart  => permanent,
         shutdown => 5000
     }.
 
 % Process registration
-
--spec self_ref(ref_options()) ->
-    mg_utils:gen_ref().
-self_ref(ID) ->
-    self_reg_name(ID).
-
--spec self_reg_name(options() | ref_options()) ->
-    mg_utils:gen_reg_name().
-self_reg_name(#{registry := consuela} = Options) ->
-    {via, consuela, wrap_id(Options)};
-self_reg_name(#{registry := gproc} = Options) ->
-    {via, gproc, {n, l, wrap_id(Options)}}.
 
 -spec wrap_id(options() | ref_options()) ->
     term().

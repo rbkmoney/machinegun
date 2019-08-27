@@ -115,16 +115,14 @@ handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason, CanRetry) ->
         % We have to take into account that `gen_server:call/2` wraps exception details in a
         % tuple with original call MFA attached.
         % > https://github.com/erlang/otp/blob/OTP-21.3/lib/stdlib/src/gen_server.erl#L215
-        noproc             -> MaybeRetry(noproc);
-        {noproc    , _MFA} -> MaybeRetry(noproc);
-        {normal    , _MFA} -> MaybeRetry(normal);
-        {shutdown  , _MFA} -> MaybeRetry(shutdown);
-        {timeout   , _MFA} -> {error, Reason};
-        {killed    , _MFA} -> {error, {transient, unavailable}};
-        {{consuela , Details}, _MFA} ->
-            {error, {transient, {registry_unavailable, Details}}};
-        Unknown ->
-            {error, {unexpected_exit, Unknown}}
+        noproc                 -> MaybeRetry(noproc);
+        {noproc    , _MFA}     -> MaybeRetry(noproc);
+        {normal    , _MFA}     -> MaybeRetry(normal);
+        {shutdown  , _MFA}     -> MaybeRetry(shutdown);
+        {timeout   , _MFA}     -> {error, Reason};
+        {killed    , _MFA}     -> {error, {transient, unavailable}};
+        {transient , _Details} -> {error, Reason};
+        Unknown                -> {error, {unexpected_exit, Unknown}}
     end.
 
 -spec start_and_retry_call(options(), id(), _Call, req_ctx(), mg_deadline:deadline()) ->
@@ -142,18 +140,8 @@ start_and_retry_call(Options, ID, Call, ReqCtx, Deadline) ->
         {error, {already_started, _}} ->
             call(Options, ID, Call, ReqCtx, Deadline, false);
         {error, Reason} ->
-            handle_start_error(Reason)
+            {error, Reason}
     end.
-
--spec handle_start_error(_Reason) ->
-    {error, _}.
-handle_start_error({'EXIT', Reason}) ->
-    % When server process startup exits in the context of `start_link/4` function
-    handle_start_error(Reason);
-handle_start_error({consuela, Reason}) ->
-    {error, {transient, {registry_unavailable, Reason}}};
-handle_start_error(Reason) ->
-    {error, Reason}.
 
 -spec get_call_queue(options(), id()) ->
     [_Call].

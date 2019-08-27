@@ -82,9 +82,9 @@ end_per_suite(C) ->
 -spec init_per_group(group_name(), config()) ->
     config().
 init_per_group(with_gproc, C) ->
-    [{registry, gproc} | C];
+    [{registry, mg_procreg_gproc} | C];
 init_per_group(with_consuela, C) ->
-    [{registry, consuela} | C];
+    [{registry, {mg_procreg_consuela, #{pulse => ?MODULE}}} | C];
 init_per_group(base, C) ->
     C.
 

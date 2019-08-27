@@ -43,14 +43,21 @@
     [test_name() | {group, group_name()}].
 all() ->
     [
-        no_workers_test,
-        exist_workers_test
+        {group, with_gproc},
+        {group, with_consuela}
     ].
 
 -spec groups() ->
-    [{group_name(), list(_), test_name()}].
+    [{group_name(), list(_), [test_name() | {group, group_name()}]}].
 groups() ->
-    [].
+    [
+        {with_gproc, [], [{group, base}]},
+        {with_consuela, [], [{group, base}]},
+        {base, [], [
+            no_workers_test,
+            exist_workers_test
+        ]}
+    ].
 
 %%
 %% starting/stopping
@@ -60,12 +67,32 @@ groups() ->
 init_per_suite(C) ->
     Apps = mg_ct_helper:start_applications([
         gproc,
-        consuela,
+        consuela
+    ]),
+    [{suite_apps, Apps} | C].
+
+-spec end_per_suite(config()) ->
+    ok.
+end_per_suite(C) ->
+    mg_ct_helper:stop_applications(?config(suite_apps, C)).
+
+-spec init_per_group(group_name(), config()) ->
+    config().
+init_per_group(with_gproc, C) ->
+    [{registry, mg_procreg_gproc} | C];
+init_per_group(with_consuela, C) ->
+    [{registry, {mg_procreg_consuela, #{}}} | C];
+init_per_group(base, C) ->
+    Apps = mg_ct_helper:start_applications([
         {how_are_you, [
             {metrics_publishers, [mg_test_hay_publisher]},
             {metrics_handlers, [
                 hay_vm_handler,
-                {mg_woody_api_hay, #{interval => 100, namespaces => [?NS]}}
+                {mg_woody_api_hay, #{
+                    interval => 100,
+                    namespaces => [?NS],
+                    registries => [registry(C)]
+                }}
             ]}
         ]},
         {mg_woody_api, mg_woody_api_config(C)}
@@ -79,39 +106,29 @@ init_per_suite(C) ->
     ),
 
     [
-        {apps              , Apps                             },
+        {apps              , Apps                   },
         {automaton_options , #{
             url            => "http://localhost:8022",
             ns             => ?NS,
             retry_strategy => undefined
         }},
-        {event_sink_options, "http://localhost:8022"          },
-        {processor_pid     , ProcessorPid                     }
+        {event_sink_options, "http://localhost:8022"},
+        {processor_pid     , ProcessorPid           }
     |
         C
     ].
 
--spec end_per_suite(config()) ->
-    ok.
-end_per_suite(C) ->
-    ok = application:set_env(how_are_you, metrics_publishers, []),
-    ok = application:set_env(how_are_you, metrics_handlers, []),
-    true = erlang:exit(?config(processor_pid, C), kill),
-    mg_ct_helper:stop_applications(?config(apps, C)).
-
--spec init_per_group(group_name(), config()) ->
-    config().
-init_per_group(_, C) ->
-    C.
-
 -spec end_per_group(group_name(), config()) ->
-    ok.
-end_per_group(_, _C) ->
-    ok.
+    _.
+end_per_group(base, C) ->
+    true = erlang:exit(?config(processor_pid, C), kill),
+    mg_ct_helper:stop_applications(?config(apps, C));
+end_per_group(_, C) ->
+    C.
 
 -spec mg_woody_api_config(config()) ->
     list().
-mg_woody_api_config(_C) ->
+mg_woody_api_config(C) ->
     [
         {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, limits => #{}}},
         {namespaces, #{
@@ -121,11 +138,14 @@ mg_woody_api_config(_C) ->
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => #{pool => ns, max_connections => 100}
                 },
+                worker     => #{
+                    registry       => registry(C)
+                },
                 default_processing_timeout => 5000,
                 schedulers => #{
-                    timers         => #{ interval => 100 },
-                    timers_retries => #{ interval => 100 },
-                    overseer       => #{ interval => 100 }
+                    timers         => #{registry => registry(C), interval => 100},
+                    timers_retries => #{registry => registry(C), interval => 100},
+                    overseer       => #{registry => registry(C), interval => 100}
                 },
                 retries => #{
                     storage   => {exponential, {max_total_timeout, 1000}, 1, 10},
@@ -135,19 +155,26 @@ mg_woody_api_config(_C) ->
         }},
         {event_sink_ns, #{
             storage => mg_storage_memory,
+            registry => registry(C),
             default_processing_timeout => 5000
         }}
     ].
+
+-spec registry(config()) ->
+    mg_procreg:options().
+registry(C) ->
+    ?config(registry, C).
 
 %% Tests
 
 -spec no_workers_test(config()) -> _.
 no_workers_test(_C) ->
+    ok = timer:sleep(200),
     ?assertEqual(0, get_metric([mg, workers_total, number])).
 
 -spec exist_workers_test(config()) -> _.
 exist_workers_test(C) ->
-    mg_automaton_client:start(automaton_options(C), <<"exist_workers_test">>, []),
+    ok = mg_automaton_client:start(automaton_options(C), <<"exist_workers_test">>, []),
     ok = timer:sleep(200),
     ?assert(get_metric([mg, workers_total, number]) > 0).
 

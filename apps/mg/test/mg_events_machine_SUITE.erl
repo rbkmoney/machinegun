@@ -167,7 +167,7 @@ start_automaton(Options, NS) ->
 -spec events_machine_options(options(), mg:ns()) ->
     mg_events_machine:options().
 events_machine_options(Options, NS) ->
-    Scheduler = #{registry => gproc, interval => 100},
+    Scheduler = #{registry => mg_procreg_gproc, interval => 100},
     #{
         namespace => NS,
         processor => {?MODULE, Options},
@@ -175,7 +175,7 @@ events_machine_options(Options, NS) ->
             namespace => <<NS/binary, "_tags">>,
             storage => mg_storage_memory,
             worker => #{
-                registry => gproc
+                registry => mg_procreg_gproc
             },
             pulse => ?MODULE,
             retries => #{}
@@ -184,7 +184,7 @@ events_machine_options(Options, NS) ->
             namespace => NS,
             storage => mg_storage_memory,
             worker => #{
-                registry => gproc
+                registry => mg_procreg_gproc
             },
             pulse => ?MODULE,
             schedulers => #{

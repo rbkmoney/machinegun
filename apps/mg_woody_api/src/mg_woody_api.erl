@@ -259,7 +259,7 @@ machine_options(NS, Config) ->
     mg_worker:options().
 worker_options(Config) ->
     maps:merge(
-        #{registry => gproc},
+        #{registry => mg_procreg_gproc},
         maps:get(worker, Config, #{})
     ).
 
@@ -267,7 +267,7 @@ worker_options(Config) ->
     mg_machine:scheduler_opt().
 scheduler_options(_SchedulerID, Config) ->
     maps:merge(
-        #{registry => gproc},
+        #{registry => mg_procreg_gproc},
         Config
     ).
 

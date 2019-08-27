@@ -172,7 +172,8 @@ how_are_you(YamlConfig) ->
             hay_cgroup_handler,
             woody_api_hay,
             {mg_woody_api_hay, #{
-                namespaces => namespaces_list(YamlConfig)
+                namespaces => namespaces_list(YamlConfig),
+                registries => [procreg(YamlConfig)]
             }}
         ]}
     ].
@@ -372,7 +373,7 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
         ?C:time_interval(?C:conf([TimeoutName], NSYamlConfig, Default), ms)
     end,
     SchedulerConfig = #{
-        registry     => registry(YamlConfig),
+        registry     => procreg(YamlConfig),
         interval     => 1000,
         limit        => <<"scheduler_tasks_total">>
     },
@@ -389,7 +390,7 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             }
         },
         worker => #{
-            registry          => registry(YamlConfig),
+            registry          => procreg(YamlConfig),
             hibernate_timeout => Timeout(hibernate_timeout,  "5S"),
             unload_timeout    => Timeout(unload_timeout   , "60S")
         },
@@ -436,9 +437,9 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
 
 event_sink_ns(YamlConfig) ->
     #{
-        registry                   => registry(YamlConfig),
+        registry                   => procreg(YamlConfig),
         storage                    => storage(<<"_event_sinks">>, YamlConfig),
-        worker                     => #{registry => registry(YamlConfig)},
+        worker                     => #{registry => procreg(YamlConfig)},
         duplicate_search_batch     => 1000,
         default_processing_timeout => ?C:time_interval("30S", ms)
     }.
@@ -458,9 +459,14 @@ event_sink(kafka, Name, ESYamlConfig) ->
         topic      => ?C:utf_bin(?C:conf([topic], ESYamlConfig))
     }}.
 
-registry(YamlConfig) ->
+procreg(YamlConfig) ->
     % Use consuela if it's set up, gproc otherwise
-    conf_with([consuela], YamlConfig, gproc, consuela).
+    conf_with(
+        [consuela],
+        YamlConfig,
+        mg_procreg_gproc,
+        {mg_procreg_consuela, #{pulse => mg_woody_api_pulse}}
+    ).
 
 %%
 %% vm.args

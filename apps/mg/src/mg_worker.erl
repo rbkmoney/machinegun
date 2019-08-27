@@ -29,7 +29,7 @@
 -export([reply         /2]).
 -export([get_call_queue/3]).
 -export([is_alive      /3]).
--export([list_all      /0]).
+-export([list_all      /1]).
 
 %% gen_server callbacks
 -behaviour(gen_server).
@@ -48,11 +48,9 @@
     {{reply, _Reply} | noreply, _State}.
 
 
--type process_registry() :: gproc | consuela.
-
 -type options() :: #{
     worker            => mg_utils:mod_opts(),
-    registry          => process_registry(),
+    registry          => mg_procreg:options(),
     hibernate_timeout => pos_integer(),
     unload_timeout    => pos_integer()
 }.
@@ -77,7 +75,7 @@ child_spec(ChildID, Options) ->
 -spec start_link(options(), mg:ns(), mg:id(), _ReqCtx) ->
     mg_utils:gen_start_ret().
 start_link(Options, NS, ID, ReqCtx) ->
-    gen_server:start_link(self_reg_name(Options, NS, ID), ?MODULE, {ID, Options, ReqCtx}, []).
+    mg_procreg:start_link(procreg_options(Options), ?wrap_id(NS, ID), ?MODULE, {ID, Options, ReqCtx}, []).
 
 -spec call(options(), mg:ns(), mg:id(), _Call, _ReqCtx, mg_deadline:deadline(), pulse()) ->
     _Result | {error, _}.
@@ -88,8 +86,9 @@ call(Options, NS, ID, Call, ReqCtx, Deadline, Pulse) ->
         request_context = ReqCtx,
         deadline = Deadline
     }),
-    gen_server:call(
-        self_ref(Options, NS, ID),
+    mg_procreg:call(
+        procreg_options(Options),
+        ?wrap_id(NS, ID),
         {call, Deadline, Call, ReqCtx},
         mg_deadline:to_timeout(Deadline)
     ).
@@ -126,19 +125,11 @@ is_alive(Options, NS, ID) ->
     Pid = mg_utils:gen_reg_name_to_pid(self_ref(Options, NS, ID)),
     Pid =/= undefined andalso erlang:is_process_alive(Pid).
 
--spec list_all() ->
+-spec list_all(mg_procreg:options()) -> % TODO nonuniform interface
     [{mg:ns(), mg:id(), pid()}].
-list_all() ->
-    lists:append([list_all(Registry) || Registry <- [consuela, gproc]]).
-
--spec list_all(process_registry()) ->
-    [{mg:ns(), mg:id(), pid()}].
-list_all(consuela) ->
-    AllWorkers = consuela:all(),
-    [{NS, ID, Pid} || {?wrap_id(NS, ID), Pid} <- AllWorkers];
-list_all(gproc) ->
-    AllWorkers = gproc:select([{{{n, l, {?MODULE, '_'}}, '_', '_'}, [], ['$$']}]),
-    [{NS, ID, Pid} || [{n, l, {?MODULE, {NS, ID}}}, Pid, _Value] <- AllWorkers].
+list_all(ProcregOptions) ->
+    AllWorkers = mg_procreg:all(ProcregOptions),
+    [{NS, ID, Pid} || {?wrap_id(NS, ID), Pid} <- AllWorkers].
 
 
 %%
@@ -266,13 +257,11 @@ start_timer(State) ->
     erlang:start_timer(unload_timeout(State), erlang:self(), unload).
 
 -spec self_ref(options(), mg:ns(), mg:id()) ->
-    mg_utils:gen_ref().
-self_ref(#{registry := consuela}, NS, ID) ->
-    {via, consuela, ?wrap_id(NS, ID)};
-self_ref(#{registry := gproc}, NS, ID) ->
-    {via, gproc, {n, l, ?wrap_id(NS, ID)}}.
+    mg_procreg:ref().
+self_ref(Options, NS, ID) ->
+    mg_procreg:ref(procreg_options(Options), ?wrap_id(NS, ID)).
 
--spec self_reg_name(options(), mg:ns(), mg:id()) ->
-    mg_utils:gen_reg_name().
-self_reg_name(Options, NS, ID) ->
-    self_ref(Options, NS, ID).
+-spec procreg_options(options()) ->
+    mg_procreg:options().
+procreg_options(#{registry := ProcregOptions}) ->
+    ProcregOptions.
