@@ -225,7 +225,7 @@ code_change(_OldVsn, State, _Extra) ->
 terminate(_Reason, _State) ->
     ok.
 
-%% Internlas
+%% Internals
 
 -spec manager_child_spec(options(), atom()) ->
     supervisor:child_spec().
@@ -445,7 +445,8 @@ emit_reserved_beat(Active, Total, Reserved, State) ->
         quota_reserved = Reserved
     }).
 
--spec(maybe_update_reserved(state()) -> state()).
+-spec maybe_update_reserved(state()) ->
+    state().
 maybe_update_reserved(#state{quota_reserved = undefined} = State) ->
     update_reserved(State);
 maybe_update_reserved(State) ->
