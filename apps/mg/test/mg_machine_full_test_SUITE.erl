@@ -237,6 +237,7 @@ automaton_options() ->
         namespace => <<"test">>,
         processor => ?MODULE,
         storage   => mg_storage_memory,
+        worker    => #{registry => mg_procreg_gproc},
         pulse     => ?MODULE
     }.
 

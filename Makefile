@@ -56,8 +56,6 @@ all: compile
 -include $(UTILS_PATH)/make_lib/utils_container.mk
 -include $(UTILS_PATH)/make_lib/utils_image.mk
 
-DOCKER_COMPOSE_PREEXEC_HOOK = $(DOCKER_COMPOSE) scale member=4
-
 .PHONY: $(CALL_W_CONTAINER)
 
 # CALL_ANYWHERE

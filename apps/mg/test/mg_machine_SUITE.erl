@@ -19,8 +19,11 @@
 
 %% tests descriptions
 -export([all           /0]).
--export([init_per_suite/1]).
--export([end_per_suite /1]).
+-export([groups          /0]).
+-export([init_per_suite  /1]).
+-export([end_per_suite   /1]).
+-export([init_per_group  /2]).
+-export([end_per_group   /2]).
 
 %% tests
 -export([simple_test/1]).
@@ -37,14 +40,27 @@
 %%
 %% tests descriptions
 %%
+-type group_name() :: atom().
 -type test_name () :: atom().
 -type config    () :: [{atom(), _}].
 
 -spec all() ->
-    [test_name()].
+    [test_name() | {group, group_name()}].
 all() ->
     [
-       simple_test
+        {group, with_gproc},
+        {group, with_consuela}
+    ].
+
+-spec groups() ->
+    [{group_name(), list(_), test_name()}].
+groups() ->
+    [
+        {with_gproc    , [], [{group, base}]},
+        {with_consuela , [], [{group, base}]},
+        {base          , [], [
+            simple_test
+        ]}
     ].
 
 %%
@@ -63,6 +79,20 @@ init_per_suite(C) ->
 end_per_suite(C) ->
     mg_ct_helper:stop_applications(?config(apps, C)).
 
+-spec init_per_group(group_name(), config()) ->
+    config().
+init_per_group(with_gproc, C) ->
+    [{registry, mg_procreg_gproc} | C];
+init_per_group(with_consuela, C) ->
+    [{registry, {mg_procreg_consuela, #{pulse => ?MODULE}}} | C];
+init_per_group(base, C) ->
+    C.
+
+-spec end_per_group(group_name(), config()) ->
+    _.
+end_per_group(_, _C) ->
+    ok.
+
 %%
 %% tests
 %%
@@ -70,8 +100,8 @@ end_per_suite(C) ->
 
 -spec simple_test(config()) ->
     _.
-simple_test(_) ->
-    Options = automaton_options(),
+simple_test(C) ->
+    Options = automaton_options(C),
     TestKey = <<"test_key">>,
     ID = <<"42">>,
     _  = start_automaton(Options),
@@ -160,18 +190,23 @@ start() ->
 start_automaton(Options) ->
     mg_utils:throw_if_error(mg_machine:start_link(Options)).
 
--spec automaton_options() ->
+-spec automaton_options(config()) ->
     mg_machine:options().
-automaton_options() ->
+automaton_options(C) ->
+    Scheduler = #{
+        registry => ?config(registry, C),
+        interval => 1000
+    },
     #{
         namespace => <<"test">>,
         processor => ?MODULE,
         storage   => mg_storage_memory,
+        worker    => #{registry => ?config(registry, C)},
         pulse     => ?MODULE,
         schedulers => #{
-            timers         => #{ interval => 1000 },
-            timers_retries => #{ interval => 1000 },
-            overseer       => #{ interval => 1000 }
+            timers         => Scheduler,
+            timers_retries => Scheduler,
+            overseer       => Scheduler
         }
     }.
 

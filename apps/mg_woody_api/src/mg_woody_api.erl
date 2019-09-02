@@ -64,7 +64,7 @@
 -type event_sink_ns() :: #{
     default_processing_timeout := timeout(),
     storage                    => mg_storage:options(),
-    duplicate_search_batch     => mg_storage:index_limit()
+    worker                     => mg_worker:options()
 }.
 -type config_element() ::
       {woody_server   , woody_server()                 }
@@ -218,7 +218,8 @@ event_sink_namespace_options(Config) ->
         namespace        => <<"_event_sinks">>,
         pulse            => pulse(),
         storage          => add_bucket_postfix(<<"machines">>, Storage),
-        events_storage   => add_bucket_postfix(<<"events"  >>, Storage)
+        events_storage   => add_bucket_postfix(<<"events"  >>, Storage),
+        worker           => worker_options(EventSinkNS)
     }.
 
 -spec tags_options(mg:ns(), events_machines()) ->
@@ -226,7 +227,7 @@ event_sink_namespace_options(Config) ->
 tags_options(NS, Config = #{retries := Retries, storage := Storage}) ->
     #{
         namespace => mg_utils:concatenate_namespaces(NS, <<"tags">>),
-        worker    => maps:get(worker, Config, #{}),
+        worker    => worker_options(Config),
         storage   => Storage, % по логике тут должен быть sub namespace, но его по историческим причинам нет
         pulse     => pulse(),
         retries   => Retries
@@ -238,9 +239,7 @@ machine_options(NS, Config) ->
     #{storage := Storage} = Config,
     Options = maps:with(
         [
-            worker,
             retries,
-            schedulers,
             reschedule_timeout,
             timer_processing_timeout
         ],
@@ -249,10 +248,28 @@ machine_options(NS, Config) ->
     Options#{
         namespace           => NS,
         storage             => add_bucket_postfix(<<"machines">>, Storage),
+        worker              => worker_options(Config),
+        schedulers          => maps:map(fun scheduler_options/2, maps:get(schedulers, Config, #{})),
         pulse               => pulse(),
         % TODO сделать аналогично в event_sink'е и тэгах
         suicide_probability => maps:get(suicide_probability, Config, undefined)
     }.
+
+-spec worker_options(map()) ->
+    mg_worker:options().
+worker_options(Config) ->
+    maps:merge(
+        #{registry => mg_procreg_gproc},
+        maps:get(worker, Config, #{})
+    ).
+
+-spec scheduler_options(mg_machine:scheduler_id(), mg_machine:scheduler_opt()) ->
+    mg_machine:scheduler_opt().
+scheduler_options(_SchedulerID, Config) ->
+    maps:merge(
+        #{registry => mg_procreg_gproc},
+        Config
+    ).
 
 -spec processor(processor()) ->
     mg_utils:mod_opts().

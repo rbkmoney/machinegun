@@ -24,12 +24,12 @@
 
 -export([child_spec    /2]).
 -export([start_link    /4]).
--export([call          /6]).
--export([brutal_kill   /2]).
+-export([call          /7]).
+-export([brutal_kill   /3]).
 -export([reply         /2]).
--export([get_call_queue/2]).
--export([is_alive      /2]).
--export([list_all      /0]).
+-export([get_call_queue/3]).
+-export([is_alive      /3]).
+-export([list_all      /1]).
 
 %% gen_server callbacks
 -behaviour(gen_server).
@@ -50,6 +50,7 @@
 
 -type options() :: #{
     worker            => mg_utils:mod_opts(),
+    registry          => mg_procreg:options(),
     hibernate_timeout => pos_integer(),
     unload_timeout    => pos_integer()
 }.
@@ -74,28 +75,29 @@ child_spec(ChildID, Options) ->
 -spec start_link(options(), mg:ns(), mg:id(), _ReqCtx) ->
     mg_utils:gen_start_ret().
 start_link(Options, NS, ID, ReqCtx) ->
-    gen_server:start_link(self_reg_name(NS, ID), ?MODULE, {ID, Options, ReqCtx}, []).
+    mg_procreg:start_link(procreg_options(Options), ?wrap_id(NS, ID), ?MODULE, {ID, Options, ReqCtx}, []).
 
--spec call(mg:ns(), mg:id(), _Call, _ReqCtx, mg_deadline:deadline(), pulse()) ->
+-spec call(options(), mg:ns(), mg:id(), _Call, _ReqCtx, mg_deadline:deadline(), pulse()) ->
     _Result | {error, _}.
-call(NS, ID, Call, ReqCtx, Deadline, Pulse) ->
+call(Options, NS, ID, Call, ReqCtx, Deadline, Pulse) ->
     ok = mg_pulse:handle_beat(Pulse, #mg_worker_call_attempt{
         namespace = NS,
         machine_id = ID,
         request_context = ReqCtx,
         deadline = Deadline
     }),
-    gen_server:call(
-        self_ref(NS, ID),
+    mg_procreg:call(
+        procreg_options(Options),
+        ?wrap_id(NS, ID),
         {call, Deadline, Call, ReqCtx},
         mg_deadline:to_timeout(Deadline)
     ).
 
 %% for testing
--spec brutal_kill(mg:ns(), mg:id()) ->
+-spec brutal_kill(options(), mg:ns(), mg:id()) ->
     ok.
-brutal_kill(NS, ID) ->
-    case mg_utils:gen_reg_name_to_pid(self_ref(NS, ID)) of
+brutal_kill(Options, NS, ID) ->
+    case mg_utils:gen_reg_name_to_pid(self_ref(Options, NS, ID)) of
         undefined ->
             ok;
         Pid ->
@@ -110,24 +112,25 @@ reply(CallCtx, Reply) ->
     _ = gen_server:reply(CallCtx, Reply),
     ok.
 
--spec get_call_queue(mg:ns(), mg:id()) ->
+-spec get_call_queue(options(), mg:ns(), mg:id()) ->
     [_Call].
-get_call_queue(NS, ID) ->
-    Pid = mg_utils:exit_if_undefined(mg_utils:gen_reg_name_to_pid(self_ref(NS, ID)), noproc),
+get_call_queue(Options, NS, ID) ->
+    Pid = mg_utils:exit_if_undefined(mg_utils:gen_reg_name_to_pid(self_ref(Options, NS, ID)), noproc),
     {messages, Messages} = erlang:process_info(Pid, messages),
     [Call || {'$gen_call', _, {call, _, Call, _}} <- Messages].
 
--spec is_alive(mg:ns(), mg:id()) ->
+-spec is_alive(options(), mg:ns(), mg:id()) ->
     boolean().
-is_alive(NS, ID) ->
-    Pid = mg_utils:gen_reg_name_to_pid(self_ref(NS, ID)),
+is_alive(Options, NS, ID) ->
+    Pid = mg_utils:gen_reg_name_to_pid(self_ref(Options, NS, ID)),
     Pid =/= undefined andalso erlang:is_process_alive(Pid).
 
--spec list_all() ->
+-spec list_all(mg_procreg:options()) -> % TODO nonuniform interface
     [{mg:ns(), mg:id(), pid()}].
-list_all() ->
-    AllWorkers = consuela:all(),
+list_all(ProcregOptions) ->
+    AllWorkers = mg_procreg:all(ProcregOptions),
     [{NS, ID, Pid} || {?wrap_id(NS, ID), Pid} <- AllWorkers].
+
 
 %%
 %% gen_server callbacks
@@ -253,12 +256,12 @@ schedule_unload_timer(State=#{unload_tref:=UnloadTRef}) ->
 start_timer(State) ->
     erlang:start_timer(unload_timeout(State), erlang:self(), unload).
 
--spec self_ref(mg:ns(), mg:id()) ->
-    mg_utils:gen_ref().
-self_ref(NS, ID) ->
-    {via, consuela, ?wrap_id(NS, ID)}.
+-spec self_ref(options(), mg:ns(), mg:id()) ->
+    mg_procreg:ref().
+self_ref(Options, NS, ID) ->
+    mg_procreg:ref(procreg_options(Options), ?wrap_id(NS, ID)).
 
--spec self_reg_name(mg:ns(), mg:id()) ->
-    mg_utils:gen_reg_name().
-self_reg_name(NS, ID) ->
-    self_ref(NS, ID).
+-spec procreg_options(options()) ->
+    mg_procreg:options().
+procreg_options(#{registry := ProcregOptions}) ->
+    ProcregOptions.

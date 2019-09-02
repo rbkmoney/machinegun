@@ -171,18 +171,25 @@ start_automaton(Options) ->
 -spec automaton_options(mg:ns(), mg_retry:policy()) ->
     mg_machine:options().
 automaton_options(NS, RetryPolicy) ->
+    Scheduler = #{
+        registry => mg_procreg_gproc,
+        interval => 1000
+    },
     #{
         namespace => NS,
         processor => ?MODULE,
         storage   => mg_storage_memory,
+        worker    => #{
+            registry => mg_procreg_gproc
+        },
         pulse     => ?MODULE,
         retries   => #{
             timers         => RetryPolicy
         },
         schedulers => #{
-            timers         => #{ interval => 100 },
-            timers_retries => #{ interval => 100 },
-            overseer       => #{ interval => 100 }
+            timers         => Scheduler,
+            timers_retries => Scheduler,
+            overseer       => Scheduler
         }
     }.
 

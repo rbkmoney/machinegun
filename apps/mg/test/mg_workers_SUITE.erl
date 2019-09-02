@@ -28,8 +28,11 @@
 
 %% tests descriptions
 -export([all             /0]).
+-export([groups          /0]).
 -export([init_per_suite  /1]).
 -export([end_per_suite   /1]).
+-export([init_per_group  /2]).
+-export([end_per_group   /2]).
 
 %% tests
 -export([base_test       /1]).
@@ -57,15 +60,27 @@
     [test_name() | {group, group_name()}].
 all() ->
     [
-       base_test,
-       load_fail_test,
-       load_error_test,
-       call_fail_test,
-       unload_fail_test,
-       unload_test,
-       unload_loading_test,
-       stress_test,
-       manager_contention_test
+        {group, with_gproc},
+        {group, with_consuela}
+    ].
+
+-spec groups() ->
+    [{group_name(), list(_), [test_name() | {group, group_name()}]}].
+groups() ->
+    [
+        {with_gproc    , [], [{group, base}]},
+        {with_consuela , [], [{group, base}]},
+        {base          , [], [
+            base_test,
+            load_fail_test,
+            load_error_test,
+            call_fail_test,
+            unload_fail_test,
+            unload_test,
+            unload_loading_test,
+            stress_test,
+            manager_contention_test
+        ]}
     ].
 
 %%
@@ -85,6 +100,20 @@ init_per_suite(C) ->
 end_per_suite(C) ->
     mg_ct_helper:stop_applications(?config(apps, C)).
 
+-spec init_per_group(group_name(), config()) ->
+    config().
+init_per_group(with_gproc, C) ->
+    [{registry, mg_procreg_gproc} | C];
+init_per_group(with_consuela, C) ->
+    [{registry, {mg_procreg_consuela, #{}}} | C];
+init_per_group(base, C) ->
+    C.
+
+-spec end_per_group(group_name(), config()) ->
+    _.
+end_per_group(_, _C) ->
+    ok.
+
 %%
 %% base group tests
 %%
@@ -93,9 +122,9 @@ end_per_suite(C) ->
 
 -spec base_test(config()) ->
     _.
-base_test(_C) ->
+base_test(C) ->
     % чтобы увидеть падение воркера линкуемся к нему
-    Options = workers_options(?unload_timeout, #{link_pid=>erlang:self()}),
+    Options = workers_options(?unload_timeout, #{link_pid=>erlang:self()}, C),
     Pid     = start_workers(Options),
     hello   = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_deadline:default()),
     ok      = wait_machines_unload(?unload_timeout),
@@ -103,9 +132,9 @@ base_test(_C) ->
 
 -spec load_fail_test(config()) ->
     _.
-load_fail_test(_C) ->
+load_fail_test(C) ->
     % тут процесс специально падает, поэтому линк не нужен
-    Options = workers_options(?unload_timeout, #{fail_on=>load}),
+    Options = workers_options(?unload_timeout, #{fail_on=>load}, C),
     Pid     = start_workers(Options),
     {error, {unexpected_exit, _}} =
         mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_deadline:default()),
@@ -114,9 +143,9 @@ load_fail_test(_C) ->
 
 -spec load_error_test(config()) ->
     _.
-load_error_test(_C) ->
+load_error_test(C) ->
     % чтобы увидеть падение воркера линкуемся к нему
-    Options = workers_options(?unload_timeout, #{load_error=>test_error, link_pid=>erlang:self()}),
+    Options = workers_options(?unload_timeout, #{load_error=>test_error, link_pid=>erlang:self()}, C),
     Pid     = start_workers(Options),
     {error, test_error} = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_deadline:default()),
     ok      = wait_machines_unload(?unload_timeout),
@@ -124,9 +153,9 @@ load_error_test(_C) ->
 
 -spec call_fail_test(config()) ->
     _.
-call_fail_test(_C) ->
+call_fail_test(C) ->
     % тут процесс специально падает, поэтому линк не нужен
-    Options = workers_options(?unload_timeout, #{fail_on=>call}),
+    Options = workers_options(?unload_timeout, #{fail_on=>call}, C),
     Pid     = start_workers(Options),
     {error, {unexpected_exit, _}} =
         mg_workers_manager:call(Options, 43, hello, ?req_ctx, mg_deadline:default()),
@@ -135,9 +164,9 @@ call_fail_test(_C) ->
 
 -spec unload_fail_test(config()) ->
     _.
-unload_fail_test(_C) ->
+unload_fail_test(C) ->
     % падение при unload'е мы не замечаем :(
-    Options = workers_options(?unload_timeout, #{fail_on=>unload}),
+    Options = workers_options(?unload_timeout, #{fail_on=>unload}, C),
     Pid     = start_workers(Options),
     hello   = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_deadline:default()),
     ok      = wait_machines_unload(?unload_timeout),
@@ -145,8 +174,8 @@ unload_fail_test(_C) ->
 
 -spec unload_test(config()) ->
     _.
-unload_test(_C) ->
-    Options = workers_options(?unload_timeout, #{link_pid => self()}),
+unload_test(C) ->
+    Options = workers_options(?unload_timeout, #{link_pid => self()}, C),
     Pid     = start_workers(Options),
     hello   = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_deadline:default()),
     WorkerPid = wait_worker_pid(42),
@@ -155,9 +184,9 @@ unload_test(_C) ->
 
 -spec unload_loading_test(config()) ->
     _.
-unload_loading_test(_C) ->
+unload_loading_test(C) ->
     LoadLag = 100,
-    Options = workers_options(?unload_timeout, #{link_pid => self(), load_lag => LoadLag}),
+    Options = workers_options(?unload_timeout, #{link_pid => self(), load_lag => LoadLag}, C),
     Pid     = start_workers(Options),
     {error, {timeout, _}} = mg_workers_manager:call(Options, 42, hello, ?req_ctx, mg_deadline:from_timeout(LoadLag div 2)),
     WorkerPid = wait_worker_pid(42),
@@ -185,14 +214,14 @@ wait_worker_unload(WorkerPid, Timeout) ->
 
 -spec stress_test(config()) ->
     _.
-stress_test(_C) ->
+stress_test(C) ->
     WorkersCount  = 50,
     UnloadTimeout = 1000, % чтобы машины выгружались в процессе теста
     ok = run_load_test(#{
         duration        => 5 * 1000,
         runners         => 1000,
         job             => fun (ManagerOptions, _N) -> stress_test_do_test_call(ManagerOptions, WorkersCount) end,
-        manager_options => workers_options(UnloadTimeout, #{link_pid=>erlang:self()}),
+        manager_options => workers_options(UnloadTimeout, #{link_pid=>erlang:self()}, C),
         unload_timeout  => UnloadTimeout * 2
     }).
 
@@ -207,14 +236,14 @@ stress_test_do_test_call(Options, WorkersCount) ->
 
 -spec manager_contention_test(config()) ->
     _.
-manager_contention_test(_C) ->
-    RunnersCount  = 10000,
+manager_contention_test(C) ->
+    RunnersCount  = 1000,
     UnloadTimeout = 1000, % чтобы машины выгружались в процессе теста
     ok = run_load_test(#{
         duration        => 5 * 1000,
         runners         => RunnersCount,
         job             => fun manager_contention_test_call/2,
-        manager_options => workers_options(UnloadTimeout, #{link_pid=>erlang:self()}),
+        manager_options => workers_options(UnloadTimeout, 200, #{link_pid=>erlang:self()}, C),
         unload_timeout  => UnloadTimeout * 2
     }).
 
@@ -268,15 +297,21 @@ stress_test_process(Job, ManagerOptions, N) ->
     _ = Job(ManagerOptions, N),
     stress_test_process(Job, ManagerOptions, N).
 
--spec workers_options(non_neg_integer(), worker_params()) ->
+-spec workers_options(non_neg_integer(), worker_params(), config()) ->
     mg_workers_manager:options().
-workers_options(UnloadTimeout, WorkerParams) ->
+workers_options(UnloadTimeout, WorkerParams, C) ->
+    workers_options(UnloadTimeout, 5000, WorkerParams, C).
+
+-spec workers_options(non_neg_integer(), non_neg_integer(), worker_params(), config()) ->
+    mg_workers_manager:options().
+workers_options(UnloadTimeout, MsgQueueLen, WorkerParams, C) ->
     #{
         name => base_test_workers,
         pulse => undefined,
-        message_queue_len_limit => 10000,
+        message_queue_len_limit => MsgQueueLen,
         worker_options => #{
             worker            => {?MODULE, WorkerParams},
+            registry          => ?config(registry, C),
             hibernate_timeout => UnloadTimeout div 2,
             unload_timeout    => UnloadTimeout
         }
@@ -353,8 +388,7 @@ start_workers(Options) ->
 -spec stop_workers(pid()) ->
     ok.
 stop_workers(Pid) ->
-    true = erlang:unlink(Pid),
-    true = erlang:exit(Pid, kill),
+    ok = proc_lib:stop(Pid, normal, 10000),
     ok.
 
 -spec wait_machines_unload(pos_integer()) ->

@@ -26,7 +26,8 @@
 
 -type options() :: #{
     interval => timeout(),
-    namespaces => [mg:ns()]
+    namespaces => [mg:ns()],
+    registries => [mg_procreg:options()]
 }.
 
 -export_type([options/0]).
@@ -35,7 +36,8 @@
 
 -record(state, {
     interval :: timeout(),
-    namespaces :: [mg:ns()]
+    namespaces :: [mg:ns()],
+    registries :: [mg_procreg:options()]
 }).
 -record(worker, {
     ns :: mg:ns(),
@@ -60,7 +62,8 @@
 init(Options) ->
     {ok, #state{
         interval = maps:get(interval, Options, 10 * 1000),
-        namespaces = maps:get(namespaces, Options, [])
+        namespaces = maps:get(namespaces, Options, []),
+        registries = maps:get(registries, Options, [])
     }}.
 
 -spec get_interval(state()) -> timeout().
@@ -70,8 +73,8 @@ get_interval(#state{interval = Interval}) ->
 -spec gather_metrics(state()) -> [hay_metrics:metric()].
 gather_metrics(#state{namespaces = []}) ->
     [];
-gather_metrics(#state{namespaces = Namespaces}) ->
-    WorkerKeys = mg_worker:list_all(),
+gather_metrics(#state{namespaces = Namespaces, registries = Procregs}) ->
+    WorkerKeys = lists:flatmap(fun mg_worker:list_all/1, Procregs),
     Workers = enrich_workers_info(WorkerKeys),
     NsWorkers = group_workers_by_ns(Workers),
     NsStats = [

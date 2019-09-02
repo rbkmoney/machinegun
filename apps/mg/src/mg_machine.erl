@@ -60,6 +60,7 @@
 %% API
 -export_type([retry_opt             /0]).
 -export_type([suicide_probability   /0]).
+-export_type([scheduler_id          /0]).
 -export_type([scheduler_opt         /0]).
 -export_type([schedulers_opt        /0]).
 -export_type([options               /0]).
@@ -108,14 +109,13 @@
 -behaviour(mg_worker).
 -export([handle_load/3, handle_call/5, handle_unload/1]).
 
--define(TIMERS, <<"timers">>).
-
 %%
 %% API
 %%
 -type scheduler_id() :: overseer | timers | timers_retries.
 
 -type scheduler_opt() :: disable | #{
+    registry     => mg_procreg:options(),
     interval     => pos_integer(),
     no_task_wait => pos_integer(),
     limit        => mg_quota_worker:name(),
@@ -843,19 +843,24 @@ try_start_timer_task(Timestamp, Status, ReqCtx, State) ->
             ID = maps:get(id, State),
             NS = maps:get(namespace, State),
             TaskInfo = mg_queue_timer:build_task_info(ID, Timestamp, Status),
-            try_add_scheduler_task(NS, ID, ?TIMERS, TaskInfo, ReqCtx, State);
+            try_add_scheduler_task(NS, ID, timers, TaskInfo, ReqCtx, State);
         false ->
             ok
     end.
 
--spec try_add_scheduler_task(mg:ns(), mg:id(), Sheduler, TaskInfo, ReqCtx, State) -> ok when
-    Sheduler :: mg_scheduler:name(),
+-spec try_add_scheduler_task(mg:ns(), mg:id(), Scheduler, TaskInfo, ReqCtx, State) -> ok when
+    Scheduler :: scheduler_id(),
     ReqCtx :: request_context(),
     TaskInfo :: mg_scheduler:task_info(),
     State :: state().
 try_add_scheduler_task(NS, ID, Scheduler, TaskInfo, ReqCtx, State) ->
     try
-        mg_scheduler:add_task(NS, Scheduler, TaskInfo)
+        case get_scheduler_ref(Scheduler, State) of
+            SchedulerRef = #{} ->
+                mg_scheduler:add_task(SchedulerRef, TaskInfo);
+            undefined ->
+                ok
+        end
     catch
         throw:({transient, {scheduler_unavailable, _Details}} = Reason):Stacktrace ->
             #{options := Options} = State,
@@ -867,6 +872,16 @@ try_add_scheduler_task(NS, ID, Scheduler, TaskInfo, ReqCtx, State) ->
                 exception = {throw, Reason, Stacktrace}
             }),
             ok
+    end.
+
+-spec get_scheduler_ref(scheduler_id(), state()) ->
+    mg_scheduler:ref_options() | undefined.
+get_scheduler_ref(Scheduler, #{namespace := NS, options := Options}) ->
+    case maps:get(schedulers, Options, #{}) of
+        #{Scheduler := #{registry := Registry}} ->
+            #{namespace => NS, name => Scheduler, registry => Registry};
+        #{} ->
+            undefined
     end.
 
 -spec call_processor(processor_impact(), processing_context(), request_context(), deadline(), state()) ->
@@ -1209,16 +1224,16 @@ scheduler_options(timers, Options, Config) ->
         reschedule_timeout => maps:get(reschedule_timeout, Options, undefined),
         timer_queue => waiting
     },
-    scheduler_options(?TIMERS, mg_queue_timer, Options, HandlerOptions, Config);
+    scheduler_options(timers, mg_queue_timer, Options, HandlerOptions, Config);
 scheduler_options(timers_retries, Options, Config) ->
     HandlerOptions = #{
         processing_timeout => maps:get(timer_processing_timeout, Options, undefined),
         reschedule_timeout => maps:get(reschedule_timeout, Options, undefined),
         timer_queue => retrying
     },
-    scheduler_options(<<"timers_retries">>, mg_queue_timer, Options, HandlerOptions, Config);
+    scheduler_options(timers_retries, mg_queue_timer, Options, HandlerOptions, Config);
 scheduler_options(overseer, Options, Config) ->
-    scheduler_options(<<"overseer">>, mg_queue_interrupted, Options, #{}, Config).
+    scheduler_options(overseer, mg_queue_interrupted, Options, #{}, Config).
 
 -spec scheduler_options(mg_scheduler:name(), module(), options(), map(), scheduler_opt()) ->
     mg_scheduler:options().
@@ -1242,6 +1257,7 @@ scheduler_options(Name, HandlerMod, Options, HandlerOptions, Config) ->
     genlib_map:compact(#{
         namespace => NS,
         name => Name,
+        registry => maps:get(registry, Config),
         queue_handler => Handler,
         task_handler => Handler,
         pulse => Pulse,

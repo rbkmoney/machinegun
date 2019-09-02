@@ -132,6 +132,7 @@ automaton_options() ->
     #{
         namespace => <<"test_tags">>,
         storage   => mg_storage_memory,
+        worker    => #{registry => mg_procreg_gproc},
         pulse     => ?MODULE,
         retries   => #{}
     }.

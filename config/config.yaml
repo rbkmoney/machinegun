@@ -14,17 +14,29 @@
 # limitations under the License.
 #
 
+# Name of the service.
+# Defaults to: 'machinegun'.
 service_name: machinegun
-# Defaults to '{service_name}@{primary_netif_ip}'
+
+# Name of the node for Erlang distribution.
+# Defaults to: '{service_name}@{primary_netif_ip}'.
 # dist_node_name: machinegun@10.0.0.42
+
+# Erlang VM options.
 erlang:
     cookie: "mg_cookie"
     ipv6: false
     disable_dns_cache: false
+
+# API server options.
 woody_server:
     ip: "::"
     port: 8022
     http_keep_alive_timeout: 60s
+
+# Distributed machine registry settings.
+# Do not set if you plan to run machinegun in a non-distributed fashion,
+# for example in a development or testing scenarios.
 consuela:
     presence:
         check_interval: 5s
@@ -35,11 +47,15 @@ consuela:
     discovery:
         tags:
             - production
+
+# Consul client settings.
+# Required when distributed machine registry is enabled.
 consul:
     url: http://localhost:8500
     acl_token: LONGUNREADABLESTRING
     connect_timeout: 200ms
     recv_timeout: 1s
+
 limits:
     process_heap: 2M # heap limit
     disk: # uses only for health check
@@ -82,6 +98,8 @@ namespaces:
         processor:
             url: http://localhost:8022/processor
             pool_size: 50
+        timers: disabled
+        overseer: enabled
 snowflake_machine_id: 1
 # memory storage backend
 storage:

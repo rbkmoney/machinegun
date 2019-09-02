@@ -128,6 +128,7 @@ automaton_options() ->
         namespace => ?MH_NS,
         processor => ?MODULE,
         storage   => mg_storage_memory,
+        worker    => #{registry => mg_procreg_gproc},
         pulse     => ?MODULE,
         retries   => #{
             continuation => {intervals, ?TEST_INTERVALS}
