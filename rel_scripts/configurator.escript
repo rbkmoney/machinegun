@@ -288,6 +288,7 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             url            => ?C:utf_bin(?C:conf([processor, url], NSYamlConfig)),
             transport_opts => #{
                 pool => erlang:list_to_atom(NameStr),
+                timeout => ?C:time_interval(?C:conf([processor, http_keep_alive_timeout], NSYamlConfig, "4S"), 'ms'),
                 max_connections => ?C:conf([processor, pool_size], NSYamlConfig, 50)
             },
             resolver_opts => #{
