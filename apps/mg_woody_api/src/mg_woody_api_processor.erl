@@ -99,9 +99,9 @@ request_context_to_woody_context(ReqCtx) ->
 call_duration_limit(Options, undefined) ->
     TransportOptions = maps:get(transport_opts, Options, #{}),
     %% use default values from hackney:request/5 options
-    ConnectTimeout = proplists:get_value(connect_timeout, TransportOptions, 8000),
-    SendTimeout = proplists:get_value(connect_timeout, TransportOptions, 5000),  % not documented option
-    RecvTimeout = proplists:get_value(recv_timeout, TransportOptions, 5000),
+    ConnectTimeout = maps:get(connect_timeout, TransportOptions, 8000),
+    SendTimeout = maps:get(connect_timeout, TransportOptions, 5000),  % not documented option
+    RecvTimeout = maps:get(recv_timeout, TransportOptions, 5000),
     RecvTimeout + ConnectTimeout + SendTimeout;
 call_duration_limit(_Options, Deadline) ->
     mg_utils:deadline_to_timeout(Deadline).

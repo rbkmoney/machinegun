@@ -63,6 +63,7 @@ namespaces:
         processor:
             url: http://localhost:8022/processor
             pool_size: 50
+            http_keep_alive_timeout: 10s
 snowflake_machine_id: 1
 # memory storage backend
 storage:
