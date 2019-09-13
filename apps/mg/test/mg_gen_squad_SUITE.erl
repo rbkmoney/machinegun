@@ -164,8 +164,8 @@ handle_rank_change(_Rank, _Squad, St) ->
     {noreply, st()} | {reply, _, st()}.
 handle_call(report, _From, Rank, Squad, St) ->
     {reply, {self(), Rank, mg_gen_squad:members(Squad)}, St};
-handle_call(_Call, _From, _Rank, _Squad, St) ->
-    {noreply, St}.
+handle_call(Call, From, _Rank, _Squad, _St) ->
+    erlang:error({unexpected, {call, Call, From}}).
 
 -type cast() :: {known, [pid()]}.
 
@@ -173,22 +173,23 @@ handle_call(_Call, _From, _Rank, _Squad, St) ->
     {noreply, st()}.
 handle_cast({known, More}, _Rank, _Squad, St = #{known := Known}) ->
     {noreply, St#{known := Known ++ More}};
-handle_cast(_Cast, _Rank, _Squad, St) ->
-    {noreply, St}.
+handle_cast(Cast, _Rank, _Squad, _St) ->
+    erlang:error({unexpected, {cast, Cast}}).
 
 -type info() :: timeout.
 
 -spec handle_info(info(), rank(), squad(), st()) ->
     {noreply, st()}.
 handle_info(timeout, leader, _Squad, St) ->
-    {stop, normal, St}.
+    {stop, normal, St};
+handle_info(Info, _Rank, _Squad, _St) ->
+    erlang:error({unexpected, {info, Info}}).
 
 -spec handle_beat(_, mg_gen_squad_pulse:beat()) ->
     _.
-handle_beat(Start, Beat = {_Sub, _}) when
-    true
-    % element(1, Sub) /= timer,
-    % element(1, Sub) /= monitor
+handle_beat(Start, Beat = {Sub, _}) when
+    element(1, Sub) /= timer,
+    element(1, Sub) /= monitor
 ->
     io:format("+~6..0Bms ~0p ~0p", [erlang:system_time(millisecond) - Start, self(), Beat]);
 handle_beat(_Start, _Beat) ->
