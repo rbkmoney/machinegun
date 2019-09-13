@@ -224,7 +224,7 @@ start_link(Options) ->
     mg_utils_supervisor_wrapper:start_link(
         #{strategy => one_for_all},
         mg_utils:lists_compact([
-            mg_storage:child_spec(storage_options(Options), storage, storage_reg_name(Options)),
+            mg_storage:child_spec(storage_options(Options), storage),
             processor_child_spec(Options),
             mg_workers_manager:child_spec(manager_options(Options), manager),
             scheduler_child_spec(timers        , Options),
@@ -306,18 +306,18 @@ is_exist(Options, ID) ->
     mg_storage:search_result() | throws().
 search(Options, Query, Limit, Continuation) ->
     StorageQuery = storage_search_query(Query, Limit, Continuation),
-    mg_storage:search(storage_options(Options), storage_ref(Options), StorageQuery).
+    mg_storage:search(storage_options(Options), StorageQuery).
 
 -spec search(options(), search_query(), mg_storage:index_limit()) ->
     mg_storage:search_result() | throws().
 search(Options, Query, Limit) ->
-    mg_storage:search(storage_options(Options), storage_ref(Options), storage_search_query(Query, Limit)).
+    mg_storage:search(storage_options(Options), storage_search_query(Query, Limit)).
 
 -spec search(options(), search_query()) ->
     mg_storage:search_result() | throws().
 search(Options, Query) ->
     % TODO deadline
-    mg_storage:search(storage_options(Options), storage_ref(Options), storage_search_query(Query)).
+    mg_storage:search(storage_options(Options), storage_search_query(Query)).
 
 -spec call_with_lazy_start(options(), mg:id(), term(), request_context(), mg_utils:deadline(), term()) ->
     _Resp | throws().
@@ -496,7 +496,7 @@ new_storage_machine() ->
 -spec get_storage_machine(options(), mg:id()) ->
     {mg_storage:context(), storage_machine()} | undefined.
 get_storage_machine(Options, ID) ->
-    try mg_storage:get(storage_options(Options), storage_ref(Options), ID) of
+    try mg_storage:get(storage_options(Options), ID) of
         undefined ->
             undefined;
         {Context, PackedMachine} ->
@@ -947,7 +947,6 @@ transit_state(ReqCtx, Deadline, NewStorageMachine, State) ->
     F = fun() ->
             mg_storage:put(
                 storage_options(Options),
-                storage_ref(Options),
                 ID,
                 StorageContext,
                 storage_machine_to_opaque(NewStorageMachine),
@@ -968,7 +967,6 @@ remove_from_storage(ReqCtx, Deadline, State) ->
     F = fun() ->
             mg_storage:delete(
                 storage_options(Options),
-                storage_ref(Options),
                 ID,
                 StorageContext
             )
@@ -1118,21 +1116,6 @@ manager_options(Options) ->
     mg_storage:options().
 storage_options(#{storage := Storage}) ->
     Storage.
-
--spec storage_ref(options()) ->
-    mg_utils:gen_ref().
-storage_ref(Options) ->
-    {via, gproc, gproc_key(storage, Options)}.
-
--spec storage_reg_name(options()) ->
-    mg_utils:gen_reg_name().
-storage_reg_name(Options) ->
-    {via, gproc, gproc_key(storage, Options)}.
-
--spec gproc_key(atom(), options()) ->
-    gproc:key().
-gproc_key(Type, #{namespace := Namespace}) ->
-    {n, l, {?MODULE, Type, Namespace}}.
 
 -spec scheduler_child_spec(overseer | timers | timers_retries, options()) ->
     supervisor:child_spec() | undefined.

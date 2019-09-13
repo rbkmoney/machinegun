@@ -127,7 +127,9 @@ automaton_options() ->
     #{
         namespace => ?MH_NS,
         processor => ?MODULE,
-        storage   => mg_storage_memory,
+        storage   => {mg_storage_memory, #{
+            name => storage
+        }},
         pulse     => ?MODULE,
         retries   => #{
             continuation => {intervals, ?TEST_INTERVALS}

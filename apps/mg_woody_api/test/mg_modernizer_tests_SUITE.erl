@@ -93,10 +93,11 @@ init_per_suite(C) ->
     % dbg:tracer(),
     % dbg:p(all, c),
     % dbg:tpl({mg_woody_api, '_', '_'}, x),
+    Apps = mg_ct_helper:start_applications([gproc]),
     % Запускаем memory storage, который сможет "пережить" рестарты mg
-    {ok, StoragePid} = mg_storage_memory:start_link(undefined, {local, ?MODULE}),
+    {ok, StoragePid} = mg_storage_memory:start_link(#{name => ?MODULE}),
     true = erlang:unlink(StoragePid),
-    [{suite_apps, []}, {storage_pid, StoragePid} | C].
+    [{suite_apps, Apps}, {storage_name, ?MODULE} | C].
 
 -spec end_per_suite(config()) ->
     ok.
@@ -148,7 +149,10 @@ start_mg_woody_api(Name, C) ->
         {namespaces, #{
             ?NS => maps:merge(
                 #{
-                    storage    => {mg_storage_memory, #{existing_storage_ref => ?config(storage_pid, C)}},
+                    storage    => {mg_storage_memory, #{
+                        name                  => erlang:binary_to_atom(?NS, utf8),
+                        existing_storage_name => ?config(storage_name, C)}
+                    },
                     processor  => #{
                         url            => <<"http://localhost:8023/processor">>,
                         transport_opts => #{pool => ns, max_connections => 100}
@@ -175,7 +179,9 @@ start_mg_woody_api(Name, C) ->
             )
         }},
         {event_sink_ns, #{
-            storage => mg_storage_memory,
+            storage => {mg_storage_memory, #{
+                name          => event_sink_ns
+            }},
             default_processing_timeout => 5000
         }}
     ],

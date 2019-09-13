@@ -174,7 +174,9 @@ automaton_options(NS, RetryPolicy) ->
     #{
         namespace => NS,
         processor => ?MODULE,
-        storage   => mg_storage_memory,
+        storage   => {mg_storage_memory, #{
+            name => erlang:binary_to_atom(NS, utf8)
+        }},
         pulse     => ?MODULE,
         retries   => #{
             timers         => RetryPolicy

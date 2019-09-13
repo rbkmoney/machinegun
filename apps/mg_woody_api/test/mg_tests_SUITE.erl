@@ -213,9 +213,9 @@ end_per_suite(_C) ->
 -spec init_per_group(group_name(), config()) ->
     config().
 init_per_group(mwc, C) ->
-    init_per_group([{storage, mg_storage_memory} | C]);
+    init_per_group([{storage, {mg_storage_memory, #{}}} | C]);
 init_per_group(history, C) ->
-    init_per_group([{storage, mg_storage_memory} | C]);
+    init_per_group([{storage, {mg_storage_memory, #{}}} | C]);
 init_per_group(_, C) ->
     % NOTE
     % Даже такой небольшой шанс может сработать в ситуациях, когда мы в процессоре выгребаем большой кусок
@@ -312,7 +312,7 @@ mg_woody_api_config(C) ->
         ]},
         {namespaces, #{
             ?NS => #{
-                storage    => ?config(storage, C),
+                storage    => add_storage_name(?NS, ?config(storage, C)),
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => #{pool => ns, max_connections => 100}
@@ -346,7 +346,9 @@ mg_woody_api_config(C) ->
             }
         }},
         {event_sink_ns, #{
-            storage => mg_storage_memory,
+            storage => {mg_storage_memory, #{
+                name => event_sink_ns
+            }},
             default_processing_timeout => 5000
         }}
     ].
@@ -687,7 +689,9 @@ config_with_multiple_event_sinks(_C) ->
         {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, limits => #{}}},
         {namespaces, #{
             <<"1">> => #{
-                storage    => mg_storage_memory,
+                storage    => {mg_storage_memory, #{
+                    name => storage_1
+                }},
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => #{pool => pool1, max_connections => 100}
@@ -702,7 +706,9 @@ config_with_multiple_event_sinks(_C) ->
                 event_sinks => [{mg_events_sink_machine, #{name => default, machine_id => <<"SingleES">>}}]
             },
             <<"2">> => #{
-                storage    => mg_storage_memory,
+                storage    => {mg_storage_memory, #{
+                    name => storage_2
+                }},
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => #{pool => pool2, max_connections => 100}
@@ -728,7 +734,9 @@ config_with_multiple_event_sinks(_C) ->
             }
         }},
         {event_sink_ns, #{
-            storage => mg_storage_memory,
+            storage => {mg_storage_memory, #{
+                name => event_sink_ns
+            }},
             default_processing_timeout => 5000
         }}
     ],
@@ -778,3 +786,8 @@ no_timeout_automaton_options(C) ->
     Options0 = automaton_options(C),
     %% Let's force enlarge client timeout. We expect server timeout only.
     Options0#{transport_opts => #{recv_timeout => ?DEADLINE_TIMEOUT * 10}}.
+
+-spec add_storage_name(mg:ns(), mg_utils:mod_opts()) ->
+    mg_utils:mod_opts().
+add_storage_name(NS, {Module, Options}) ->
+    {Module, Options#{name => erlang:binary_to_atom(NS, utf8)}}.

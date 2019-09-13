@@ -145,10 +145,10 @@ event_sink_options() ->
         name                   => machine,
         machine_id             => ?ES_ID,
         namespace              => ?ES_ID,
-        storage                => mg_storage_memory,
+        storage                => {mg_storage_memory, #{name => machines}},
         pulse                  => ?MODULE,
         duplicate_search_batch => 1000,
-        events_storage         => mg_storage_memory
+        events_storage         => {mg_storage_memory, #{name => events}}
     }.
 
 -spec handle_beat(_, mg_pulse:beat()) ->

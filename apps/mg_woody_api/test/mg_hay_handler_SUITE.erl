@@ -115,7 +115,9 @@ mg_woody_api_config(_C) ->
         {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, limits => #{}}},
         {namespaces, #{
             ?NS => #{
-                storage    => mg_storage_memory,
+                storage    => {mg_storage_memory, #{
+                    name           => erlang:binary_to_atom(?NS, utf8)
+                }},
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => #{pool => ns, max_connections => 100}
@@ -133,7 +135,9 @@ mg_woody_api_config(_C) ->
             }
         }},
         {event_sink_ns, #{
-            storage => mg_storage_memory,
+            storage => {mg_storage_memory, #{
+                name          => event_sink_ns
+            }},
             default_processing_timeout => 5000
         }}
     ].

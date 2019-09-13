@@ -192,7 +192,7 @@ events_machine_options(NS, Config) ->
         processor                  => processor(ProcessorConfig),
         tagging                    => tags_options(NS, NSConfigs),
         machines                   => machine_options(NS, NSConfigs),
-        events_storage             => add_bucket_postfix(<<"events">>, Storage),
+        events_storage             => sub_storage_options(<<"events">>, Storage),
         event_sinks                => EventSinks,
         pulse                      => pulse(),
         default_processing_timeout => maps:get(default_processing_timeout, NSConfigs)
@@ -216,8 +216,8 @@ event_sink_namespace_options(Config) ->
     EventSinkNS#{
         namespace        => <<"_event_sinks">>,
         pulse            => pulse(),
-        storage          => add_bucket_postfix(<<"machines">>, Storage),
-        events_storage   => add_bucket_postfix(<<"events"  >>, Storage)
+        storage          => sub_storage_options(<<"machines">>, Storage),
+        events_storage   => sub_storage_options(<<"events"  >>, Storage)
     }.
 
 -spec tags_options(mg:ns(), events_machines()) ->
@@ -225,7 +225,8 @@ event_sink_namespace_options(Config) ->
 tags_options(NS, #{retries := Retries, storage := Storage}) ->
     #{
         namespace => mg_utils:concatenate_namespaces(NS, <<"tags">>),
-        storage   => Storage, % по логике тут должен быть sub namespace, но его по историческим причинам нет
+        % по логике тут должен быть sub namespace, но его по историческим причинам нет
+        storage   => add_name_postfix(<<"tags">>, Storage),
         pulse     => pulse(),
         retries   => Retries
     }.
@@ -245,7 +246,7 @@ machine_options(NS, Config) ->
     ),
     Options#{
         namespace           => NS,
-        storage             => add_bucket_postfix(<<"machines">>, Storage),
+        storage             => sub_storage_options(<<"machines">>, Storage),
         pulse               => pulse(),
         % TODO сделать аналогично в event_sink'е и тэгах
         suicide_probability => maps:get(suicide_probability, Config, undefined)
@@ -283,14 +284,25 @@ collect_event_sink_machines(Config) ->
     ]),
     ordsets:to_list(EventSinks).
 
+-spec sub_storage_options(mg:ns(), mg_storage:options()) ->
+    mg_storage:options().
+sub_storage_options(SubNS, Storage0) ->
+    Storage1 = add_name_postfix(SubNS, Storage0),
+    Storage2 = add_bucket_postfix(SubNS, Storage1),
+    Storage2.
+
+-spec add_name_postfix(mg:ns(), mg_storage:options()) ->
+    mg_storage:options().
+add_name_postfix(SubNS, {Module, #{name := Name} = Options}) ->
+    BinName = erlang:atom_to_binary(Name, utf8),
+    NewName = erlang:binary_to_atom(<<BinName/binary, "_", SubNS/binary>>, utf8),
+    NewOptions = Options#{name => NewName},
+    {Module, NewOptions}.
+
 -spec add_bucket_postfix(mg:ns(), mg_storage:options()) ->
     mg_storage:options().
-add_bucket_postfix(_, Storage = mg_storage_memory) ->
-    Storage;
 add_bucket_postfix(_, Storage = {mg_storage_memory, _}) ->
     Storage;
-add_bucket_postfix(SubNS, {mg_storage_pool, Options = #{worker := Worker}}) ->
-    {mg_storage_pool, Options#{worker := add_bucket_postfix(SubNS, Worker)}};
 add_bucket_postfix(SubNS, {mg_storage_riak, Options = #{bucket := Bucket}}) ->
     {mg_storage_riak, Options#{bucket := mg_utils:concatenate_namespaces(Bucket, SubNS)}}.
 

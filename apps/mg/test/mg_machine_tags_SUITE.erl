@@ -131,7 +131,7 @@ start_automaton(Options) ->
 automaton_options() ->
     #{
         namespace => <<"test_tags">>,
-        storage   => mg_storage_memory,
+        storage   => {mg_storage_memory, #{name => test_tags}},
         pulse     => ?MODULE,
         retries   => #{}
     }.

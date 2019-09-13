@@ -51,18 +51,19 @@
 %% mg_storage callbacks
 -behaviour(mg_storage).
 -export_type([options/0]).
--export([child_spec/2, child_spec/3, do_request/3]).
+-export([child_spec/2, do_request/2]).
 
 %% internal
--export([start_link/1]).
--export([start_link/2]).
+-export([start_client/1]).
 
 % from riakc
 % -type bucket() :: binary().
 -type options() :: #{
+    name            := mg_storage:name(),
     host            := inet:ip_address() | inet:hostname() | binary(),
     port            := inet:port_number(),
     bucket          := bucket(),
+    pool_options    := pool_options(),
     resolve_timeout => timeout(),
     connect_timeout => timeout(),
     request_timeout => timeout(),
@@ -82,58 +83,52 @@
 -type range_index_opt() :: {return_terms, boolean()} |
                            {term_regex, binary()}.
 -type range_index_opts() :: [index_opt() | range_index_opt()].
--type self_ref() :: mg_utils:gen_ref().
+-type client_ref() :: mg_utils:gen_ref().
+
+%% See https://github.com/seth/pooler/blob/master/src/pooler_config.erl for pool option details
+-type pool_options() :: #{
+    init_count          := non_neg_integer(),
+    max_count           := non_neg_integer(),
+    idle_timeout        => timeout(),
+    cull_interval       => timeout(),
+    auto_grow_threshold => non_neg_integer(),
+    queue_max           => non_neg_integer()
+}.
+
+-define(TAKE_CLIENT_TIMEOUT, 30000).  %% TODO: Replace by deadline
 
 %%
 %% internal API
 %%
--spec start_link(options()) ->
+
+-spec start_client(options()) ->
     mg_utils:gen_start_ret().
-start_link(Options = #{port := Port}) ->
+start_client(#{port := Port} = Options) ->
     IP = get_riak_addr(Options),
     riakc_pb_socket:start_link(IP, Port, [{connect_timeout, get_option(connect_timeout, Options)}]).
 
--spec start_link(options(), mg_utils:gen_reg_name()) ->
-    mg_utils:gen_start_ret().
-start_link(Options = #{port := Port}, RegName) ->
-    IP = get_riak_addr(Options),
-    riakc_pb_socket:start_link(IP, Port, [{connect_timeout, get_option(connect_timeout, Options)}], RegName).
+%%
+%% mg_storage callbacks
+%%
 
-%%
-%% mg_storage_pool callbacks
-%%
 -spec child_spec(options(), atom()) ->
     supervisor:child_spec().
-child_spec(Options, ChildID) ->
-    #{
-        id       => ChildID,
-        start    => {?MODULE, start_link, [Options]},
-        restart  => permanent,
-        shutdown => 5000
-    }.
+child_spec(Options, _ChildID) ->
+    PoolConfig = make_pool_config(Options),
+    pooler:pool_child_spec(PoolConfig).
 
--spec child_spec(options(), atom(), mg_utils:gen_reg_name()) ->
-    supervisor:child_spec().
-child_spec(Options, ChildID, RegName) ->
-    #{
-        id       => ChildID,
-        start    => {?MODULE, start_link, [Options, RegName]},
-        restart  => permanent,
-        shutdown => 5000
-    }.
-
--spec do_request(options(), self_ref(), mg_storage:request()) ->
+-spec do_request(options(), mg_storage:request()) ->
     mg_storage:response().
-do_request(Options, SelfRef, Request) ->
-    case Request of
-        {put, Key, Context, Value, IndexesUpdates} ->
-            put(Options, SelfRef, Key, Context, Value, IndexesUpdates);
-        {get, Key} ->
-            get(Options, SelfRef, Key);
-        {search, Query} ->
-            search(Options, SelfRef, Query);
-        {delete, Key, Context} ->
-            delete(Options, SelfRef, Key, Context)
+do_request(Options, Request) ->
+    ClientRef = take_client(Options),
+    try
+        Result = try_do_request(Options, ClientRef, Request),
+        ok = return_client(Options, ClientRef, ok),
+        Result
+    catch
+        Class:Error:StackTrace ->
+            ok = return_client(Options, ClientRef, fail),
+            erlang:raise(Class, Error, StackTrace)
     end.
 
 %%
@@ -156,22 +151,37 @@ do_request(Options, SelfRef, Request) ->
             {error, disconnected}
     end
 ).
--spec put(options(), self_ref(), mg_storage:key(), context(), mg_storage:value(), [mg_storage:index_update()]) ->
+
+-spec try_do_request(options(), client_ref(), mg_storage:request()) ->
+    mg_storage:response().
+try_do_request(Options, ClientRef, Request) ->
+    case Request of
+        {put, Key, Context, Value, IndexesUpdates} ->
+            put(Options, ClientRef, Key, Context, Value, IndexesUpdates);
+        {get, Key} ->
+            get(Options, ClientRef, Key);
+        {search, Query} ->
+            search(Options, ClientRef, Query);
+        {delete, Key, Context} ->
+            delete(Options, ClientRef, Key, Context)
+    end.
+
+-spec put(options(), client_ref(), mg_storage:key(), context(), mg_storage:value(), [mg_storage:index_update()]) ->
     context().
-put(Options = #{bucket := Bucket}, SelfRef, Key, Context, Value, IndexesUpdates) ->
+put(Options = #{bucket := Bucket}, ClientRef, Key, Context, Value, IndexesUpdates) ->
     Object = to_riak_obj(Bucket, Key, Context, Value, IndexesUpdates),
     Timeout = get_option(request_timeout, Options),
     NewObject =
         handle_riak_response(
-            ?SAFE(riakc_pb_socket:put(SelfRef, Object, [return_body] ++ get_option(w_options, Options), Timeout))
+            ?SAFE(riakc_pb_socket:put(ClientRef, Object, [return_body] ++ get_option(w_options, Options), Timeout))
         ),
     riakc_obj:vclock(NewObject).
 
--spec get(options(), self_ref(), mg_storage:key()) ->
+-spec get(options(), client_ref(), mg_storage:key()) ->
     {context(), mg_storage:value()} | undefined.
-get(Options = #{bucket := Bucket}, SelfRef, Key) ->
+get(Options = #{bucket := Bucket}, ClientRef, Key) ->
     Timeout = get_option(request_timeout, Options),
-    case ?SAFE(riakc_pb_socket:get(SelfRef, Bucket, Key, get_option(r_options, Options), Timeout)) of
+    case ?SAFE(riakc_pb_socket:get(ClientRef, Bucket, Key, get_option(r_options, Options), Timeout)) of
         {error, notfound} ->
             undefined;
         Result ->
@@ -179,17 +189,17 @@ get(Options = #{bucket := Bucket}, SelfRef, Key) ->
             from_riak_obj(Object)
     end.
 
--spec search(options(), self_ref(), mg_storage:index_query()) ->
+-spec search(options(), client_ref(), mg_storage:index_query()) ->
     mg_storage:search_result().
-search(Options = #{bucket := Bucket}, SelfRef, Query) ->
+search(Options = #{bucket := Bucket}, ClientRef, Query) ->
     LiftedQuery = lift_query(Query),
-    Result = handle_riak_response_(do_get_index(SelfRef, Bucket, LiftedQuery, Options)),
+    Result = handle_riak_response_(do_get_index(ClientRef, Bucket, LiftedQuery, Options)),
     get_index_response(LiftedQuery, Result).
 
--spec delete(options(), self_ref(), mg_storage:key(), context()) ->
+-spec delete(options(), client_ref(), mg_storage:key(), context()) ->
     ok.
-delete(Options = #{bucket := Bucket}, SelfRef, Key, Context) ->
-    case ?SAFE(riakc_pb_socket:delete_vclock(SelfRef, Bucket, Key, Context, get_option(d_options, Options))) of
+delete(Options = #{bucket := Bucket}, ClientRef, Key, Context) ->
+    case ?SAFE(riakc_pb_socket:delete_vclock(ClientRef, Bucket, Key, Context, get_option(d_options, Options))) of
         ok ->
             ok;
         {error, Reason} ->
@@ -198,14 +208,14 @@ delete(Options = #{bucket := Bucket}, SelfRef, Key, Context) ->
 
 %%
 
--spec do_get_index(self_ref(), bucket(), mg_storage:index_query(), options()) ->
+-spec do_get_index(client_ref(), bucket(), mg_storage:index_query(), options()) ->
     _.
-do_get_index(SelfRef, Bucket, {IndexName, {From, To}, IndexLimit, Continuation}, Options) ->
+do_get_index(ClientRef, Bucket, {IndexName, {From, To}, IndexLimit, Continuation}, Options) ->
     SearchOptions = index_opts([{return_terms, true}], Options, IndexLimit, Continuation),
-    ?SAFE(riakc_pb_socket:get_index_range(SelfRef, Bucket, prepare_index_name(IndexName), From, To, SearchOptions));
-do_get_index(SelfRef, Bucket, {IndexName, Value, IndexLimit, Continuation}, Options) ->
+    ?SAFE(riakc_pb_socket:get_index_range(ClientRef, Bucket, prepare_index_name(IndexName), From, To, SearchOptions));
+do_get_index(ClientRef, Bucket, {IndexName, Value, IndexLimit, Continuation}, Options) ->
     SearchOptions = index_opts(Options, IndexLimit, Continuation),
-    ?SAFE(riakc_pb_socket:get_index_eq(SelfRef, Bucket, prepare_index_name(IndexName), Value, SearchOptions)).
+    ?SAFE(riakc_pb_socket:get_index_eq(ClientRef, Bucket, prepare_index_name(IndexName), Value, SearchOptions)).
 
 -spec get_index_response(mg_storage:index_query(), get_index_results()) ->
     mg_storage:search_result().
@@ -406,3 +416,53 @@ get_addrs_by_host(Host, Timeout) ->
                     exit({'invalid host address', Host})
             end
     end.
+
+%% pool helpers
+
+-spec make_pool_config(options()) ->
+    [{atom(), term()}].
+make_pool_config(Options) ->
+    Name = maps:get(name, Options),
+    PoolOptions = maps:get(pool_options, Options),
+    StartTimeout = get_option(connect_timeout, Options) + get_option(resolve_timeout, Options),
+    DefaultConfig = [
+        {name, Name},
+        {start_mfa, {?MODULE, start_client, [Options]}},
+        {stop_mfa, {riakc_pb_socket, stop, ['$pooler_pid']}},
+        {member_start_timeout, {StartTimeout, ms}}
+    ],
+    Config = maps:fold(
+        fun
+            (init_count, V, Acc) when is_integer(V) ->
+                [{init_count, V} | Acc];
+            (max_count, V, Acc) when is_integer(V) ->
+                [{max_count, V} | Acc];
+            (idle_timeout, V, Acc) when is_integer(V) ->
+                [{max_age, {V, ms}} | Acc];
+            (cull_interval, V, Acc) when is_integer(V) ->
+                [{cull_interval, {V, ms}} | Acc];
+            (auto_grow_threshold, V, Acc) when is_integer(V) ->
+                [{auto_grow_threshold, V} | Acc];
+            (queue_max, V, Acc) when is_integer(V) ->
+                [{queue_max, V} | Acc]
+        end,
+        [],
+        PoolOptions
+    ),
+    DefaultConfig ++ Config.
+
+-spec take_client(options()) ->
+    client_ref().
+take_client(#{name := Name}) ->
+    Timeout = ?TAKE_CLIENT_TIMEOUT,
+    case pooler:take_member(Name, {Timeout, ms}) of
+        Ref when is_pid(Ref) ->
+            Ref;
+        error_no_members ->
+            erlang:throw({transient, {storage_unavailable, no_pool_members}})
+    end.
+
+-spec return_client(options(), client_ref(), ok | fail) ->
+    ok.
+return_client(#{name := Name}, ClientRef, Status) ->
+    pooler:return_member(Name, ClientRef, Status).

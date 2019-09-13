@@ -172,13 +172,17 @@ events_machine_options(Options, NS) ->
         processor => {?MODULE, Options},
         tagging => #{
             namespace => <<NS/binary, "_tags">>,
-            storage => mg_storage_memory,
+            storage => {mg_storage_memory, #{
+                name => erlang:binary_to_atom(<<NS/binary, "_tags">>, utf8)
+            }},
             pulse => ?MODULE,
             retries => #{}
         },
         machines => #{
             namespace => NS,
-            storage => mg_storage_memory,
+            storage => {mg_storage_memory, #{
+                name => erlang:binary_to_atom(NS, utf8)
+            }},
             pulse => ?MODULE,
             schedulers => #{
                 timers => #{ interval => 100 },
@@ -186,7 +190,9 @@ events_machine_options(Options, NS) ->
                 overseer => #{ interval => 100 }
             }
         },
-        events_storage => mg_storage_memory,
+        events_storage => {mg_storage_memory, #{
+            name => erlang:binary_to_atom(<<NS/binary, "_sink">>, utf8)
+        }},
         event_sinks => [
             {?MODULE, Options}
         ],

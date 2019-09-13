@@ -26,6 +26,8 @@
 -module(mg_storage).
 
 %% API
+-export_type([name        /0]).
+
 -export_type([opaque      /0]).
 -export_type([key         /0]).
 -export_type([value       /0]).
@@ -48,13 +50,12 @@
 -export_type([response/0]).
 
 -export([child_spec/2]).
--export([child_spec/3]).
--export([put       /6]).
--export([get       /3]).
--export([search    /3]).
--export([delete    /4]).
+-export([put       /5]).
+-export([get       /2]).
+-export([search    /2]).
+-export([delete    /3]).
 
--export([do_request/3]).
+-export([do_request/2]).
 
 %% Internal API
 -export([opaque_to_binary/1]).
@@ -66,6 +67,8 @@
 %%
 %% API
 %%
+-type name        () :: atom().
+
 -type opaque      () :: null | true | false | number() | binary() | [opaque()] | #{opaque() => opaque()}.
 -type key         () :: binary().
 -type value       () :: opaque().
@@ -90,7 +93,10 @@
     [key()].
 
 
--type storage_options() :: term().
+-type storage_options() :: #{
+    name := name(),
+    atom() => any()
+}.
 -type options() :: mg_utils:mod_opts(storage_options()).
 
 %%
@@ -111,13 +117,10 @@
 -callback child_spec(storage_options(), atom()) ->
     supervisor:child_spec() | undefined.
 
--callback child_spec(storage_options(), atom(), mg_utils:gen_reg_name()) ->
-    supervisor:child_spec() | undefined.
-
--callback do_request(storage_options(), mg_utils:gen_ref(), request()) ->
+-callback do_request(storage_options(), request()) ->
     response().
 
--optional_callbacks([child_spec/2, child_spec/3]).
+-optional_callbacks([child_spec/2]).
 
 %%
 
@@ -126,43 +129,38 @@
 child_spec(Options, ChildID) ->
     mg_utils:apply_mod_opts(Options, child_spec, [ChildID]).
 
--spec child_spec(options(), atom(), mg_utils:gen_reg_name()) ->
-    supervisor:child_spec() | undefined.
-child_spec(Options, ChildID, RegName) ->
-    mg_utils:apply_mod_opts(Options, child_spec, [ChildID, RegName]).
-
--spec put(options(), mg_utils:gen_ref(), key(), context() | undefined, value(), [index_update()]) ->
+-spec put(options(), key(), context() | undefined, value(), [index_update()]) ->
     context().
-put(_Options, _SelfRef, Key, _Context, _Value, _Indexes) when byte_size(Key) < ?KEY_SIZE_LOWER_BOUND ->
+put(_Options, Key, _Context, _Value, _Indexes) when byte_size(Key) < ?KEY_SIZE_LOWER_BOUND ->
     throw({logic, {invalid_key, {too_small, Key}}});
-put(_Options, _SelfRef, Key, _Context, _Value, _Indexes) when byte_size(Key) > ?KEY_SIZE_UPPER_BOUND ->
+put(_Options, Key, _Context, _Value, _Indexes) when byte_size(Key) > ?KEY_SIZE_UPPER_BOUND ->
     throw({logic, {invalid_key, {too_big, Key}}});
-put(Options, SelfRef, Key, Context, Value, Indexes) ->
-    do_request(Options, SelfRef, {put, Key, Context, Value, Indexes}).
+put(Options, Key, Context, Value, Indexes) ->
+    do_request(Options, {put, Key, Context, Value, Indexes}).
 
--spec get(options(), mg_utils:gen_ref(), key()) ->
+-spec get(options(), key()) ->
     {context(), value()} | undefined.
-get(_Options, _SelfRef, Key) when byte_size(Key) < ?KEY_SIZE_LOWER_BOUND ->
+get(_Options, Key) when byte_size(Key) < ?KEY_SIZE_LOWER_BOUND ->
     throw({logic, {invalid_key, {too_small, Key}}});
-get(_Options, _SelfRef, Key) when byte_size(Key) > ?KEY_SIZE_UPPER_BOUND ->
+get(_Options, Key) when byte_size(Key) > ?KEY_SIZE_UPPER_BOUND ->
     throw({logic, {invalid_key, {too_big, Key}}});
-get(Options, SelfRef, Key) ->
-    do_request(Options, SelfRef, {get, Key}).
+get(Options, Key) ->
+    do_request(Options, {get, Key}).
 
--spec search(options(), mg_utils:gen_ref(), index_query()) ->
+-spec search(options(), index_query()) ->
     search_result().
-search(Options, SelfRef, Query) ->
-    do_request(Options, SelfRef, {search, Query}).
+search(Options, Query) ->
+    do_request(Options, {search, Query}).
 
--spec delete(options(), mg_utils:gen_ref(), key(), context()) ->
+-spec delete(options(), key(), context()) ->
     ok.
-delete(Options, SelfRef, Key, Context) ->
-    do_request(Options, SelfRef, {delete, Key, Context}).
+delete(Options, Key, Context) ->
+    do_request(Options, {delete, Key, Context}).
 
--spec do_request(options(), mg_utils:gen_ref(), request()) ->
+-spec do_request(options(), request()) ->
     response().
-do_request(Options, SelfRef, Request) ->
-    mg_utils:apply_mod_opts(Options, do_request, [SelfRef, Request]).
+do_request(Options, Request) ->
+    mg_utils:apply_mod_opts(Options, do_request, [Request]).
 
 %%
 %% Internal API

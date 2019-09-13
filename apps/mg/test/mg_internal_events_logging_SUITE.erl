@@ -119,7 +119,9 @@ automaton_options(NS) ->
     #{
         namespace => NS,
         processor => ?MODULE,
-        storage   => mg_storage_memory,
+        storage   => {mg_storage_memory, #{
+            name => erlang:binary_to_atom(NS, utf8)
+        }},
         pulse     => ?MODULE,
         retries   => #{
             timers         => {intervals, [1000, 1000, 1000, 1000, 1000]},

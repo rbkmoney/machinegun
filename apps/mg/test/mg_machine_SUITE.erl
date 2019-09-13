@@ -166,7 +166,7 @@ automaton_options() ->
     #{
         namespace => <<"test">>,
         processor => ?MODULE,
-        storage   => mg_storage_memory,
+        storage   => {mg_storage_memory, #{name => test}},
         pulse     => ?MODULE,
         schedulers => #{
             timers         => #{ interval => 1000 },
