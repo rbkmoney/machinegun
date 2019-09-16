@@ -92,7 +92,9 @@
     idle_timeout        => timeout(),
     cull_interval       => timeout(),
     auto_grow_threshold => non_neg_integer(),
-    queue_max           => non_neg_integer()
+    queue_max           => non_neg_integer(),
+    metrics_mod         => module() | pooler_no_metrics,
+    metrics_api         => folsom | exometer
 }.
 
 -define(TAKE_CLIENT_TIMEOUT, 30000).  %% TODO: Replace by deadline
@@ -444,7 +446,11 @@ make_pool_config(Options) ->
             (auto_grow_threshold, V, Acc) when is_integer(V) ->
                 [{auto_grow_threshold, V} | Acc];
             (queue_max, V, Acc) when is_integer(V) ->
-                [{queue_max, V} | Acc]
+                [{queue_max, V} | Acc];
+            (metrics_mod, V, Acc) when is_atom(V) ->
+                [{metrics_mod, V} | Acc];
+            (metrics_api, V, Acc) when is_atom(V) ->
+                [{metrics_api, V} | Acc]
         end,
         [],
         PoolOptions

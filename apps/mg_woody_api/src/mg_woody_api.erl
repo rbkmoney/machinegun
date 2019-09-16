@@ -90,7 +90,6 @@ stop() ->
     {ok, pid()} | {error, any()}.
 start(_StartType, _StartArgs) ->
     Config = application:get_all_env(?MODULE),
-    ok = metrics_init(Config),
     mg_utils_supervisor_wrapper:start_link(
         {local, ?MODULE},
         #{strategy => rest_for_one},
@@ -305,16 +304,6 @@ add_bucket_postfix(_, Storage = {mg_storage_memory, _}) ->
     Storage;
 add_bucket_postfix(SubNS, {mg_storage_riak, Options = #{bucket := Bucket}}) ->
     {mg_storage_riak, Options#{bucket := mg_utils:concatenate_namespaces(Bucket, SubNS)}}.
-
--spec metrics_init(config()) ->
-    ok | {error, _Details}.
-metrics_init(Config) ->
-    ConfigNSs = proplists:get_value(namespaces, Config),
-    MachineNSs =  maps:keys(ConfigNSs),
-    TagNSs = [mg_utils:concatenate_namespaces(NS, <<"tags">>) || NS <- MachineNSs],
-    AllNS = [<<"_event_sinks_machines">>] ++ MachineNSs ++ TagNSs,
-    Metrics = mg_woody_api_pulse_metric:get_all_metrics(AllNS),
-    lists:foreach(fun (M) -> ok = how_are_you:metric_register(M) end, Metrics).
 
 -spec pulse() ->
     mg_pulse:handler().
