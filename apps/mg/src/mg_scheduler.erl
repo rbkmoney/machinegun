@@ -30,8 +30,6 @@
 -export([handle_info/2]).
 -export([handle_cast/2]).
 -export([handle_call/3]).
--export([code_change/3]).
--export([terminate/2]).
 
 -callback child_spec(queue_options(), atom()) -> supervisor:child_spec() | undefined.
 -callback init(queue_options()) -> {ok, queue_state()}.
@@ -214,16 +212,6 @@ handle_info({'DOWN', Monitor, process, _Object, _Info}, State0) ->
 handle_info(Info, State) ->
     ok = logger:error("unexpected gen_server info received: ~p", [Info]),
     {noreply, State}.
-
--spec code_change(OldVsn :: any(), state(), Extra :: any()) ->
-    mg_utils:gen_server_code_change_ret(state()).
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
-
--spec terminate(Reason :: any(), state()) ->
-    ok.
-terminate(_Reason, _State) ->
-    ok.
 
 %% Internals
 
