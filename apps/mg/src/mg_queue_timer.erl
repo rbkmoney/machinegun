@@ -111,8 +111,8 @@ search_new_tasks(#{timer_queue := TimerMode} = Options, Limit, State) ->
 execute_task(#{timer_queue := TimerMode} = Options, #{payload := Payload}) ->
     MachineOptions = machine_options(Options),
     #{
-         machine_id := MachineID,
-         target_timestamp := TargetTimestamp
+        machine_id := MachineID,
+        target_timestamp := TargetTimestamp
     } = Payload,
     Status =
         case maps:get(status, Payload) of
