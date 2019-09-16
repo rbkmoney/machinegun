@@ -104,7 +104,6 @@
 -type ref() :: {id, mg:id()} | {tag, mg_machine_tags:tag()}.
 -type options() :: #{
     namespace                  => mg:ns(),
-    events_storage_name        => mg_storage:name(),
     events_storage             => mg_storage:options(),
     processor                  => mg_utils:mod_opts(),
     tagging                    => mg_machine_tags:options(),

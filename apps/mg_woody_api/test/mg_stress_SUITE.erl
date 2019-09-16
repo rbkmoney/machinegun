@@ -98,9 +98,7 @@ mg_woody_api_config(_C) ->
         }},
         {namespaces, #{
             ?NS => #{
-                storage    => {mg_storage_memory, #{
-                    name           => erlang:binary_to_atom(?NS, utf8)
-                }},
+                storage    => mg_ct_helper:build_storage(?NS, mg_storage_memory),
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => #{pool => ns, max_connections => 100}

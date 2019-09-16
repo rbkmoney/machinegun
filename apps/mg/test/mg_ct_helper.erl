@@ -27,6 +27,8 @@
 -export([stop_applications/1]).
 -export([assert_wait_expected/3]).
 
+-export([build_storage/2]).
+
 -type appname() :: atom().
 
 -type option() ::
@@ -81,3 +83,10 @@ assert_wait_expected(Expected, Fun, Strategy) when is_function(Fun, 0) ->
                     error({assertion_failed, Expected, Other})
             end
     end.
+
+-spec build_storage(mg:ns(), mg_utils:mod_opts()) ->
+    mg_utils:mod_opts().
+build_storage(NS, Module) when is_atom(Module) ->
+    build_storage(NS, {Module, #{}});
+build_storage(NS, {Module, Options}) ->
+    {Module, Options#{name => erlang:binary_to_atom(NS, utf8)}}.

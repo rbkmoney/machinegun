@@ -312,7 +312,7 @@ mg_woody_api_config(C) ->
         ]},
         {namespaces, #{
             ?NS => #{
-                storage    => add_storage_name(?NS, ?config(storage, C)),
+                storage    => mg_ct_helper:build_storage(?NS, ?config(storage, C)),
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => #{pool => ns, max_connections => 100}
@@ -786,8 +786,3 @@ no_timeout_automaton_options(C) ->
     Options0 = automaton_options(C),
     %% Let's force enlarge client timeout. We expect server timeout only.
     Options0#{transport_opts => #{recv_timeout => ?DEADLINE_TIMEOUT * 10}}.
-
--spec add_storage_name(mg:ns(), mg_utils:mod_opts()) ->
-    mg_utils:mod_opts().
-add_storage_name(NS, {Module, Options}) ->
-    {Module, Options#{name => erlang:binary_to_atom(NS, utf8)}}.

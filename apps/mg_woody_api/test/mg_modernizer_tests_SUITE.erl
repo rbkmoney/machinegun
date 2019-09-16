@@ -149,10 +149,9 @@ start_mg_woody_api(Name, C) ->
         {namespaces, #{
             ?NS => maps:merge(
                 #{
-                    storage    => {mg_storage_memory, #{
-                        name                  => erlang:binary_to_atom(?NS, utf8),
+                    storage    => mg_ct_helper:build_storage(?NS, {mg_storage_memory, #{
                         existing_storage_name => ?config(storage_name, C)}
-                    },
+                    }),
                     processor  => #{
                         url            => <<"http://localhost:8023/processor">>,
                         transport_opts => #{pool => ns, max_connections => 100}
