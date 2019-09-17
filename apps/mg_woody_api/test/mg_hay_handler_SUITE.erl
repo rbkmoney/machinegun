@@ -87,12 +87,7 @@ init_per_group(base, C) ->
         {how_are_you, [
             {metrics_publishers, [mg_test_hay_publisher]},
             {metrics_handlers, [
-                hay_vm_handler,
-                {mg_woody_api_hay, #{
-                    interval => 100,
-                    namespaces => [?NS],
-                    registries => [registry(C)]
-                }}
+                hay_vm_handler
             ]}
         ]},
         {mg_woody_api, mg_woody_api_config(C)}
@@ -139,7 +134,8 @@ mg_woody_api_config(C) ->
                     transport_opts => #{pool => ns, max_connections => 100}
                 },
                 worker     => #{
-                    registry       => registry(C)
+                    registry        => registry(C),
+                    metrics_handler => {mg_woody_api_hay, #{interval => 100}}
                 },
                 default_processing_timeout => 5000,
                 schedulers => #{
@@ -170,13 +166,13 @@ registry(C) ->
 -spec no_workers_test(config()) -> _.
 no_workers_test(_C) ->
     ok = timer:sleep(200),
-    ?assertEqual(0, get_metric([mg, workers_total, number])).
+    ?assertEqual(0, get_metric([mg, workers, ?NS, number])).
 
 -spec exist_workers_test(config()) -> _.
 exist_workers_test(C) ->
     ok = mg_automaton_client:start(automaton_options(C), <<"exist_workers_test">>, []),
     ok = timer:sleep(200),
-    ?assert(get_metric([mg, workers_total, number]) > 0).
+    ?assert(get_metric([mg, workers, ?NS, number]) > 0).
 
 %% Utils
 

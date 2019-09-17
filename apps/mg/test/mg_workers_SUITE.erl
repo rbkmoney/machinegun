@@ -308,10 +308,10 @@ workers_options(UnloadTimeout, MsgQueueLen, WorkerParams, C) ->
     #{
         name => base_test_workers,
         pulse => undefined,
+        registry => ?config(registry, C),
         message_queue_len_limit => MsgQueueLen,
         worker_options => #{
             worker            => {?MODULE, WorkerParams},
-            registry          => ?config(registry, C),
             hibernate_timeout => UnloadTimeout div 2,
             unload_timeout    => UnloadTimeout
         }
