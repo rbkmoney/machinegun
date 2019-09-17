@@ -50,7 +50,7 @@ reg_name(Options, Name) ->
 select(_Options, Query) ->
     % TODO move to consuela
     List = consuela:all(),
-    MatchSpec = ets:match_spec_compile([{Query, [], ['$_']}]),
+    MatchSpec = ets:match_spec_compile([{{Query, '_'}, [], ['$_']}]),
     ets:match_spec_run(List, MatchSpec).
 
 -spec start_link(options(), mg_procreg:reg_name(), module(), _Args, list()) ->
