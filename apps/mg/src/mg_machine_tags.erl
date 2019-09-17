@@ -30,7 +30,7 @@
 
 -type options() :: #{
     namespace => mg:ns(),
-    worker    => mg_worker:options(), % all but `worker` option
+    worker    => mg_workers_manager:options(),
     storage   => mg_storage:options(),
     pulse     => mg_pulse:handler(),
     retries   => mg_machine:retry_opt()

@@ -31,6 +31,8 @@
 %% API
 -export_type([options/0]).
 -export_type([queue_limit/0]).
+-export_type([metrics_handler/0]).
+-export_type([metrics_handler_options/0]).
 
 -export([child_spec    /2]).
 -export([start_link    /1]).
@@ -42,11 +44,20 @@
 %% Types
 -type options() :: #{
     name                    => name(),
+    registry                => mg_procreg:options(),
     message_queue_len_limit => queue_limit(),
-    worker_options          => mg_worker:options(),
+    worker_options          => mg_worker:options(), % all but `registry`
+    metrics_handler         => metrics_handler(),
     pulse                   => mg_pulse:handler()
 }.
 -type queue_limit() :: non_neg_integer().
+
+-type metrics_handler_options() :: #{
+    name           => name(),
+    registry       => mg_procreg:options(),
+    _              => _
+}.
+-type metrics_handler() :: mg_utils:mod_opts(metrics_handler_options()).
 
 %% Internal types
 -type id() :: mg:id().
@@ -75,12 +86,39 @@ child_spec(Options, ChildID) ->
     mg_utils:gen_start_ret().
 start_link(Options) ->
     mg_utils_supervisor_wrapper:start_link(
+        #{strategy => one_for_all, intensity => 0, period => 1},
+        mg_utils:lists_compact([
+            manager_child_spec(Options),
+            metrics_handler_child_spec(Options)
+        ])
+    ).
+
+-spec manager_child_spec(options()) ->
+    supervisor:child_spec().
+manager_child_spec(Options) ->
+    Args = [
         self_reg_name(Options),
         #{strategy => simple_one_for_one},
-        [
-            mg_worker:child_spec(worker, worker_options(Options))
-        ]
-    ).
+        [mg_worker:child_spec(worker, worker_options(Options))]
+    ],
+    #{
+        id    => manager,
+        start => {mg_utils_supervisor_wrapper, start_link, Args},
+        type  => supervisor
+    }.
+
+-spec metrics_handler_child_spec(options()) ->
+    supervisor:child_spec() | undefined.
+metrics_handler_child_spec(#{metrics_handler := Handler} = Options) ->
+    {HandlerMod, HandlerOpts0} = mg_utils:separate_mod_opts(Handler, #{}),
+    HandlerOpts = maps:merge(HandlerOpts0, maps:with([name, registry], Options)),
+    #{
+        id    => metrics_handler,
+        start => {hay_metrics_handler, start_link, [{HandlerMod, HandlerOpts}]},
+        type  => worker
+    };
+metrics_handler_child_spec(#{}) ->
+    undefined.
 
 % sync
 -spec call(options(), id(), _Call, req_ctx(), mg_deadline:deadline()) ->
@@ -168,8 +206,8 @@ is_alive(Options, ID) ->
 
 -spec worker_options(options()) ->
     mg_worker:options().
-worker_options(#{worker_options := WorkerOptions}) ->
-    WorkerOptions.
+worker_options(#{worker_options := WorkerOptions, registry := Registry}) ->
+    WorkerOptions#{registry => Registry}.
 
 %%
 %% local

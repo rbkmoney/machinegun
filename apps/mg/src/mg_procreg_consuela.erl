@@ -22,7 +22,7 @@
 
 -export([ref/2]).
 -export([reg_name/2]).
--export([all/1]).
+-export([select/2]).
 
 -export([start_link/5]).
 -export([call/4]).
@@ -45,10 +45,13 @@ ref(_Options, Name) ->
 reg_name(Options, Name) ->
     ref(Options, Name).
 
--spec all(options()) ->
+-spec select(options(), _Query) ->
     [{mg_procreg:name(), pid()}].
-all(_Options) ->
-    consuela:all().
+select(_Options, Query) ->
+    % TODO move to consuela
+    List = consuela:all(),
+    MatchSpec = ets:match_spec_compile([{Query, [], ['$_']}]),
+    ets:match_spec_run(List, MatchSpec).
 
 -spec start_link(options(), mg_procreg:reg_name(), module(), _Args, list()) ->
     mg_procreg:start_link_ret().

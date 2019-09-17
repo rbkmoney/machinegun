@@ -35,7 +35,7 @@
 
 -export([ref/2]).
 -export([reg_name/2]).
--export([all/1]).
+-export([select/2]).
 
 -export([start_link/5]).
 -export([call/3]).
@@ -53,7 +53,7 @@
 -callback reg_name(procreg_options(), name()) ->
     reg_name().
 
--callback all(procreg_options()) ->
+-callback select(procreg_options(), _Query :: name()) ->
     [{name(), pid()}].
 
 -callback call(procreg_options(), ref(), _Call, timeout()) ->
@@ -90,10 +90,10 @@ ref(Options, Name) ->
 reg_name(Options, Name) ->
     mg_utils:apply_mod_opts(Options, reg_name, [Name]).
 
--spec all(options()) ->
+-spec select(options(), _Query :: name()) ->
     [{name(), pid()}].
-all(Options) ->
-    mg_utils:apply_mod_opts(Options, all, []).
+select(Options, Query) ->
+    mg_utils:apply_mod_opts(Options, select, [Query]).
 
 -spec call(options(), name(), _Call) ->
     _Reply.

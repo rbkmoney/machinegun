@@ -22,7 +22,7 @@
 
 -export([ref/2]).
 -export([reg_name/2]).
--export([all/1]).
+-export([select/2]).
 
 -export([start_link/5]).
 -export([call/4]).
@@ -43,13 +43,11 @@ ref(_Options, Name) ->
 reg_name(Options, Name) ->
     ref(Options, Name).
 
--spec all(options()) ->
+-spec select(options(), _Query) ->
     [{mg_procreg:name(), pid()}].
-all(_Options) ->
-    lists:map(
-        fun erlang:list_to_tuple/1,
-        gproc:select([{{{n, l, '$1'}, '$2', '_'}, [], [['$1', '$2']]}])
-    ).
+select(_Options, Query) ->
+    MatchSpec = [{{{n, l, Query}, '_', '_'}, [], ['$$']}],
+    [{Name, Pid} || [[{n, l, Name}, Pid, _]] <- gproc:select(MatchSpec)].
 
 -spec start_link(options(), mg_procreg:reg_name(), module(), _Args, list()) ->
     mg_procreg:start_link_ret().

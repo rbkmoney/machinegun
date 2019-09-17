@@ -29,7 +29,7 @@
 -export([reply         /2]).
 -export([get_call_queue/3]).
 -export([is_alive      /3]).
--export([list_all      /1]).
+-export([list          /2]).
 
 %% gen_server callbacks
 -behaviour(gen_server).
@@ -125,11 +125,13 @@ is_alive(Options, NS, ID) ->
     Pid = mg_utils:gen_reg_name_to_pid(self_ref(Options, NS, ID)),
     Pid =/= undefined andalso erlang:is_process_alive(Pid).
 
--spec list_all(mg_procreg:options()) -> % TODO nonuniform interface
+-spec list(mg_procreg:options(), mg:ns()) -> % TODO nonuniform interface
     [{mg:ns(), mg:id(), pid()}].
-list_all(ProcregOptions) ->
-    AllWorkers = mg_procreg:all(ProcregOptions),
-    [{NS, ID, Pid} || {?wrap_id(NS, ID), Pid} <- AllWorkers].
+list(Procreg, NS) ->
+    [
+        {NS, ID, Pid} ||
+            {?wrap_id(_, ID), Pid} <- mg_procreg:select(Procreg, ?wrap_id(NS, '$1'))
+    ].
 
 
 %%

@@ -53,7 +53,7 @@
 -type events_machines() :: #{
     processor                  := processor(),
     modernizer                 => modernizer(),
-    worker                     => mg_worker:options(), % all but `worker` option
+    worker                     => mg_workers_manager:options(), % all but `worker_options.worker` option
     storage                    := mg_storage:options(),
     event_sinks                => [mg_events_sink:handler()],
     retries                    := mg_machine:retry_opt(),
@@ -74,6 +74,8 @@
 .
 -type config() :: [config_element()].
 
+-define(EVENT_SINK_NS, <<"_event_sinks">>).
+
 -spec start() ->
     {ok, _}.
 start() ->
@@ -91,7 +93,6 @@ stop() ->
     {ok, pid()} | {error, any()}.
 start(_StartType, _StartArgs) ->
     Config = application:get_all_env(?MODULE),
-    ok = metrics_init(Config),
     mg_utils_supervisor_wrapper:start_link(
         {local, ?MODULE},
         #{strategy => rest_for_one},
@@ -102,6 +103,8 @@ start(_StartType, _StartArgs) ->
         events_machines_child_specs(Config)
         ++
         [woody_server_child_spec(Config, woody_server)]
+        ++
+        [woody_metrics_handler_childspec()]
     ).
 
 -spec stop(any()) ->
@@ -161,6 +164,15 @@ woody_server_child_spec(Config, ChildID) ->
         }
     ).
 
+-spec woody_metrics_handler_childspec() ->
+    supervisor:child_spec().
+woody_metrics_handler_childspec() ->
+    #{
+        id    => woody_metrics_handler,
+        start => {hay_metrics_handler, start_link, [woody_api_hay]},
+        type  => worker
+    }.
+
 -spec api_automaton_options(config()) ->
     mg_woody_api_automaton:options().
 api_automaton_options(Config) ->
@@ -215,11 +227,11 @@ event_sink_options({mg_events_sink_kafka, EventSinkConfig}, _Config) ->
 event_sink_namespace_options(Config) ->
     EventSinkNS = #{storage := Storage} = proplists:get_value(event_sink_ns, Config),
     EventSinkNS#{
-        namespace        => <<"_event_sinks">>,
+        namespace        => ?EVENT_SINK_NS,
         pulse            => pulse(),
         storage          => add_bucket_postfix(<<"machines">>, Storage),
         events_storage   => add_bucket_postfix(<<"events"  >>, Storage),
-        worker           => worker_options(EventSinkNS)
+        worker           => worker_manager_options(EventSinkNS)
     }.
 
 -spec tags_options(mg:ns(), events_machines()) ->
@@ -227,7 +239,7 @@ event_sink_namespace_options(Config) ->
 tags_options(NS, Config = #{retries := Retries, storage := Storage}) ->
     #{
         namespace => mg_utils:concatenate_namespaces(NS, <<"tags">>),
-        worker    => worker_options(Config),
+        worker    => worker_manager_options(Config),
         storage   => Storage, % по логике тут должен быть sub namespace, но его по историческим причинам нет
         pulse     => pulse(),
         retries   => Retries
@@ -248,18 +260,21 @@ machine_options(NS, Config) ->
     Options#{
         namespace           => NS,
         storage             => add_bucket_postfix(<<"machines">>, Storage),
-        worker              => worker_options(Config),
+        worker              => worker_manager_options(Config),
         schedulers          => maps:map(fun scheduler_options/2, maps:get(schedulers, Config, #{})),
         pulse               => pulse(),
         % TODO сделать аналогично в event_sink'е и тэгах
         suicide_probability => maps:get(suicide_probability, Config, undefined)
     }.
 
--spec worker_options(map()) ->
-    mg_worker:options().
-worker_options(Config) ->
+-spec worker_manager_options(map()) ->
+    mg_workers_manager:options().
+worker_manager_options(Config) ->
     maps:merge(
-        #{registry => mg_procreg_gproc},
+        #{
+            registry        => mg_procreg_gproc,
+            metrics_handler => mg_woody_api_hay
+        },
         maps:get(worker, Config, #{})
     ).
 
@@ -313,16 +328,6 @@ add_bucket_postfix(SubNS, {mg_storage_pool, Options = #{worker := Worker}}) ->
     {mg_storage_pool, Options#{worker := add_bucket_postfix(SubNS, Worker)}};
 add_bucket_postfix(SubNS, {mg_storage_riak, Options = #{bucket := Bucket}}) ->
     {mg_storage_riak, Options#{bucket := mg_utils:concatenate_namespaces(Bucket, SubNS)}}.
-
--spec metrics_init(config()) ->
-    ok | {error, _Details}.
-metrics_init(Config) ->
-    ConfigNSs = proplists:get_value(namespaces, Config),
-    MachineNSs =  maps:keys(ConfigNSs),
-    TagNSs = [mg_utils:concatenate_namespaces(NS, <<"tags">>) || NS <- MachineNSs],
-    AllNS = [<<"_event_sinks_machines">>] ++ MachineNSs ++ TagNSs,
-    Metrics = mg_woody_api_pulse_metric:get_all_metrics(AllNS),
-    lists:foreach(fun (M) -> ok = how_are_you:metric_register(M) end, Metrics).
 
 -spec pulse() ->
     mg_pulse:handler().
