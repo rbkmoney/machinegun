@@ -98,14 +98,16 @@ extract_worker_stats({_NS, _ID, Pid}, Acc) ->
         undefined ->
             Acc;
         ProcessInfo ->
-            lists:foldl(
-                fun ({Info, V}, Acc1) ->
-                    maps:update_with(Info, fun (Vs) -> [V | Vs] end, [V], Acc1)
-                end,
-                Acc,
-                ProcessInfo
-            )
+            append_map(maps:from_list(ProcessInfo), Acc)
     end.
+
+-spec append_map(#{K => V}, #{K => [V]}) -> #{K => [V]}.
+append_map(M, Acc) ->
+    maps:fold(
+        fun (K, V, A) -> maps:update_with(K, fun (Vs) -> [V | Vs] end, [V], A) end,
+        Acc,
+        M
+    ).
 
 -spec interest_worker_info() ->
     [atom()].
