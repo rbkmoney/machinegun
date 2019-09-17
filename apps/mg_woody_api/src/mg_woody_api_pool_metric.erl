@@ -41,8 +41,8 @@
     ok.
 notify(Key, {inc, Value}, counter) ->
     ok = push([create_inc([mg, Key], Value)]);
-notify(Key, Value, meter) ->
-    ok = push([create_gauge([mg, Key], Value)]);
+notify(_Key, _Value, meter) ->
+    ok;
 notify(_Key, _Value, history) ->
     ok;
 notify(Key, Value, histogram) ->

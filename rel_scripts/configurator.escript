@@ -252,6 +252,9 @@ storage(NS, YamlConfig) ->
                 connect_timeout => ?C:time_interval(?C:conf([storage, connect_timeout  ], YamlConfig, "5S" ), ms),
                 request_timeout => ?C:time_interval(?C:conf([storage, request_timeout  ], YamlConfig, "10S"), ms),
                 pool_options => #{
+                    % If `init_count` is greater than zero, then the service will not start
+                    % if the riak is unavailable. The `pooler` synchronously creates `init_count`
+                    % connections at the start.
                     init_count          => 0,
                     max_count           => ?C:conf([storage, pool_size], YamlConfig, 100),
                     idle_timeout        => timer:seconds(60),
