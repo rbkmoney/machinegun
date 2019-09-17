@@ -406,22 +406,19 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             continuation => {exponential, infinity, 2, 10, 60 * 1000}
         },
         schedulers => maps:merge(
-            conf_with([timers], NSYamlConfig,
-                fun
-                    ("disabled") ->
+            case ?C:conf([timers], NSYamlConfig, undefined) of
+                "disabled" ->
                         #{};
-                    (_) ->
+                _ ->
                         #{
                             timers         => SchedulerConfig#{share => 2},
                             timers_retries => SchedulerConfig#{share => 1}
                         }
-                end
-            ),
-            conf_with([overseer], NSYamlConfig,
-                fun
-                    ("disabled") ->
+            end,
+            case ?C:conf([overseer], NSYamlConfig, undefined) of
+                "disabled" ->
                         #{};
-                    (_) ->
+                _ ->
                         #{
                             overseer => SchedulerConfig#{
                                 no_task_wait => 10 * 60 * 1000,  % 10 min
@@ -429,7 +426,6 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
                             }
                         }
                 end
-            )
         ),
         event_sinks => [event_sink(ES) || ES <- ?C:conf([event_sinks], NSYamlConfig, [])],
         suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0))
