@@ -62,11 +62,6 @@ push(Metrics) ->
 create_inc(Key, Number) ->
     mg_woody_api_metric_utils:create_inc(Key, Number).
 
--spec create_gauge(metric_key(), non_neg_integer()) ->
-    metric().
-create_gauge(Key, Number) ->
-    mg_woody_api_metric_utils:create_gauge(Key, Number).
-
 -spec create_bin_inc(metric_key(), bin_type(), number()) ->
     metric().
 create_bin_inc(KeyPrefix, BinType, Value) ->
