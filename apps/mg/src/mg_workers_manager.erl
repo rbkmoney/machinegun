@@ -86,7 +86,7 @@ child_spec(Options, ChildID) ->
     mg_utils:gen_start_ret().
 start_link(Options) ->
     mg_utils_supervisor_wrapper:start_link(
-        #{strategy => one_for_all, intensity => 0, period => 1},
+        #{strategy => rest_for_one},
         mg_utils:lists_compact([
             manager_child_spec(Options),
             metrics_handler_child_spec(Options)
