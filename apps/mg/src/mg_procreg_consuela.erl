@@ -48,10 +48,7 @@ reg_name(Options, Name) ->
 -spec select(options(), mg_procreg:name_pattern()) ->
     [{mg_procreg:name(), pid()}].
 select(_Options, NamePattern) ->
-    % TODO move to consuela
-    List = consuela:all(),
-    MatchSpec = ets:match_spec_compile([{{NamePattern, '_'}, [], ['$_']}]),
-    ets:match_spec_run(List, MatchSpec).
+    consuela:select(NamePattern).
 
 -spec start_link(options(), mg_procreg:reg_name(), module(), _Args, list()) ->
     mg_procreg:start_link_ret().
