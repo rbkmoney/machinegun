@@ -43,10 +43,10 @@ ref(_Options, Name) ->
 reg_name(Options, Name) ->
     ref(Options, Name).
 
--spec select(options(), _Query) ->
+-spec select(options(), mg_procreg:name_pattern()) ->
     [{mg_procreg:name(), pid()}].
-select(_Options, Query) ->
-    MatchSpec = [{{{n, l, Query}, '_', '_'}, [], ['$$']}],
+select(_Options, NamePattern) ->
+    MatchSpec = [{{{n, l, NamePattern}, '_', '_'}, [], ['$$']}],
     [{Name, Pid} || [{n, l, Name}, Pid, _] <- gproc:select(MatchSpec)].
 
 -spec start_link(options(), mg_procreg:reg_name(), module(), _Args, list()) ->

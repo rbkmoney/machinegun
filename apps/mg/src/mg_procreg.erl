@@ -18,6 +18,7 @@
 
 % Any term sans ephemeral ones, like `reference()`s / `pid()`s / `fun()`s.
 -type name() :: term().
+-type name_pattern() :: ets:match_pattern().
 
 -type ref() :: mg_utils:gen_ref().
 -type reg_name() :: mg_utils:gen_reg_name().
@@ -26,6 +27,7 @@
 -type options() :: mg_utils:mod_opts(procreg_options()).
 
 -export_type([name/0]).
+-export_type([name_pattern/0]).
 -export_type([ref/0]).
 -export_type([reg_name/0]).
 -export_type([options/0]).
@@ -53,7 +55,7 @@
 -callback reg_name(procreg_options(), name()) ->
     reg_name().
 
--callback select(procreg_options(), _Query :: name()) ->
+-callback select(procreg_options(), name_pattern()) ->
     [{name(), pid()}].
 
 -callback call(procreg_options(), ref(), _Call, timeout()) ->
@@ -90,10 +92,10 @@ ref(Options, Name) ->
 reg_name(Options, Name) ->
     mg_utils:apply_mod_opts(Options, reg_name, [Name]).
 
--spec select(options(), _Query :: name()) ->
+-spec select(options(), name_pattern()) ->
     [{name(), pid()}].
-select(Options, Query) ->
-    mg_utils:apply_mod_opts(Options, select, [Query]).
+select(Options, NamePattern) ->
+    mg_utils:apply_mod_opts(Options, select, [NamePattern]).
 
 -spec call(options(), name(), _Call) ->
     _Reply.
