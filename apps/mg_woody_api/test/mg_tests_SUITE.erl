@@ -213,9 +213,9 @@ end_per_suite(_C) ->
 -spec init_per_group(group_name(), config()) ->
     config().
 init_per_group(mwc, C) ->
-    init_per_group([{storage, {mg_storage_memory, #{}}} | C]);
+    init_per_group([{storage, mg_storage_memory} | C]);
 init_per_group(history, C) ->
-    init_per_group([{storage, {mg_storage_memory, #{}}} | C]);
+    init_per_group([{storage, mg_storage_memory} | C]);
 init_per_group(_, C) ->
     % NOTE
     % Даже такой небольшой шанс может сработать в ситуациях, когда мы в процессоре выгребаем большой кусок
@@ -312,7 +312,7 @@ mg_woody_api_config(C) ->
         ]},
         {namespaces, #{
             ?NS => #{
-                storage    => mg_ct_helper:build_storage(?NS, ?config(storage, C)),
+                storage    =>  ?config(storage, C),
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => #{pool => ns, max_connections => 100}
@@ -346,9 +346,7 @@ mg_woody_api_config(C) ->
             }
         }},
         {event_sink_ns, #{
-            storage => {mg_storage_memory, #{
-                name => event_sink_ns
-            }},
+            storage => mg_storage_memory,
             default_processing_timeout => 5000
         }}
     ].
@@ -689,9 +687,7 @@ config_with_multiple_event_sinks(_C) ->
         {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, limits => #{}}},
         {namespaces, #{
             <<"1">> => #{
-                storage    => {mg_storage_memory, #{
-                    name => storage_1
-                }},
+                storage    => mg_storage_memory,
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => #{pool => pool1, max_connections => 100}
@@ -706,9 +702,7 @@ config_with_multiple_event_sinks(_C) ->
                 event_sinks => [{mg_events_sink_machine, #{name => default, machine_id => <<"SingleES">>}}]
             },
             <<"2">> => #{
-                storage    => {mg_storage_memory, #{
-                    name => storage_2
-                }},
+                storage    => mg_storage_memory,
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => #{pool => pool2, max_connections => 100}
@@ -734,9 +728,7 @@ config_with_multiple_event_sinks(_C) ->
             }
         }},
         {event_sink_ns, #{
-            storage => {mg_storage_memory, #{
-                name => event_sink_ns
-            }},
+            storage => mg_storage_memory,
             default_processing_timeout => 5000
         }}
     ],

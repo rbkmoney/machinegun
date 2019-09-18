@@ -27,6 +27,7 @@
 
 %% API
 -export_type([options         /0]).
+-export_type([storage_options /0]).
 -export_type([ref             /0]).
 -export_type([machine         /0]).
 -export_type([tag_action      /0]).
@@ -104,7 +105,7 @@
 -type ref() :: {id, mg:id()} | {tag, mg_machine_tags:tag()}.
 -type options() :: #{
     namespace                  => mg:ns(),
-    events_storage             => mg_storage:options(),
+    events_storage             => storage_options(),
     processor                  => mg_utils:mod_opts(),
     tagging                    => mg_machine_tags:options(),
     machines                   => mg_machine:options(),
@@ -112,6 +113,7 @@
     event_sinks                => [mg_events_sink:handler()],
     default_processing_timeout => timeout()
 }.
+-type storage_options() :: mg_utils:mod_opts(map()).  % like mg_storage:options() except `name`
 
 
 -spec child_spec(options(), atom()) ->
@@ -505,8 +507,9 @@ machine_options(Options = #{machines := MachinesOptions}) ->
 
 -spec events_storage_options(options()) ->
     mg_storage:options().
-events_storage_options(#{events_storage := EventsStorage}) ->
-    EventsStorage.
+events_storage_options(#{namespace := NS, events_storage := StorageOptions}) ->
+    {Mod, Options} = mg_utils:separate_mod_opts(StorageOptions, #{}),
+    {Mod, Options#{name => {NS, ?MODULE, events_storage}}}.
 
 -spec tags_machine_options(options()) ->
     mg_machine_tags:options().

@@ -63,6 +63,7 @@
 -export_type([scheduler_opt         /0]).
 -export_type([schedulers_opt        /0]).
 -export_type([options               /0]).
+-export_type([storage_options       /0]).
 -export_type([thrown_error          /0]).
 -export_type([logic_error           /0]).
 -export_type([transient_error       /0]).
@@ -131,7 +132,7 @@
 
 -type options() :: #{
     namespace                => mg:ns(),
-    storage                  => mg_storage:options(),
+    storage                  => storage_options(),
     processor                => mg_utils:mod_opts(),
     pulse                    => mg_pulse:handler(),
     retries                  => retry_opt(),
@@ -140,6 +141,8 @@
     reschedule_timeout       => timeout(),
     timer_processing_timeout => timeout()
 }.
+
+-type storage_options() :: mg_utils:mod_opts(map()).  % like mg_storage:options() except `name`
 
 -type thrown_error() :: {logic, logic_error()} | {transient, transient_error()} | {timeout, _Reason}.
 -type logic_error() :: machine_already_exist | machine_not_found | machine_failed | machine_already_working.
@@ -1114,8 +1117,9 @@ manager_options(Options) ->
 
 -spec storage_options(options()) ->
     mg_storage:options().
-storage_options(#{storage := Storage}) ->
-    Storage.
+storage_options(#{namespace := NS, storage := StorageOptions}) ->
+    {Mod, Options} = mg_utils:separate_mod_opts(StorageOptions, #{}),
+    {Mod, Options#{name => {NS, ?MODULE, storage}}}.
 
 -spec scheduler_child_spec(overseer | timers | timers_retries, options()) ->
     supervisor:child_spec() | undefined.

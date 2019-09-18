@@ -18,7 +18,8 @@
 
 %% API
 -export_type([event_body/0]).
--export_type([options   /0]).
+-export_type([options/0]).
+-export_type([storage_options/0]).
 -export_type([ns_options/0]).
 -export([child_spec /2]).
 -export([start_link /1]).
@@ -46,18 +47,19 @@
     name                       := atom(),
     namespace                  := mg:ns(),
     machine_id                 := mg:id(),
-    storage                    := mg_storage:options(),
+    storage                    := storage_options(),
     pulse                      := mg_pulse:handler(),
     events_storage             := mg_storage:options(),
     default_processing_timeout := timeout()
 }.
 -type ns_options() :: #{
     namespace                  := mg:ns(),
-    storage                    := mg_storage:options(),
+    storage                    := storage_options(),
     pulse                      := mg_pulse:handler(),
-    events_storage             := mg_storage:options(),
+    events_storage             := storage_options(),
     default_processing_timeout := timeout()
 }.
+-type storage_options() :: mg_utils:mod_opts(map()).  % like mg_storage:options() except `name`
 
 -spec child_spec(ns_options(), atom()) ->
     supervisor:child_spec().
@@ -209,8 +211,9 @@ machine_options(Options = #{namespace := Namespace, storage := Storage, pulse :=
 
 -spec events_storage_options(ns_options()) ->
     mg_storage:options().
-events_storage_options(#{events_storage := EventsStorage}) ->
-    EventsStorage.
+events_storage_options(#{namespace := NS, events_storage := StorageOptions}) ->
+    {Mod, Options} = mg_utils:separate_mod_opts(StorageOptions, #{}),
+    {Mod, Options#{name => {NS, ?MODULE, events_storage}}}.
 
 %%
 

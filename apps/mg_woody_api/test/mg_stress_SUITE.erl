@@ -98,7 +98,7 @@ mg_woody_api_config(_C) ->
         }},
         {namespaces, #{
             ?NS => #{
-                storage    => mg_ct_helper:build_storage(?NS, mg_storage_memory),
+                storage    => mg_storage_memory,
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => #{pool => ns, max_connections => 100}
@@ -114,9 +114,7 @@ mg_woody_api_config(_C) ->
             }
         }},
         {event_sink_ns, #{
-            storage => {mg_storage_memory, #{
-                name        => event_sink_ns
-            }},
+            storage => mg_storage_memory,
             default_processing_timeout => 5000
         }}
     ].
@@ -130,7 +128,7 @@ stress_test(C) ->
     Processes = [stress_test_start_processes(C, integer_to_binary(ID)) || ID <- lists:seq(1, N)],
 
     ok = timer:sleep(TestTimeout),
-    ok = mg_utils:stop_wait_all(Processes, shutdown, 2000).
+    ok = mg_ct_helper:stop_wait_all(Processes, shutdown, 2000).
 
 -spec stress_test_start_processes(term(), mg:id()) ->
     _.

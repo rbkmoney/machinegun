@@ -149,9 +149,9 @@ start_mg_woody_api(Name, C) ->
         {namespaces, #{
             ?NS => maps:merge(
                 #{
-                    storage    => mg_ct_helper:build_storage(?NS, {mg_storage_memory, #{
+                    storage    => {mg_storage_memory, #{
                         existing_storage_name => ?config(storage_name, C)}
-                    }),
+                    },
                     processor  => #{
                         url            => <<"http://localhost:8023/processor">>,
                         transport_opts => #{pool => ns, max_connections => 100}
@@ -178,9 +178,7 @@ start_mg_woody_api(Name, C) ->
             )
         }},
         {event_sink_ns, #{
-            storage => {mg_storage_memory, #{
-                name          => event_sink_ns
-            }},
+            storage => mg_storage_memory,
             default_processing_timeout => 5000
         }}
     ],

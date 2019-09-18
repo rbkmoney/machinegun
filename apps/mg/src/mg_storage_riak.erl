@@ -55,6 +55,7 @@
 
 %% internal
 -export([start_client/1]).
+-export([start_link/1]).
 
 % from riakc
 % -type bucket() :: binary().
@@ -109,15 +110,25 @@ start_client(#{port := Port} = Options) ->
     IP = get_riak_addr(Options),
     riakc_pb_socket:start_link(IP, Port, [{connect_timeout, get_option(connect_timeout, Options)}]).
 
+-spec start_link(options()) ->
+    mg_utils:gen_start_ret().
+start_link(Options) ->
+    PoolConfig = pooler_config:list_to_pool(make_pool_config(Options)),
+    pooler_pool_sup:start_link(PoolConfig).
+
 %%
 %% mg_storage callbacks
 %%
 
 -spec child_spec(options(), atom()) ->
     supervisor:child_spec().
-child_spec(Options, _ChildID) ->
-    PoolConfig = make_pool_config(Options),
-    pooler:pool_child_spec(PoolConfig).
+child_spec(Options, ChildID) ->
+    #{
+        id       => ChildID,
+        start    => {?MODULE, start_link, [Options]},
+        restart  => permanent,
+        type     => supervisor
+    }.
 
 -spec do_request(options(), mg_storage:request()) ->
     mg_storage:response().
@@ -424,7 +435,7 @@ get_addrs_by_host(Host, Timeout) ->
 -spec make_pool_config(options()) ->
     [{atom(), term()}].
 make_pool_config(Options) ->
-    Name = maps:get(name, Options),
+    Name = pool_name(Options),
     PoolOptions = maps:get(pool_options, Options),
     StartTimeout = get_option(connect_timeout, Options) + get_option(resolve_timeout, Options),
     DefaultConfig = [
@@ -459,9 +470,9 @@ make_pool_config(Options) ->
 
 -spec take_client(options()) ->
     client_ref().
-take_client(#{name := Name}) ->
+take_client(Options) ->
     Timeout = ?TAKE_CLIENT_TIMEOUT,
-    case pooler:take_member(Name, {Timeout, ms}) of
+    case pooler:take_member(pool_name(Options), {Timeout, ms}) of
         Ref when is_pid(Ref) ->
             Ref;
         error_no_members ->
@@ -470,5 +481,15 @@ take_client(#{name := Name}) ->
 
 -spec return_client(options(), client_ref(), ok | fail) ->
     ok.
-return_client(#{name := Name}, ClientRef, Status) ->
-    pooler:return_member(Name, ClientRef, Status).
+return_client(Options, ClientRef, Status) ->
+    pooler:return_member(pool_name(Options), ClientRef, Status).
+
+-spec pool_name(options()) ->
+    atom().
+pool_name(#{name := Name}) ->
+    term_to_atom(Name).
+
+-spec term_to_atom(term()) ->
+    atom().
+term_to_atom(Term) ->
+    erlang:binary_to_atom(base64:encode(erlang:term_to_binary(Term)), latin1).

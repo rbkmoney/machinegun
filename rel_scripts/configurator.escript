@@ -240,12 +240,9 @@ wait_value(Fun, Timeout, Interval, Key) ->
 storage(NS, YamlConfig) ->
     case ?C:conf([storage, type], YamlConfig) of
         "memory" ->
-            {mg_storage_memory, #{
-                name => ?C:atom(NS)
-            }
+            mg_storage_memory
         "riak" ->
             {mg_storage_riak, #{
-                name   => ?C:atom(NS),
                 host   => ?C:utf_bin(?C:conf([storage, host], YamlConfig)),
                 port   =>            ?C:conf([storage, port], YamlConfig),
                 bucket => NS,

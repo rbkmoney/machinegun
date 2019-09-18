@@ -67,7 +67,7 @@
 %%
 %% API
 %%
--type name        () :: atom().
+-type name        () :: term().
 
 -type opaque      () :: null | true | false | number() | binary() | [opaque()] | #{opaque() => opaque()}.
 -type key         () :: binary().

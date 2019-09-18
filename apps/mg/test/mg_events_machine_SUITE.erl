@@ -172,7 +172,7 @@ events_machine_options(Options, NS) ->
         processor => {?MODULE, Options},
         tagging => #{
             namespace => <<NS/binary, "_tags">>,
-            storage => mg_ct_helper:build_storage(<<NS/binary, "_tags">>, mg_storage_memory),
+            storage => mg_storage_memory,
             pulse => ?MODULE,
             retries => #{}
         },
