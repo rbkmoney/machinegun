@@ -17,7 +17,7 @@
 -module(mg_woody_api_hay).
 -behaviour(hay_metrics_handler).
 
--export([child_spec/2]).
+-export([child_spec/3]).
 
 %% how_are_you callbacks
 -export([init/1]).
@@ -27,8 +27,6 @@
 %% Types
 
 -type options() :: #{
-    name     := mg:ns(),
-    registry := mg_procreg:options(),
     interval => timeout()
 }.
 
@@ -50,16 +48,18 @@
 
 %% API
 
--spec child_spec(options(), _ChildID) -> supervisor:child_spec().
-child_spec(Options, ChildID) ->
+-spec child_spec(options() | undefined, mg_workers_manager:options(), _ChildID) ->
+    supervisor:child_spec().
+child_spec(Options0, ManagerOptions, ChildID) ->
+    Options = genlib:define(Options0, #{}),
     #{
         id    => ChildID,
-        start => {hay_metrics_handler, start_link, [{?MODULE, Options}]},
+        start => {hay_metrics_handler, start_link, [{?MODULE, {Options, ManagerOptions}}]},
         type  => worker
     }.
 
--spec init(options()) -> {ok, state()}.
-init(Options = #{name := NS, registry := Registry}) ->
+-spec init({options(), mg_workers_manager:options()}) -> {ok, state()}.
+init({Options, #{name := NS, registry := Registry}}) ->
     {ok, #state{
         interval = maps:get(interval, Options, 10 * 1000),
         namespace = NS,

@@ -32,7 +32,6 @@
 -export_type([options/0]).
 -export_type([queue_limit/0]).
 -export_type([metrics_handler/0]).
--export_type([metrics_handler_options/0]).
 
 -export([child_spec    /2]).
 -export([start_link    /1]).
@@ -51,13 +50,7 @@
     pulse                   => mg_pulse:handler()
 }.
 -type queue_limit() :: non_neg_integer().
-
--type metrics_handler_options() :: #{
-    name           => name(),
-    registry       => mg_procreg:options(),
-    _              => _
-}.
--type metrics_handler() :: mg_utils:mod_opts(metrics_handler_options()).
+-type metrics_handler() :: mg_utils:mod_opts().
 
 %% Internal types
 -type id() :: mg:id().
@@ -110,13 +103,8 @@ manager_child_spec(Options) ->
 -spec metrics_handler_child_spec(options()) ->
     supervisor:child_spec() | undefined.
 metrics_handler_child_spec(#{metrics_handler := Handler} = Options) ->
-    {HandlerMod, HandlerOpts0} = mg_utils:separate_mod_opts(Handler, #{}),
-    HandlerOpts = maps:merge(HandlerOpts0, maps:with([name, registry], Options)),
-    #{
-        id    => metrics_handler,
-        start => {hay_metrics_handler, start_link, [{HandlerMod, HandlerOpts}]},
-        type  => worker
-    };
+    ChildID = metrics_handler,
+    mg_utils:apply_mod_opts(Handler, child_spec, [Options, ChildID]);
 metrics_handler_child_spec(#{}) ->
     undefined.
 
