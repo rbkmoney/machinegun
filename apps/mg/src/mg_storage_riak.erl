@@ -53,6 +53,9 @@
 -export_type([options/0]).
 -export([child_spec/2, do_request/2]).
 
+%% API
+-export([pool_utilization/1]).
+
 %% internal
 -export([start_client/1]).
 -export([start_link/1]).
@@ -99,6 +102,15 @@
 }.
 
 -define(TAKE_CLIENT_TIMEOUT, 30000).  %% TODO: Replace by deadline
+
+%%
+%% API
+%%
+
+-spec pool_utilization(options()) ->
+    [{MetricName :: atom(), Value :: integer()}].
+pool_utilization(Options) ->
+    pooler:pool_utilization(pool_name(Options)).
 
 %%
 %% internal API

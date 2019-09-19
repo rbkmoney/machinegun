@@ -58,6 +58,8 @@
 -export([do_request/2]).
 
 %% Internal API
+-export([start_link/1]).
+
 -export([opaque_to_binary/1]).
 -export([binary_to_opaque/1]).
 
@@ -95,6 +97,7 @@
 
 -type storage_options() :: #{
     name := name(),
+    sidecar => mg_utils:mod_opts(),
     atom() => any()
 }.
 -type options() :: mg_utils:mod_opts(storage_options()).
@@ -124,10 +127,26 @@
 
 %%
 
--spec child_spec(options(), atom()) ->
-    supervisor:child_spec() | undefined.
+-spec start_link(options()) ->
+    mg_utils:gen_start_ret().
+start_link(Options) ->
+    mg_utils_supervisor_wrapper:start_link(
+        #{strategy => rest_for_one},
+        mg_utils:lists_compact([
+            mg_utils:apply_mod_opts_if_defined(Options, child_spec, undefined, [storage]),
+            sidecar_child_spec(Options, sidecar)
+        ])
+    ).
+
+-spec child_spec(options(), term()) ->
+    supervisor:child_spec().
 child_spec(Options, ChildID) ->
-    mg_utils:apply_mod_opts(Options, child_spec, [ChildID]).
+    #{
+        id       => ChildID,
+        start    => {?MODULE, start_link, [Options]},
+        restart  => permanent,
+        type     => supervisor
+    }.
 
 -spec put(options(), key(), context() | undefined, value(), [index_update()]) ->
     context().
@@ -192,4 +211,17 @@ binary_to_opaque(Binary) ->
             Data;
         {error, Reason} ->
             erlang:error(msgpack_unpack_error, [Binary, Reason])
+    end.
+
+%% Internals
+
+-spec sidecar_child_spec(options(), term()) ->
+    supervisor:child_spec() | undefined.
+sidecar_child_spec(Options, ChildID) ->
+    {_Handler, StorageOptions} = mg_utils:separate_mod_opts(Options, #{}),
+    case maps:find(sidecar, StorageOptions) of
+        {ok, Sidecar} ->
+            mg_utils:apply_mod_opts(Sidecar, child_spec, [Options, ChildID]);
+        error ->
+            undefined
     end.

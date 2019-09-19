@@ -1119,7 +1119,7 @@ manager_options(Options) ->
     mg_storage:options().
 storage_options(#{namespace := NS, storage := StorageOptions}) ->
     {Mod, Options} = mg_utils:separate_mod_opts(StorageOptions, #{}),
-    {Mod, Options#{name => {NS, ?MODULE, storage}}}.
+    {Mod, Options#{name => {NS, ?MODULE, machines}}}.
 
 -spec scheduler_child_spec(overseer | timers | timers_retries, options()) ->
     supervisor:child_spec() | undefined.

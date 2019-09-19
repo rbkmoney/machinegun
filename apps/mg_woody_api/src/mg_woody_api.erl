@@ -186,12 +186,13 @@ events_machine_options(NS, Config) ->
         event_sink_options(SinkConfig, Config)
         || SinkConfig <- maps:get(event_sinks, NSConfigs, [])
     ],
+    EventsStorage = add_storage_metrics(NS, events, sub_storage_options(<<"events">>, Storage)),
     #{
         namespace                  => NS,
         processor                  => processor(ProcessorConfig),
         tagging                    => tags_options(NS, NSConfigs),
         machines                   => machine_options(NS, NSConfigs),
-        events_storage             => sub_storage_options(<<"events">>, Storage),
+        events_storage             => EventsStorage,
         event_sinks                => EventSinks,
         pulse                      => pulse(),
         default_processing_timeout => maps:get(default_processing_timeout, NSConfigs)
@@ -212,20 +213,25 @@ event_sink_options({mg_events_sink_kafka, EventSinkConfig}, _Config) ->
     mg_events_sink_machine:ns_options().
 event_sink_namespace_options(Config) ->
     EventSinkNS = #{storage := Storage} = proplists:get_value(event_sink_ns, Config),
+    NS = <<"_event_sinks">>,
+    MachinesStorage = add_storage_metrics(NS, machines, sub_storage_options(<<"machines">>, Storage)),
+    EventsStorage = add_storage_metrics(NS, events, sub_storage_options(<<"events">>, Storage)),
     EventSinkNS#{
-        namespace        => <<"_event_sinks">>,
+        namespace        => NS,
         pulse            => pulse(),
-        storage          => sub_storage_options(<<"machines">>, Storage),
-        events_storage   => sub_storage_options(<<"events"  >>, Storage)
+        storage          => MachinesStorage,
+        events_storage   => EventsStorage
     }.
 
 -spec tags_options(mg:ns(), events_machines()) ->
     mg_machine_tags:options().
 tags_options(NS, #{retries := Retries, storage := Storage}) ->
+    TagsNS = mg_utils:concatenate_namespaces(NS, <<"tags">>),
+    % по логике тут должен быть sub namespace, но его по историческим причинам нет
+    TagsStorage = add_storage_metrics(TagsNS, tags, Storage),
     #{
-        namespace => mg_utils:concatenate_namespaces(NS, <<"tags">>),
-        % по логике тут должен быть sub namespace, но его по историческим причинам нет
-        storage   => Storage,
+        namespace => TagsNS,
+        storage   => TagsStorage,
         pulse     => pulse(),
         retries   => Retries
     }.
@@ -243,9 +249,10 @@ machine_options(NS, Config) ->
         ],
         Config
     ),
+    MachinesStorage = add_storage_metrics(NS, machines, sub_storage_options(<<"machines">>, Storage)),
     Options#{
         namespace           => NS,
-        storage             => sub_storage_options(<<"machines">>, Storage),
+        storage             => MachinesStorage,
         pulse               => pulse(),
         % TODO сделать аналогично в event_sink'е и тэгах
         suicide_probability => maps:get(suicide_probability, Config, undefined)
@@ -283,8 +290,8 @@ collect_event_sink_machines(Config) ->
     ]),
     ordsets:to_list(EventSinks).
 
--spec sub_storage_options(mg:ns(), mg_storage:options()) ->
-    mg_storage:options().
+-spec sub_storage_options(mg:ns(), mg_machine:storage_options()) ->
+    mg_machine:storage_options().
 sub_storage_options(SubNS, Storage0) ->
     Storage1 = mg_utils:separate_mod_opts(Storage0, #{}),
     Storage2 = add_bucket_postfix(SubNS, Storage1),
@@ -292,10 +299,34 @@ sub_storage_options(SubNS, Storage0) ->
 
 -spec add_bucket_postfix(mg:ns(), mg_storage:options()) ->
     mg_storage:options().
-add_bucket_postfix(_, Storage = {mg_storage_memory, _}) ->
+add_bucket_postfix(_, {mg_storage_memory, _} = Storage) ->
     Storage;
-add_bucket_postfix(SubNS, {mg_storage_riak, Options = #{bucket := Bucket}}) ->
+add_bucket_postfix(SubNS, {mg_storage_riak, #{bucket := Bucket} = Options}) ->
     {mg_storage_riak, Options#{bucket := mg_utils:concatenate_namespaces(Bucket, SubNS)}}.
+
+-spec add_storage_metrics(mg:ns(), _type, mg_machine:storage_options()) ->
+    mg_machine:storage_options().
+add_storage_metrics(NS, Type, Storage0) ->
+    Storage1 = mg_utils:separate_mod_opts(Storage0, #{}),
+    do_add_storage_metrics(NS, Type, Storage1).
+
+-spec do_add_storage_metrics(mg:ns(), atom(), mg_machine:storage_options()) ->
+    mg_machine:storage_options().
+do_add_storage_metrics(_NS, _Type, {mg_storage_memory, _} = Storage) ->
+    Storage;
+do_add_storage_metrics(NS, Type, {mg_storage_riak, Options}) ->
+    PoolOptions = maps:get(pool_options, Options, #{}),
+    NewOptions = Options#{
+        sidecar => {mg_woody_api_riak_metric, #{
+            namespace => NS,
+            type => Type
+        }},
+        pool_options => PoolOptions#{
+            metrics_mod => mg_woody_api_riak_metric,
+            metrics_api => exometer
+        }
+    },
+    {mg_storage_riak, NewOptions}.
 
 -spec pulse() ->
     mg_pulse:handler().

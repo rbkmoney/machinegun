@@ -256,9 +256,7 @@ storage(NS, YamlConfig) ->
                     max_count           => ?C:conf([storage, pool_size], YamlConfig, 100),
                     idle_timeout        => timer:seconds(60),
                     cull_interval       => timer:seconds(10),
-                    queue_max           => 1000,
-                    metrics_mod         => mg_woody_api_pool_metric,
-                    metrics_api         => folsom
+                    queue_max           => 1000
                 }
             }}
     end.
