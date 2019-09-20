@@ -167,11 +167,7 @@ woody_server_child_spec(Config, ChildID) ->
 -spec woody_metrics_handler_childspec() ->
     supervisor:child_spec().
 woody_metrics_handler_childspec() ->
-    #{
-        id    => woody_metrics_handler,
-        start => {hay_metrics_handler, start_link, [woody_api_hay]},
-        type  => worker
-    }.
+    hay_metrics_handler:child_spec(woody_api_hay, woody_metrics_handler).
 
 -spec api_automaton_options(config()) ->
     mg_woody_api_automaton:options().
@@ -272,8 +268,8 @@ machine_options(NS, Config) ->
 worker_manager_options(Config) ->
     maps:merge(
         #{
-            registry        => mg_procreg_gproc,
-            metrics_handler => mg_woody_api_hay
+            registry => mg_procreg_gproc,
+            sidecar  => mg_woody_api_hay
         },
         maps:get(worker, Config, #{})
     ).

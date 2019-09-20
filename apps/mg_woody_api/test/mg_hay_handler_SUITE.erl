@@ -134,8 +134,8 @@ mg_woody_api_config(C) ->
                     transport_opts => #{pool => ns, max_connections => 100}
                 },
                 worker     => #{
-                    registry        => registry(C),
-                    metrics_handler => {mg_woody_api_hay, #{interval => 100}}
+                    registry => registry(C),
+                    sidecar  => {mg_woody_api_hay, #{interval => 100}}
                 },
                 default_processing_timeout => 5000,
                 schedulers => #{

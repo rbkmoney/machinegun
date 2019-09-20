@@ -50,13 +50,9 @@
 
 -spec child_spec(options() | undefined, mg_workers_manager:options(), _ChildID) ->
     supervisor:child_spec().
-child_spec(Options0, ManagerOptions, ChildID) ->
-    Options = genlib:define(Options0, #{}),
-    #{
-        id    => ChildID,
-        start => {hay_metrics_handler, start_link, [{?MODULE, {Options, ManagerOptions}}]},
-        type  => worker
-    }.
+child_spec(Options, ManagerOptions, ChildID) ->
+    HandlerOptions = {genlib:define(Options, #{}), ManagerOptions},
+    hay_metrics_handler:child_spec({?MODULE, HandlerOptions}, ChildID).
 
 -spec init({options(), mg_workers_manager:options()}) -> {ok, state()}.
 init({Options, #{name := NS, registry := Registry}}) ->

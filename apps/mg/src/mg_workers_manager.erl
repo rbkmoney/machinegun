@@ -31,7 +31,6 @@
 %% API
 -export_type([options/0]).
 -export_type([queue_limit/0]).
--export_type([metrics_handler/0]).
 
 -export([child_spec    /2]).
 -export([start_link    /1]).
@@ -46,11 +45,10 @@
     registry                => mg_procreg:options(),
     message_queue_len_limit => queue_limit(),
     worker_options          => mg_worker:options(), % all but `registry`
-    metrics_handler         => metrics_handler(),
-    pulse                   => mg_pulse:handler()
+    pulse                   => mg_pulse:handler(),
+    sidecar                 => mg_utils:mod_opts()
 }.
 -type queue_limit() :: non_neg_integer().
--type metrics_handler() :: mg_utils:mod_opts().
 
 %% Internal types
 -type id() :: mg:id().
@@ -82,7 +80,7 @@ start_link(Options) ->
         #{strategy => rest_for_one},
         mg_utils:lists_compact([
             manager_child_spec(Options),
-            metrics_handler_child_spec(Options)
+            sidecar_child_spec(Options)
         ])
     ).
 
@@ -100,12 +98,11 @@ manager_child_spec(Options) ->
         type  => supervisor
     }.
 
--spec metrics_handler_child_spec(options()) ->
+-spec sidecar_child_spec(options()) ->
     supervisor:child_spec() | undefined.
-metrics_handler_child_spec(#{metrics_handler := Handler} = Options) ->
-    ChildID = metrics_handler,
-    mg_utils:apply_mod_opts(Handler, child_spec, [Options, ChildID]);
-metrics_handler_child_spec(#{}) ->
+sidecar_child_spec(#{sidecar := Sidecar} = Options) ->
+    mg_utils:apply_mod_opts(Sidecar, child_spec, [Options, sidecar]);
+sidecar_child_spec(#{}) ->
     undefined.
 
 % sync
