@@ -169,12 +169,7 @@ how_are_you(YamlConfig) ->
         {metrics_publishers, Publishers},
         {metrics_handlers, [
             hay_vm_handler,
-            hay_cgroup_handler,
-            woody_api_hay,
-            {mg_woody_api_hay, #{
-                namespaces => namespaces_list(YamlConfig),
-                registries => [procreg(YamlConfig)]
-            }}
+            hay_cgroup_handler
         ]}
     ].
 
@@ -357,16 +352,6 @@ namespaces(YamlConfig) ->
         ?C:conf([namespaces], YamlConfig)
     ).
 
-namespaces_list(YamlConfig) ->
-    NsNames = [
-        erlang:list_to_binary(NameStr)
-        || {NameStr, _NSYamlConfig} <- ?C:conf([namespaces], YamlConfig)
-    ],
-    lists:flatten([<<"_event_sinks_machines">>] ++ [
-        [NS, <<NS/binary, "_tags">>]
-        || NS <- NsNames
-    ]).
-
 namespace({NameStr, NSYamlConfig}, YamlConfig) ->
     Name = ?C:utf_bin(NameStr),
     Timeout = fun(TimeoutName, Default) ->
@@ -391,8 +376,10 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
         },
         worker => #{
             registry          => procreg(YamlConfig),
-            hibernate_timeout => Timeout(hibernate_timeout,  "5S"),
-            unload_timeout    => Timeout(unload_timeout   , "60S")
+            worker_options    => #{
+                hibernate_timeout => Timeout(hibernate_timeout,  "5S"),
+                unload_timeout    => Timeout(unload_timeout   , "60S")
+            }
         },
         default_processing_timeout => Timeout(default_processing_timeout, "30S"),
         timer_processing_timeout => Timeout(timer_processing_timeout, "60S"),

@@ -282,7 +282,7 @@ run_load_test(#{
     WorkersPid = start_workers(ManagerOptions),
     RunnersPid = [stress_test_start_process(Job, ManagerOptions, N) || N <- lists:seq(1, RunnersCount)],
     ok = timer:sleep(Duration),
-    ok = mg_utils:stop_wait_all(RunnersPid, shutdown, 1000),
+    ok = mg_utils:stop_wait_all(RunnersPid, shutdown, RunnersCount * 10),
     ok = wait_machines_unload(UnloadTimeout),
     ok = stop_workers(WorkersPid).
 
@@ -308,10 +308,10 @@ workers_options(UnloadTimeout, MsgQueueLen, WorkerParams, C) ->
     #{
         name => base_test_workers,
         pulse => undefined,
+        registry => ?config(registry, C),
         message_queue_len_limit => MsgQueueLen,
         worker_options => #{
             worker            => {?MODULE, WorkerParams},
-            registry          => ?config(registry, C),
             hibernate_timeout => UnloadTimeout div 2,
             unload_timeout    => UnloadTimeout
         }

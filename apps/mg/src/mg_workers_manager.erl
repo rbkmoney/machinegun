@@ -42,9 +42,11 @@
 %% Types
 -type options() :: #{
     name                    => name(),
+    registry                => mg_procreg:options(),
     message_queue_len_limit => queue_limit(),
-    worker_options          => mg_worker:options(),
-    pulse                   => mg_pulse:handler()
+    worker_options          => mg_worker:options(), % all but `registry`
+    pulse                   => mg_pulse:handler(),
+    sidecar                 => mg_utils:mod_opts()
 }.
 -type queue_limit() :: non_neg_integer().
 
@@ -75,12 +77,33 @@ child_spec(Options, ChildID) ->
     mg_utils:gen_start_ret().
 start_link(Options) ->
     mg_utils_supervisor_wrapper:start_link(
+        #{strategy => rest_for_one},
+        mg_utils:lists_compact([
+            manager_child_spec(Options),
+            sidecar_child_spec(Options)
+        ])
+    ).
+
+-spec manager_child_spec(options()) ->
+    supervisor:child_spec().
+manager_child_spec(Options) ->
+    Args = [
         self_reg_name(Options),
         #{strategy => simple_one_for_one},
-        [
-            mg_worker:child_spec(worker, worker_options(Options))
-        ]
-    ).
+        [mg_worker:child_spec(worker, worker_options(Options))]
+    ],
+    #{
+        id    => manager,
+        start => {mg_utils_supervisor_wrapper, start_link, Args},
+        type  => supervisor
+    }.
+
+-spec sidecar_child_spec(options()) ->
+    supervisor:child_spec() | undefined.
+sidecar_child_spec(#{sidecar := Sidecar} = Options) ->
+    mg_utils:apply_mod_opts(Sidecar, child_spec, [Options, sidecar]);
+sidecar_child_spec(#{}) ->
+    undefined.
 
 % sync
 -spec call(options(), id(), _Call, req_ctx(), mg_deadline:deadline()) ->
@@ -168,8 +191,8 @@ is_alive(Options, ID) ->
 
 -spec worker_options(options()) ->
     mg_worker:options().
-worker_options(#{worker_options := WorkerOptions}) ->
-    WorkerOptions.
+worker_options(#{worker_options := WorkerOptions, registry := Registry}) ->
+    WorkerOptions#{registry => Registry}.
 
 %%
 %% local

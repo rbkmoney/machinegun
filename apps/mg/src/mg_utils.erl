@@ -59,6 +59,7 @@
 -export([apply_mod_opts_if_defined /3]).
 -export([apply_mod_opts_if_defined /4]).
 -export([separate_mod_opts         /1]).
+-export([separate_mod_opts         /2]).
 
 -export([throw_if_error    /1]).
 -export([throw_if_error    /2]).
@@ -263,10 +264,15 @@ apply_mod_opts_if_defined(ModOpts, Function, Default, Args) ->
 
 -spec separate_mod_opts(mod_opts()) ->
     {module(), _Arg}.
-separate_mod_opts(ModOpts={_, _}) ->
+separate_mod_opts(ModOpts) ->
+    separate_mod_opts(ModOpts, undefined).
+
+-spec separate_mod_opts(mod_opts(Defaults), Defaults) ->
+    {module(), Defaults}.
+separate_mod_opts(ModOpts={_, _}, _) ->
     ModOpts;
-separate_mod_opts(Mod) ->
-    {Mod, undefined}.
+separate_mod_opts(Mod, Defaults) ->
+    {Mod, Defaults}.
 
 -spec throw_if_error
     (ok             ) -> ok;

@@ -47,7 +47,7 @@
     namespace                  := mg:ns(),
     machine_id                 := mg:id(),
     storage                    := mg_storage:options(),
-    worker                     := mg_worker:options(),
+    worker                     := mg_workers_manager:options(),
     pulse                      := mg_pulse:handler(),
     events_storage             := mg_storage:options(),
     default_processing_timeout := timeout()
@@ -55,7 +55,7 @@
 -type ns_options() :: #{
     namespace                  := mg:ns(),
     storage                    := mg_storage:options(),
-    worker                     := mg_worker:options(),
+    worker                     := mg_workers_manager:options(),
     pulse                      := mg_pulse:handler(),
     events_storage             := mg_storage:options(),
     default_processing_timeout := timeout()

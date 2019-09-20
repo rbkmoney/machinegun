@@ -25,13 +25,13 @@
         genlib,
         rfc3339,
         mg_proto,
-        mg,
         woody,
         yamerl,
         bear,
         cg_mon,
         how_are_you,
-        erl_health
+        erl_health,
+        mg
     ]},
     {env, []},
     {modules, []},

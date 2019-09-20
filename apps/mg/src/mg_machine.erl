@@ -136,7 +136,7 @@
     namespace                => mg:ns(),
     storage                  => mg_storage:options(),
     processor                => mg_utils:mod_opts(),
-    worker                   => mg_worker:options(), % all but `worker` option
+    worker                   => mg_workers_manager:options(),
     pulse                    => mg_pulse:handler(),
     retries                  => retry_opt(),
     schedulers               => schedulers_opt(),
@@ -1165,12 +1165,12 @@ emit_machine_load_beat(Options, Namespace, ID, ReqCtx, _StorageMachine) ->
 
 -spec manager_options(options()) ->
     mg_workers_manager:options().
-manager_options(Options) ->
-    #{
-        name           => maps:get(namespace, Options),
-        pulse          => maps:get(pulse, Options),
+manager_options(Options = #{namespace := NS, worker := ManagerOptions, pulse := Pulse}) ->
+    ManagerOptions#{
+        name           => NS,
+        pulse          => Pulse,
         worker_options => maps:merge(
-            maps:get(worker, Options, #{}),
+            maps:get(worker_options, ManagerOptions, #{}),
             #{
                 worker => {?MODULE, Options}
             }
