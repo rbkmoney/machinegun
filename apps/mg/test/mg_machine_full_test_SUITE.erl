@@ -236,7 +236,7 @@ automaton_options() ->
     #{
         namespace => <<"test">>,
         processor => ?MODULE,
-        storage   => {mg_storage_memory, #{name => test}},
+        storage   => mg_storage_memory,
         pulse     => ?MODULE
     }.
 
