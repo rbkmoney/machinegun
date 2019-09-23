@@ -186,7 +186,7 @@ automaton_options(NS) ->
     #{
         namespace => NS,
         processor => ?MODULE,
-        storage   => mg_storage_memory,
+        storage   => mg_ct_helper:build_storage(NS, mg_storage_memory),
         pulse     => ?MODULE,
         schedulers => #{
             timers         => #{ interval => timer:hours(1) },
@@ -201,7 +201,7 @@ automaton_options_wo_shedulers(NS) ->
     #{
         namespace => NS,
         processor => ?MODULE,
-        storage   => mg_storage_memory,
+        storage   => mg_ct_helper:build_storage(NS, mg_storage_memory),
         pulse     => ?MODULE,
         schedulers => #{
         }

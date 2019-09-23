@@ -312,7 +312,7 @@ mg_woody_api_config(C) ->
         ]},
         {namespaces, #{
             ?NS => #{
-                storage    => ?config(storage, C),
+                storage    =>  ?config(storage, C),
                 processor  => #{
                     url            => <<"http://localhost:8023/processor">>,
                     transport_opts => #{pool => ns, max_connections => 100}

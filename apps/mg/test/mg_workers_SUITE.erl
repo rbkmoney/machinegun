@@ -151,7 +151,7 @@ stress_test(_C) ->
     TestProcesses = [stress_test_start_process(Options, WorkersCount) || _ <- lists:seq(1, TestProcessesCount)],
     ok = timer:sleep(TestTimeout),
 
-    ok = mg_utils:stop_wait_all(TestProcesses, shutdown, 1000),
+    ok = mg_ct_helper:stop_wait_all(TestProcesses, shutdown, 1000),
     ok = wait_machines_unload(UnloadTimeout + 10),
     ok = stop_workers(WorkersPid).
 

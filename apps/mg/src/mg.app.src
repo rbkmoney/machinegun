@@ -24,6 +24,7 @@
         genlib,
         gproc,
         riakc,
+        pooler,
         brod,
         msgpack
     ]},

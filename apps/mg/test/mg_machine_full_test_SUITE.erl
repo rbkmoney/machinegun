@@ -85,7 +85,7 @@ full_test(_) ->
             lists:seq(1, 10)
         ),
     ok = timer:sleep(5 * 1000),
-    mg_utils:stop_wait_all(Pids ++ [AutomatonPid], shutdown, 5000).
+    mg_ct_helper:stop_wait_all(Pids ++ [AutomatonPid], shutdown, 5000).
 
 %% TODO wait, simple_repair, kill, continuation
 -type id() :: pos_integer().

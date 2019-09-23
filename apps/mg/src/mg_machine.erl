@@ -63,6 +63,7 @@
 -export_type([scheduler_opt         /0]).
 -export_type([schedulers_opt        /0]).
 -export_type([options               /0]).
+-export_type([storage_options       /0]).
 -export_type([thrown_error          /0]).
 -export_type([logic_error           /0]).
 -export_type([transient_error       /0]).
@@ -131,7 +132,7 @@
 
 -type options() :: #{
     namespace                => mg:ns(),
-    storage                  => mg_storage:options(),
+    storage                  => storage_options(),
     processor                => mg_utils:mod_opts(),
     pulse                    => mg_pulse:handler(),
     retries                  => retry_opt(),
@@ -140,6 +141,8 @@
     reschedule_timeout       => timeout(),
     timer_processing_timeout => timeout()
 }.
+
+-type storage_options() :: mg_utils:mod_opts(map()).  % like mg_storage:options() except `name`
 
 -type thrown_error() :: {logic, logic_error()} | {transient, transient_error()} | {timeout, _Reason}.
 -type logic_error() :: machine_already_exist | machine_not_found | machine_failed | machine_already_working.
@@ -224,7 +227,7 @@ start_link(Options) ->
     mg_utils_supervisor_wrapper:start_link(
         #{strategy => one_for_all},
         mg_utils:lists_compact([
-            mg_storage:child_spec(storage_options(Options), storage, storage_reg_name(Options)),
+            mg_storage:child_spec(storage_options(Options), storage),
             processor_child_spec(Options),
             mg_workers_manager:child_spec(manager_options(Options), manager),
             scheduler_child_spec(timers        , Options),
@@ -306,18 +309,18 @@ is_exist(Options, ID) ->
     mg_storage:search_result() | throws().
 search(Options, Query, Limit, Continuation) ->
     StorageQuery = storage_search_query(Query, Limit, Continuation),
-    mg_storage:search(storage_options(Options), storage_ref(Options), StorageQuery).
+    mg_storage:search(storage_options(Options), StorageQuery).
 
 -spec search(options(), search_query(), mg_storage:index_limit()) ->
     mg_storage:search_result() | throws().
 search(Options, Query, Limit) ->
-    mg_storage:search(storage_options(Options), storage_ref(Options), storage_search_query(Query, Limit)).
+    mg_storage:search(storage_options(Options), storage_search_query(Query, Limit)).
 
 -spec search(options(), search_query()) ->
     mg_storage:search_result() | throws().
 search(Options, Query) ->
     % TODO deadline
-    mg_storage:search(storage_options(Options), storage_ref(Options), storage_search_query(Query)).
+    mg_storage:search(storage_options(Options), storage_search_query(Query)).
 
 -spec call_with_lazy_start(options(), mg:id(), term(), request_context(), mg_utils:deadline(), term()) ->
     _Resp | throws().
@@ -496,7 +499,7 @@ new_storage_machine() ->
 -spec get_storage_machine(options(), mg:id()) ->
     {mg_storage:context(), storage_machine()} | undefined.
 get_storage_machine(Options, ID) ->
-    try mg_storage:get(storage_options(Options), storage_ref(Options), ID) of
+    try mg_storage:get(storage_options(Options), ID) of
         undefined ->
             undefined;
         {Context, PackedMachine} ->
@@ -947,7 +950,6 @@ transit_state(ReqCtx, Deadline, NewStorageMachine, State) ->
     F = fun() ->
             mg_storage:put(
                 storage_options(Options),
-                storage_ref(Options),
                 ID,
                 StorageContext,
                 storage_machine_to_opaque(NewStorageMachine),
@@ -968,7 +970,6 @@ remove_from_storage(ReqCtx, Deadline, State) ->
     F = fun() ->
             mg_storage:delete(
                 storage_options(Options),
-                storage_ref(Options),
                 ID,
                 StorageContext
             )
@@ -1116,23 +1117,9 @@ manager_options(Options) ->
 
 -spec storage_options(options()) ->
     mg_storage:options().
-storage_options(#{storage := Storage}) ->
-    Storage.
-
--spec storage_ref(options()) ->
-    mg_utils:gen_ref().
-storage_ref(Options) ->
-    {via, gproc, gproc_key(storage, Options)}.
-
--spec storage_reg_name(options()) ->
-    mg_utils:gen_reg_name().
-storage_reg_name(Options) ->
-    {via, gproc, gproc_key(storage, Options)}.
-
--spec gproc_key(atom(), options()) ->
-    gproc:key().
-gproc_key(Type, #{namespace := Namespace}) ->
-    {n, l, {?MODULE, Type, Namespace}}.
+storage_options(#{namespace := NS, storage := StorageOptions}) ->
+    {Mod, Options} = mg_utils:separate_mod_opts(StorageOptions, #{}),
+    {Mod, Options#{name => {NS, ?MODULE, machines}}}.
 
 -spec scheduler_child_spec(overseer | timers | timers_retries, options()) ->
     supervisor:child_spec() | undefined.

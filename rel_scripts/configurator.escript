@@ -240,20 +240,24 @@ wait_value(Fun, Timeout, Interval, Key) ->
 storage(NS, YamlConfig) ->
     case ?C:conf([storage, type], YamlConfig) of
         "memory" ->
-            mg_storage_memory;
+            mg_storage_memory
         "riak" ->
-            {mg_storage_pool, #{
-                worker =>
-                    {mg_storage_riak, #{
-                        host   => ?C:utf_bin(?C:conf([storage, host], YamlConfig)),
-                        port   =>            ?C:conf([storage, port], YamlConfig),
-                        bucket => NS,
-                        connect_timeout => ?C:time_interval(?C:conf([storage, connect_timeout  ], YamlConfig, "5S" ), ms),
-                        request_timeout => ?C:time_interval(?C:conf([storage, request_timeout  ], YamlConfig, "10S"), ms)
-                    }},
-                size => ?C:conf([storage, pool_size], YamlConfig, 100),
-                queue_len_limit => 10,
-                retry_attempts  => 10
+            {mg_storage_riak, #{
+                host   => ?C:utf_bin(?C:conf([storage, host], YamlConfig)),
+                port   =>            ?C:conf([storage, port], YamlConfig),
+                bucket => NS,
+                connect_timeout => ?C:time_interval(?C:conf([storage, connect_timeout  ], YamlConfig, "5S" ), ms),
+                request_timeout => ?C:time_interval(?C:conf([storage, request_timeout  ], YamlConfig, "10S"), ms),
+                pool_options => #{
+                    % If `init_count` is greater than zero, then the service will not start
+                    % if the riak is unavailable. The `pooler` synchronously creates `init_count`
+                    % connections at the start.
+                    init_count          => 0,
+                    max_count           => ?C:conf([storage, pool_size], YamlConfig, 100),
+                    idle_timeout        => timer:seconds(60),
+                    cull_interval       => timer:seconds(10),
+                    queue_max           => 1000
+                }
             }}
     end.
 

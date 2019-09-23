@@ -18,7 +18,8 @@
 
 %% API
 -export_type([event_body/0]).
--export_type([options   /0]).
+-export_type([options/0]).
+-export_type([storage_options/0]).
 -export_type([ns_options/0]).
 -export([child_spec /2]).
 -export([start_link /1]).
@@ -46,18 +47,19 @@
     name                       := atom(),
     namespace                  := mg:ns(),
     machine_id                 := mg:id(),
-    storage                    := mg_storage:options(),
+    storage                    := storage_options(),
     pulse                      := mg_pulse:handler(),
     events_storage             := mg_storage:options(),
     default_processing_timeout := timeout()
 }.
 -type ns_options() :: #{
     namespace                  := mg:ns(),
-    storage                    := mg_storage:options(),
+    storage                    := storage_options(),
     pulse                      := mg_pulse:handler(),
-    events_storage             := mg_storage:options(),
+    events_storage             := storage_options(),
     default_processing_timeout := timeout()
 }.
+-type storage_options() :: mg_utils:mod_opts(map()).  % like mg_storage:options() except `name`
 
 -spec child_spec(ns_options(), atom()) ->
     supervisor:child_spec().
@@ -77,7 +79,7 @@ start_link(Options) ->
         #{strategy => one_for_all},
         mg_utils:lists_compact([
             mg_machine:child_spec(machine_options       (Options), automaton),
-            mg_storage:child_spec(events_storage_options(Options), events_storage, events_storage_reg_name(Options))
+            mg_storage:child_spec(events_storage_options(Options), events_storage)
         ])
     ).
 
@@ -104,10 +106,9 @@ get_history(Options, EventSinkID, HistoryRange) ->
     #{events_range := EventsRange} = get_state(Options, EventSinkID),
     EventsKeys = get_events_keys(EventSinkID, EventsRange, HistoryRange),
     StorageOptions = events_storage_options(Options),
-    StorageRef = events_storage_ref(Options),
     Kvs = genlib_pmap:map(
         fun(Key) ->
-            {_Context, Value} = mg_storage:get(StorageOptions, StorageRef, Key),
+            {_Context, Value} = mg_storage:get(StorageOptions, Key),
             {Key, Value}
         end,
         EventsKeys
@@ -171,7 +172,7 @@ store_sink_events(Options, EventSinkID, SinkEvents) ->
     ok.
 store_event(Options, EventSinkID, SinkEvent) ->
     {Key, Value} = sink_event_to_kv(EventSinkID, SinkEvent),
-    _ = mg_storage:put(events_storage_options(Options), events_storage_ref(Options), Key,
+    _ = mg_storage:put(events_storage_options(Options), Key,
             undefined, Value, []),
     ok.
 
@@ -210,23 +211,9 @@ machine_options(Options = #{namespace := Namespace, storage := Storage, pulse :=
 
 -spec events_storage_options(ns_options()) ->
     mg_storage:options().
-events_storage_options(#{events_storage := EventsStorage}) ->
-    EventsStorage.
-
--spec events_storage_ref(ns_options()) ->
-    mg_utils:gen_ref().
-events_storage_ref(Options) ->
-    {via, gproc, gproc_key(events, Options)}.
-
--spec events_storage_reg_name(ns_options()) ->
-    mg_utils:gen_reg_name().
-events_storage_reg_name(Options) ->
-    {via, gproc, gproc_key(events, Options)}.
-
--spec gproc_key(atom(), ns_options()) ->
-    gproc:key().
-gproc_key(Type, #{namespace := Namespace}) ->
-    {n, l, {?MODULE, Type, Namespace}}.
+events_storage_options(#{namespace := NS, events_storage := StorageOptions}) ->
+    {Mod, Options} = mg_utils:separate_mod_opts(StorageOptions, #{}),
+    {Mod, Options#{name => {NS, ?MODULE, events}}}.
 
 %%
 

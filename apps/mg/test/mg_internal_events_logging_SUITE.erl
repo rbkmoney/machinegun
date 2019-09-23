@@ -119,7 +119,7 @@ automaton_options(NS) ->
     #{
         namespace => NS,
         processor => ?MODULE,
-        storage   => mg_storage_memory,
+        storage   => mg_ct_helper:build_storage(NS, mg_storage_memory),
         pulse     => ?MODULE,
         retries   => #{
             timers         => {intervals, [1000, 1000, 1000, 1000, 1000]},
