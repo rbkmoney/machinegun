@@ -36,7 +36,7 @@ BUILD_IMAGE_TAG := cd38c35976f3684fe7552533b6175a4c3460e88b
 
 CALL_ANYWHERE := all submodules rebar-update compile xref lint dialyze start devrel release clean distclean
 
-CALL_W_CONTAINER := $(CALL_ANYWHERE) test dev_test
+CALL_W_CONTAINER := $(CALL_ANYWHERE) test dev_test test_configurator
 
 all: compile
 
