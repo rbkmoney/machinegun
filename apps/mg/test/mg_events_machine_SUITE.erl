@@ -182,7 +182,7 @@ events_machine_options(Options, NS) ->
         },
         machines => #{
             namespace => NS,
-            storage => mg_storage_memory,
+            storage => mg_ct_helper:build_storage(NS, mg_storage_memory),
             worker => #{
                 registry => mg_procreg_gproc
             },
@@ -193,7 +193,7 @@ events_machine_options(Options, NS) ->
                 overseer       => Scheduler
             }
         },
-        events_storage => mg_storage_memory,
+        events_storage => mg_ct_helper:build_storage(<<NS/binary, "_sink">>, mg_storage_memory),
         event_sinks => [
             {?MODULE, Options}
         ],

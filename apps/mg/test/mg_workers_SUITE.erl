@@ -282,7 +282,7 @@ run_load_test(#{
     WorkersPid = start_workers(ManagerOptions),
     RunnersPid = [stress_test_start_process(Job, ManagerOptions, N) || N <- lists:seq(1, RunnersCount)],
     ok = timer:sleep(Duration),
-    ok = mg_utils:stop_wait_all(RunnersPid, shutdown, RunnersCount * 10),
+    ok = mg_ct_helper:stop_wait_all(RunnersPid, shutdown, RunnersCount * 10),
     ok = wait_machines_unload(UnloadTimeout),
     ok = stop_workers(WorkersPid).
 

@@ -92,7 +92,7 @@ update_event(Event = #{body := Body}, ModernizedBody) ->
     ok.
 store_event(Options, ID, Event) ->
     {Key, Value} = mg_events:add_machine_id(ID, mg_events:event_to_kv(Event)),
-    mg_storage:put(events_storage_options(Options), events_storage_ref(Options), Key, undefined, Value, []).
+    mg_storage:put(events_storage_options(Options), Key, undefined, Value, []).
 
 -spec filter_outdated_history(options(), [mg_events:event()]) ->
     [mg_events:event()].
@@ -135,15 +135,6 @@ call_handler(#{handler := Handler}, ReqCtx, MachineEvent) ->
 
 -spec events_storage_options(mg_events_machine:options()) ->
     mg_storage:options().
-events_storage_options(#{events_storage := EventsStorage}) ->
-    EventsStorage.
-
--spec events_storage_ref(mg_events_machine:options()) ->
-    mg_utils:gen_ref().
-events_storage_ref(Options) ->
-    {via, gproc, gproc_key(events, Options)}.
-
--spec gproc_key(atom(), mg_events_machine:options()) ->
-    gproc:key().
-gproc_key(Type, #{namespace := Namespace}) ->
-    {n, l, {?MODULE, Type, Namespace}}.
+events_storage_options(#{namespace := NS, events_storage := StorageOptions}) ->
+    {Mod, Options} = mg_utils:separate_mod_opts(StorageOptions, #{}),
+    {Mod, Options#{name => {NS, mg_events_machine, events_storage}}}.

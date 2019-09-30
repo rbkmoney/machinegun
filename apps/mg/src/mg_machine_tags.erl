@@ -31,7 +31,7 @@
 -type options() :: #{
     namespace => mg:ns(),
     worker    => mg_workers_manager:options(),
-    storage   => mg_storage:options(),
+    storage   => mg_machine:storage_options(),
     pulse     => mg_pulse:handler(),
     retries   => mg_machine:retry_opt()
 }.

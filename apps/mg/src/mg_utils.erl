@@ -73,7 +73,6 @@
 -export([join/2]).
 
 -export([lists_compact/1]).
--export([stop_wait_all/3]).
 
 -export([concatenate_namespaces/2]).
 
@@ -271,8 +270,8 @@ separate_mod_opts(ModOpts) ->
     {module(), Defaults}.
 separate_mod_opts(ModOpts={_, _}, _) ->
     ModOpts;
-separate_mod_opts(Mod, Defaults) ->
-    {Mod, Defaults}.
+separate_mod_opts(Mod, Default) ->
+    {Mod, Default}.
 
 -spec throw_if_error
     (ok             ) -> ok;
@@ -341,33 +340,6 @@ lists_compact(List) ->
         end,
         List
     ).
-
--spec stop_wait_all([pid()], _Reason, timeout()) ->
-    ok.
-stop_wait_all(Pids, Reason, Timeout) ->
-    lists:foreach(
-        fun(Pid) ->
-            case stop_wait(Pid, Reason, Timeout) of
-                ok      -> ok;
-                timeout -> exit(stop_timeout)
-            end
-        end,
-        Pids
-    ).
-
--spec stop_wait(pid(), _Reason, timeout()) ->
-    ok | timeout.
-stop_wait(Pid, Reason, Timeout) ->
-    OldTrap = process_flag(trap_exit, true),
-    erlang:exit(Pid, Reason),
-    R =
-        receive
-            {'EXIT', Pid, Reason} -> ok
-        after
-            Timeout -> timeout
-        end,
-    process_flag(trap_exit, OldTrap),
-    R.
 
 -spec concatenate_namespaces(mg:ns(), mg:ns()) ->
     mg:ns().

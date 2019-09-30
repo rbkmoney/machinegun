@@ -50,8 +50,7 @@
 all() ->
     [
         {group, memory   },
-        {group, riak     },
-        {group, riak_pool}
+        {group, riak     }
     ].
 
 -spec groups() ->
@@ -59,8 +58,7 @@ all() ->
 groups() ->
     [
         {memory   , [], tests()},
-        {riak     , [], tests()},
-        {riak_pool, [], tests()}
+        {riak     , [], tests()}
     ].
 
 -spec tests() ->
@@ -84,7 +82,7 @@ init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
     % dbg:tpl({riakc_pb_socket, 'get_index_eq', '_'}, x),
     % dbg:tpl({riakc_pb_socket, 'get_index_range', '_'}, x),
-    Apps = mg_ct_helper:start_applications([msgpack, gproc, riakc]),
+    Apps = mg_ct_helper:start_applications([msgpack, gproc, riakc, pooler]),
     [{apps, Apps} | C].
 
 -spec end_per_suite(config()) ->
@@ -119,13 +117,13 @@ base_test(ID, Options) ->
     Value1 = #{<<"hello">> => <<"world">>},
     Value2 = [<<"hello">>, 1],
 
-    undefined      = mg_storage:get   (Options, storage, Key),
-    Ctx1           = mg_storage:put   (Options, storage, Key, undefined, Value1, []),
-    {Ctx1, Value1} = mg_storage:get   (Options, storage, Key),
-    Ctx2           = mg_storage:put   (Options, storage, Key, Ctx1, Value2, []),
-    {Ctx2, Value2} = mg_storage:get   (Options, storage, Key),
-    ok             = mg_storage:delete(Options, storage, Key, Ctx2),
-    undefined      = mg_storage:get   (Options, storage, Key),
+    undefined      = mg_storage:get   (Options, Key),
+    Ctx1           = mg_storage:put   (Options, Key, undefined, Value1, []),
+    {Ctx1, Value1} = mg_storage:get   (Options, Key),
+    Ctx2           = mg_storage:put   (Options, Key, Ctx1, Value2, []),
+    {Ctx2, Value2} = mg_storage:get   (Options, Key),
+    ok             = mg_storage:delete(Options, Key, Ctx2),
+    undefined      = mg_storage:get   (Options, Key),
     ok.
 
 -spec indexes_test(config()) ->
@@ -144,33 +142,33 @@ indexes_test(C) ->
 
     Value = #{<<"hello">> => <<"world">>},
 
-    [] = mg_storage:search(Options, storage, {I1, IV1}),
-    [] = mg_storage:search(Options, storage, {I1, {IV1, IV2}}),
-    [] = mg_storage:search(Options, storage, {I2, {IV1, IV2}}),
+    [] = mg_storage:search(Options, {I1, IV1}),
+    [] = mg_storage:search(Options, {I1, {IV1, IV2}}),
+    [] = mg_storage:search(Options, {I2, {IV1, IV2}}),
 
-    Ctx1 = mg_storage:put(Options, storage, K1, undefined, Value, [{I1, IV1}, {I2, IV2}]),
+    Ctx1 = mg_storage:put(Options, K1, undefined, Value, [{I1, IV1}, {I2, IV2}]),
 
-    [K1       ] = mg_storage:search(Options, storage, {I1, IV1       }),
-    [{IV1, K1}] = mg_storage:search(Options, storage, {I1, {IV1, IV2}}),
-    [K1       ] = mg_storage:search(Options, storage, {I2, IV2       }),
-    [{IV2, K1}] = mg_storage:search(Options, storage, {I2, {IV1, IV2}}),
+    [K1       ] = mg_storage:search(Options, {I1, IV1       }),
+    [{IV1, K1}] = mg_storage:search(Options, {I1, {IV1, IV2}}),
+    [K1       ] = mg_storage:search(Options, {I2, IV2       }),
+    [{IV2, K1}] = mg_storage:search(Options, {I2, {IV1, IV2}}),
 
-    Ctx2 = mg_storage:put(Options, storage, K2, undefined, Value, [{I1, IV2}, {I2, IV1}]),
+    Ctx2 = mg_storage:put(Options, K2, undefined, Value, [{I1, IV2}, {I2, IV1}]),
 
-    [K1                  ] = mg_storage:search(Options, storage, {I1, IV1       }),
-    [{IV1, K1}, {IV2, K2}] = mg_storage:search(Options, storage, {I1, {IV1, IV2}}),
-    [K1                  ] = mg_storage:search(Options, storage, {I2, IV2       }),
-    [{IV1, K2}, {IV2, K1}] = mg_storage:search(Options, storage, {I2, {IV1, IV2}}),
+    [K1                  ] = mg_storage:search(Options, {I1, IV1       }),
+    [{IV1, K1}, {IV2, K2}] = mg_storage:search(Options, {I1, {IV1, IV2}}),
+    [K1                  ] = mg_storage:search(Options, {I2, IV2       }),
+    [{IV1, K2}, {IV2, K1}] = mg_storage:search(Options, {I2, {IV1, IV2}}),
 
-    ok = mg_storage:delete(Options, storage, K1, Ctx1),
+    ok = mg_storage:delete(Options, K1, Ctx1),
 
-    [{IV2, K2}] = mg_storage:search(Options, storage, {I1, {IV1, IV2}}),
-    [{IV1, K2}] = mg_storage:search(Options, storage, {I2, {IV1, IV2}}),
+    [{IV2, K2}] = mg_storage:search(Options, {I1, {IV1, IV2}}),
+    [{IV1, K2}] = mg_storage:search(Options, {I2, {IV1, IV2}}),
 
-    ok = mg_storage:delete(Options, storage, K2, Ctx2),
+    ok = mg_storage:delete(Options, K2, Ctx2),
 
-    [] = mg_storage:search(Options, storage, {I1, {IV1, IV2}}),
-    [] = mg_storage:search(Options, storage, {I2, {IV1, IV2}}),
+    [] = mg_storage:search(Options, {I1, {IV1, IV2}}),
+    [] = mg_storage:search(Options, {I2, {IV1, IV2}}),
 
     ok.
 
@@ -181,29 +179,20 @@ key_length_limit_test(C) ->
     _ = start_storage(Options),
 
     {logic, {invalid_key, {too_small, _}}} =
-        (catch mg_storage:get(Options, storage, <<"">>)),
+        (catch mg_storage:get(Options, <<"">>)),
 
     {logic, {invalid_key, {too_small, _}}} =
-        (catch mg_storage:put(Options, storage, <<"">>, undefined, <<"test">>, [])),
+        (catch mg_storage:put(Options, <<"">>, undefined, <<"test">>, [])),
 
-    _ = mg_storage:get(
-        Options,
-        storage,
-        binary:copy(<<"K">>, 1024)
-    ),
+    _ = mg_storage:get(Options, binary:copy(<<"K">>, 1024)),
 
     {logic, {invalid_key, {too_big, _}}} =
         (catch
-            mg_storage:get(
-                Options,
-                storage,
-                binary:copy(<<"K">>, 1025)
-            )
+            mg_storage:get(Options, binary:copy(<<"K">>, 1025))
         ),
 
     _ = mg_storage:put(
         Options,
-        storage,
         binary:copy(<<"K">>, 1024),
         undefined,
         <<"test">>,
@@ -214,7 +203,6 @@ key_length_limit_test(C) ->
         (catch
             mg_storage:put(
                 Options,
-                storage,
                 binary:copy(<<"K">>, 1025),
                 undefined,
                 <<"test">>,
@@ -240,17 +228,17 @@ indexes_test_with_limits(C) ->
 
     Value = #{<<"hello">> => <<"world">>},
 
-    Ctx1 = mg_storage:put(Options, storage, K1, undefined, Value, [{I1, IV1}, {I2, IV2}]),
-    Ctx2 = mg_storage:put(Options, storage, K2, undefined, Value, [{I1, IV2}, {I2, IV1}]),
+    Ctx1 = mg_storage:put(Options, K1, undefined, Value, [{I1, IV1}, {I2, IV2}]),
+    Ctx2 = mg_storage:put(Options, K2, undefined, Value, [{I1, IV2}, {I2, IV1}]),
 
-    {[{IV1, K1}], Cont1} = mg_storage:search(Options, storage, {I1, {IV1, IV2}, 1, undefined}),
-    {[{IV2, K2}], Cont2} = mg_storage:search(Options, storage, {I1, {IV1, IV2}, 1, Cont1}),
-    {[], undefined}      = mg_storage:search(Options, storage, {I1, {IV1, IV2}, 1, Cont2}),
+    {[{IV1, K1}], Cont1} = mg_storage:search(Options, {I1, {IV1, IV2}, 1, undefined}),
+    {[{IV2, K2}], Cont2} = mg_storage:search(Options, {I1, {IV1, IV2}, 1, Cont1}),
+    {[], undefined}      = mg_storage:search(Options, {I1, {IV1, IV2}, 1, Cont2}),
 
-    [{IV1, K2}, {IV2, K1}] = mg_storage:search(Options, storage, {I2, {IV1, IV2}, inf, undefined}),
+    [{IV1, K2}, {IV2, K1}] = mg_storage:search(Options, {I2, {IV1, IV2}, inf, undefined}),
 
-    ok = mg_storage:delete(Options, storage, K1, Ctx1),
-    ok = mg_storage:delete(Options, storage, K2, Ctx2),
+    ok = mg_storage:delete(Options, K1, Ctx1),
+    ok = mg_storage:delete(Options, K2, Ctx2),
 
     ok.
 
@@ -330,22 +318,25 @@ stop_wait(Pid, Reason, Timeout) ->
     config().
 storage_options(riak, Namespace) ->
     {mg_storage_riak, #{
-        host   => "riakdb",
-        port   => 8087,
-        bucket => Namespace
+        name         => storage,
+        host         => "riakdb",
+        port         => 8087,
+        bucket       => Namespace,
+        pool_options => #{
+            init_count          => 1,
+            max_count           => 10,
+            idle_timeout        => 1000,
+            cull_interval       => 1000,
+            auto_grow_threshold => 5,
+            queue_max           => 100,
+            metrics_mod         => pooler_no_metrics,
+            metrics_api         => folsom
+        }
     }};
 storage_options(memory, _) ->
-    mg_storage_memory;
-storage_options(riak_pool, Namespace) ->
-    {
-        mg_storage_pool,
-        #{
-            worker          => storage_options(riak, mg_utils:concatenate_namespaces(Namespace, <<"pool">>)),
-            size            => 10,
-            queue_len_limit => 100,
-            retry_attempts  => 10
-        }
-    }.
+    {mg_storage_memory, #{
+        name => storage
+    }}.
 
 -spec start_storage(mg_storage:options()) ->
     pid().
@@ -353,6 +344,6 @@ start_storage(Options) ->
     mg_utils:throw_if_error(
         mg_utils_supervisor_wrapper:start_link(
             #{strategy => one_for_all},
-            [mg_storage:child_spec(Options, storage, {local, storage})]
+            [mg_storage:child_spec(Options, storage)]
         )
     ).
