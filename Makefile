@@ -49,7 +49,7 @@ CALL_ANYWHERE := \
 	test_configurator \
 
 
-CALL_W_CONTAINER := $(CALL_ANYWHERE) test dev_test
+CALL_W_CONTAINER := $(CALL_ANYWHERE) test dev_test test_configurator
 
 all: compile
 

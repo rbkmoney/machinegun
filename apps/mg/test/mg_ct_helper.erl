@@ -27,6 +27,10 @@
 -export([stop_applications/1]).
 -export([assert_wait_expected/3]).
 
+-export([build_storage/2]).
+
+-export([stop_wait_all/3]).
+
 -export([handle_beat/2]).
 
 -type appname() :: atom().
@@ -100,6 +104,40 @@ assert_wait_expected(Expected, Fun, Strategy) when is_function(Fun, 0) ->
                     error({assertion_failed, Expected, Other})
             end
     end.
+
+-spec build_storage(mg:ns(), mg_utils:mod_opts()) ->
+    mg_utils:mod_opts().
+build_storage(NS, Module) when is_atom(Module) ->
+    build_storage(NS, {Module, #{}});
+build_storage(NS, {Module, Options}) ->
+    {Module, Options#{name => erlang:binary_to_atom(NS, utf8)}}.
+
+-spec stop_wait_all([pid()], _Reason, timeout()) ->
+    ok.
+stop_wait_all(Pids, Reason, Timeout) ->
+    lists:foreach(
+        fun(Pid) ->
+            case stop_wait(Pid, Reason, Timeout) of
+                ok      -> ok;
+                timeout -> exit(stop_timeout)
+            end
+        end,
+        Pids
+    ).
+
+-spec stop_wait(pid(), _Reason, timeout()) ->
+    ok | timeout.
+stop_wait(Pid, Reason, Timeout) ->
+    OldTrap = process_flag(trap_exit, true),
+    erlang:exit(Pid, Reason),
+    R =
+        receive
+            {'EXIT', Pid, Reason} -> ok
+        after
+            Timeout -> timeout
+        end,
+    process_flag(trap_exit, OldTrap),
+    R.
 
 %%
 

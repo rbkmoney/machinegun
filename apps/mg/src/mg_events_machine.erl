@@ -27,6 +27,7 @@
 
 %% API
 -export_type([options         /0]).
+-export_type([storage_options /0]).
 -export_type([ref             /0]).
 -export_type([machine         /0]).
 -export_type([tag_action      /0]).
@@ -104,7 +105,7 @@
 -type ref() :: {id, mg:id()} | {tag, mg_machine_tags:tag()}.
 -type options() :: #{
     namespace                  => mg:ns(),
-    events_storage             => mg_storage:options(),
+    events_storage             => storage_options(),
     processor                  => mg_utils:mod_opts(),
     tagging                    => mg_machine_tags:options(),
     machines                   => mg_machine:options(),
@@ -112,6 +113,7 @@
     event_sinks                => [mg_events_sink:handler()],
     default_processing_timeout => timeout()
 }.
+-type storage_options() :: mg_utils:mod_opts(map()).  % like mg_storage:options() except `name`
 
 
 -spec child_spec(options(), atom()) ->
@@ -127,13 +129,12 @@ child_spec(Options, ChildID) ->
 -spec start_link(options()) ->
     mg_utils:gen_start_ret().
 start_link(Options) ->
-    ESRegName = events_storage_reg_name(Options),
     mg_utils_supervisor_wrapper:start_link(
         #{strategy => one_for_all},
         mg_utils:lists_compact([
             mg_machine     :child_spec(machine_options       (Options), automaton),
             mg_machine_tags:child_spec(tags_machine_options  (Options), tags     ),
-            mg_storage     :child_spec(events_storage_options(Options), events_storage, ESRegName)
+            mg_storage     :child_spec(events_storage_options(Options), events_storage)
         ])
     ).
 
@@ -350,7 +351,7 @@ add_tag(Options, ID, ReqCtx, Deadline, Tag) ->
 store_events(Options, ID, _, Events) ->
     lists:foreach(
         fun({Key, Value}) ->
-            _ = mg_storage:put(events_storage_options(Options), events_storage_ref(Options), Key, undefined, Value, [])
+            _ = mg_storage:put(events_storage_options(Options), Key, undefined, Value, [])
         end,
         events_to_kvs(ID, Events)
     ).
@@ -506,23 +507,9 @@ machine_options(Options = #{machines := MachinesOptions}) ->
 
 -spec events_storage_options(options()) ->
     mg_storage:options().
-events_storage_options(#{events_storage := EventsStorage}) ->
-    EventsStorage.
-
--spec events_storage_ref(options()) ->
-    mg_utils:gen_ref().
-events_storage_ref(Options) ->
-    {via, gproc, gproc_key(events, Options)}.
-
--spec events_storage_reg_name(options()) ->
-    mg_utils:gen_reg_name().
-events_storage_reg_name(Options) ->
-    {via, gproc, gproc_key(events, Options)}.
-
--spec gproc_key(atom(), options()) ->
-    gproc:key().
-gproc_key(Type, #{namespace := Namespace}) ->
-    {n, l, {?MODULE, Type, Namespace}}.
+events_storage_options(#{namespace := NS, events_storage := StorageOptions}) ->
+    {Mod, Options} = mg_utils:separate_mod_opts(StorageOptions, #{}),
+    {Mod, Options#{name => {NS, ?MODULE, events}}}.
 
 -spec tags_machine_options(options()) ->
     mg_machine_tags:options().
@@ -585,10 +572,9 @@ find_event_getter([{_, Getter}], _) ->
     event_getter().
 storage_event_getter(Options, ID) ->
     StorageOptions = events_storage_options(Options),
-    StorageRef = events_storage_ref(Options),
     fun (EventID) ->
         Key = mg_events:add_machine_id(ID, mg_events:event_id_to_key(EventID)),
-        {_Context, Value} = mg_storage:get(StorageOptions, StorageRef, Key),
+        {_Context, Value} = mg_storage:get(StorageOptions, Key),
         kv_to_event(ID, {Key, Value})
     end.
 

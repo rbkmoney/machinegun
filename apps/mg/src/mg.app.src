@@ -25,6 +25,7 @@
         gproc,
         consuela,
         riakc,
+        pooler,
         brod,
         msgpack,
         rfc3339

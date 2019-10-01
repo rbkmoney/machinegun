@@ -22,12 +22,12 @@
 -include_lib("stdlib/include/ms_transform.hrl").
 
 %% internal API
--export([start_link/2]).
+-export([start_link/1]).
 
 %% mg_storage callbacks
 -behaviour(mg_storage).
 -export_type([options/0]).
--export([child_spec/3, do_request/3]).
+-export([child_spec/2, do_request/2]).
 
 %% gen_server callbacks
 -behaviour(gen_server).
@@ -36,48 +36,49 @@
 %%
 %% internal API
 %%
--spec start_link(options(), mg_utils:gen_reg_name()) ->
+-spec start_link(options()) ->
     mg_utils:gen_start_ret().
-start_link(Options, RegName) ->
-    gen_server:start_link(RegName, ?MODULE, Options, []).
+start_link(Options) ->
+    gen_server:start_link(reg_name(get_name(Options)), ?MODULE, Options, []).
 
 %%
 %% mg_storage callbacks
 %%
 -type context      () :: {pos_integer(), non_neg_integer()} | undefined.
 -type options      () :: undefined | #{
-    existing_storage_ref  => self_ref(),
+    name                  := name(),
+    existing_storage_name => name(),
     random_transient_fail => float()
 }.
 -type continuation () :: binary() | undefined.
--type self_ref     () :: mg_utils:gen_ref().
+-type name         () :: mg_storage:name().
 
 
--spec child_spec(options(), atom(), mg_utils:gen_reg_name()) ->
+-spec child_spec(options(), atom()) ->
     supervisor:child_spec() | undefined.
-child_spec(#{existing_storage_ref := _}, _ChildID, _RegName) ->
+child_spec(#{existing_storage_name := _}, _ChildID) ->
     undefined;
-child_spec(Options, ChildID, RegName) ->
+child_spec(Options, ChildID) ->
     #{
         id       => ChildID,
-        start    => {?MODULE, start_link, [Options, RegName]},
+        start    => {?MODULE, start_link, [Options]},
         restart  => permanent,
         shutdown => 5000
     }.
 
--spec do_request(options(), self_ref(), mg_storage:request()) ->
+-spec do_request(options(), mg_storage:request()) ->
     mg_storage:response().
-do_request(Options, SelfRef, Req) ->
+do_request(Options, Req) ->
     random_fail(Options, fun() ->
-        Ref = get_ref(Options, SelfRef),
-        gen_server:call(Ref, Req)
+        RealName = get_name(Options),
+        gen_server:call(ref(RealName), Req)
     end).
 
--spec get_ref(options(), self_ref()) -> self_ref().
-get_ref(#{existing_storage_ref := SelfRef}, _) ->
-    SelfRef;
-get_ref(_Options, SelfRef) ->
-    SelfRef.
+-spec get_name(options()) -> name().
+get_name(#{existing_storage_name := Name}) ->
+    Name;
+get_name(#{name := Name}) ->
+    Name.
 
 %%
 %% gen_server callbacks
@@ -374,3 +375,20 @@ start_from_elem(Item, [Item|Tail]) ->
     Tail;
 start_from_elem(Item, [_|Tail]) ->
     start_from_elem(Item, Tail).
+
+%% Registry utils
+
+-spec ref(name()) ->
+    mg_utils:gen_ref().
+ref(Name) ->
+    {via, gproc, gproc_key(Name)}.
+
+-spec reg_name(name()) ->
+    mg_utils:gen_reg_name().
+reg_name(Name) ->
+    {via, gproc, gproc_key(Name)}.
+
+-spec gproc_key(name()) ->
+    gproc:key().
+gproc_key(Name) ->
+    {n, l, {?MODULE, Name}}.

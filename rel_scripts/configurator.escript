@@ -169,12 +169,7 @@ how_are_you(YamlConfig) ->
         {metrics_publishers, Publishers},
         {metrics_handlers, [
             hay_vm_handler,
-            hay_cgroup_handler,
-            woody_api_hay,
-            {mg_woody_api_hay, #{
-                namespaces => namespaces_list(YamlConfig),
-                registries => [procreg(YamlConfig)]
-            }}
+            hay_cgroup_handler
         ]}
     ].
 
@@ -332,18 +327,22 @@ storage(NS, YamlConfig) ->
         "memory" ->
             mg_storage_memory;
         "riak" ->
-            {mg_storage_pool, #{
-                worker =>
-                    {mg_storage_riak, #{
-                        host   => ?C:utf_bin(?C:conf([storage, host], YamlConfig)),
-                        port   =>            ?C:conf([storage, port], YamlConfig),
-                        bucket => NS,
-                        connect_timeout => ?C:time_interval(?C:conf([storage, connect_timeout  ], YamlConfig, "5S" ), ms),
-                        request_timeout => ?C:time_interval(?C:conf([storage, request_timeout  ], YamlConfig, "10S"), ms)
-                    }},
-                size => ?C:conf([storage, pool_size], YamlConfig, 100),
-                queue_len_limit => 10,
-                retry_attempts  => 10
+            {mg_storage_riak, #{
+                host   => ?C:utf_bin(?C:conf([storage, host], YamlConfig)),
+                port   =>            ?C:conf([storage, port], YamlConfig),
+                bucket => NS,
+                connect_timeout => ?C:time_interval(?C:conf([storage, connect_timeout  ], YamlConfig, "5S" ), ms),
+                request_timeout => ?C:time_interval(?C:conf([storage, request_timeout  ], YamlConfig, "10S"), ms),
+                pool_options => #{
+                    % If `init_count` is greater than zero, then the service will not start
+                    % if the riak is unavailable. The `pooler` synchronously creates `init_count`
+                    % connections at the start.
+                    init_count          => 0,
+                    max_count           => ?C:conf([storage, pool_size], YamlConfig, 100),
+                    idle_timeout        => timer:seconds(60),
+                    cull_interval       => timer:seconds(10),
+                    queue_max           => 1000
+                }
             }}
     end.
 
@@ -356,16 +355,6 @@ namespaces(YamlConfig) ->
         #{},
         ?C:conf([namespaces], YamlConfig)
     ).
-
-namespaces_list(YamlConfig) ->
-    NsNames = [
-        erlang:list_to_binary(NameStr)
-        || {NameStr, _NSYamlConfig} <- ?C:conf([namespaces], YamlConfig)
-    ],
-    lists:flatten([<<"_event_sinks_machines">>] ++ [
-        [NS, <<NS/binary, "_tags">>]
-        || NS <- NsNames
-    ]).
 
 namespace({NameStr, NSYamlConfig}, YamlConfig) ->
     Name = ?C:utf_bin(NameStr),
@@ -383,6 +372,7 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             url            => ?C:utf_bin(?C:conf([processor, url], NSYamlConfig)),
             transport_opts => #{
                 pool => erlang:list_to_atom(NameStr),
+                timeout => ?C:time_interval(?C:conf([processor, http_keep_alive_timeout], NSYamlConfig, "4S"), 'ms'),
                 max_connections => ?C:conf([processor, pool_size], NSYamlConfig, 50)
             },
             resolver_opts => #{
@@ -391,8 +381,10 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
         },
         worker => #{
             registry          => procreg(YamlConfig),
-            hibernate_timeout => Timeout(hibernate_timeout,  "5S"),
-            unload_timeout    => Timeout(unload_timeout   , "60S")
+            worker_options    => #{
+                hibernate_timeout => Timeout(hibernate_timeout,  "5S"),
+                unload_timeout    => Timeout(unload_timeout   , "60S")
+            }
         },
         default_processing_timeout => Timeout(default_processing_timeout, "30S"),
         timer_processing_timeout => Timeout(timer_processing_timeout, "60S"),
@@ -406,30 +398,26 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             continuation => {exponential, infinity, 2, 10, 60 * 1000}
         },
         schedulers => maps:merge(
-            conf_with([timers], NSYamlConfig,
-                fun
-                    ("disabled") ->
-                        #{};
-                    (_) ->
-                        #{
-                            timers         => SchedulerConfig#{share => 2},
-                            timers_retries => SchedulerConfig#{share => 1}
+            case ?C:conf([timers], NSYamlConfig, undefined) of
+                "disabled" ->
+                    #{};
+                _ ->
+                    #{
+                        timers         => SchedulerConfig#{share => 2},
+                        timers_retries => SchedulerConfig#{share => 1}
+                    }
+            end,
+            case ?C:conf([overseer], NSYamlConfig, undefined) of
+                "disabled" ->
+                    #{};
+                _ ->
+                    #{
+                        overseer => SchedulerConfig#{
+                            no_task_wait => 10 * 60 * 1000,  % 10 min
+                            share        => 0
                         }
-                end
-            ),
-            conf_with([overseer], NSYamlConfig,
-                fun
-                    ("disabled") ->
-                        #{};
-                    (_) ->
-                        #{
-                            overseer => SchedulerConfig#{
-                                no_task_wait => 10 * 60 * 1000,  % 10 min
-                                share        => 0
-                            }
-                        }
-                end
-            )
+                    }
+            end
         ),
         event_sinks => [event_sink(ES) || ES <- ?C:conf([event_sinks], NSYamlConfig, [])],
         suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0))
