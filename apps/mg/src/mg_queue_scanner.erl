@@ -19,8 +19,8 @@
 -type milliseconds() :: pos_integer().
 
 -type name() :: mg_procreg:name().
--type search_status() :: continue | completed.
--type scan_interval() :: #{search_status() => milliseconds()}.
+-type scan_status() :: continue | completed.
+-type scan_interval() :: #{scan_status() => milliseconds()}.
 
 -type options() :: #{
     scheduler     := mg_procreg:ref(),
@@ -98,16 +98,42 @@ discover(St = #st{name = Name}) ->
 
 -spec handle_rank_change(mg_gen_squad:rank(), mg_gen_squad:squad(), st()) ->
     {noreply, st()}.
-handle_rank_change(leader, Squad, St0) ->
+handle_rank_change(leader, Squad, St) ->
     % well then start right away
-    St1 = restart_timer(St0),
-    St2 = scan_queue(St1),
-    {noreply, St2}.
+    {noreply, handle_scan(Squad, St)};
+handle_rank_change(follower, _Squad, St) ->
+    % no more scanning for you today
+    {noreply, cancel_timer(St)}.
 
--spec restart_timer(search_status(), st()) ->
+-type info() :: scan.
+
+-spec handle_info(info(), mg_gen_squad:rank(), mg_gen_squad:squad(), st()) ->
+    {noreply, st()}.
+handle_info(scan, leader, Squad, St) ->
+    St1 = scan_queue(St0),
+    St2 = start_timer(ScanStatus, St0),
+    {noreply, St2};
+
+-spec handle_scan(mg_gen_squad:squad(), st()) ->
     st().
-restart_timer(Status, St = #st{interval = Interval, timer = TRef}) ->
+handle_scan(Squad, St0) ->
+    St1 = scan_queue(St0),
+    St2 = start_timer(ScanStatus, St0),
+    St2.
+
+%%
+
+-spec cancel_timer(st()) ->
+    st().
+cancel_timer(St = #st{timer = TRef}) when is_reference(TRef) ->
     _ = erlang:cancel_timer(TRef),
+    St#st{timer = undefined};
+cancel_timer(St) ->
+    St.
+
+-spec start_timer(scan_status(), st()) ->
+    st().
+start_timer(Status, St = #st{interval = Interval}) ->
     Timeout = maps:get(Status, Interval),
     St#st{timer = erlang:send_after(Timeout, self(), scan)}.
 

@@ -152,6 +152,22 @@ start_link(Module, Args, Opts) ->
 start_link(RegName, Module, Args, Opts) ->
     gen_server:start_link(RegName, ?MODULE, mk_state(Module, Args, set_defaults(Opts)), []).
 
+-spec start_sup(_ServerArgs :: list(), st(), heart()) ->
+    {ok, pid()}.
+start_sup(ServerArgs, ServerSt, HeartSt) ->
+    Strategy = #{strategy => one_for_all, intensity => 0, period => 1},
+    {ok, SupPid} = genlib_adhoc_supervisor:start_link(Strategy, []),
+    % TODO we should handle errors here probably
+    {ok, ServerPid} = supervisor:start_child(SupPid, #{
+        id    => heart,
+        start => {gen_server, start_link, [?MODULE, {server, ServerSt}, []]}
+    }),
+    {ok, _HeartPid} = supervisor:start_child(SupPid, #{
+        id    => heart,
+        start => {gen_server, start_link, [?MODULE, {heart, HeartSt, ServerPid}, []]}
+    }),
+    {ok, SupPid}.
+
 -spec set_defaults(opts()) ->
     opts().
 set_defaults(Opts) ->
