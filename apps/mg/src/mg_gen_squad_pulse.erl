@@ -32,8 +32,8 @@
         {added, mg_gen_squad:member()} |
         {refreshed, mg_gen_squad:member()} |
         {removed, _Reason :: lost | {down, _}}} |
-    {{broadcast, mg_gen_squad:payload()},
-        {sent, pid()} |
+    {{broadcast, mg_gen_squad_heart:payload()},
+        {sent, pid(), _Ctx} |
         received} |
     {{timer, reference()},
         {started, _Timeout :: non_neg_integer(), _Msg} |
@@ -42,7 +42,9 @@
     {{monitor, reference()},
         {started, pid()} |
         cancelled |
-        {fired, pid(), _Reason}}.
+        {fired, pid(), _Reason}} |
+    {unexpected,
+        {{call, _From} | cast | info, _Payload}}.
 
 -type handler() :: mg_utils:mod_opts().
 

@@ -45,7 +45,6 @@
 -type member() :: #{
     age             => age(),
     last_contact    => timestamp(),
-    heartbeat_timer => reference(), % when self()
     loss_timer      => reference(),
     monitor         => reference()
 }.
@@ -100,6 +99,7 @@
 
 -export_type([rank/0]).
 -export_type([squad/0]).
+-export_type([member/0]).
 
 -export([start_link/3]).
 -export([start_link/4]).
@@ -141,6 +141,9 @@
 }.
 
 -export_type([opts/0]).
+-export_type([heartbeat_opts/0]).
+
+%%
 
 -spec start_link(module(), _Args, opts()) ->
     {ok, pid()} | ignore | {error, _}.
@@ -151,22 +154,6 @@ start_link(Module, Args, Opts) ->
     {ok, pid()} | ignore | {error, _}.
 start_link(RegName, Module, Args, Opts) ->
     gen_server:start_link(RegName, ?MODULE, mk_state(Module, Args, set_defaults(Opts)), []).
-
--spec start_sup(_ServerArgs :: list(), st(), heart()) ->
-    {ok, pid()}.
-start_sup(ServerArgs, ServerSt, HeartSt) ->
-    Strategy = #{strategy => one_for_all, intensity => 0, period => 1},
-    {ok, SupPid} = genlib_adhoc_supervisor:start_link(Strategy, []),
-    % TODO we should handle errors here probably
-    {ok, ServerPid} = supervisor:start_child(SupPid, #{
-        id    => heart,
-        start => {gen_server, start_link, [?MODULE, {server, ServerSt}, []]}
-    }),
-    {ok, _HeartPid} = supervisor:start_child(SupPid, #{
-        id    => heart,
-        start => {gen_server, start_link, [?MODULE, {heart, HeartSt, ServerPid}, []]}
-    }),
-    {ok, SupPid}.
 
 -spec set_defaults(opts()) ->
     opts().
@@ -214,70 +201,80 @@ members(Squad) ->
 
 %%
 
--type st() :: #{
-    squad    := squad(),
-    rank     => rank(),
-    modstate := {module(), _ArgsOrState},
-    opts     := opts(),
-    timers   := #{atom() => reference()}
-}.
+-record(st, {
+    squad    :: squad(),
+    heart    :: pid() | undefined,
+    rank     :: rank() | undefined,
+    modstate :: {module(), _ArgsOrState},
+    opts     :: opts(),
+    timers   :: #{atom() => reference()}
+}).
+
+-type st() :: #st{}.
 
 -spec mk_state(module(), _Args, opts()) ->
     st().
 mk_state(Module, Args, Opts) ->
-    #{
-        squad    => #{},
-        modstate => {Module, Args},
-        opts     => Opts,
-        timers   => #{}
+    #st{
+        squad    = #{},
+        modstate = {Module, Args},
+        opts     = Opts,
+        timers   = #{}
     }.
 
 -spec get_rank(st()) ->
     rank().
-get_rank(St) ->
-    maps:get(rank, St, follower).
+get_rank(#st{rank = Rank}) when Rank /= undefined ->
+    Rank;
+get_rank(#st{rank = undefined}) ->
+    follower.
 
 -spec init(st()) ->
     {ok, st()} | ignore | {stop, _Reason}.
 init(St0) ->
     case invoke_callback(init, [], St0) of
-        {ok, St = #{squad := Squad, opts := Opts}} ->
-            {ok, defer_discovery(St#{squad := add_member(self(), Squad, Opts)})};
+        {ok, St = #st{squad = Squad0, opts = Opts}} ->
+            Squad = add_member(self(), Squad0, Opts),
+            HeartOpts = maps:with([heartbeat, pulse], Opts),
+            {ok, HeartPid} = mg_gen_squad_heart:start_link(heartbeat, HeartOpts),
+            {ok, defer_discovery(St#st{heart = HeartPid, squad = Squad})};
         Ret ->
             Ret
     end.
 
 -spec handle_call(_Call, from(), st()) ->
-    reply(_, _).
-handle_call(Call, From, St0 = #{squad := Squad}) ->
-    invoke_callback(handle_call, [Call, From, get_rank(St0), Squad], try_cancel_st_timer(user, St0)).
+    reply(_, st()).
+handle_call(Call, From, St = #st{squad = Squad}) ->
+    invoke_callback(handle_call, [Call, From, get_rank(St), Squad], try_cancel_st_timer(user, St)).
 
 -type cast() ::
-    payload().
+    mg_gen_squad_heart:envelope() |
+    heartbeat.
 
 -spec handle_cast(cast(), st()) ->
-    noreply(_).
-handle_cast({?MODULE, Payload = #{vsn := 1, msg := _, from := _}}, St) ->
+    noreply(st()).
+handle_cast({'$squad', Payload = #{vsn := 1, msg := _, from := _}}, St) ->
     _ = beat({{broadcast, Payload}, received}, St),
     handle_broadcast(Payload, St);
-handle_cast(Cast, St0 = #{squad := Squad}) ->
-    invoke_callback(handle_cast, [Cast, get_rank(St0), Squad], try_cancel_st_timer(user, St0)).
+handle_cast(heartbeat, St) ->
+    handle_heartbeat_feedback(St);
+handle_cast(Cast, St = #st{squad = Squad}) ->
+    invoke_callback(handle_cast, [Cast, get_rank(St), Squad], try_cancel_st_timer(user, St)).
 
--spec handle_broadcast(payload(), st()) ->
+-spec handle_broadcast(mg_gen_squad_heart:payload(), st()) ->
     noreply(st()).
-handle_broadcast(#{msg := howdy, from := Pid, members := Pids}, St = #{squad := Squad0, opts := Opts}) ->
+handle_broadcast(#{msg := howdy, from := Pid, members := Pids}, St = #st{squad = Squad0, opts = Opts}) ->
     Squad = refresh_member(Pid, add_members([Pid | Pids], Squad0, Opts), Opts),
     % NOTE
     % Simple approach: retransmit another broadcast to those members we see for the first time.
     % It's possible to reduce message rate here at the expense of higher squad convergence time,
     % for example taking just half or some m << size(Squad) of new squad members randomly. Would
     % be better to consider some gossip protocol scheme instead though.
-    ok = broadcast(howdy, [newbies(Squad0)], broadcast, Squad, Opts),
+    ok = broadcast(howdy, newbies(Squad0), Squad, broadcast, Opts),
     try_update_squad(Squad, St).
 
 -type timer() ::
     discover      |
-    heartbeat     |
     {lost, pid()} |
     user.
 
@@ -290,24 +287,22 @@ handle_broadcast(#{msg := howdy, from := Pid, members := Pids}, St = #{squad := 
 handle_info({timeout, TRef, Msg}, St) ->
     _ = beat({{timer, TRef}, {fired, Msg}}, St),
     handle_timeout(Msg, TRef, St);
-handle_info({'DOWN', MRef, process, Pid, Reason}, St = #{squad := Squad, opts := Opts}) ->
+handle_info({'DOWN', MRef, process, Pid, Reason}, St = #st{squad = Squad, opts = Opts}) ->
     _ = beat({{monitor, MRef}, {fired, Pid, Reason}}, St),
     try_update_squad(handle_member_down(Pid, MRef, Reason, Squad, Opts), St);
-handle_info(Info, St0 = #{squad := Squad}) ->
-    invoke_callback(handle_info, [Info, get_rank(St0), Squad], try_cancel_st_timer(user, St0)).
+handle_info(Info, St = #st{squad = Squad}) ->
+    invoke_callback(handle_info, [Info, get_rank(St), Squad], try_cancel_st_timer(user, St)).
 
--spec handle_timeout(_Msg, reference(), st()) ->
+-spec handle_timeout(timer(), reference(), st()) ->
     st().
-handle_timeout(discovery, TRef, St = #{timers := Timers0}) ->
+handle_timeout(discovery, TRef, St = #st{timers = Timers0}) ->
     {TRef, Timers} = maps:take(discovery, Timers0),
-    try_discover(St#{timers := Timers});
-handle_timeout(heartbeat, TRef, St = #{squad := Squad, opts := Opts}) ->
-    try_update_squad(handle_heartbeat(TRef, Squad, Opts), St);
-handle_timeout({lost, Pid}, TRef, St = #{squad := Squad, opts := Opts}) ->
+    try_discover(St#st{timers = Timers});
+handle_timeout({lost, Pid}, TRef, St = #st{squad = Squad, opts = Opts}) ->
     try_update_squad(handle_loss_timeout(TRef, Pid, Squad, Opts), St);
-handle_timeout(user, TRef, St = #{squad := Squad, timers := Timers0}) ->
+handle_timeout(user, TRef, St = #st{squad = Squad, timers = Timers0}) ->
     {TRef, Timers} = maps:take(user, Timers0),
-    invoke_callback(handle_info, [timeout, get_rank(St), Squad], St#{timers := Timers}).
+    invoke_callback(handle_info, [timeout, get_rank(St), Squad], St#st{timers = Timers}).
 
 -spec restart_st_timer(atom(), pos_integer(), st()) ->
     st().
@@ -316,19 +311,19 @@ restart_st_timer(Type, Timeout, St) ->
 
 -spec try_cancel_st_timer(atom(), st()) ->
     st().
-try_cancel_st_timer(Type, St = #{timers := Timers}) ->
+try_cancel_st_timer(Type, St = #st{timers = Timers, opts = Opts}) ->
     case Timers of
         #{Type := TRef} ->
-            ok = cancel_timer(TRef, St),
-            St#{timers => maps:remove(Type, Timers)};
+            ok = cancel_timer(TRef, Opts),
+            St#st{timers = maps:remove(Type, Timers)};
         #{} ->
             St
     end.
 
 -spec start_st_timer(atom(), pos_integer(), st()) ->
     st().
-start_st_timer(Type, Timeout, St = #{timers := Timers, opts := Opts}) ->
-    St#{timers := Timers#{Type => start_timer(Type, Timeout, Opts)}}.
+start_st_timer(Type, Timeout, St = #st{timers = Timers, opts = Opts}) ->
+    St#st{timers = Timers#{Type => start_timer(Type, Timeout, Opts)}}.
 
 -spec terminate(reason(), st()) ->
     _.
@@ -344,11 +339,11 @@ code_change(OldVsn, St, Extra) ->
 
 -spec try_discover(st()) ->
     st().
-try_discover(St0 = #{squad := Squad0, opts := Opts}) ->
+try_discover(St0 = #st{squad = Squad0, opts = Opts}) ->
     case invoke_callback(discover, [], St0) of
         {ok, Members, St} ->
             Squad = add_members(Members, Squad0, Opts),
-            ok = broadcast(howdy, [newbies(Squad0)], discover, Squad, Opts),
+            ok = broadcast(howdy, newbies(Squad0), Squad, discover, Opts),
             try_update_squad(Squad, defer_discovery(St));
         Ret ->
             Ret
@@ -356,36 +351,61 @@ try_discover(St0 = #{squad := Squad0, opts := Opts}) ->
 
 -spec defer_discovery(st()) ->
     st().
-defer_discovery(St = #{squad := Squad, opts := #{discovery := DOpts}}) ->
+defer_discovery(St = #st{squad = Squad, opts = #{discovery := DOpts}}) ->
     Timeout = case maps:size(Squad) of
         S when S < 2 -> maps:get(initial_interval, DOpts);
         _            -> maps:get(refresh_interval, DOpts)
     end,
     restart_st_timer(discovery, Timeout, St).
 
+-spec handle_heartbeat_feedback(st()) ->
+    noreply(st()).
+handle_heartbeat_feedback(St = #st{squad = Squad, opts = Opts}) ->
+    try_update_squad(refresh_member(self(), Squad, Opts), St).
+
 -spec try_update_squad(squad(), st()) ->
     noreply(st()).
-try_update_squad(Squad, St0 = #{opts := Opts}) ->
-    St1 = St0#{squad := Squad},
+try_update_squad(Squad, St0 = #st{heart = HeartPid, opts = Opts}) ->
+    St1 = St0#st{squad = Squad},
+    ok = case has_squad_changed(Squad, St0) of
+        {true, Members} ->
+            mg_gen_squad_heart:update_members(Members, HeartPid);
+        false ->
+            ok
+    end,
     Rank = try_promote(Squad, Opts),
     case St1 of
-        #{} when Rank == undefined ->
+        #st{} when Rank == undefined ->
             {noreply, St1};
-        #{rank := Rank} ->
+        #st{rank = Rank} ->
             {noreply, St1};
-        #{} ->
-            St2 = St1#{rank => Rank},
+        #st{} ->
+            St2 = St1#st{rank = Rank},
             _ = beat({rank, {changed, Rank}}, St2),
             invoke_callback(handle_rank_change, [Rank, Squad], try_cancel_st_timer(user, St2))
+    end.
+
+-spec has_squad_changed(squad(), st()) ->
+    {true, [pid()]} | false.
+has_squad_changed(Squad, #st{squad = Squad0}) ->
+    Members = maps:keys(Squad),
+    Members0 = maps:keys(Squad0),
+    case {Members -- Members0, Members0 -- Members} of
+        {[], []} -> false;
+        {_, _}   -> {true, Members}
     end.
 
 -spec try_promote(squad(), opts()) ->
     rank() | undefined.
 try_promote(Squad, #{promotion := #{min_squad_age := MinAge}}) ->
-    SquadAge = maps:fold(fun (_, Member, Age) -> min(Age, maps:get(age, Member, 0)) end, MinAge, Squad),
-    case SquadAge >= MinAge of
-        true  -> rank(self(), Squad);
-        false -> undefined
+    % NOTE
+    % Inequality `number()` < `atom()` always holds.
+    SquadAge = maps:fold(fun (_, Member, Age) -> min(Age, maps:get(age, Member, 0)) end, undefined, Squad),
+    case SquadAge of
+        N when is_integer(N), N >= MinAge ->
+            rank(self(), Squad);
+        _ ->
+            undefined
     end.
 
 %%
@@ -426,8 +446,8 @@ remove_member(_Pid, _Member, _Reason, Squad, _Opts) ->
     member().
 watch_member(Pid, Opts) when Pid /= self() ->
     defer_loss(Pid, start_monitor(Pid, #{}, Opts), Opts);
-watch_member(Pid, Opts) when Pid == self() ->
-    defer_heartbeat(#{}, Opts).
+watch_member(Pid, _Opts) when Pid == self() ->
+    #{}.
 
 -spec rewatch_member(pid(), member(), opts()) ->
     member().
@@ -435,8 +455,8 @@ rewatch_member(Pid, Member0, Opts) when Pid /= self() ->
     {TRef, Member} = maps:take(loss_timer, Member0),
     ok = cancel_timer(TRef, Opts),
     defer_loss(Pid, Member, Opts);
-rewatch_member(Pid, Member, Opts) when Pid == self() ->
-    defer_heartbeat(Member, Opts).
+rewatch_member(Pid, Member, _Opts) when Pid == self() ->
+    Member.
 
 -spec unwatch_member(member(), opts()) ->
     member().
@@ -448,20 +468,6 @@ unwatch_member(Member = #{monitor := MRef}, Opts) ->
     unwatch_member(maps:remove(monitor, Member), Opts);
 unwatch_member(Member = #{}, _Opts) ->
     Member.
-
--spec defer_heartbeat(member(), opts()) ->
-    member().
-defer_heartbeat(Member, Opts = #{heartbeat := #{broadcast_interval := Timeout}}) ->
-    false = maps:is_key(heartbeat_timer, Member),
-    Member#{heartbeat_timer => start_timer(heartbeat, Timeout, Opts)}.
-
--spec handle_heartbeat(reference(), squad(), opts()) ->
-    squad().
-handle_heartbeat(TRef, Squad, Opts) ->
-    Pid = self(),
-    {TRef, Member} = maps:take(heartbeat_timer, maps:get(Pid, Squad)),
-    ok = broadcast(howdy, [], heartbeat, Squad, Opts),
-    refresh_member(Pid, Squad#{Pid := Member}, Opts).
 
 -spec defer_loss(pid(), member(), opts()) ->
     member().
@@ -497,53 +503,25 @@ account_heartbeat(Member) ->
 
 %%
 
--type message() :: howdy.
+-type recepient_filter() :: fun((pid()) -> boolean()).
 
--type payload() ::
-    #{
-        vsn     := 1,
-        msg     := message(),
-        from    := pid(),
-        members := [pid()]
-    }.
-
--type recepient_filter() :: fun((pid(), member()) -> boolean()).
-
--spec broadcast(message(), [recepient_filter()], _Ctx, squad(), opts()) ->
+-spec broadcast(mg_gen_squad_heart:message(), recepient_filter(), squad(), _Ctx, opts()) ->
     ok.
-broadcast(Message, RecepientFilters, Ctx, Squad, Opts) ->
-    Payload = mk_payload(Message, Squad),
-    Recepients = lists:foldl(fun maps:filter/2, maps:remove(self(), Squad), RecepientFilters),
-    genlib_map:foreach(
-        fun (Pid, _) ->
-            _ = gen_server:cast(Pid, {?MODULE, Payload}),
-            _ = beat({{broadcast, Payload}, {sent, Pid, Ctx}}, Opts),
-            ok
-        end,
-        Recepients
-    ).
+broadcast(Message, RecepientFilter, Squad, Ctx, Opts) ->
+    Recepients = lists:filter(RecepientFilter, maps:keys(Squad)),
+    mg_gen_squad_heart:broadcast(Message, self(), members(Squad), Recepients, Ctx, Opts).
 
 -spec newbies(squad()) ->
     recepient_filter().
 newbies(Squad) ->
-    fun (Pid, _) -> not maps:is_key(Pid, Squad) end.
-
--spec mk_payload(message(), squad()) ->
-    payload().
-mk_payload(Message, Squad) ->
-    #{
-        vsn     => 1,
-        msg     => Message,
-        from    => self(),
-        members => members(Squad)
-    }.
+    fun (Pid) -> not maps:is_key(Pid, Squad) end.
 
 %% Utilities
 
 -spec invoke_callback(_Name :: atom(), _Args :: list(), st()) ->
     _Result.
-invoke_callback(Name, Args, St = #{modstate := {Module, ModState}}) ->
-    handle_callback_ret( erlang:apply(Module, Name, Args ++ [ModState]), St).
+invoke_callback(Name, Args, St = #st{modstate = {Module, ModState}}) ->
+    handle_callback_ret(erlang:apply(Module, Name, Args ++ [ModState]), St).
 
 -spec try_invoke_callback(_Name :: atom(), _Args :: list(), _Default, st()) ->
     _Result.
@@ -552,7 +530,7 @@ try_invoke_callback(Name, Args, Default, St) ->
 
 -spec try_invoke_callback(_Name :: atom(), _Args :: list(), _LastArgs :: list(), _Default, st()) ->
     _Result.
-try_invoke_callback(Name, Args, LastArgs, Default, St = #{modstate := {Module, ModState}}) ->
+try_invoke_callback(Name, Args, LastArgs, Default, St = #st{modstate = {Module, ModState}}) ->
     handle_callback_ret(
         try erlang:apply(Module, Name, Args ++ [ModState] ++ LastArgs) catch
             error:undef -> Default
@@ -585,8 +563,8 @@ handle_callback_ret(Ret, _St) ->
 
 -spec update_modstate(_ModState, st()) ->
     st().
-update_modstate(ModSt, St = #{modstate := {Module, _}}) ->
-    St#{modstate := {Module, ModSt}}.
+update_modstate(ModSt, St = #st{modstate = {Module, _}}) ->
+    St#st{modstate = {Module, ModSt}}.
 
 %%
 
@@ -624,9 +602,9 @@ cancel_monitor(MRef, Opts) ->
 
 -spec beat(mg_gen_squad_pulse:beat(), st() | opts()) ->
     _.
+beat(Beat, #st{opts = Opts}) ->
+    beat(Beat, Opts);
 beat(Beat, #{pulse := Handler}) ->
     mg_gen_squad_pulse:handle_beat(Handler, Beat);
-beat(Beat, #{opts := Opts}) ->
-    beat(Beat, Opts);
 beat(_Beat, _St) ->
     ok.

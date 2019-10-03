@@ -187,10 +187,7 @@ handle_info(Info, _Rank, _Squad, _St) ->
 
 -spec handle_beat(_, mg_gen_squad_pulse:beat()) ->
     _.
-handle_beat(Start, Beat = {Sub, _}) when
-    element(1, Sub) /= timer,
-    element(1, Sub) /= monitor
-->
-    io:format("+~6..0Bms ~0p ~0p", [erlang:system_time(millisecond) - Start, self(), Beat]);
-handle_beat(_Start, _Beat) ->
-    ok.
+handle_beat(_Start, {{timer, _}, _}) -> ok;
+handle_beat(_Start, {{monitor, _}, _}) -> ok;
+handle_beat(Start, Beat) ->
+    io:format("+~6..0Bms ~0p ~0p", [erlang:system_time(millisecond) - Start, self(), Beat]).
