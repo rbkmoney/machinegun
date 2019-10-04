@@ -15,16 +15,22 @@
 #
 
 # Name of the service.
+#
 # Defaults to: 'machinegun'.
 service_name: machinegun
 
 # Name of the node for Erlang distribution.
+#
 # Defaults to: '{service_name}@{primary_netif_ip}'.
 # dist_node_name: machinegun@10.0.0.42
 
 # Erlang VM options.
 erlang:
-    cookie: "mg_cookie"
+    # Path to a file which holds Erlang distribution cookie.
+    # The cookie is _sensitive_ piece of information so handle it with caution.
+    #
+    # Must be set, there's no default.
+    secret_cookie_file: "config/cookie"
     ipv6: false
     disable_dns_cache: false
 

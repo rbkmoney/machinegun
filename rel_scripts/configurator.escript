@@ -22,12 +22,25 @@
 %% main
 %%
 main([YamlConfigFilename, ConfigsPath]) ->
+    ok = logger:set_primary_config(level, error),
+    {ok, [[Home]]} = init:get_argument(home),
     YamlConfig = ?C:parse_yaml_config(YamlConfigFilename),
     ERLInetrcFilename = filename:join(ConfigsPath, "erl_inetrc"),
+    ErlangCookieFilename = filename:join(Home, ".erlang.cookie"),
     ?C:write_files([
-        {filename:join(ConfigsPath, "sys.config"), ?C:print_sys_config(sys_config(YamlConfig                   ))},
+        {filename:join(ConfigsPath, "sys.config"), ?C:print_sys_config(sys_config(YamlConfig))},
         {filename:join(ConfigsPath, "vm.args"   ), ?C:print_vm_args   (vm_args   (YamlConfig, ERLInetrcFilename))},
-        {ERLInetrcFilename                       , ?C:print_erl_inetrc(erl_inetrc(YamlConfig                   ))}
+        {ERLInetrcFilename                       , ?C:print_erl_inetrc(erl_inetrc(YamlConfig))},
+        % TODO
+        % Writing distribution cookie to the file which BEAM looks for when setting up the
+        % distribution under *nix, as a fallback mechanism when missing `-setcookie` arg from
+        % command line.
+        % It's the only method not to expose cookie contents in the BEAM command line in a way which
+        % doesn't break various start script functions (e.g. remsh or ping), however it may still
+        % appear there for a brief amount of time while running them.
+        % One must take care to run service under its own UID because `~/.erlang.cookie` is supposed
+        % to be shared between every BEAM instance run by some user.
+        {ErlangCookieFilename, cookie(YamlConfig), 8#00400}
     ]).
 
 %%
@@ -462,7 +475,6 @@ procreg(YamlConfig) ->
 vm_args(YamlConfig, ERLInetrcFilename) ->
     [
         node_name(YamlConfig),
-        {'-setcookie', ?C:utf_bin(?C:conf([erlang, cookie], YamlConfig, "mg_cookie" ))},
         {'+K'        , <<"true">>},
         {'+A'        , <<"10">>  },
         {'-kernel'   , <<"inetrc '\"", (?C:utf_bin(ERLInetrcFilename))/binary, "\"'">>}
@@ -470,6 +482,9 @@ vm_args(YamlConfig, ERLInetrcFilename) ->
     conf_if([erlang, ipv6], YamlConfig, [
         {'-proto_dist', <<"inet6_tcp">>}
     ]).
+
+cookie(YamlConfig) ->
+    ?C:contents(?C:filename(?C:conf([erlang, secret_cookie_file], YamlConfig))).
 
 service_name(YamlConfig) ->
     ?C:utf_bin(?C:conf([service_name], YamlConfig, "machinegun")).

@@ -39,6 +39,7 @@
 -export([conf             /3]).
 -export([conf             /2]).
 -export([probability      /1]).
+-export([contents         /1]).
 
 %%
 
@@ -72,7 +73,17 @@ write_files(Files) ->
 -spec write_file({filename(), iolist()}) ->
     ok.
 write_file({Name, Data}) ->
-    ok = file:write_file(Name, Data).
+    ok = file:write_file(Name, Data);
+write_file({Name, Data, Mode}) ->
+    % Turn write permission on temporarily
+    _ = file:change_mode(Name, Mode bor 8#00200),
+    % Truncate it
+    ok = file:write_file(Name, <<>>),
+    ok = file:change_mode(Name, Mode bor 8#00200),
+    % Write contents
+    ok = file:write_file(Name, Data),
+    % Drop write permission (if `Mode` doesn't specify it)
+    ok = file:change_mode(Name, Mode).
 
 -spec print_sys_config(sys_config()) ->
     iolist().
@@ -342,3 +353,13 @@ probability(Prob) when is_number(Prob) andalso 0 =< Prob andalso Prob =< 1 ->
     Prob;
 probability(Prob) ->
     throw({'bad probability', Prob}).
+
+-spec contents(filename()) ->
+    binary().
+contents(Filename) ->
+    case file:read_file(Filename) of
+        {ok, Contents} ->
+            Contents;
+        {error, Reason} ->
+            erlang:throw({'could not read file contents', Filename, Reason})
+    end.
