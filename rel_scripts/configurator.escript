@@ -153,11 +153,16 @@ service_presence_name(YamlConfig) ->
     erlang:iolist_to_binary([service_name(YamlConfig), "-consuela"]).
 
 consul_client(Name, YamlConfig) ->
+    ACLToken = conf_with(
+        [consul, acl_token_file], YamlConfig,
+        undefined,
+        fun (V) -> {file, ?C:file(V, 8#600)} end
+    ),
     #{
         url   => ?C:conf([consul, url], YamlConfig),
         opts  => genlib_map:compact(#{
             datacenter => ?C:conf([consul, datacenter], YamlConfig, undefined),
-            acl        => ?C:conf([consul, acl_token ], YamlConfig, undefined),
+            acl        => ACLToken,
             transport_opts => genlib_map:compact(#{
                 pool =>
                     ?C:conf([consul, pool             ], YamlConfig, Name),

@@ -58,7 +58,7 @@ consuela:
 # Required when distributed machine registry is enabled.
 consul:
     url: http://localhost:8500
-    acl_token: LONGUNREADABLESTRING
+    acl_token_file: config/consul.token
     connect_timeout: 200ms
     recv_timeout: 1s
 

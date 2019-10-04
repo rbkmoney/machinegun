@@ -15,6 +15,7 @@
 %%%
 
 -module(mg_woody_api_configurator).
+-include_lib("kernel/include/file.hrl").
 
 -export([parse_yaml_config/1]).
 -export([write_files      /1]).
@@ -27,6 +28,7 @@
 -export([hostname/0]).
 
 -export([filename         /1]).
+-export([file             /2]).
 -export([log_level        /1]).
 -export([mem_words        /1]).
 -export([mem_bytes        /1]).
@@ -116,6 +118,24 @@ filename(Filename) when is_list(Filename) ->
     Filename;
 filename(Filename) ->
     erlang:throw({bad_file_name, Filename}).
+
+-spec file(maybe(string()), _AtMostMode :: non_neg_integer()) ->
+    filename().
+file(Filename, AtMostMode) ->
+    _ = filename(Filename),
+    case file:read_file_info(Filename) of
+        {ok, #file_info{type = regular, mode = Mode}} ->
+            case (Mode band 8#777) bor AtMostMode of
+                AtMostMode ->
+                    Filename;
+                _ ->
+                    erlang:throw({'bad file mode', Filename, io_lib:format("~.8.0B", [Mode])})
+            end;
+        {ok, #file_info{type = Type}} ->
+            erlang:throw({'bad file type', Filename, Type});
+        {error, Reason} ->
+            erlang:throw({'error accessing file', Filename, Reason})
+    end.
 
 -spec guess_host_address(inet:address_family()) ->
     inet:ip_address().
