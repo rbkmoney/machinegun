@@ -65,12 +65,16 @@ parse_yaml_config(Filename) ->
     [Config] = yamerl_constr:file(Filename),
     Config.
 
--spec write_files([{filename(), iolist()}]) ->
+-type file_contents() ::
+    {filename(), iolist()} |
+    {filename(), iolist(), _Mode :: non_neg_integer()}.
+
+-spec write_files([file_contents()]) ->
     ok.
 write_files(Files) ->
     ok = lists:foreach(fun write_file/1, Files).
 
--spec write_file({filename(), iolist()}) ->
+-spec write_file(file_contents()) ->
     ok.
 write_file({Name, Data}) ->
     ok = file:write_file(Name, Data);
