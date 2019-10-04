@@ -65,7 +65,7 @@ groups() ->
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
     % dbg:tpl({mg_events_sink_machine, '_', '_'}, x),
-    Apps = mg_ct_helper:start_applications([consuela, mg]),
+    Apps = mg_ct_helper:start_applications([mg]),
     Pid = start_event_sink(event_sink_options()),
     true = erlang:unlink(Pid),
     {Events, _} = mg_events:generate_events_with_range([{#{}, Body} || Body <- [1, 2, 3]], undefined),

@@ -68,7 +68,7 @@ groups() ->
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
     % dbg:tpl({mg_storage, '_', '_'}, x),
-    Apps = mg_ct_helper:start_applications([consuela, mg]),
+    Apps = mg_ct_helper:start_applications([mg]),
     Pid = start_automaton(automaton_options()),
     true = erlang:unlink(Pid),
     [{apps, Apps}, {pid, Pid}| C].
