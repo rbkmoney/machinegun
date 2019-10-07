@@ -39,6 +39,7 @@
 -export([conf             /3]).
 -export([conf             /2]).
 -export([probability      /1]).
+-export([contents         /1]).
 
 %%
 
@@ -64,15 +65,29 @@ parse_yaml_config(Filename) ->
     [Config] = yamerl_constr:file(Filename),
     Config.
 
--spec write_files([{filename(), iolist()}]) ->
+-type file_contents() ::
+    {filename(), iolist()} |
+    {filename(), iolist(), _Mode :: non_neg_integer()}.
+
+-spec write_files([file_contents()]) ->
     ok.
 write_files(Files) ->
     ok = lists:foreach(fun write_file/1, Files).
 
--spec write_file({filename(), iolist()}) ->
+-spec write_file(file_contents()) ->
     ok.
 write_file({Name, Data}) ->
-    ok = file:write_file(Name, Data).
+    ok = file:write_file(Name, Data);
+write_file({Name, Data, Mode}) ->
+    % Turn write permission on temporarily
+    _ = file:change_mode(Name, Mode bor 8#00200),
+    % Truncate it
+    ok = file:write_file(Name, <<>>),
+    ok = file:change_mode(Name, Mode bor 8#00200),
+    % Write contents
+    ok = file:write_file(Name, Data),
+    % Drop write permission (if `Mode` doesn't specify it)
+    ok = file:change_mode(Name, Mode).
 
 -spec print_sys_config(sys_config()) ->
     iolist().
@@ -342,3 +357,13 @@ probability(Prob) when is_number(Prob) andalso 0 =< Prob andalso Prob =< 1 ->
     Prob;
 probability(Prob) ->
     throw({'bad probability', Prob}).
+
+-spec contents(filename()) ->
+    binary().
+contents(Filename) ->
+    case file:read_file(Filename) of
+        {ok, Contents} ->
+            Contents;
+        {error, Reason} ->
+            erlang:throw({'could not read file contents', Filename, Reason})
+    end.
