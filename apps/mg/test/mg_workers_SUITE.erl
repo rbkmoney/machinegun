@@ -219,7 +219,7 @@ stress_test(C) ->
     WorkersCount  = 50,
     UnloadTimeout = 100, % чтобы машины выгружались в процессе теста
     ok = run_load_test(#{
-        duration        => 5 * 1000,
+        duration        => 10 * 1000,
         runners         => 1000,
         job             => fun (ManagerOptions, _N) -> stress_test_do_test_call(ManagerOptions, WorkersCount) end,
         manager_options => workers_options(UnloadTimeout, #{link_pid=>erlang:self()}, C)
@@ -240,7 +240,7 @@ manager_contention_test(C) ->
     RunnersCount  = 1000,
     UnloadTimeout = 100, % чтобы машины выгружались в процессе теста
     ok = run_load_test(#{
-        duration        => 5 * 1000,
+        duration        => 10 * 1000,
         runners         => RunnersCount,
         job             => fun manager_contention_test_call/2,
         manager_options => workers_options(UnloadTimeout, 10, #{link_pid=>erlang:self()}, C)
