@@ -398,7 +398,10 @@ start_workers(Options) ->
 -spec stop_workers(pid()) ->
     ok.
 stop_workers(Pid) ->
-    ok = proc_lib:stop(Pid, normal, 5000),
+    ct:pal("Manager inbox: ~p", [erlang:process_info(Pid, messages)]),
+    ok = try proc_lib:stop(Pid, normal, 5000) after
+        ct:pal("Manager inbox: ~p", [erlang:process_info(Pid, messages)])
+    end,
     ok.
 
 -spec wait_machines_unload(pos_integer()) ->
