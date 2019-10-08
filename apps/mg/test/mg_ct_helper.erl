@@ -51,13 +51,7 @@ start_application(consuela) ->
     genlib_app:start_application_with(consuela, [
         {registry, #{
             nodename => "consul0",
-            namespace => <<"mg">>,
-            registry => #{
-                pulse => {?MODULE, {registry, info}}
-            },
-            keeper => #{
-                pulse => {?MODULE, {keeper, info}}
-            }
+            namespace => <<"mg">>
         }}
     ]);
 start_application(brod) ->
