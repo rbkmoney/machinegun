@@ -397,7 +397,9 @@ start_workers(Options) ->
 -spec stop_workers(pid()) ->
     ok.
 stop_workers(Pid) ->
-    ok = proc_lib:stop(Pid, normal, 10000),
+    Counts = supervisor:count_children(Pid),
+    Active = proplists:get_value(active, Counts),
+    ok = proc_lib:stop(Pid, normal, Active * 100),
     ok.
 
 -spec wait_machines_unload(pos_integer()) ->
