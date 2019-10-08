@@ -217,8 +217,8 @@ wait_worker_unload(WorkerPid, Timeout) ->
     _.
 stress_test(C) ->
     Concurrency   = erlang:system_info(schedulers),
-    RunnersCount  = 125 * Concurrency,
-    WorkersCount  = 5 * Concurrency,
+    RunnersCount  = 100 * Concurrency,
+    WorkersCount  = 10 * Concurrency,
     UnloadTimeout = 100, % чтобы машины выгружались в процессе теста
     ok = run_load_test(#{
         duration        => 10 * 1000,
@@ -240,13 +240,13 @@ stress_test_do_test_call(Options, WorkersCount) ->
     _.
 manager_contention_test(C) ->
     Concurrency   = erlang:system_info(schedulers),
-    RunnersCount  = 125 * Concurrency,
+    RunnersCount  = 100 * Concurrency,
     UnloadTimeout = 100, % чтобы машины выгружались в процессе теста
     ok = run_load_test(#{
         duration        => 10 * 1000,
         runners         => RunnersCount,
         job             => fun manager_contention_test_call/2,
-        manager_options => workers_options(UnloadTimeout, 50, #{link_pid=>erlang:self()}, C)
+        manager_options => workers_options(UnloadTimeout, 10 * Concurrency, #{link_pid=>erlang:self()}, C)
     }).
 
 -spec manager_contention_test_call(mg_workers_manager:options(), pos_integer()) ->
