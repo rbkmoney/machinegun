@@ -222,8 +222,7 @@ stress_test(C) ->
         duration        => 5 * 1000,
         runners         => 1000,
         job             => fun (ManagerOptions, _N) -> stress_test_do_test_call(ManagerOptions, WorkersCount) end,
-        manager_options => workers_options(UnloadTimeout, #{link_pid=>erlang:self()}, C),
-        unload_timeout  => UnloadTimeout
+        manager_options => workers_options(UnloadTimeout, #{link_pid=>erlang:self()}, C)
     }).
 
 -spec stress_test_do_test_call(mg_workers_manager:options(), pos_integer()) ->
@@ -244,8 +243,7 @@ manager_contention_test(C) ->
         duration        => 5 * 1000,
         runners         => RunnersCount,
         job             => fun manager_contention_test_call/2,
-        manager_options => workers_options(UnloadTimeout, 100, #{link_pid=>erlang:self()}, C),
-        unload_timeout  => UnloadTimeout
+        manager_options => workers_options(UnloadTimeout, 10, #{link_pid=>erlang:self()}, C)
     }).
 
 -spec manager_contention_test_call(mg_workers_manager:options(), pos_integer()) ->
@@ -265,8 +263,7 @@ manager_contention_test_call(Options, N) ->
     workers         := pos_integer(),
     runners         := pos_integer(),
     job             := load_job_fun(),
-    manager_options := mg_workers_manager:options(),
-    unload_timeout  := pos_integer()
+    manager_options := mg_workers_manager:options()
 }.
 
 -type load_job_fun() :: fun((load_options(), _N :: pos_integer()) -> _).
@@ -277,8 +274,7 @@ run_load_test(#{
     duration        := Duration,
     runners         := RunnersCount,
     job             := Job,
-    manager_options := ManagerOptions,
-    unload_timeout  := UnloadTimeout
+    manager_options := ManagerOptions = #{worker_options := WorkerOptions}
 }) ->
     Ts = now_diff(0),
     _ = ct:pal(user, "===> [~p] begin~n", [now_diff(Ts)]),
@@ -290,7 +286,7 @@ run_load_test(#{
     _ = ct:pal(user, "===> [~p] sleep done~n", [now_diff(Ts)]),
     ok = mg_ct_helper:stop_wait_all(RunnersPid, shutdown, RunnersCount * 10),
     _ = ct:pal(user, "===> [~p] stop runners done~n", [now_diff(Ts)]),
-    ok = wait_machines_unload(UnloadTimeout),
+    ok = wait_machines_unload(maps:get(unload_timeout, WorkerOptions, 60 * 1000)),
     ok = stop_workers(WorkersPid),
     _ = ct:pal(user, "===> [~p] stop workers done~n", [now_diff(Ts)]).
 
