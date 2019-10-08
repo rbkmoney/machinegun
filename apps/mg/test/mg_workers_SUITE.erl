@@ -257,8 +257,7 @@ manager_contention_test_call(Options, N) ->
     case mg_workers_manager:call(Options, N, Call, ?req_ctx, mg_deadline:default()) of
         Call ->
             ok;
-        {error, {transient, _} = Reason} ->
-            _ = ct:pal("mg_workers_manager:call ~p failed: ~p", [N, Reason]),
+        {error, {transient, _}} ->
             ok
     end.
 
