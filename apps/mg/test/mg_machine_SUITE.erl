@@ -104,7 +104,7 @@ simple_test(C) ->
     Options = automaton_options(C),
     TestKey = <<"test_key">>,
     ID = <<"42">>,
-    _  = start_automaton(Options),
+    Pid = start_automaton(Options),
 
     {logic, machine_not_found} =
         (catch mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default())),
@@ -144,7 +144,7 @@ simple_test(C) ->
     {logic, machine_not_found} =
         (catch mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default())),
 
-    ok.
+    ok = stop_automaton(Pid).
 
 %%
 %% processor
@@ -189,6 +189,12 @@ start() ->
     pid().
 start_automaton(Options) ->
     mg_utils:throw_if_error(mg_machine:start_link(Options)).
+
+-spec stop_automaton(pid()) ->
+    ok.
+stop_automaton(Pid) ->
+    ok = proc_lib:stop(Pid, normal, 5000),
+    ok.
 
 -spec automaton_options(config()) ->
     mg_machine:options().

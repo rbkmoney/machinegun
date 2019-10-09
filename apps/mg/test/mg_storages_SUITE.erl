@@ -107,8 +107,9 @@ end_per_group(_, _C) ->
     _.
 base_test(C) ->
     Options = storage_options(?config(storage_type, C), <<"base_test">>),
-    _ = start_storage(Options),
-    base_test(1, Options).
+    Pid = start_storage(Options),
+    base_test(1, Options),
+    ok = stop_storage(Pid).
 
 -spec base_test(mg:id(), mg_storage:options()) ->
     _.
@@ -130,7 +131,7 @@ base_test(ID, Options) ->
     _.
 indexes_test(C) ->
     Options = storage_options(?config(storage_type, C), <<"indexes_test">>),
-    _ = start_storage(Options),
+    Pid = start_storage(Options),
 
     K1  = <<"Key_24">>,
     I1  = {integer, <<"index1">>},
@@ -170,13 +171,13 @@ indexes_test(C) ->
     [] = mg_storage:search(Options, {I1, {IV1, IV2}}),
     [] = mg_storage:search(Options, {I2, {IV1, IV2}}),
 
-    ok.
+    ok = stop_storage(Pid).
 
 -spec key_length_limit_test(config()) ->
     _.
 key_length_limit_test(C) ->
     Options = storage_options(?config(storage_type, C), <<"key_length_limit">>),
-    _ = start_storage(Options),
+    Pid = start_storage(Options),
 
     {logic, {invalid_key, {too_small, _}}} =
         (catch mg_storage:get(Options, <<"">>)),
@@ -210,13 +211,13 @@ key_length_limit_test(C) ->
             )
         ),
 
-    ok.
+    ok = stop_storage(Pid).
 
 -spec indexes_test_with_limits(config()) ->
     _.
 indexes_test_with_limits(C) ->
     Options = storage_options(?config(storage_type, C), <<"indexes_test_with_limits">>),
-    _ = start_storage(Options),
+    Pid = start_storage(Options),
 
     K1  = <<"Key_24">>,
     I1  = {integer, <<"index1">>},
@@ -240,19 +241,19 @@ indexes_test_with_limits(C) ->
     ok = mg_storage:delete(Options, K1, Ctx1),
     ok = mg_storage:delete(Options, K2, Ctx2),
 
-    ok.
+    ok = stop_storage(Pid).
 
 -spec stress_test(_C) ->
     ok.
 stress_test(C) ->
     Options = storage_options(?config(storage_type, C), <<"stress_test">>),
-    _ = start_storage(Options),
+    Pid = start_storage(Options),
     ProcessCount = 20,
     Processes = [stress_test_start_process(ID, ProcessCount, Options) || ID <- lists:seq(1, ProcessCount)],
 
     timer:sleep(5000),
     ok = stop_wait_all(Processes, shutdown, 5000),
-    ok.
+    ok = stop_storage(Pid).
 
 -spec stress_test_start_process(term(), pos_integer(), mg_storage:options()) ->
     pid().
@@ -347,3 +348,9 @@ start_storage(Options) ->
             [mg_storage:child_spec(Options, storage)]
         )
     ).
+
+-spec stop_storage(pid()) ->
+    ok.
+stop_storage(Pid) ->
+    ok = proc_lib:stop(Pid, normal, 5000),
+    ok.

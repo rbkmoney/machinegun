@@ -76,12 +76,13 @@ end_per_suite(C) ->
     _.
 continuation_delayed_retries_test(_C) ->
     Options = automaton_options(),
-    _  = start_automaton(Options),
+    Pid = start_automaton(Options),
     ID = ?MH_ID,
     ok = mg_machine:start(Options, ID, #{},  ?REQ_CTX, mg_deadline:default()),
     ok = mg_machine:call (Options, ID, test, ?REQ_CTX, mg_deadline:default()),
     ok = timer:sleep(?TEST_SLEEP),
-    2  = get_fail_count().
+    2  = get_fail_count(),
+    _  = stop_automaton(Pid).
 
 %%
 %% processor
@@ -120,6 +121,12 @@ update_fail_count(FailCount) ->
     pid().
 start_automaton(Options) ->
     mg_utils:throw_if_error(mg_machine:start_link(Options)).
+
+-spec stop_automaton(pid()) ->
+    ok.
+stop_automaton(Pid) ->
+    ok = proc_lib:stop(Pid, normal, 5000),
+    ok.
 
 -spec automaton_options() ->
     mg_machine:options().

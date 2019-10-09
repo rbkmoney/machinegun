@@ -101,13 +101,14 @@ continuation_repair_test(_C) ->
             (Events) -> TestRunner ! {sink_events, Events}, ok
         end
     },
-    _Pid = start_automaton(Options, NS),
+    Pid = start_automaton(Options, NS),
     ok = start(Options, NS, MachineID, <<>>),
     ?assertReceive({sink_events, [1]}),
     ?assertException(throw, {logic, machine_failed}, call(Options, NS, MachineID, raise)),
     ok = repair(Options, NS, MachineID, <<>>),
     ?assertReceive({sink_events, [2, 3]}),
-    ?assertEqual([1, 2, 3], get_history(Options, NS, MachineID)).
+    ?assertEqual([1, 2, 3], get_history(Options, NS, MachineID)),
+    ok = stop_automaton(Pid).
 
 %% Processor handlers
 
@@ -163,6 +164,12 @@ dummy_sink_handler(_Events) ->
     pid().
 start_automaton(Options, NS) ->
     mg_utils:throw_if_error(mg_events_machine:start_link(events_machine_options(Options, NS))).
+
+-spec stop_automaton(pid()) ->
+    ok.
+stop_automaton(Pid) ->
+    ok = proc_lib:stop(Pid, normal, 5000),
+    ok.
 
 -spec events_machine_options(options(), mg:ns()) ->
     mg_events_machine:options().

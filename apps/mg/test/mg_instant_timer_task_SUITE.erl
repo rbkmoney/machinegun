@@ -77,7 +77,7 @@ instant_start_test(_C) ->
     NS = <<"test">>,
     ID = genlib:to_binary(?FUNCTION_NAME),
     Options = automaton_options(NS),
-    _  = start_automaton(Options),
+    Pid = start_automaton(Options),
 
     ok = mg_machine:start(Options, ID, 0, ?req_ctx, mg_deadline:default()),
      0 = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
@@ -85,7 +85,9 @@ instant_start_test(_C) ->
     F = fun() ->
             mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default())
         end,
-    mg_ct_helper:assert_wait_expected(1, F, mg_retry:new_strategy({linear, _Retries = 10, _Timeout = 100})).
+    mg_ct_helper:assert_wait_expected(1, F, mg_retry:new_strategy({linear, _Retries = 10, _Timeout = 100})),
+
+    ok = stop_automaton(Pid).
 
 -spec without_shedulers_test(config()) ->
     _.
@@ -93,13 +95,15 @@ without_shedulers_test(_C) ->
     NS = <<"test">>,
     ID = genlib:to_binary(?FUNCTION_NAME),
     Options = automaton_options_wo_shedulers(NS),
-    _  = start_automaton(Options),
+    Pid = start_automaton(Options),
 
     ok = mg_machine:start(Options, ID, 0, ?req_ctx, mg_deadline:default()),
      0 = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
     ok = mg_machine:call(Options, ID, force_timeout, ?req_ctx, mg_deadline:default()),
     % machine is still alive
-    _  = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()).
+    _  = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
+
+    ok = stop_automaton(Pid).
 
 %%
 %% processor
@@ -179,6 +183,12 @@ start() ->
     pid().
 start_automaton(Options) ->
     mg_utils:throw_if_error(mg_machine:start_link(Options)).
+
+-spec stop_automaton(pid()) ->
+    ok.
+stop_automaton(Pid) ->
+    ok = proc_lib:stop(Pid, normal, 5000),
+    ok.
 
 -spec automaton_options(mg:ns()) ->
     mg_machine:options().
