@@ -197,10 +197,15 @@ unload_loading_test(C) ->
 -spec wait_worker_pid(_ID) ->
     pid().
 wait_worker_pid(ID) ->
+    wait_worker_pid(ID, 100).
+
+-spec wait_worker_pid(_ID, timeout()) ->
+    pid().
+wait_worker_pid(ID, Timeout) ->
     receive
         {worker, ID, Pid} -> Pid
     after
-        0 -> erlang:error(no_pid_received)
+        Timeout -> erlang:error(no_pid_received)
     end.
 
 -spec wait_worker_unload(_WorkerPid :: pid(), timeout()) ->
