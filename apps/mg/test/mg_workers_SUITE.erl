@@ -287,16 +287,16 @@ run_load_test(#{
     _ = ct:pal("running load test ~p", [Options]),
     Ts = now_diff(0),
     WorkersPid = start_workers(ManagerOptions),
-    _ = ct:pal("===> [~p] start workers done~n", [now_diff(Ts)]),
+    _ = ct:pal("===> [~p] start workers done", [now_diff(Ts)]),
     RunnersPid = [stress_test_start_process(Job, ManagerOptions, N) || N <- lists:seq(1, RunnersCount)],
-    _ = ct:pal("===> [~p] start runners done~n", [now_diff(Ts)]),
+    _ = ct:pal("===> [~p] start runners done", [now_diff(Ts)]),
     ok = timer:sleep(Duration),
-    _ = ct:pal("===> [~p] sleep done~n", [now_diff(Ts)]),
+    _ = ct:pal("===> [~p] sleep done", [now_diff(Ts)]),
     ok = mg_ct_helper:stop_wait_all(RunnersPid, shutdown, RunnersCount * 10),
-    _ = ct:pal("===> [~p] stop runners done~n", [now_diff(Ts)]),
+    _ = ct:pal("===> [~p] stop runners done", [now_diff(Ts)]),
     ok = wait_machines_unload(maps:get(unload_timeout, WorkerOptions, 60 * 1000)),
     ok = stop_workers(WorkersPid),
-    _ = ct:pal("===> [~p] stop workers done~n", [now_diff(Ts)]).
+    _ = ct:pal("===> [~p] stop workers done", [now_diff(Ts)]).
 
 -spec now_diff(integer()) ->
     non_neg_integer().
