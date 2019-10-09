@@ -218,7 +218,7 @@ wait_worker_unload(WorkerPid, Timeout) ->
 stress_test(C) ->
     Concurrency   = erlang:system_info(schedulers),
     RunnersCount  = 100 * Concurrency,
-    WorkersCount  = 10 * Concurrency,
+    WorkersCount  = 5 * Concurrency,
     UnloadTimeout = 100, % чтобы машины выгружались в процессе теста
     ok = run_load_test(#{
         duration        => 10 * 1000,
