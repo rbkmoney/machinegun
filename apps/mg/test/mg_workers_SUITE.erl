@@ -25,6 +25,7 @@
 %%%
 -module(mg_workers_SUITE).
 -include_lib("common_test/include/ct.hrl").
+-include("ct_helper.hrl").
 
 %% tests descriptions
 -export([all             /0]).
@@ -196,10 +197,15 @@ unload_loading_test(C) ->
 -spec wait_worker_pid(_ID) ->
     pid().
 wait_worker_pid(ID) ->
+    wait_worker_pid(ID, 100).
+
+-spec wait_worker_pid(_ID, timeout()) ->
+    pid().
+wait_worker_pid(ID, Timeout) ->
     receive
         {worker, ID, Pid} -> Pid
     after
-        0 -> erlang:error(no_pid_received)
+        Timeout -> erlang:error(no_pid_received)
     end.
 
 -spec wait_worker_unload(_WorkerPid :: pid(), timeout()) ->
@@ -215,14 +221,15 @@ wait_worker_unload(WorkerPid, Timeout) ->
 -spec stress_test(config()) ->
     _.
 stress_test(C) ->
-    WorkersCount  = 50,
-    UnloadTimeout = 1000, % чтобы машины выгружались в процессе теста
+    Concurrency   = erlang:system_info(schedulers),
+    RunnersCount  = 100 * Concurrency,
+    WorkersCount  = 5 * Concurrency,
+    UnloadTimeout = 100, % чтобы машины выгружались в процессе теста
     ok = run_load_test(#{
-        duration        => 5 * 1000,
-        runners         => 1000,
+        duration        => 10 * 1000,
+        runners         => RunnersCount,
         job             => fun (ManagerOptions, _N) -> stress_test_do_test_call(ManagerOptions, WorkersCount) end,
-        manager_options => workers_options(UnloadTimeout, #{link_pid=>erlang:self()}, C),
-        unload_timeout  => UnloadTimeout * 2
+        manager_options => workers_options(UnloadTimeout, #{link_pid=>erlang:self()}, C)
     }).
 
 -spec stress_test_do_test_call(mg_workers_manager:options(), pos_integer()) ->
@@ -237,14 +244,14 @@ stress_test_do_test_call(Options, WorkersCount) ->
 -spec manager_contention_test(config()) ->
     _.
 manager_contention_test(C) ->
-    RunnersCount  = 1000,
-    UnloadTimeout = 1000, % чтобы машины выгружались в процессе теста
+    Concurrency   = erlang:system_info(schedulers),
+    RunnersCount  = 100 * Concurrency,
+    UnloadTimeout = 100, % чтобы машины выгружались в процессе теста
     ok = run_load_test(#{
-        duration        => 5 * 1000,
+        duration        => 10 * 1000,
         runners         => RunnersCount,
         job             => fun manager_contention_test_call/2,
-        manager_options => workers_options(UnloadTimeout, 200, #{link_pid=>erlang:self()}, C),
-        unload_timeout  => UnloadTimeout * 2
+        manager_options => workers_options(UnloadTimeout, 10 * Concurrency, #{link_pid=>erlang:self()}, C)
     }).
 
 -spec manager_contention_test_call(mg_workers_manager:options(), pos_integer()) ->
@@ -264,8 +271,7 @@ manager_contention_test_call(Options, N) ->
     workers         := pos_integer(),
     runners         := pos_integer(),
     job             := load_job_fun(),
-    manager_options := mg_workers_manager:options(),
-    unload_timeout  := pos_integer()
+    manager_options := mg_workers_manager:options()
 }.
 
 -type load_job_fun() :: fun((load_options(), _N :: pos_integer()) -> _).
@@ -276,15 +282,26 @@ run_load_test(#{
     duration        := Duration,
     runners         := RunnersCount,
     job             := Job,
-    manager_options := ManagerOptions,
-    unload_timeout  := UnloadTimeout
-}) ->
+    manager_options := ManagerOptions = #{worker_options := WorkerOptions}
+} = Options) ->
+    _ = ct:pal("running load test ~p", [Options]),
+    Ts = now_diff(0),
     WorkersPid = start_workers(ManagerOptions),
+    _ = ct:pal("===> [~p] start workers done", [now_diff(Ts)]),
     RunnersPid = [stress_test_start_process(Job, ManagerOptions, N) || N <- lists:seq(1, RunnersCount)],
+    _ = ct:pal("===> [~p] start runners done", [now_diff(Ts)]),
     ok = timer:sleep(Duration),
+    _ = ct:pal("===> [~p] sleep done", [now_diff(Ts)]),
     ok = mg_ct_helper:stop_wait_all(RunnersPid, shutdown, RunnersCount * 10),
-    ok = wait_machines_unload(UnloadTimeout),
-    ok = stop_workers(WorkersPid).
+    _ = ct:pal("===> [~p] stop runners done", [now_diff(Ts)]),
+    ok = wait_machines_unload(maps:get(unload_timeout, WorkerOptions, 60 * 1000)),
+    ok = stop_workers(WorkersPid),
+    _ = ct:pal("===> [~p] stop workers done", [now_diff(Ts)]).
+
+-spec now_diff(integer()) ->
+    non_neg_integer().
+now_diff(Ts) ->
+    erlang:system_time(millisecond) - Ts.
 
 -spec stress_test_start_process(load_job_fun(), mg_workers_manager:options(), _N :: pos_integer()) ->
     pid().
@@ -388,7 +405,7 @@ start_workers(Options) ->
 -spec stop_workers(pid()) ->
     ok.
 stop_workers(Pid) ->
-    ok = proc_lib:stop(Pid, normal, 10000),
+    ok = proc_lib:stop(Pid, normal, 60 * 1000),
     ok.
 
 -spec wait_machines_unload(pos_integer()) ->
