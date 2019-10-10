@@ -85,7 +85,8 @@ full_test(_) ->
             lists:seq(1, 10)
         ),
     ok = timer:sleep(5 * 1000),
-    mg_ct_helper:stop_wait_all(Pids ++ [AutomatonPid], shutdown, 5000).
+    ok = mg_ct_helper:stop_wait_all(Pids, shutdown, 5000),
+    ok = stop_automaton(AutomatonPid).
 
 %% TODO wait, simple_repair, kill, continuation
 -type id() :: pos_integer().
@@ -229,6 +230,12 @@ start() ->
     pid().
 start_automaton(Options) ->
     mg_utils:throw_if_error(mg_machine:start_link(Options)).
+
+-spec stop_automaton(pid()) ->
+    ok.
+stop_automaton(Pid) ->
+    ok = proc_lib:stop(Pid, normal, 5000),
+    ok.
 
 -spec automaton_options() ->
     mg_machine:options().
