@@ -71,6 +71,7 @@
 -export([format_exception /1]).
 
 -export([join/2]).
+-export([partition/2]).
 
 -export([lists_compact/1]).
 
@@ -329,6 +330,21 @@ format_exception({Class, Reason, Stacktrace}) ->
 join(_    , []   ) -> [];
 join(_    , [H]  ) ->  H;
 join(Delim, [H|T]) -> [H, Delim, join(Delim, T)].
+
+-spec partition([T], [Owner, ...]) ->
+    #{Owner => [T]}.
+partition(L, Owners = [_ | _]) ->
+    partition(L, Owners, Owners, #{}).
+
+-spec partition([T], [Owner, ...], [Owner], Acc) ->
+    Acc when Acc :: #{Owner => [T]}.
+partition([V | Vs], Owners, [Owner | Rest], Acc) ->
+    Acc1 = maps:update_with(Owner, fun (Share) -> [V | Share] end, [V], Acc),
+    partition(Vs, Owners, Rest, Acc1);
+partition(Vs, Owners, [], Acc) ->
+    partition(Vs, Owners, Owners, Acc);
+partition([], _, _, Acc) ->
+    Acc.
 
 -spec lists_compact(list(T)) ->
     list(T).
