@@ -55,7 +55,7 @@ all() ->
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
     % dbg:tpl({mg_machine, '_', '_'}, x),
-    Apps = mg_ct_helper:start_applications([consuela, mg]),
+    Apps = mg_ct_helper:start_applications([mg]),
     [{apps, Apps} | C].
 
 -spec end_per_suite(config()) ->
@@ -76,11 +76,13 @@ robust_handling(_C) ->
     NS = BinTestName,
     ID = BinTestName,
     Options = automaton_options(NS),
-    _  = start_automaton(Options),
+    Pid = start_automaton(Options),
 
     ok = mg_machine:start(Options, ID, undefined, ?req_ctx, mg_deadline:default()),
     ok = timer:sleep(2000),
-    {retrying, _, _, _, _} = mg_machine:get_status(Options, ID).
+    {retrying, _, _, _, _} = mg_machine:get_status(Options, ID),
+
+    ok = stop_automaton(Pid).
 
 %%
 %% processor
@@ -112,6 +114,12 @@ start() ->
     pid().
 start_automaton(Options) ->
     mg_utils:throw_if_error(mg_machine:start_link(Options)).
+
+-spec stop_automaton(pid()) ->
+    ok.
+stop_automaton(Pid) ->
+    ok = proc_lib:stop(Pid, normal, 5000),
+    ok.
 
 -spec automaton_options(mg:ns()) ->
     mg_machine:options().

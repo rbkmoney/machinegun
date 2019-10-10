@@ -15,6 +15,7 @@
 %%%
 
 -module(mg_woody_api_configurator).
+-include_lib("kernel/include/file.hrl").
 
 -export([parse_yaml_config/1]).
 -export([write_files      /1]).
@@ -27,6 +28,7 @@
 -export([hostname/0]).
 
 -export([filename         /1]).
+-export([file             /2]).
 -export([log_level        /1]).
 -export([mem_words        /1]).
 -export([mem_bytes        /1]).
@@ -39,6 +41,7 @@
 -export([conf             /3]).
 -export([conf             /2]).
 -export([probability      /1]).
+-export([contents         /1]).
 
 %%
 
@@ -64,15 +67,29 @@ parse_yaml_config(Filename) ->
     [Config] = yamerl_constr:file(Filename),
     Config.
 
--spec write_files([{filename(), iolist()}]) ->
+-type file_contents() ::
+    {filename(), iolist()} |
+    {filename(), iolist(), _Mode :: non_neg_integer()}.
+
+-spec write_files([file_contents()]) ->
     ok.
 write_files(Files) ->
     ok = lists:foreach(fun write_file/1, Files).
 
--spec write_file({filename(), iolist()}) ->
+-spec write_file(file_contents()) ->
     ok.
 write_file({Name, Data}) ->
-    ok = file:write_file(Name, Data).
+    ok = file:write_file(Name, Data);
+write_file({Name, Data, Mode}) ->
+    % Turn write permission on temporarily
+    _ = file:change_mode(Name, Mode bor 8#00200),
+    % Truncate it
+    ok = file:write_file(Name, <<>>),
+    ok = file:change_mode(Name, Mode bor 8#00200),
+    % Write contents
+    ok = file:write_file(Name, Data),
+    % Drop write permission (if `Mode` doesn't specify it)
+    ok = file:change_mode(Name, Mode).
 
 -spec print_sys_config(sys_config()) ->
     iolist().
@@ -101,6 +118,24 @@ filename(Filename) when is_list(Filename) ->
     Filename;
 filename(Filename) ->
     erlang:throw({bad_file_name, Filename}).
+
+-spec file(maybe(string()), _AtMostMode :: non_neg_integer()) ->
+    filename().
+file(Filename, AtMostMode) ->
+    _ = filename(Filename),
+    case file:read_file_info(Filename) of
+        {ok, #file_info{type = regular, mode = Mode}} ->
+            case (Mode band 8#777) bor AtMostMode of
+                AtMostMode ->
+                    Filename;
+                _ ->
+                    erlang:throw({'bad file mode', Filename, io_lib:format("~.8.0B", [Mode])})
+            end;
+        {ok, #file_info{type = Type}} ->
+            erlang:throw({'bad file type', Filename, Type});
+        {error, Reason} ->
+            erlang:throw({'error accessing file', Filename, Reason})
+    end.
 
 -spec guess_host_address(inet:address_family()) ->
     inet:ip_address().
@@ -342,3 +377,13 @@ probability(Prob) when is_number(Prob) andalso 0 =< Prob andalso Prob =< 1 ->
     Prob;
 probability(Prob) ->
     throw({'bad probability', Prob}).
+
+-spec contents(filename()) ->
+    binary().
+contents(Filename) ->
+    case file:read_file(Filename) of
+        {ok, Contents} ->
+            Contents;
+        {error, Reason} ->
+            erlang:throw({'could not read file contents', Filename, Reason})
+    end.

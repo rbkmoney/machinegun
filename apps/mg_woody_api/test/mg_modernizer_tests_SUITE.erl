@@ -182,7 +182,7 @@ start_mg_woody_api(Name, C) ->
             default_processing_timeout => 5000
         }}
     ],
-    Apps = mg_ct_helper:start_applications([consuela, {mg_woody_api, Config}]),
+    Apps = mg_ct_helper:start_applications([{mg_woody_api, Config}]),
     [
         {group_name        , Name},
         {group_apps        , Apps},

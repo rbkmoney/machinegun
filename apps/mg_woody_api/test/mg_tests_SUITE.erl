@@ -228,7 +228,6 @@ init_per_group(C) ->
     %% TODO сделать нормальную генерацию урлов
     Apps = mg_ct_helper:start_applications([
         brod,
-        consuela,
         {mg_woody_api, mg_woody_api_config(C)}
     ]),
 
@@ -762,10 +761,10 @@ create_event(Event, C, ID) ->
 -spec create_events(integer(), config(), mg:id()) -> _.
 create_events(N, C, ID) ->
     lists:foreach(
-            fun(I) ->
-                I = create_event([<<"event">>, I], C, ID)
-            end,
-            lists:seq(1, N)
+        fun(I) ->
+            I = create_event([<<"event">>, I], C, ID)
+        end,
+        lists:seq(1, N)
     ).
 
 -spec automaton_options(config()) -> _.

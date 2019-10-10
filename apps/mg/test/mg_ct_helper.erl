@@ -51,13 +51,7 @@ start_application(consuela) ->
     genlib_app:start_application_with(consuela, [
         {registry, #{
             nodename => "consul0",
-            namespace => <<"mg">>,
-            registry => #{
-                pulse => {?MODULE, {registry, info}}
-            },
-            keeper => #{
-                pulse => {?MODULE, {keeper, info}}
-            }
+            namespace => <<"mg">>
         }}
     ]);
 start_application(brod) ->
@@ -115,29 +109,29 @@ build_storage(NS, {Module, Options}) ->
 -spec stop_wait_all([pid()], _Reason, timeout()) ->
     ok.
 stop_wait_all(Pids, Reason, Timeout) ->
-    lists:foreach(
-        fun(Pid) ->
-            case stop_wait(Pid, Reason, Timeout) of
-                ok      -> ok;
-                timeout -> exit(stop_timeout)
-            end
-        end,
-        Pids
-    ).
+    FlagWas = erlang:process_flag(trap_exit, true),
+    TRef = erlang:start_timer(Timeout, self(), stop_timeout),
+    ok = lists:foreach(fun (Pid) -> erlang:exit(Pid, Reason) end, Pids),
+    ok = await_stop(Pids, Reason, TRef),
+    _ = erlang:process_flag(trap_exit, FlagWas),
+    ok.
 
--spec stop_wait(pid(), _Reason, timeout()) ->
+-spec await_stop(pid(), _Reason, reference()) ->
     ok | timeout.
-stop_wait(Pid, Reason, Timeout) ->
-    OldTrap = process_flag(trap_exit, true),
-    erlang:exit(Pid, Reason),
-    R =
-        receive
-            {'EXIT', Pid, Reason} -> ok
-        after
-            Timeout -> timeout
-        end,
-    process_flag(trap_exit, OldTrap),
-    R.
+await_stop([Pid | Rest], Reason, TRef) ->
+    receive
+        {'EXIT', Pid, Reason} ->
+            await_stop(Rest, Reason, TRef);
+        {timeout, TRef, Error} ->
+            erlang:exit(Error)
+    end;
+await_stop([], _Reason, TRef) ->
+    _ = erlang:cancel_timer(TRef),
+    receive
+        {timeout, TRef, _} -> ok
+    after 0 ->
+        ok
+    end.
 
 %%
 

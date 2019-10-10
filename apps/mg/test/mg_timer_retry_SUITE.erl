@@ -70,7 +70,7 @@ groups() ->
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
     % dbg:tpl({mg_machine, '_', '_'}, x),
-    Apps = mg_ct_helper:start_applications([consuela, mg]),
+    Apps = mg_ct_helper:start_applications([mg]),
     [{apps, Apps} | C].
 
 -spec end_per_suite(config()) ->
@@ -100,7 +100,7 @@ transient_fail(_C) ->
     NS = BinTestName,
     ID = BinTestName,
     Options = automaton_options(NS, {intervals, [1000, 1000, 1000, 1000, 1000, 1000, 1000]}),
-    _  = start_automaton(Options),
+    Pid = start_automaton(Options),
 
     ok = mg_machine:start(Options, ID, <<"normal">>, ?req_ctx, mg_deadline:default()),
     0  = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
@@ -111,7 +111,8 @@ transient_fail(_C) ->
     ok = timer:sleep(3000),
     I  = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
     true = I > 0,
-    ok.
+
+    ok = stop_automaton(Pid).
 
 -spec permament_fail(config()) ->
     _.
@@ -120,14 +121,15 @@ permament_fail(_C) ->
     NS = BinTestName,
     ID = BinTestName,
     Options = automaton_options(NS, {intervals, [1000]}),
-    _  = start_automaton(Options),
+    Pid = start_automaton(Options),
 
     ok = mg_machine:start(Options, ID, <<"normal">>, ?req_ctx, mg_deadline:default()),
     0  = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
     ok = mg_machine:call(Options, ID, {set_mode, <<"failing">>}, ?req_ctx, mg_deadline:default()),
     ok = timer:sleep(4000),
     {logic, machine_failed} = (catch mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default())),
-    ok.
+
+    ok = stop_automaton(Pid).
 
 %%
 %% processor
@@ -167,6 +169,12 @@ start() ->
     pid().
 start_automaton(Options) ->
     mg_utils:throw_if_error(mg_machine:start_link(Options)).
+
+-spec stop_automaton(pid()) ->
+    ok.
+stop_automaton(Pid) ->
+    ok = proc_lib:stop(Pid, normal, 5000),
+    ok.
 
 -spec automaton_options(mg:ns(), mg_retry:policy()) ->
     mg_machine:options().
