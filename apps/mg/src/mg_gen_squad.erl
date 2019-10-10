@@ -184,7 +184,18 @@ set_defaults(Opts) ->
 -spec leader(squad()) ->
     pid().
 leader(Squad) ->
-    [Leader | _] = lists:sort(maps:keys(Squad)), Leader.
+    % NOTE
+    % Adding some controlled randomness here.
+    % So that `node id` term would not dominate in ordering in different squads on some set of nodes
+    % which could happen to have "same" pids in them, e.g pid 85 @ node 1, pid 85 @ node 2 and so
+    % forth. This may affect squads started under a supervisor on different nodes, since startup
+    % order of whole supervision trees in a release is fixed and determinate.
+    Members = [First | _] = lists:sort(members(Squad)),
+    Size = length(Members),
+    Seed = erlang:phash2(First),
+    State = rand:seed_s(exrop, {Size, Seed, Seed}),
+    {N, _} = rand:uniform_s(Size, State),
+    lists:nth(N, Members).
 
 -spec rank(pid(), squad()) ->
     rank().
