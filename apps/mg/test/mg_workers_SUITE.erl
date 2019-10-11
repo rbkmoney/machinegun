@@ -107,22 +107,17 @@ init_per_group(with_gproc, C) ->
     [
         {registry, mg_procreg_gproc},
         {runner_retry_strategy, #{
-            {transient, noproc} =>
-                genlib_retry:linear(3, 100),
-            '_' =>
-                finish
+            noproc  => genlib_retry:linear(3, 100),
+            default => finish
         }} | C
     ];
 init_per_group(with_consuela, C) ->
     [
         {registry, {mg_procreg_consuela, #{}}},
         {runner_retry_strategy, #{
-            {transient, noproc} =>
-                genlib_retry:linear(3, 100),
-            {transient, {registry_unavailable, timeout}} =>
-                genlib_retry:linear(3, 500),
-            '_' =>
-                finish
+            noproc     => genlib_retry:linear(3, 100),
+            noregistry => genlib_retry:linear(3, 500),
+            default    => finish
         }} | C
     ];
 init_per_group(base, C) ->
@@ -295,9 +290,16 @@ manager_contention_test_call(Options, N, RetrySt) ->
 -spec maybe_retry(_Reason, retry_strategy()) ->
     {ok, retry_strategy()}.
 maybe_retry(Reason, RetrySt) ->
-    {ID, Retry} = case maps:find(Reason, RetrySt) of
-        {ok, R} -> {Reason, R};
-        error   -> {'_', maps:get('_', RetrySt)}
+    Class = case Reason of
+        {transient, noproc}   -> noproc;
+        {transient, normal}   -> noproc;
+        {transient, shutdown} -> noproc;
+        {transient, {registry_unavailable, timeout}} -> noregistry;
+        _ -> default
+    end,
+    {ID, Retry} = case maps:find(Class, RetrySt) of
+        {ok, R} -> {Class, R};
+        error   -> {default, maps:get(default, RetrySt)}
     end,
     case genlib_retry:next_step(Retry) of
         {wait, Timeout, Retry1} ->
