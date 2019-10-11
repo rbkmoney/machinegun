@@ -190,9 +190,9 @@ leader(Squad) ->
     % which could happen to have "same" pids in them, e.g pid 85 @ node 1, pid 85 @ node 2 and so
     % forth. This may affect squads started under a supervisor on different nodes, since startup
     % order of whole supervision trees in a release is fixed and determinate.
-    Members = [First | _] = lists:sort(members(Squad)),
+    Members = lists:sort(members(Squad)),
     Size = length(Members),
-    Seed = erlang:phash2(First),
+    Seed = erlang:phash2(Members),
     State = rand:seed_s(exrop, {Size, Seed, Seed}),
     {N, _} = rand:uniform_s(Size, State),
     lists:nth(N, Members).
