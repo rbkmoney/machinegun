@@ -302,11 +302,12 @@ maybe_retry(Reason, RetrySt) ->
         error   -> {default, maps:get(default, RetrySt)}
     end,
     case genlib_retry:next_step(Retry) of
-        {wait, Timeout, Retry1} ->
-            _ = ct:pal(warning, "~p retrying error: ~p", [self(), Reason]),
+        {wait, Timeout, RetryLeft} ->
+            _ = ct:pal(warning, "~p retrying error: ~p, retries left: ~p", [self(), Reason, RetryLeft]),
             ok = timer:sleep(Timeout),
-            {ok, RetrySt#{ID := Retry1}};
+            {ok, RetrySt#{ID := RetryLeft}};
         finish ->
+            _ = ct:pal(warning, "~p unretryable error: ~p", [self(), Reason]),
             erlang:error(Reason)
     end.
 
