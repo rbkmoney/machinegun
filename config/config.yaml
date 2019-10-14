@@ -73,7 +73,9 @@ storage:
 #     type: riak
 #     host: "127.0.0.1"
 #     port: 8080
-#     pool_size: 100
+#     pool:
+#        size: 100
+#        queue_max: 1000
 #     connect_timeout: 5S
 #     request_timeout: 10S
 
