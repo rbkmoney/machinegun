@@ -208,7 +208,7 @@ rank(Pid, Squad) ->
 -spec members(squad()) ->
     [pid()].
 members(Squad) ->
-    maps:keys(maps:remove(self(), Squad)).
+    maps:keys(Squad).
 
 %%
 
@@ -519,8 +519,9 @@ account_heartbeat(Member) ->
 -spec broadcast(mg_gen_squad_heart:message(), recepient_filter(), squad(), _Ctx, opts()) ->
     ok.
 broadcast(Message, RecepientFilter, Squad, Ctx, Opts) ->
+    Members = members(maps:remove(self(), Squad)),
     Recepients = lists:filter(RecepientFilter, maps:keys(Squad)),
-    mg_gen_squad_heart:broadcast(Message, self(), members(Squad), Recepients, Ctx, Opts).
+    mg_gen_squad_heart:broadcast(Message, self(), Members, Recepients, Ctx, Opts).
 
 -spec newbies(squad()) ->
     recepient_filter().
