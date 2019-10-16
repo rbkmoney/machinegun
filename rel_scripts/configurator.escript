@@ -356,10 +356,10 @@ storage(NS, YamlConfig) ->
                     % if the riak is unavailable. The `pooler` synchronously creates `init_count`
                     % connections at the start.
                     init_count          => 0,
-                    max_count           => ?C:conf([storage, pool_size], YamlConfig, 100),
+                    max_count           => ?C:conf([storage, pool, size], YamlConfig, 100),
                     idle_timeout        => timer:seconds(60),
                     cull_interval       => timer:seconds(10),
-                    queue_max           => 1000
+                    queue_max           => ?C:conf([storage, pool, queue_max], YamlConfig, 1000)
                 }
             }}
     end.
