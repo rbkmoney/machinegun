@@ -34,7 +34,20 @@ BASE_IMAGE_TAG := 294d280ff42e6c0cc68ab40fe81e76a6262636c4
 # Build image tag to be used
 BUILD_IMAGE_TAG := cd38c35976f3684fe7552533b6175a4c3460e88b
 
-CALL_ANYWHERE := all submodules rebar-update compile xref lint dialyze start devrel release clean distclean
+CALL_ANYWHERE := \
+	all \
+	submodules \
+	compile \
+	xref \
+	lint \
+	dialyze \
+	start \
+	devrel \
+	release \
+	clean \
+	distclean \
+	test_configurator \
+
 
 CALL_W_CONTAINER := $(CALL_ANYWHERE) test dev_test test_configurator
 
@@ -42,8 +55,6 @@ all: compile
 
 -include $(UTILS_PATH)/make_lib/utils_container.mk
 -include $(UTILS_PATH)/make_lib/utils_image.mk
-
-DOCKER_COMPOSE_PREEXEC_HOOK = $(DOCKER_COMPOSE) scale member=4
 
 .PHONY: $(CALL_W_CONTAINER)
 
@@ -54,13 +65,10 @@ $(SUBTARGETS): %/.git: %
 
 submodules: $(SUBTARGETS)
 
-rebar-update:
-	$(REBAR) update
-
 upgrade-proto:
 	$(REBAR) upgrade mg_proto
 
-compile: submodules rebar-update
+compile: submodules
 	$(REBAR) compile
 
 xref: submodules
@@ -92,4 +100,9 @@ test: submodules
 dev_test: xref lint test
 
 test_configurator:
+	$(MAKE) $(FILE_PERMISSIONS)
 	ERL_LIBS=_build/default/lib ./rel_scripts/configurator.escript config/config.yaml config
+
+FILE_PERMISSIONS = $(patsubst %,%.target,$(wildcard config/*._perms))
+$(FILE_PERMISSIONS): config/%._perms.target: config/%._perms
+	chmod $$(cat $^) config/$*

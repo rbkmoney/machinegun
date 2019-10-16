@@ -75,31 +75,35 @@ end_per_suite(C) ->
     _.
 instant_start_test(_C) ->
     NS = <<"test">>,
-    ID = <<"machine">>,
+    ID = genlib:to_binary(?FUNCTION_NAME),
     Options = automaton_options(NS),
-    _  = start_automaton(Options),
+    Pid = start_automaton(Options),
 
-    ok = mg_machine:start(Options, ID, 0, ?req_ctx, mg_utils:default_deadline()),
-     0 = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
-    ok = mg_machine:call(Options, ID, force_timeout, ?req_ctx, mg_utils:default_deadline()),
+    ok = mg_machine:start(Options, ID, 0, ?req_ctx, mg_deadline:default()),
+     0 = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
+    ok = mg_machine:call(Options, ID, force_timeout, ?req_ctx, mg_deadline:default()),
     F = fun() ->
-            mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline())
+            mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default())
         end,
-    mg_ct_helper:assert_wait_expected(1, F, mg_retry:new_strategy({linear, _Retries = 10, _Timeout = 100})).
+    mg_ct_helper:assert_wait_expected(1, F, mg_retry:new_strategy({linear, _Retries = 10, _Timeout = 100})),
+
+    ok = stop_automaton(Pid).
 
 -spec without_shedulers_test(config()) ->
     _.
 without_shedulers_test(_C) ->
     NS = <<"test">>,
-    ID = <<"machine">>,
+    ID = genlib:to_binary(?FUNCTION_NAME),
     Options = automaton_options_wo_shedulers(NS),
-    _  = start_automaton(Options),
+    Pid = start_automaton(Options),
 
-    ok = mg_machine:start(Options, ID, 0, ?req_ctx, mg_utils:default_deadline()),
-     0 = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
-    ok = mg_machine:call(Options, ID, force_timeout, ?req_ctx, mg_utils:default_deadline()),
+    ok = mg_machine:start(Options, ID, 0, ?req_ctx, mg_deadline:default()),
+     0 = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
+    ok = mg_machine:call(Options, ID, force_timeout, ?req_ctx, mg_deadline:default()),
     % machine is still alive
-    _  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()).
+    _  = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
+
+    ok = stop_automaton(Pid).
 
 %%
 %% processor
@@ -124,7 +128,7 @@ pool_child_spec(_Options, Name) ->
     Impact :: mg_machine:processor_impact(),
     PCtx :: mg_machine:processing_context(),
     ReqCtx :: mg_machine:request_context(),
-    Deadline :: mg_utils:deadline(),
+    Deadline :: mg_deadline:deadline(),
     MachineState :: mg_machine:machine_state(),
     Result :: mg_machine:processor_result().
 process_machine(_, _, Impact, _, ReqCtx, _, EncodedState) ->
@@ -180,18 +184,28 @@ start() ->
 start_automaton(Options) ->
     mg_utils:throw_if_error(mg_machine:start_link(Options)).
 
+-spec stop_automaton(pid()) ->
+    ok.
+stop_automaton(Pid) ->
+    ok = proc_lib:stop(Pid, normal, 5000),
+    ok.
+
 -spec automaton_options(mg:ns()) ->
     mg_machine:options().
 automaton_options(NS) ->
+    Scheduler = #{registry => mg_procreg_gproc, interval => timer:hours(1)},
     #{
         namespace => NS,
         processor => ?MODULE,
         storage   => mg_ct_helper:build_storage(NS, mg_storage_memory),
+        worker    => #{
+            registry => mg_procreg_gproc
+        },
         pulse     => ?MODULE,
         schedulers => #{
-            timers         => #{ interval => timer:hours(1) },
-            timers_retries => #{ interval => timer:hours(1) },
-            overseer       => #{ interval => timer:hours(1) }
+            timers         => Scheduler,
+            timers_retries => Scheduler,
+            overseer       => Scheduler
         }
     }.
 
@@ -202,8 +216,12 @@ automaton_options_wo_shedulers(NS) ->
         namespace => NS,
         processor => ?MODULE,
         storage   => mg_ct_helper:build_storage(NS, mg_storage_memory),
+        worker    => #{
+            registry => mg_procreg_gproc
+        },
         pulse     => ?MODULE,
         schedulers => #{
+            % none
         }
     }.
 

@@ -53,6 +53,7 @@
 -type events_machines() :: #{
     processor                  := processor(),
     modernizer                 => modernizer(),
+    worker                     => mg_workers_manager:options(), % all but `worker_options.worker` option
     storage                    := mg_machine:storage_options(),
     event_sinks                => [mg_events_sink:handler()],
     retries                    := mg_machine:retry_opt(),
@@ -63,7 +64,7 @@
 -type event_sink_ns() :: #{
     default_processing_timeout := timeout(),
     storage                    => mg_storage:options(),
-    duplicate_search_batch     => mg_storage:index_limit()
+    worker                     => mg_worker:options()
 }.
 -type config_element() ::
       {woody_server   , woody_server()                 }
@@ -72,6 +73,8 @@
     | {event_sink_ns  , event_sink_ns()                }
 .
 -type config() :: [config_element()].
+
+-define(EVENT_SINK_NS, <<"_event_sinks">>).
 
 -spec start() ->
     {ok, _}.
@@ -100,6 +103,8 @@ start(_StartType, _StartArgs) ->
         events_machines_child_specs(Config)
         ++
         [woody_server_child_spec(Config, woody_server)]
+        ++
+        [woody_metrics_handler_childspec()]
     ).
 
 -spec stop(any()) ->
@@ -158,6 +163,11 @@ woody_server_child_spec(Config, ChildID) ->
             ]
         }
     ).
+
+-spec woody_metrics_handler_childspec() ->
+    supervisor:child_spec().
+woody_metrics_handler_childspec() ->
+    hay_metrics_handler:child_spec(woody_api_hay, woody_metrics_handler).
 
 -spec api_automaton_options(config()) ->
     mg_woody_api_automaton:options().
@@ -220,18 +230,20 @@ event_sink_namespace_options(Config) ->
         namespace        => NS,
         pulse            => pulse(),
         storage          => MachinesStorage,
-        events_storage   => EventsStorage
+        events_storage   => EventsStorage,
+        worker           => worker_manager_options(EventSinkNS)
     }.
 
 -spec tags_options(mg:ns(), events_machines()) ->
     mg_machine_tags:options().
-tags_options(NS, #{retries := Retries, storage := Storage}) ->
+tags_options(NS, #{retries := Retries, storage := Storage} = Config) ->
     TagsNS = mg_utils:concatenate_namespaces(NS, <<"tags">>),
     % по логике тут должен быть sub namespace, но его по историческим причинам нет
     TagsStorage = add_storage_metrics(TagsNS, tags, Storage),
     #{
         namespace => TagsNS,
         storage   => TagsStorage,
+        worker    => worker_manager_options(Config),
         pulse     => pulse(),
         retries   => Retries
     }.
@@ -243,7 +255,6 @@ machine_options(NS, Config) ->
     Options = maps:with(
         [
             retries,
-            schedulers,
             reschedule_timeout,
             timer_processing_timeout
         ],
@@ -253,10 +264,31 @@ machine_options(NS, Config) ->
     Options#{
         namespace           => NS,
         storage             => MachinesStorage,
+        worker              => worker_manager_options(Config),
+        schedulers          => maps:map(fun scheduler_options/2, maps:get(schedulers, Config, #{})),
         pulse               => pulse(),
         % TODO сделать аналогично в event_sink'е и тэгах
         suicide_probability => maps:get(suicide_probability, Config, undefined)
     }.
+
+-spec worker_manager_options(map()) ->
+    mg_workers_manager:options().
+worker_manager_options(Config) ->
+    maps:merge(
+        #{
+            registry => mg_procreg_gproc,
+            sidecar  => mg_woody_api_hay
+        },
+        maps:get(worker, Config, #{})
+    ).
+
+-spec scheduler_options(mg_machine:scheduler_id(), mg_machine:scheduler_opt()) ->
+    mg_machine:scheduler_opt().
+scheduler_options(_SchedulerID, Config) ->
+    maps:merge(
+        #{registry => mg_procreg_gproc},
+        Config
+    ).
 
 -spec processor(processor()) ->
     mg_utils:mod_opts().

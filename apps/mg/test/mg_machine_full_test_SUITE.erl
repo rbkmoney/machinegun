@@ -85,7 +85,8 @@ full_test(_) ->
             lists:seq(1, 10)
         ),
     ok = timer:sleep(5 * 1000),
-    mg_ct_helper:stop_wait_all(Pids ++ [AutomatonPid], shutdown, 5000).
+    ok = mg_ct_helper:stop_wait_all(Pids, shutdown, 5000),
+    ok = stop_automaton(AutomatonPid).
 
 %% TODO wait, simple_repair, kill, continuation
 -type id() :: pos_integer().
@@ -131,13 +132,13 @@ do_action(Options, ID, Seq, Action) ->
     try
         case Action of
             {start, ResultAction} ->
-                mg_machine:start(Options, id(ID), ResultAction, req_ctx(ID, Seq), mg_utils:default_deadline());
+                mg_machine:start(Options, id(ID), ResultAction, req_ctx(ID, Seq), mg_deadline:default());
             fail ->
-                mg_machine:fail(Options, id(ID), req_ctx(ID, Seq), mg_utils:default_deadline());
+                mg_machine:fail(Options, id(ID), req_ctx(ID, Seq), mg_deadline:default());
             {repair, ResultAction} ->
-                mg_machine:repair(Options, id(ID), ResultAction, req_ctx(ID, Seq), mg_utils:default_deadline());
+                mg_machine:repair(Options, id(ID), ResultAction, req_ctx(ID, Seq), mg_deadline:default());
             {call, ResultAction} ->
-                mg_machine:call(Options, id(ID), ResultAction, req_ctx(ID, Seq), mg_utils:default_deadline())
+                mg_machine:call(Options, id(ID), ResultAction, req_ctx(ID, Seq), mg_deadline:default())
         end
     catch
         throw:{logic, machine_failed         } -> failed;
@@ -230,6 +231,12 @@ start() ->
 start_automaton(Options) ->
     mg_utils:throw_if_error(mg_machine:start_link(Options)).
 
+-spec stop_automaton(pid()) ->
+    ok.
+stop_automaton(Pid) ->
+    ok = proc_lib:stop(Pid, normal, 5000),
+    ok.
+
 -spec automaton_options() ->
     mg_machine:options().
 automaton_options() ->
@@ -237,6 +244,7 @@ automaton_options() ->
         namespace => <<"test">>,
         processor => ?MODULE,
         storage   => mg_storage_memory,
+        worker    => #{registry => mg_procreg_gproc},
         pulse     => ?MODULE
     }.
 

@@ -42,9 +42,11 @@
 %% Types
 -type options() :: #{
     name                    => name(),
+    registry                => mg_procreg:options(),
     message_queue_len_limit => queue_limit(),
-    worker_options          => mg_worker:options(),
-    pulse                   => mg_pulse:handler()
+    worker_options          => mg_worker:options(), % all but `registry`
+    pulse                   => mg_pulse:handler(),
+    sidecar                 => mg_utils:mod_opts()
 }.
 -type queue_limit() :: non_neg_integer().
 
@@ -75,45 +77,78 @@ child_spec(Options, ChildID) ->
     mg_utils:gen_start_ret().
 start_link(Options) ->
     mg_utils_supervisor_wrapper:start_link(
-        self_reg_name(Options),
-        #{strategy => simple_one_for_one},
-        [
-            mg_worker:child_spec(worker, maps:get(worker_options, Options))
-        ]
+        #{strategy => rest_for_one},
+        mg_utils:lists_compact([
+            manager_child_spec(Options),
+            sidecar_child_spec(Options)
+        ])
     ).
 
+-spec manager_child_spec(options()) ->
+    supervisor:child_spec().
+manager_child_spec(Options) ->
+    Args = [
+        self_reg_name(Options),
+        #{strategy => simple_one_for_one},
+        [mg_worker:child_spec(worker, worker_options(Options))]
+    ],
+    #{
+        id    => manager,
+        start => {mg_utils_supervisor_wrapper, start_link, Args},
+        type  => supervisor
+    }.
+
+-spec sidecar_child_spec(options()) ->
+    supervisor:child_spec() | undefined.
+sidecar_child_spec(#{sidecar := Sidecar} = Options) ->
+    mg_utils:apply_mod_opts(Sidecar, child_spec, [Options, sidecar]);
+sidecar_child_spec(#{}) ->
+    undefined.
+
 % sync
--spec call(options(), id(), _Call, req_ctx(), mg_utils:deadline()) ->
+-spec call(options(), id(), _Call, req_ctx(), mg_deadline:deadline()) ->
     _Reply | {error, _}.
 call(Options, ID, Call, ReqCtx, Deadline) ->
-    case mg_utils:is_deadline_reached(Deadline) of
+    case mg_deadline:is_reached(Deadline) of
         false ->
-            #{name := Name, pulse := Pulse} = Options,
-            MsgQueueLimit = message_queue_len_limit(Options),
-            try
-                mg_worker:call(Name, ID, Call, ReqCtx, Deadline, MsgQueueLimit, Pulse)
-            catch
-                exit:Reason ->
-                    handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason)
-            end;
+            call(Options, ID, Call, ReqCtx, Deadline, true);
         true ->
-            {error, {timeout, worker_call_deadline_reached}}
+            {error, {transient, worker_call_deadline_reached}}
     end.
 
--spec handle_worker_exit(options(), id(), _Call, req_ctx(), mg_utils:deadline(), _Reason) ->
+-spec call(options(), id(), _Call, req_ctx(), mg_deadline:deadline(), boolean()) ->
     _Reply | {error, _}.
-handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason) ->
-    case Reason of
-         noproc         -> start_and_retry_call(Options, ID, Call, ReqCtx, Deadline);
-        {noproc    , _} -> start_and_retry_call(Options, ID, Call, ReqCtx, Deadline);
-        {normal    , _} -> start_and_retry_call(Options, ID, Call, ReqCtx, Deadline);
-        {shutdown  , _} -> start_and_retry_call(Options, ID, Call, ReqCtx, Deadline);
-        {timeout   , _} -> {error, Reason};
-        {killed    , _} -> {error, {transient, unavailable}};
-         Unknown        -> {error, {unexpected_exit, Unknown}}
+call(Options, ID, Call, ReqCtx, Deadline, CanRetry) ->
+    #{name := Name, pulse := Pulse} = Options,
+    try mg_worker:call(worker_options(Options), Name, ID, Call, ReqCtx, Deadline, Pulse) catch
+        exit:Reason ->
+            handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason, CanRetry)
     end.
 
--spec start_and_retry_call(options(), id(), _Call, req_ctx(), mg_utils:deadline()) ->
+-spec handle_worker_exit(options(), id(), _Call, req_ctx(), mg_deadline:deadline(), _Reason, boolean()) ->
+    _Reply | {error, _}.
+handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason, CanRetry) ->
+    MaybeRetry = case CanRetry of
+        true ->
+            fun (_Details) -> start_and_retry_call(Options, ID, Call, ReqCtx, Deadline) end;
+        false ->
+            fun (Details) -> {error, {transient, Details}} end
+    end,
+    case Reason of
+        % We have to take into account that `gen_server:call/2` wraps exception details in a
+        % tuple with original call MFA attached.
+        % > https://github.com/erlang/otp/blob/OTP-21.3/lib/stdlib/src/gen_server.erl#L215
+        noproc                 -> MaybeRetry(noproc);
+        {noproc    , _MFA}     -> MaybeRetry(noproc);
+        {normal    , _MFA}     -> MaybeRetry(normal);
+        {shutdown  , _MFA}     -> MaybeRetry(shutdown);
+        {timeout   , _MFA}     -> {error, Reason};
+        {killed    , _MFA}     -> {error, {transient, unavailable}};
+        {transient , _Details} -> {error, Reason};
+        Unknown                -> {error, {unexpected_exit, Unknown}}
+    end.
+
+-spec start_and_retry_call(options(), id(), _Call, req_ctx(), mg_deadline:deadline()) ->
     _Reply | {error, _}.
 start_and_retry_call(Options, ID, Call, ReqCtx, Deadline) ->
     %
@@ -124,18 +159,18 @@ start_and_retry_call(Options, ID, Call, ReqCtx, Deadline) ->
     %
     case start_child(Options, ID, ReqCtx) of
         {ok, _} ->
-            call(Options, ID, Call, ReqCtx, Deadline);
+            call(Options, ID, Call, ReqCtx, Deadline, false);
         {error, {already_started, _}} ->
-            call(Options, ID, Call, ReqCtx, Deadline);
-        Error={error, _} ->
-            Error
+            call(Options, ID, Call, ReqCtx, Deadline, false);
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 -spec get_call_queue(options(), id()) ->
     [_Call].
 get_call_queue(Options, ID) ->
     try
-        mg_worker:get_call_queue(maps:get(name, Options), ID)
+        mg_worker:get_call_queue(worker_options(Options), maps:get(name, Options), ID)
     catch exit:noproc ->
         []
     end.
@@ -144,7 +179,7 @@ get_call_queue(Options, ID) ->
     ok.
 brutal_kill(Options, ID) ->
     try
-        mg_worker:brutal_kill(maps:get(name, Options), ID)
+        mg_worker:brutal_kill(worker_options(Options), maps:get(name, Options), ID)
     catch exit:noproc ->
         ok
     end.
@@ -152,8 +187,12 @@ brutal_kill(Options, ID) ->
 -spec is_alive(options(), id()) ->
     boolean().
 is_alive(Options, ID) ->
-    mg_worker:is_alive(maps:get(name, Options), ID).
+    mg_worker:is_alive(worker_options(Options), maps:get(name, Options), ID).
 
+-spec worker_options(options()) ->
+    mg_worker:options().
+worker_options(#{worker_options := WorkerOptions, registry := Registry}) ->
+    WorkerOptions#{registry => Registry}.
 
 %%
 %% local

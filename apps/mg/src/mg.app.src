@@ -23,10 +23,12 @@
         stdlib,
         genlib,
         gproc,
+        consuela,
         riakc,
         pooler,
         brod,
-        msgpack
+        msgpack,
+        rfc3339
     ]},
     {env, []},
     {modules, []},

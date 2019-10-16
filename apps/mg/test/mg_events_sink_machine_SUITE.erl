@@ -118,7 +118,7 @@ not_idempotent_add_get_events_test(C) ->
     _.
 add_events(C) ->
     mg_events_sink_machine:add_events(event_sink_options(), ?SOURCE_NS, ?SOURCE_ID,
-        ?config(events, C), null, mg_utils:default_deadline()).
+        ?config(events, C), null, mg_deadline:default()).
 
 -spec get_history(config()) ->
     _.
@@ -146,6 +146,7 @@ event_sink_options() ->
         machine_id             => ?ES_ID,
         namespace              => ?ES_ID,
         storage                => mg_storage_memory,
+        worker                 => #{registry => mg_procreg_gproc},
         pulse                  => ?MODULE,
         duplicate_search_batch => 1000,
         events_storage         => mg_storage_memory

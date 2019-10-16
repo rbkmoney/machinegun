@@ -48,6 +48,7 @@
     namespace                  := mg:ns(),
     machine_id                 := mg:id(),
     storage                    := storage_options(),
+    worker                     := mg_workers_manager:options(),
     pulse                      := mg_pulse:handler(),
     events_storage             := mg_storage:options(),
     default_processing_timeout := timeout()
@@ -55,6 +56,7 @@
 -type ns_options() :: #{
     namespace                  := mg:ns(),
     storage                    := storage_options(),
+    worker                     := mg_workers_manager:options(),
     pulse                      := mg_pulse:handler(),
     events_storage             := storage_options(),
     default_processing_timeout := timeout()
@@ -84,7 +86,7 @@ start_link(Options) ->
     ).
 
 
--spec add_events(options(), mg:ns(), mg:id(), [mg_events:event()], ReqCtx, mg_utils:deadline()) ->
+-spec add_events(options(), mg:ns(), mg:id(), [mg_events:event()], ReqCtx, mg_deadline:deadline()) ->
     ok
 when
     ReqCtx:: mg:request_context()
@@ -115,7 +117,7 @@ get_history(Options, EventSinkID, HistoryRange) ->
     ),
     kvs_to_sink_events(EventSinkID, Kvs).
 
--spec repair(ns_options(), mg:id(), mg:request_context(), mg_utils:deadline()) ->
+-spec repair(ns_options(), mg:id(), mg:request_context(), mg_deadline:deadline()) ->
     ok.
 repair(Options, EventSinkID, ReqCtx, Deadline) ->
     mg_machine:repair(machine_options(Options), EventSinkID, undefined, ReqCtx, Deadline).
@@ -133,7 +135,7 @@ repair(Options, EventSinkID, ReqCtx, Deadline) ->
     Impact :: mg_machine:processor_impact(),
     PCtx :: mg_machine:processing_context(),
     ReqCtx :: mg:request_context(),
-    Deadline :: mg_utils:deadline(),
+    Deadline :: mg_deadline:deadline(),
     PackedState :: mg_machine:machine_state(),
     Result :: mg_machine:processor_result().
 process_machine(Options, EventSinkID, Impact, _PCtx, _ReqCtx, _Deadline, PackedState) ->
@@ -201,11 +203,12 @@ new_state() ->
 
 -spec machine_options(ns_options()) ->
     mg_machine:options().
-machine_options(Options = #{namespace := Namespace, storage := Storage, pulse := Pulse}) ->
+machine_options(Options = #{namespace := Namespace, storage := Storage, worker := Worker, pulse := Pulse}) ->
     #{
         namespace       => mg_utils:concatenate_namespaces(Namespace, <<"machines">>),
         processor       => {?MODULE, Options},
         storage         => Storage,
+        worker          => Worker,
         pulse           => Pulse
     }.
 

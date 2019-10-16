@@ -16,6 +16,7 @@
 #
 
 CONFLUENT_PLATFORM_VERSION="5.1.2"  # with Kafka 2.1.1
+CONSUL_VERSION=1.4.2
 
 cat <<EOF
 # https://hub.docker.com/r/basho/riak-kv/
@@ -45,7 +46,8 @@ services:
     volumes:
       - ./riak_user.conf:/etc/riak/user.conf:ro
       - schemas:/etc/riak/schemas
-  member:
+  member1:
+    &member-node
     image: dr.rbkmoney.com/basho/riak-kv:ubuntu-2.1.4-1
     labels:
       - "com.basho.riak.cluster.name=riakkv"
@@ -58,6 +60,8 @@ services:
       - COORDINATOR_NODE=riakdb
     volumes:
       - ./riak_user.conf:/etc/riak/user.conf:ro
+  member2:
+    <<: *member-node
 
   zookeeper:
     image: confluentinc/cp-zookeeper:${CONFLUENT_PLATFORM_VERSION}
@@ -84,6 +88,22 @@ services:
       KAFKA_BROKER_ID: 3
       KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:9092
+
+  consul1: &consul-server
+    image: consul:${CONSUL_VERSION}
+    hostname: consul1
+    command:
+      agent -server -retry-join consul0 -client 0.0.0.0
+
+  consul2:
+    <<: *consul-server
+    hostname: consul2
+
+  consul0:
+    <<: *consul-server
+    hostname: consul0
+    command:
+      agent -server -bootstrap-expect 3 -ui -client 0.0.0.0
 
 volumes:
   schemas:

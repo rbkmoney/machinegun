@@ -189,10 +189,10 @@ pulse(Namespace, Options) ->
     end.
 
 -spec get_deadline(mg:ns(), woody_context:ctx(), options()) ->
-    mg_utils:deadline().
+    mg_deadline:deadline().
 get_deadline(Namespace, WoodyContext, Options) ->
     DefaultTimeout = default_processing_timeout(Namespace, Options),
-    mg_woody_api_utils:get_deadline(WoodyContext, mg_utils:timeout_to_deadline(DefaultTimeout)).
+    mg_woody_api_utils:get_deadline(WoodyContext, mg_deadline:from_timeout(DefaultTimeout)).
 
 -spec default_processing_timeout(mg:ns(), options()) ->
     timeout().

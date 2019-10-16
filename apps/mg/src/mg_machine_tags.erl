@@ -30,6 +30,7 @@
 
 -type options() :: #{
     namespace => mg:ns(),
+    worker    => mg_workers_manager:options(),
     storage   => mg_machine:storage_options(),
     pulse     => mg_pulse:handler(),
     retries   => mg_machine:retry_opt()
@@ -41,12 +42,12 @@
 child_spec(Options, ChildID) ->
     mg_machine:child_spec(machine_options(Options), ChildID).
 
--spec add(options(), tag(), mg:id(), mg:request_context(), mg_utils:deadline()) ->
+-spec add(options(), tag(), mg:id(), mg:request_context(), mg_deadline:deadline()) ->
     ok | {already_exists, mg:id()} | no_return().
 add(Options, Tag, ID, ReqCtx, Deadline) ->
     mg_machine:call_with_lazy_start(machine_options(Options), Tag, {add, ID}, ReqCtx, Deadline, undefined).
 
--spec replace(options(), tag(), mg:id(), mg:request_context(), mg_utils:deadline()) ->
+-spec replace(options(), tag(), mg:id(), mg:request_context(), mg_deadline:deadline()) ->
     ok | no_return().
 replace(Options, Tag, ID, ReqCtx, Deadline) ->
     mg_machine:call_with_lazy_start(machine_options(Options), Tag, {replace, ID}, ReqCtx, Deadline, undefined).
@@ -88,10 +89,11 @@ process_machine(_, _, {call, {replace, ID}}, _, _, _, _) ->
 %%
 -spec machine_options(options()) ->
     mg_machine:options().
-machine_options(#{namespace:=Namespace, storage:=Storage, pulse := Pulse, retries := Retries}) ->
+machine_options(Opts = #{namespace:=Namespace, storage:=Storage, pulse := Pulse, retries := Retries}) ->
     #{
         namespace => Namespace,
         processor => ?MODULE,
+        worker    => maps:get(worker, Opts, #{}),
         storage   => Storage,
         pulse     => Pulse,
         retries   => Retries

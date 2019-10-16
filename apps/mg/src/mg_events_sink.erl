@@ -32,7 +32,7 @@
 
 -type event() :: mg_events:event().
 -type req_ctx() :: mg:request_context().
--type deadline() :: mg_utils:deadline().
+-type deadline() :: mg_deadline:deadline().
 -type handler_options() :: any().
 
 %% API

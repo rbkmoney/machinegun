@@ -22,12 +22,25 @@
 %% main
 %%
 main([YamlConfigFilename, ConfigsPath]) ->
+    ok = logger:set_primary_config(level, error),
+    {ok, [[Home]]} = init:get_argument(home),
     YamlConfig = ?C:parse_yaml_config(YamlConfigFilename),
     ERLInetrcFilename = filename:join(ConfigsPath, "erl_inetrc"),
+    ErlangCookieFilename = filename:join(Home, ".erlang.cookie"),
     ?C:write_files([
-        {filename:join(ConfigsPath, "sys.config"), ?C:print_sys_config(sys_config(YamlConfig                   ))},
+        {filename:join(ConfigsPath, "sys.config"), ?C:print_sys_config(sys_config(YamlConfig))},
         {filename:join(ConfigsPath, "vm.args"   ), ?C:print_vm_args   (vm_args   (YamlConfig, ERLInetrcFilename))},
-        {ERLInetrcFilename                       , ?C:print_erl_inetrc(erl_inetrc(YamlConfig                   ))}
+        {ERLInetrcFilename                       , ?C:print_erl_inetrc(erl_inetrc(YamlConfig))},
+        % TODO
+        % Writing distribution cookie to the file which BEAM looks for when setting up the
+        % distribution under *nix, as a fallback mechanism when missing `-setcookie` arg from
+        % command line.
+        % It's the only method not to expose cookie contents in the BEAM command line in a way which
+        % doesn't break various start script functions (e.g. remsh or ping), however it may still
+        % appear there for a brief amount of time while running them.
+        % One must take care to run service under its own UID because `~/.erlang.cookie` is supposed
+        % to be shared between every BEAM instance run by some user.
+        {ErlangCookieFilename, cookie(YamlConfig), 8#00400}
     ]).
 
 %%
@@ -35,16 +48,17 @@ main([YamlConfigFilename, ConfigsPath]) ->
 %%
 sys_config(YamlConfig) ->
     [
-        {os_mon        , os_mon      (YamlConfig)},
+        {os_mon      , os_mon      (YamlConfig)},
         {kernel, [
             {logger_level, logger_level(YamlConfig)},
             {logger      , logger      (YamlConfig)}
         ]},
-        {how_are_you   , how_are_you (YamlConfig)},
-        {snowflake     , snowflake   (YamlConfig)},
-        {brod          , brod        (YamlConfig)},
-        {hackney       , hackney     (YamlConfig)},
-        {mg_woody_api  , mg_woody_api(YamlConfig)}
+        {consuela    , consuela    (YamlConfig)},
+        {how_are_you , how_are_you (YamlConfig)},
+        {snowflake   , snowflake   (YamlConfig)},
+        {brod        , brod        (YamlConfig)},
+        {hackney     , hackney     (YamlConfig)},
+        {mg_woody_api, mg_woody_api(YamlConfig)}
     ].
 
 os_mon(_YamlConfig) ->
@@ -75,24 +89,112 @@ logger(YamlConfig) ->
         }}
     ].
 
+consuela(YamlConfig) ->
+    lists:append([
+        conf_with([consuela, presence], YamlConfig, [], fun (PresenceConfig) -> [
+            {presence, #{
+                name      => service_presence_name(YamlConfig),
+                consul    => consul_client(mg_consuela_presence, YamlConfig),
+                shutdown  => ?C:time_interval(?C:conf([shutdown_timeout], PresenceConfig, "5s"), 'ms'),
+                session_opts => #{
+                    interval => ?C:time_interval(?C:conf([check_interval], PresenceConfig, "5s"), 'sec'),
+                    pulse    => mg_consuela_pulse_adapter:pulse(presence_session, mg_woody_api_pulse)
+                }
+            }}
+        ] end),
+        conf_with([consuela, registry], YamlConfig, fun (RegConfig) -> [
+            {registry, #{
+                nodename  => ?C:conf([nodename], RegConfig, ?C:hostname()),
+                namespace => ?C:utf_bin(?C:conf([namespace], RegConfig, "mg")),
+                session   => maps:merge(
+                    #{
+                        ttl        => ?C:time_interval(?C:conf([session_ttl], RegConfig, "30s"), 'sec'),
+                        lock_delay => ?C:time_interval(?C:conf([session_lock_delay], RegConfig, "10s"), 'sec')
+                    },
+                    conf_with([consuela, presence], YamlConfig, #{}, fun (_) -> #{
+                        presence => service_presence_name(YamlConfig)
+                    } end)
+                ),
+                consul    => consul_client(mg_consuela_registry, YamlConfig),
+                shutdown  => ?C:time_interval(?C:conf([shutdown_timeout], RegConfig, "5s"), 'ms'),
+                keeper    => maps:merge(
+                    #{
+                    pulse => mg_consuela_pulse_adapter:pulse(session_keeper, mg_woody_api_pulse)
+                },
+                    conf_with([session_renewal_interval], RegConfig, #{}, fun (V) -> #{
+                        interval => ?C:time_interval(V, 'sec')
+                    } end)
+                ),
+                reaper    => #{
+                    pulse => mg_consuela_pulse_adapter:pulse(zombie_reaper, mg_woody_api_pulse)
+                },
+                registry  => #{
+                    pulse => mg_consuela_pulse_adapter:pulse(registry_server, mg_woody_api_pulse)
+                }
+            }}
+        ] end),
+        conf_with([consuela, discovery], YamlConfig, [], fun (DiscoveryConfig) -> [
+            {discovery, #{
+                name      => service_presence_name(YamlConfig),
+                tags      => [?C:utf_bin(T) || T <- ?C:conf([tags], DiscoveryConfig, [])],
+                consul    => consul_client(mg_consuela_discovery, YamlConfig),
+                opts      => #{
+                    interval => #{
+                        init => ?C:time_interval(?C:conf([interval, init], DiscoveryConfig,  "5s"), 'ms'),
+                        idle => ?C:time_interval(?C:conf([interval, idle], DiscoveryConfig, "10m"), 'ms')
+                    },
+                    pulse => mg_consuela_pulse_adapter:pulse(discovery_server, mg_woody_api_pulse)
+                }
+            }}
+        ] end)
+    ]).
+
+service_presence_name(YamlConfig) ->
+    erlang:iolist_to_binary([service_name(YamlConfig), "-consuela"]).
+
+consul_client(Name, YamlConfig) ->
+    ACLToken = conf_with(
+        [consul, acl_token_file], YamlConfig,
+        undefined,
+        fun (V) -> {file, ?C:file(V, 8#600)} end
+    ),
+    #{
+        url   => ?C:conf([consul, url], YamlConfig),
+        opts  => genlib_map:compact(#{
+            datacenter => ?C:conf([consul, datacenter], YamlConfig, undefined),
+            acl        => ACLToken,
+            transport_opts => genlib_map:compact(#{
+                pool =>
+                    ?C:conf([consul, pool             ], YamlConfig, Name),
+                max_connections =>
+                    ?C:conf([consul, max_connections  ], YamlConfig, 8),
+                max_response_size =>
+                    ?C:conf([consul, max_response_size], YamlConfig, undefined),
+                connect_timeout =>
+                    ?C:time_interval(?C:conf([consul, connect_timeout], YamlConfig, undefined), 'ms'),
+                recv_timeout =>
+                    ?C:time_interval(?C:conf([consul, recv_timeout   ], YamlConfig, undefined), 'ms'),
+                ssl_options =>
+                    ?C:proplist(?C:conf([consul, ssl_options      ], YamlConfig, undefined))
+            }),
+            pulse => mg_consuela_pulse_adapter:pulse(client, mg_woody_api_pulse)
+        })
+    }.
+
 how_are_you(YamlConfig) ->
     Publishers = hay_statsd_publisher(YamlConfig),
     [
         {metrics_publishers, Publishers},
         {metrics_handlers, [
             hay_vm_handler,
-            hay_cgroup_handler,
-            woody_api_hay,
-            {mg_woody_api_hay, #{
-                namespaces => namespaces_list(YamlConfig)
-            }}
+            hay_cgroup_handler
         ]}
     ].
 
 hay_statsd_publisher(YamlConfig) ->
     conf_with([metrics, publisher, statsd], YamlConfig, [], fun (Config) -> [
         {hay_statsd_publisher, #{
-            key_prefix => <<(?C:utf_bin(?C:conf([service_name], YamlConfig)))/binary, ".">>,
+            key_prefix => <<(service_name(YamlConfig))/binary, ".">>,
             host => ?C:utf_bin(?C:conf([host], Config, "localhost")),
             port => ?C:conf([port], Config, 8125),
             interval => 15000
@@ -174,7 +276,8 @@ woody_server(YamlConfig) ->
                 ?C:conf([woody_server, http_keep_alive_timeout], YamlConfig, "5S"), 'ms'
             ),
             % idle_timeout must be greater then any possible deadline
-            idle_timeout    => ?C:time_interval(?C:conf([woody_server, idle_timeout], YamlConfig, "infinity"), 'ms')
+            idle_timeout    => ?C:time_interval(?C:conf([woody_server, idle_timeout], YamlConfig, "infinity"), 'ms'),
+            logger          => logger
         },
         limits   => genlib_map:compact(#{
             max_heap_size       => ?C:mem_words(?C:conf([limits, process_heap], YamlConfig, undefined)),
@@ -194,7 +297,7 @@ health_checkers(YamlConfig) ->
             end,
         [{erl_health, Type, [Limit]}]
     end) ++
-    [{erl_health, service, [?C:utf_bin(?C:conf([service_name], YamlConfig))]}].
+    [{erl_health, service, [service_name(YamlConfig)]}].
 
 quotas(YamlConfig) ->
     SchedulerLimit = ?C:conf([limits, scheduler_tasks], YamlConfig, 5000),
@@ -271,21 +374,16 @@ namespaces(YamlConfig) ->
         ?C:conf([namespaces], YamlConfig)
     ).
 
-namespaces_list(YamlConfig) ->
-    NsNames = [
-        erlang:list_to_binary(NameStr)
-        || {NameStr, _NSYamlConfig} <- ?C:conf([namespaces], YamlConfig)
-    ],
-    lists:flatten([<<"_event_sinks_machines">>] ++ [
-        [NS, <<NS/binary, "_tags">>]
-        || NS <- NsNames
-    ]).
-
 namespace({NameStr, NSYamlConfig}, YamlConfig) ->
     Name = ?C:utf_bin(NameStr),
     Timeout = fun(TimeoutName, Default) ->
         ?C:time_interval(?C:conf([TimeoutName], NSYamlConfig, Default), ms)
     end,
+    SchedulerConfig = #{
+        registry     => procreg(YamlConfig),
+        interval     => 1000,
+        limit        => <<"scheduler_tasks_total">>
+    },
     {Name, #{
         storage   => storage(Name, YamlConfig),
         processor => #{
@@ -299,6 +397,13 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
                 ip_picker => random
             }
         },
+        worker => #{
+            registry          => procreg(YamlConfig),
+            worker_options    => #{
+                hibernate_timeout => Timeout(hibernate_timeout,  "5S"),
+                unload_timeout    => Timeout(unload_timeout   , "60S")
+            }
+        },
         default_processing_timeout => Timeout(default_processing_timeout, "30S"),
         timer_processing_timeout => Timeout(timer_processing_timeout, "60S"),
         reschedule_timeout => Timeout(reschedule_timeout, "60S"),
@@ -310,31 +415,37 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             processor    => {exponential, {max_total_timeout, 24 * 60 * 60 * 1000}, 2, 10, 60 * 1000},
             continuation => {exponential, infinity, 2, 10, 60 * 1000}
         },
-        schedulers => #{
-            timers         => #{
-                interval     => 1000,
-                limit        => <<"scheduler_tasks_total">>,
-                share        => 2
-            },
-            timers_retries => #{
-                interval     => 1000,
-                limit        => <<"scheduler_tasks_total">>,
-                share        => 1
-            },
-            overseer       => #{
-                interval     => 1000,
-                limit        => <<"scheduler_tasks_total">>,
-                no_task_wait => 10 * 60 * 1000,  % 10 min
-                share        => 0
-            }
-        },
+        schedulers => maps:merge(
+            case ?C:conf([timers], NSYamlConfig, undefined) of
+                "disabled" ->
+                    #{};
+                _ ->
+                    #{
+                        timers         => SchedulerConfig#{share => 2},
+                        timers_retries => SchedulerConfig#{share => 1}
+                    }
+            end,
+            case ?C:conf([overseer], NSYamlConfig, undefined) of
+                "disabled" ->
+                    #{};
+                _ ->
+                    #{
+                        overseer => SchedulerConfig#{
+                            no_task_wait => 10 * 60 * 1000,  % 10 min
+                            share        => 0
+                        }
+                    }
+            end
+        ),
         event_sinks => [event_sink(ES) || ES <- ?C:conf([event_sinks], NSYamlConfig, [])],
         suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0))
     }}.
 
 event_sink_ns(YamlConfig) ->
     #{
+        registry                   => procreg(YamlConfig),
         storage                    => storage(<<"_event_sinks">>, YamlConfig),
+        worker                     => #{registry => procreg(YamlConfig)},
         duplicate_search_batch     => 1000,
         default_processing_timeout => ?C:time_interval("30S", ms)
     }.
@@ -354,13 +465,21 @@ event_sink(kafka, Name, ESYamlConfig) ->
         topic      => ?C:utf_bin(?C:conf([topic], ESYamlConfig))
     }}.
 
+procreg(YamlConfig) ->
+    % Use consuela if it's set up, gproc otherwise
+    conf_with(
+        [consuela],
+        YamlConfig,
+        mg_procreg_gproc,
+        {mg_procreg_consuela, #{pulse => mg_woody_api_pulse}}
+    ).
+
 %%
 %% vm.args
 %%
 vm_args(YamlConfig, ERLInetrcFilename) ->
     [
-        {'-sname'    , ?C:utf_bin(?C:conf([service_name  ], YamlConfig, "machinegun"))},
-        {'-setcookie', ?C:utf_bin(?C:conf([erlang, cookie], YamlConfig, "mg_cookie" ))},
+        node_name(YamlConfig),
         {'+K'        , <<"true">>},
         {'+A'        , <<"10">>  },
         {'-kernel'   , <<"inetrc '\"", (?C:utf_bin(ERLInetrcFilename))/binary, "\"'">>}
@@ -368,6 +487,42 @@ vm_args(YamlConfig, ERLInetrcFilename) ->
     conf_if([erlang, ipv6], YamlConfig, [
         {'-proto_dist', <<"inet6_tcp">>}
     ]).
+
+cookie(YamlConfig) ->
+    ?C:contents(?C:filename(?C:conf([erlang, secret_cookie_file], YamlConfig))).
+
+service_name(YamlConfig) ->
+    ?C:utf_bin(?C:conf([service_name], YamlConfig, "machinegun")).
+
+node_name(YamlConfig) ->
+    Name = ?C:conf([dist_node_name], YamlConfig, default_node_name(YamlConfig)),
+    {node_name_type(Name), ?C:utf_bin(Name)}.
+
+node_name_type(Name) ->
+    case string:split(Name, "@") of
+        [_, Hostname] -> host_name_type(Hostname);
+        [_]           -> '-sname'
+    end.
+
+host_name_type(Name) ->
+    case inet:parse_address(Name) of
+        {ok, _} ->
+            '-name';
+        {error, einval} ->
+            case string:find(Name, ".") of
+                nomatch -> '-sname';
+                _       -> '-name'
+            end
+    end.
+
+default_node_name(YamlConfig) ->
+    ?C:conf([service_name], YamlConfig, "machinegun") ++ "@" ++ guess_host_addr(YamlConfig).
+
+guess_host_addr(YamlConfig) ->
+    inet:ntoa(?C:guess_host_address(address_family_preference(YamlConfig))).
+
+address_family_preference(YamlConfig) ->
+    conf_with([erlang, ipv6], YamlConfig, inet, fun (true) -> inet6; (false) -> inet end).
 
 %%
 %% erl_inetrc
@@ -382,8 +537,12 @@ conf_if(YamlConfigPath, YamlConfig, Value) ->
         false -> []
     end.
 
-conf_with(YamlConfigPath, YamlConfig, Default, Fun) ->
+conf_with(YamlConfigPath, YamlConfig, Fun) ->
+    Fun(?C:conf(YamlConfigPath, YamlConfig)).
+
+conf_with(YamlConfigPath, YamlConfig, Default, FunOrVal) ->
     case ?C:conf(YamlConfigPath, YamlConfig, undefined) of
         undefined -> Default;
-        Value     -> Fun(Value)
+        Value when is_function(FunOrVal) -> FunOrVal(Value);
+        _Value -> FunOrVal
     end.

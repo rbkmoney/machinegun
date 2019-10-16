@@ -90,7 +90,7 @@ end_per_suite(C) ->
 -spec tag(config()) ->
     _.
 tag(_C) ->
-    ok = mg_machine_tags:add(automaton_options(), ?TAG, ?ID, null, mg_utils:default_deadline()).
+    ok = mg_machine_tags:add(automaton_options(), ?TAG, ?ID, null, mg_deadline:default()).
 
 -spec idempotent_tag(config()) ->
     _.
@@ -101,12 +101,12 @@ idempotent_tag(C) ->
     _.
 double_tag(_C) ->
     {already_exists, ?ID} =
-        mg_machine_tags:add(automaton_options(), ?TAG, ?OTHER_ID, null, mg_utils:default_deadline()).
+        mg_machine_tags:add(automaton_options(), ?TAG, ?OTHER_ID, null, mg_deadline:default()).
 
 -spec replace(config()) ->
     _.
 replace(_C) ->
-    ok = mg_machine_tags:replace(automaton_options(), ?TAG, ?ID, null, mg_utils:default_deadline()).
+    ok = mg_machine_tags:replace(automaton_options(), ?TAG, ?ID, null, mg_deadline:default()).
 
 -spec resolve(config()) ->
     _.
@@ -132,6 +132,7 @@ automaton_options() ->
     #{
         namespace => <<"test_tags">>,
         storage   => mg_storage_memory,
+        worker    => #{registry => mg_procreg_gproc},
         pulse     => ?MODULE,
         retries   => #{}
     }.

@@ -100,18 +100,19 @@ transient_fail(_C) ->
     NS = BinTestName,
     ID = BinTestName,
     Options = automaton_options(NS, {intervals, [1000, 1000, 1000, 1000, 1000, 1000, 1000]}),
-    _  = start_automaton(Options),
+    Pid = start_automaton(Options),
 
-    ok = mg_machine:start(Options, ID, <<"normal">>, ?req_ctx, mg_utils:default_deadline()),
-    0  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
-    ok = mg_machine:call(Options, ID, {set_mode, <<"failing">>}, ?req_ctx, mg_utils:default_deadline()),
+    ok = mg_machine:start(Options, ID, <<"normal">>, ?req_ctx, mg_deadline:default()),
+    0  = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
+    ok = mg_machine:call(Options, ID, {set_mode, <<"failing">>}, ?req_ctx, mg_deadline:default()),
     ok = timer:sleep(3000),
-    0  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
-    ok = mg_machine:call(Options, ID, {set_mode, <<"counting">>}, ?req_ctx, mg_utils:default_deadline()),
+    0  = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
+    ok = mg_machine:call(Options, ID, {set_mode, <<"counting">>}, ?req_ctx, mg_deadline:default()),
     ok = timer:sleep(3000),
-    I  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
+    I  = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
     true = I > 0,
-    ok.
+
+    ok = stop_automaton(Pid).
 
 -spec permament_fail(config()) ->
     _.
@@ -120,14 +121,15 @@ permament_fail(_C) ->
     NS = BinTestName,
     ID = BinTestName,
     Options = automaton_options(NS, {intervals, [1000]}),
-    _  = start_automaton(Options),
+    Pid = start_automaton(Options),
 
-    ok = mg_machine:start(Options, ID, <<"normal">>, ?req_ctx, mg_utils:default_deadline()),
-    0  = mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline()),
-    ok = mg_machine:call(Options, ID, {set_mode, <<"failing">>}, ?req_ctx, mg_utils:default_deadline()),
+    ok = mg_machine:start(Options, ID, <<"normal">>, ?req_ctx, mg_deadline:default()),
+    0  = mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default()),
+    ok = mg_machine:call(Options, ID, {set_mode, <<"failing">>}, ?req_ctx, mg_deadline:default()),
     ok = timer:sleep(4000),
-    {logic, machine_failed} = (catch mg_machine:call(Options, ID, get, ?req_ctx, mg_utils:default_deadline())),
-    ok.
+    {logic, machine_failed} = (catch mg_machine:call(Options, ID, get, ?req_ctx, mg_deadline:default())),
+
+    ok = stop_automaton(Pid).
 
 %%
 %% processor
@@ -168,21 +170,34 @@ start() ->
 start_automaton(Options) ->
     mg_utils:throw_if_error(mg_machine:start_link(Options)).
 
+-spec stop_automaton(pid()) ->
+    ok.
+stop_automaton(Pid) ->
+    ok = proc_lib:stop(Pid, normal, 5000),
+    ok.
+
 -spec automaton_options(mg:ns(), mg_retry:policy()) ->
     mg_machine:options().
 automaton_options(NS, RetryPolicy) ->
+    Scheduler = #{
+        registry => mg_procreg_gproc,
+        interval => 1000
+    },
     #{
         namespace => NS,
         processor => ?MODULE,
         storage   => mg_ct_helper:build_storage(NS, mg_storage_memory),
+        worker    => #{
+            registry => mg_procreg_gproc
+        },
         pulse     => ?MODULE,
         retries   => #{
             timers         => RetryPolicy
         },
         schedulers => #{
-            timers         => #{ interval => 100 },
-            timers_retries => #{ interval => 100 },
-            overseer       => #{ interval => 100 }
+            timers         => Scheduler,
+            timers_retries => Scheduler,
+            overseer       => Scheduler
         }
     }.
 

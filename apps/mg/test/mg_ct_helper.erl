@@ -31,6 +31,8 @@
 
 -export([stop_wait_all/3]).
 
+-export([handle_beat/2]).
+
 -type appname() :: atom().
 
 -type option() ::
@@ -45,6 +47,13 @@ config(kafka_client_name) ->
 -spec start_application(appname() | {appname(), [{atom(), _Value}]}) ->
     _Deps :: [appname()].
 
+start_application(consuela) ->
+    genlib_app:start_application_with(consuela, [
+        {registry, #{
+            nodename => "consul0",
+            namespace => <<"mg">>
+        }}
+    ]);
 start_application(brod) ->
     genlib_app:start_application_with(brod, [
         {clients, [
@@ -71,7 +80,11 @@ start_applications(Apps) ->
 stop_applications(AppNames) ->
     lists:foreach(fun application:stop/1, lists:reverse(AppNames)).
 
--spec(assert_wait_expected(any(), function(), mg_retry:strategy()) -> ok).
+%%
+
+-spec assert_wait_expected(any(), function(), mg_retry:strategy()) ->
+    ok.
+
 assert_wait_expected(Expected, Fun, Strategy) when is_function(Fun, 0) ->
     case Fun() of
         Expected ->
@@ -96,26 +109,42 @@ build_storage(NS, {Module, Options}) ->
 -spec stop_wait_all([pid()], _Reason, timeout()) ->
     ok.
 stop_wait_all(Pids, Reason, Timeout) ->
-    lists:foreach(
-        fun(Pid) ->
-            case stop_wait(Pid, Reason, Timeout) of
-                ok      -> ok;
-                timeout -> exit(stop_timeout)
-            end
-        end,
-        Pids
-    ).
+    FlagWas = erlang:process_flag(trap_exit, true),
+    TRef = erlang:start_timer(Timeout, self(), stop_timeout),
+    ok = lists:foreach(fun (Pid) -> erlang:exit(Pid, Reason) end, Pids),
+    ok = await_stop(Pids, Reason, TRef),
+    _ = erlang:process_flag(trap_exit, FlagWas),
+    ok.
 
--spec stop_wait(pid(), _Reason, timeout()) ->
+-spec await_stop(pid(), _Reason, reference()) ->
     ok | timeout.
-stop_wait(Pid, Reason, Timeout) ->
-    OldTrap = process_flag(trap_exit, true),
-    erlang:exit(Pid, Reason),
-    R =
-        receive
-            {'EXIT', Pid, Reason} -> ok
-        after
-            Timeout -> timeout
-        end,
-    process_flag(trap_exit, OldTrap),
-    R.
+await_stop([Pid | Rest], Reason, TRef) ->
+    receive
+        {'EXIT', Pid, Reason} ->
+            await_stop(Rest, Reason, TRef);
+        {timeout, TRef, Error} ->
+            erlang:exit(Error)
+    end;
+await_stop([], _Reason, TRef) ->
+    _ = erlang:cancel_timer(TRef),
+    receive
+        {timeout, TRef, _} -> ok
+    after 0 ->
+        ok
+    end.
+
+%%
+
+-type category() :: atom().
+
+-spec handle_beat
+    (consuela_client:beat(), {client, category()}) -> ok;
+    (consuela_session_keeper:beat(), {keeper, category()}) -> ok;
+    (consuela_zombie_reaper:beat(), {reaper, category()}) -> ok;
+    (consuela_registry:beat(), {registry, category()}) -> ok
+.
+
+handle_beat(Beat, {Producer, Category}) ->
+    ct:pal(Category, "[~p] ~p", [Producer, Beat]);
+handle_beat(_Beat, _) ->
+    ok.

@@ -100,7 +100,7 @@
 .
 -type timer       () :: {timeout, timeout_()} | {deadline, calendar:datetime()}.
 -type timeout_    () :: non_neg_integer().
--type deadline    () :: mg_utils:deadline().
+-type deadline    () :: mg_deadline:deadline().
 
 -type ref() :: {id, mg:id()} | {tag, mg_machine_tags:tag()}.
 -type options() :: #{
@@ -138,7 +138,7 @@ start_link(Options) ->
         ])
     ).
 
--define(default_deadline, mg_utils:timeout_to_deadline(5000)).
+-define(default_deadline, mg_deadline:from_timeout(5000)).
 
 -spec start(options(), mg:id(), term(), request_context(), deadline()) ->
     ok.

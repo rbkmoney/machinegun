@@ -47,15 +47,6 @@
 -export([supervisor_old_flags     /1]).
 -export([supervisor_old_child_spec/1]).
 
-%% deadlines
--export_type([deadline/0]).
--export([timeout_to_deadline/1]).
--export([deadline_to_timeout/1]).
--export([unixtime_ms_to_deadline/1]).
--export([deadline_to_unixtime_ms/1]).
--export([is_deadline_reached/1]).
--export([default_deadline   /0]).
-
 %% Woody
 -export_type([woody_handlers/0]).
 -export_type([woody_handler /0]).
@@ -229,63 +220,6 @@ supervisor_old_child_spec(ChildSpec = #{id := ChildID, start := Start = {M, _, _
         maps:get(type    , ChildSpec, worker   ),
         maps:get(modules , ChildSpec, [M]      )
     }.
-
-%%
-%% deadlines
-%%
--type deadline() :: undefined | pos_integer().
-
--spec timeout_to_deadline(timeout()) ->
-    deadline().
-timeout_to_deadline(infinity) ->
-    undefined;
-timeout_to_deadline(Timeout) when is_integer(Timeout) ->
-    now_ms() + Timeout;
-timeout_to_deadline(Timeout) ->
-    erlang:error(badarg, [Timeout]).
-
--spec deadline_to_timeout(deadline()) ->
-    timeout().
-deadline_to_timeout(undefined) ->
-    infinity;
-deadline_to_timeout(Deadline) when is_integer(Deadline) ->
-    erlang:max(Deadline - now_ms(), 0);
-deadline_to_timeout(Deadline) ->
-    erlang:error(badarg, [Deadline]).
-
--spec unixtime_ms_to_deadline(non_neg_integer()) ->
-    deadline().
-unixtime_ms_to_deadline(Deadline) when is_integer(Deadline) ->
-    Deadline;
-unixtime_ms_to_deadline(Deadline) ->
-    erlang:error(badarg, [Deadline]).
-
--spec deadline_to_unixtime_ms(deadline()) ->
-    non_neg_integer().
-deadline_to_unixtime_ms(Deadline) when is_integer(Deadline) ->
-    Deadline;
-deadline_to_unixtime_ms(Deadline) ->
-    erlang:error(badarg, [Deadline]).
-
--spec is_deadline_reached(deadline()) ->
-    boolean().
-is_deadline_reached(undefined) ->
-    false;
-is_deadline_reached(Deadline) ->
-    Deadline - now_ms() =< 0.
-
--spec default_deadline() ->
-    deadline().
-default_deadline() ->
-    %% For testing purposes only
-    timeout_to_deadline(30000).
-
-%%
-
--spec now_ms() ->
-    pos_integer().
-now_ms() ->
-    erlang:system_time(1000).
 
 %%
 %% Woody

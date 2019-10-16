@@ -101,8 +101,271 @@ format_beat(#mg_timer_lifecycle_rescheduled{target_timestamp = TS, attempt = Att
 format_beat(#mg_timer_lifecycle_rescheduling_error{exception = {_, Reason, _}} = Beat) ->
     Context = ?beat_to_meta(mg_timer_lifecycle_rescheduling_error, Beat),
     {info, {"machine rescheduling failed ~p", [Reason]}, Context};
+
+format_beat({consuela, Beat = {Producer, _}}) ->
+    {Level, Format, Context} = format_consuela_beat(Beat),
+    {Level, Format, [{consuela_producer, Producer} | Context]};
+
 format_beat(_Beat) ->
     undefined.
+
+%% consuela
+-spec format_consuela_beat(mg_consuela_pulse_adapter:beat()) ->
+    log_msg() | undefined.
+
+%% consul client
+format_consuela_beat({client, {request, Request = {Method, Url, _Headers, Body}}}) ->
+    _ = erlang:put({?MODULE, consuela_request}, Request),
+    {debug, {"consul request: ~s ~s ~p", [Method, Url, Body]}, [
+        {mg_pulse_event_id, consuela_client_request}
+    ]};
+format_consuela_beat({client, {result, Response = {ok, Status, _Headers, _Body}}}) ->
+    {Method, Url, _, Body} = erlang:get({?MODULE, consuela_request}),
+    Level = case Status of
+        S when S < 500 -> debug;
+        _              -> warning
+    end,
+    {Level, {"consul response: ~p for: ~s ~s ~p", [Response, Method, Url, Body]}, [
+        {mg_pulse_event_id, consuela_client_response},
+        {status, Status}
+    ]};
+format_consuela_beat({client, {result, Error = {error, Reason}}}) ->
+    {Method, Url, _, Body} = erlang:get({?MODULE, consuela_request}),
+    {warning, {"consul request failed: ~p for: ~s ~s ~p", [Error, Method, Url, Body]}, [
+        {mg_pulse_event_id, consuela_client_request_failed},
+        {error, [{reason, genlib:print(Reason, 500)}]}
+    ]};
+
+%% registry
+format_consuela_beat({registry_server, {{register, {Name, Pid}}, Status}}) ->
+    case Status of
+        started ->
+            {debug, {"registering ~p as ~p ...", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_registration_started}
+            ]};
+        {finished, ok} ->
+            {debug, {"registered ~p as ~p", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_registration_succeeded}
+            ]};
+        {finished, Error} ->
+            {info, {"did not register ~p as ~p: ~p", [Pid, Name, Error]}, [
+                {mg_pulse_event_id, consuela_registration_did_not_succeed}
+            ]};
+        {failed, Reason} ->
+            {warning, {"failed to register ~p as ~p", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_registration_failed},
+                {error, [{reason, genlib:print(Reason, 500)}]}
+            ]}
+    end;
+format_consuela_beat({registry_server, {{unregister, Reg}, Status}}) ->
+    {Name, Pid} = case Reg of
+        {_, N, P} -> {N, P};
+        {N, P}    -> {N, P}
+    end,
+    case Status of
+        started ->
+            {debug, {"unregistering ~p known as ~p ...", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_unregistration_started}
+            ]};
+        {finished, ok} ->
+            {debug, {"unregistered ~p known as ~p", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_unregistration_succeeded}
+            ]};
+        {finished, Error} ->
+            {info, {"did not unregister ~p known as ~p: ~p", [Pid, Name, Error]}, [
+                {mg_pulse_event_id, consuela_registration_did_not_succeed}
+            ]};
+        {failed, Reason} ->
+            {warning, {"failed to unregister ~p known as ~p", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_unregistration_failed},
+                {error, [{reason, genlib:print(Reason, 500)}]}
+            ]}
+    end;
+
+%% session keeper
+format_consuela_beat({session_keeper, {session, {renewal, Status}}}) ->
+    case Status of
+        {succeeded, Session, Deadline} ->
+            {info, {"session renewal succeeded: ~p", [Session]}, [
+                {mg_pulse_event_id, consuela_session_renewal_succeeded},
+                {time_left, Deadline - os:system_time(second)}
+            ]};
+        {failed, Reason} ->
+            {error, {"session renewal failed", []}, [
+                {mg_pulse_event_id, consuela_session_renewal_failed},
+                {error, [
+                    {reason, genlib:print(Reason, 500)}
+                ]}
+            ]}
+    end;
+format_consuela_beat({session_keeper, {session, expired}}) ->
+    {error, {"session expired", []}, [{mg_pulse_event_id, consuela_session_expired}]};
+format_consuela_beat({session_keeper, {session, destroyed}}) ->
+    {info, {"session destroyed", []}, [{mg_pulse_event_id, consuela_session_destroyed}]};
+
+%% zombie reaper
+format_consuela_beat({zombie_reaper, {{zombie, {Rid, Name, Pid}}, Status}}) ->
+    {Level, Format, Context} = case Status of
+        enqueued ->
+            {info, {"enqueued zombie registration ~p as ~p", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_zombie_enqueued}
+            ]};
+        {reaping, succeeded} ->
+            {info, {"reaped zombie registration ~p as ~p", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_zombie_reaped}
+            ]};
+        {reaping, {failed, Reason}} ->
+            {warning, {"reaped zombie registration ~p as ~p failed", [Pid, Name]}, [
+                {mg_pulse_event_id, consuela_zombie_failed},
+                {error, [{reason, genlib:print(Reason, 500)}]}
+            ]}
+    end,
+    {Level, Format, [{registration_id, Rid} | Context]};
+
+%% leader sup
+format_consuela_beat({leader, {{leader, Name}, Status}}) ->
+    case Status of
+        {started, Pid} ->
+            {info, {"leader ~p started", [Name]}, [
+                {mg_pulse_event_id, consuela_leader_sup_started},
+                {leader_pid, Pid}
+            ]};
+        {down, Pid, Reason} ->
+            {info, {"leader ~p looks down from here", [Name]}, [
+                {mg_pulse_event_id, consuela_leader_sup_down},
+                {leader_pid, Pid},
+                {error, [{reason, genlib:print(Reason, 500)}]}
+            ]}
+    end;
+format_consuela_beat({leader, {{warden, Name}, {started, Pid}}}) ->
+    {info, {"leader ~p warden started", [Name]}, [
+        {mg_pulse_event_id, consuela_leader_warden_started},
+        {warden_pid, Pid}
+    ]};
+format_consuela_beat({leader, {{warden, Name}, {stopped, Pid}}}) ->
+    {info, {"leader ~p warden stopped", [Name]}, [
+        {mg_pulse_event_id, consuela_leader_warden_stopped},
+        {warden_pid, Pid}
+    ]};
+
+%% discovery
+format_consuela_beat({discovery_server, {discovery, Status}}) ->
+    case Status of
+        started ->
+            {debug, {"discovery started ...", []}, [
+                {mg_pulse_event_id, consuela_discovery_started}
+            ]};
+        {succeeded, Nodes} ->
+            {info, {"discovery succeeded, found ~p nodes: ~p", [length(Nodes), Nodes]}, [
+                {mg_pulse_event_id, consuela_discovery_succeeded}
+            ]};
+        {failed, Reason} ->
+            {error, {"discovery failed", []}, [
+                {mg_pulse_event_id, consuela_discovery_failed},
+                {error, [{reason, genlib:print(Reason, 500)}]}
+            ]}
+    end;
+format_consuela_beat({discovery_server, {{connect, Node}, Status}}) ->
+    case Status of
+        started ->
+            {debug, {"trying to connect to ~p ...", [Node]}, [
+                {mg_pulse_event_id, consuela_distnode_connect_started}
+            ]};
+        {finished, true} ->
+            {info, {"connection to ~p estabilished", [Node]}, [
+                {mg_pulse_event_id, consuela_distnode_connect_succeeded}
+            ]};
+        {finished, false} ->
+            {error, {"connect to ~p did not succeed", [Node]}, [
+                {mg_pulse_event_id, consuela_distnode_connect_failed}
+            ]}
+    end;
+format_consuela_beat({discovery_server, {{node, Node}, Status}}) ->
+    case Status of
+        up ->
+            {info, {"~p is online now", [Node]}, [
+                {mg_pulse_event_id, consuela_distnode_online}
+            ]};
+        {down, Reason} ->
+            Level = case Reason of
+                shutdown -> info;
+                _        -> warning
+            end,
+            {Level, {"~p gone offline", [Node]}, [
+                {mg_pulse_event_id, consuela_distnode_offline},
+                {error, [{reason, genlib:print(Reason, 500)}]}
+            ]}
+    end;
+
+%% presence
+format_consuela_beat({presence_session, {{presence, Name}, Status}}) ->
+    case Status of
+        started ->
+            {info, {"started '~s' presence session", [Name]}, [
+                {mg_pulse_event_id, consuela_presence_session_started}
+            ]};
+        {stopped, Reason} ->
+            {info, {"stopped '~s' presence session: ~p", [Name, Reason]}, [
+                {mg_pulse_event_id, consuela_presence_session_stopped}
+            ]}
+    end;
+
+%% kinda generic beats
+format_consuela_beat({_Producer, {{deadline_call, Deadline, Call}, Status}}) ->
+    TimeLeft = Deadline - erlang:monotonic_time(millisecond),
+    case Status of
+        accepted ->
+            {debug, {"accepted call ~p with ~p ms time left", [Call, TimeLeft]}, [
+                {mg_pulse_event_id, consuela_deadline_call_accepted},
+                {time_left, TimeLeft}
+            ]};
+        rejected ->
+            {warning, {"rejected stale call ~p (~p ms late)", [Call, -TimeLeft]}, [
+                {mg_pulse_event_id, consuela_deadline_call_rejected},
+                {time_left, TimeLeft}
+            ]}
+    end;
+format_consuela_beat({_Producer, {{timer, TRef}, Status}}) ->
+    case Status of
+        {started, Timeout} ->
+            {debug, {"timer ~p armed to fire after ~p ms", [TRef, Timeout]}, [
+                {mg_pulse_event_id, consuela_timer_started},
+                {timeout, Timeout}
+            ]};
+        {started, Msg, Timeout} ->
+            {debug, {"timer ~p armed to fire ~p after ~p ms", [TRef, Msg, Timeout]}, [
+                {mg_pulse_event_id, consuela_timer_started},
+                {timeout, Timeout}
+            ]};
+        fired ->
+            {debug, {"timer ~p fired", [TRef]}, [{mg_pulse_event_id, consuela_timer_fired}]};
+        reset ->
+            {debug, {"timer ~p reset", [TRef]}, [{mg_pulse_event_id, consuela_timer_reset}]}
+    end;
+format_consuela_beat({_Producer, {{monitor, MRef}, Status}}) ->
+    case Status of
+        set ->
+            {debug, {"monitor ~p set", [MRef]}, [{mg_pulse_event_id, consuela_monitor_set}]};
+        fired ->
+            {debug, {"monitor ~p fired", [MRef]}, [{mg_pulse_event_id, consuela_monitor_fired}]}
+    end;
+format_consuela_beat({_Producer, {unexpected, {Type, Message}}}) ->
+    case Type of
+        {call, From} ->
+            {warning, {"received unexpected call from ~p: ~p", [From, Message]}, [
+                {mg_pulse_event_id, consuela_unexpected_call}
+            ]};
+        cast ->
+            {warning, {"received unexpected cast: ~p", [Message]}, [
+                {mg_pulse_event_id, consuela_unexpected_cast}
+            ]};
+        info ->
+            {warning, {"received unexpected info: ~p", [Message]}, [
+                {mg_pulse_event_id, consuela_unexpected_info}
+            ]}
+    end;
+format_consuela_beat({_Producer, Beat}) ->
+    {warning, {"unknown or mishandled consuela beat: ~p", [Beat]}, []}.
 
 -spec extract_meta(atom(), any()) ->
     [meta()] | meta().
@@ -116,15 +379,15 @@ extract_meta(request_context, ReqCtx) ->
 extract_meta(rpc_id, RPCID) ->
     maps:to_list(RPCID);
 extract_meta(deadline, Deadline) when is_integer(Deadline) ->
-    {deadline, format_timestamp(Deadline div 1000)};  % Deadline measured in millisecond
+    {deadline, mg_deadline:format(Deadline)};
 extract_meta(target_timestamp, Timestamp) ->
     {target_timestamp, format_timestamp(Timestamp)};
-extract_meta(exception, {Class, Reason, StackStrace}) ->
+extract_meta(exception, {Class, Reason, Stacktrace}) ->
     [
         {error, [
             {class, genlib:to_binary(Class)},
             {reason, genlib:format(Reason)},
-            {stack_trace, genlib_format:format_stacktrace(StackStrace)}
+            {stack_trace, genlib_format:format_stacktrace(Stacktrace)}
         ]}
     ];
 extract_meta(retry_action, {wait, Timeout, NextStrategy}) ->

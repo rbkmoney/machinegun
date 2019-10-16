@@ -49,7 +49,7 @@
 start(Options, ID, Args) ->
     start(Options, ID, Args, undefined).
 
--spec start(options(), mg:id(), mg_events_machine:args(), mg_utils:deadline()) -> ok.
+-spec start(options(), mg:id(), mg_events_machine:args(), mg_deadline:deadline()) -> ok.
 start(#{ns := NS} = Options, ID, Args, Deadline) ->
     ok = call_service(Options, 'Start', [pack(ns, NS), pack(id, ID), pack(args, Args)], Deadline).
 
@@ -57,7 +57,7 @@ start(#{ns := NS} = Options, ID, Args, Deadline) ->
 repair(Options, Ref, Args) ->
     repair(Options, Ref, Args, undefined).
 
--spec repair(options(), mg_events_machine:ref(), mg_events_machine:args(), mg_utils:deadline()) -> ok.
+-spec repair(options(), mg_events_machine:ref(), mg_events_machine:args(), mg_deadline:deadline()) -> ok.
 repair(#{ns := NS} = Options, Ref, Args, Deadline) ->
     ok = call_service(Options, 'Repair', [machine_desc(NS, Ref), pack(args, Args)], Deadline).
 
@@ -65,7 +65,7 @@ repair(#{ns := NS} = Options, Ref, Args, Deadline) ->
 simple_repair(Options, Ref) ->
     simple_repair(Options, Ref, undefined).
 
--spec simple_repair(options(), mg_events_machine:ref(), mg_utils:deadline()) -> ok.
+-spec simple_repair(options(), mg_events_machine:ref(), mg_deadline:deadline()) -> ok.
 simple_repair(#{ns := NS} = Options, Ref, Deadline) ->
     ok = call_service(Options, 'SimpleRepair', [pack(ns, NS), pack(ref, Ref)], Deadline).
 
@@ -73,7 +73,7 @@ simple_repair(#{ns := NS} = Options, Ref, Deadline) ->
 remove(Options, ID) ->
     remove(Options, ID, undefined).
 
--spec remove(options(), mg:id(), mg_utils:deadline()) -> ok.
+-spec remove(options(), mg:id(), mg_deadline:deadline()) -> ok.
 remove(#{ns := NS} = Options, ID, Deadline) ->
     ok = call_service(Options, 'Remove', [pack(ns, NS), pack(id, ID)], Deadline).
 
@@ -81,7 +81,7 @@ remove(#{ns := NS} = Options, ID, Deadline) ->
 call(Options, Ref, Args) ->
     call(Options, Ref, Args, undefined).
 
--spec call(options(), mg_events_machine:ref(), mg_events_machine:args(), mg_utils:deadline()) ->
+-spec call(options(), mg_events_machine:ref(), mg_events_machine:args(), mg_deadline:deadline()) ->
     mg:call_resp().
 call(#{ns := NS} = Options, Ref, Args, Deadline) ->
     unpack(
@@ -94,7 +94,7 @@ call(#{ns := NS} = Options, Ref, Args, Deadline) ->
 get_machine(Options, Ref, Range) ->
     get_machine(Options, Ref, Range, undefined).
 
--spec get_machine(options(), mg_events_machine:ref(), mg_events:history_range(), mg_utils:deadline()) ->
+-spec get_machine(options(), mg_events_machine:ref(), mg_events:history_range(), mg_deadline:deadline()) ->
     mg_events_machine:machine().
 get_machine(#{ns := NS} = Options, Ref, Range, Deadline) ->
     unpack(
@@ -120,7 +120,7 @@ machine_desc(NS, Ref) ->
 machine_desc(NS, Ref, HRange) ->
     pack(machine_descriptor, {NS, Ref, HRange}).
 
--spec call_service(options(), atom(), [_Arg], mg_utils:deadline()) ->
+-spec call_service(options(), atom(), [_Arg], mg_deadline:deadline()) ->
     any().
 call_service(#{retry_strategy := Strategy} = Options, Function, Args, Deadline) ->
     try woody_call(Options, Function, Args, Deadline) of
@@ -143,7 +143,7 @@ call_service(#{retry_strategy := Strategy} = Options, Function, Args, Deadline) 
 call_service(Options, Function, Args, Deadline) ->
     call_service(Options#{retry_strategy => finish}, Function, Args, Deadline).
 
--spec woody_call(options(), atom(), [_Arg], mg_utils:deadline()) ->
+-spec woody_call(options(), atom(), [_Arg], mg_deadline:deadline()) ->
     any().
 woody_call(#{url := BaseURL} = Options, Function, Args, Deadline) ->
     TransportOptions = maps:get(transport_opts, Options, #{}),

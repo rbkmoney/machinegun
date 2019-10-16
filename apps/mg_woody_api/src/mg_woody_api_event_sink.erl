@@ -46,7 +46,7 @@ handler(Options) ->
 handle_function('GetHistory', [EventSinkID, Range], WoodyContext, {AvaliableEventSinks, Options}) ->
     ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
     DefaultTimeout = maps:get(default_processing_timeout, Options),
-    DefaultDeadline = mg_utils:timeout_to_deadline(DefaultTimeout),
+    DefaultDeadline = mg_deadline:from_timeout(DefaultTimeout),
     Deadline = mg_woody_api_utils:get_deadline(WoodyContext, DefaultDeadline),
     SinkHistory =
         mg_woody_api_utils:handle_error(

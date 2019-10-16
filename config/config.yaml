@@ -14,15 +14,54 @@
 # limitations under the License.
 #
 
+# Name of the service.
+#
+# Defaults to: 'machinegun'.
 service_name: machinegun
+
+# Name of the node for Erlang distribution.
+#
+# Defaults to: '{service_name}@{primary_netif_ip}'.
+# dist_node_name: machinegun@10.0.0.42
+
+# Erlang VM options.
 erlang:
-    cookie: "mg_cookie"
+    # Path to a file which holds Erlang distribution cookie.
+    # The cookie is _sensitive_ piece of information so handle it with caution.
+    #
+    # Must be set, there's no default.
+    secret_cookie_file: "config/cookie"
     ipv6: false
     disable_dns_cache: false
+
+# API server options.
 woody_server:
     ip: "::"
     port: 8022
     http_keep_alive_timeout: 60s
+
+# Distributed machine registry settings.
+# Do not set if you plan to run machinegun in a non-distributed fashion,
+# for example in a development or testing scenarios.
+consuela:
+    presence:
+        check_interval: 5s
+    registry:
+        nodename: mhost1
+        session_ttl: 30s
+        session_renewal_interval: 10s
+    discovery:
+        tags:
+            - production
+
+# Consul client settings.
+# Required when distributed machine registry is enabled.
+consul:
+    url: http://localhost:8500
+    acl_token_file: config/consul.token
+    connect_timeout: 200ms
+    recv_timeout: 1s
+
 limits:
     process_heap: 2M # heap limit
     disk: # uses only for health check
@@ -60,10 +99,14 @@ namespaces:
         default_processing_timeout: 30s
         timer_processing_timeout: 60s
         reschedule_timeout: 60s
+        hibernate_timeout: 5s
+        unload_timeout: 60s
         processor:
             url: http://localhost:8022/processor
             pool_size: 50
             http_keep_alive_timeout: 10s
+        timers: disabled
+        overseer: enabled
 snowflake_machine_id: 1
 # memory storage backend
 storage:

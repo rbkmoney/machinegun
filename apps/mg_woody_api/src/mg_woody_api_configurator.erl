@@ -15,6 +15,7 @@
 %%%
 
 -module(mg_woody_api_configurator).
+-include_lib("kernel/include/file.hrl").
 
 -export([parse_yaml_config/1]).
 -export([write_files      /1]).
@@ -23,18 +24,24 @@
 -export([print_vm_args    /1]).
 -export([print_erl_inetrc /1]).
 
+-export([guess_host_address/1]).
+-export([hostname/0]).
+
 -export([filename         /1]).
+-export([file             /2]).
 -export([log_level        /1]).
 -export([mem_words        /1]).
 -export([mem_bytes        /1]).
 -export([time_interval    /1]).
 -export([time_interval    /2]).
+-export([proplist         /1]).
 -export([ip               /1]).
 -export([utf_bin          /1]).
 -export([atom             /1]).
 -export([conf             /3]).
 -export([conf             /2]).
 -export([probability      /1]).
+-export([contents         /1]).
 
 %%
 
@@ -60,15 +67,29 @@ parse_yaml_config(Filename) ->
     [Config] = yamerl_constr:file(Filename),
     Config.
 
--spec write_files([{filename(), iolist()}]) ->
+-type file_contents() ::
+    {filename(), iolist()} |
+    {filename(), iolist(), _Mode :: non_neg_integer()}.
+
+-spec write_files([file_contents()]) ->
     ok.
 write_files(Files) ->
     ok = lists:foreach(fun write_file/1, Files).
 
--spec write_file({filename(), iolist()}) ->
+-spec write_file(file_contents()) ->
     ok.
 write_file({Name, Data}) ->
-    ok = file:write_file(Name, Data).
+    ok = file:write_file(Name, Data);
+write_file({Name, Data, Mode}) ->
+    % Turn write permission on temporarily
+    _ = file:change_mode(Name, Mode bor 8#00200),
+    % Truncate it
+    ok = file:write_file(Name, <<>>),
+    ok = file:change_mode(Name, Mode bor 8#00200),
+    % Write contents
+    ok = file:write_file(Name, Data),
+    % Drop write permission (if `Mode` doesn't specify it)
+    ok = file:change_mode(Name, Mode).
 
 -spec print_sys_config(sys_config()) ->
     iolist().
@@ -97,6 +118,89 @@ filename(Filename) when is_list(Filename) ->
     Filename;
 filename(Filename) ->
     erlang:throw({bad_file_name, Filename}).
+
+-spec file(maybe(string()), _AtMostMode :: non_neg_integer()) ->
+    filename().
+file(Filename, AtMostMode) ->
+    _ = filename(Filename),
+    case file:read_file_info(Filename) of
+        {ok, #file_info{type = regular, mode = Mode}} ->
+            case (Mode band 8#777) bor AtMostMode of
+                AtMostMode ->
+                    Filename;
+                _ ->
+                    erlang:throw({'bad file mode', Filename, io_lib:format("~.8.0B", [Mode])})
+            end;
+        {ok, #file_info{type = Type}} ->
+            erlang:throw({'bad file type', Filename, Type});
+        {error, Reason} ->
+            erlang:throw({'error accessing file', Filename, Reason})
+    end.
+
+-spec guess_host_address(inet:address_family()) ->
+    inet:ip_address().
+guess_host_address(AddressFamilyPreference) ->
+    {ok, Ifaces0} = inet:getifaddrs(),
+    Ifaces1 = filter_running_ifaces(Ifaces0),
+    IfaceAddrs0 = gather_iface_addrs(Ifaces1, AddressFamilyPreference),
+    [{_Name, Addr} | _] = sort_iface_addrs(IfaceAddrs0),
+    Addr.
+
+-type iface_name() :: string().
+-type iface()      :: {iface_name(), proplists:proplist()}.
+
+-spec filter_running_ifaces([iface()]) ->
+    [iface()].
+filter_running_ifaces(Ifaces) ->
+    lists:filter(
+        fun ({_, Ps}) -> is_iface_running(proplists:get_value(flags, Ps)) end,
+        Ifaces
+    ).
+
+-spec is_iface_running([up | running | atom()]) ->
+    boolean().
+is_iface_running(Flags) ->
+    [] == [up, running] -- Flags.
+
+-spec gather_iface_addrs([iface()], inet:address_family()) ->
+    [{iface_name(), inet:ip_address()}].
+gather_iface_addrs(Ifaces, Pref) ->
+    lists:filtermap(
+        fun ({Name, Ps}) -> choose_iface_address(Name, proplists:get_all_values(addr, Ps), Pref) end,
+        Ifaces
+    ).
+
+-spec choose_iface_address(iface_name(), [inet:ip_address()], inet:address_family()) ->
+    false | {true, {iface_name(), inet:ip_address()}}.
+choose_iface_address(Name, [Addr = {_, _, _, _} | _], inet) ->
+    {true, {Name, Addr}};
+choose_iface_address(Name, [Addr = {_, _, _, _, _, _, _, _} | _], inet6) ->
+    {true, {Name, Addr}};
+choose_iface_address(Name, [_ | Rest], Pref) ->
+    choose_iface_address(Name, Rest, Pref);
+choose_iface_address(_, [], _) ->
+    false.
+
+-spec sort_iface_addrs([{iface_name(), inet:ip_address()}]) ->
+    [{iface_name(), inet:ip_address()}].
+sort_iface_addrs(IfaceAddrs) ->
+    lists:sort(fun ({N1, _}, {N2, _}) -> get_iface_prio(N1) =< get_iface_prio(N2) end, IfaceAddrs).
+
+-spec get_iface_prio(iface_name()) ->
+    integer().
+get_iface_prio("eth" ++ _) -> 1;
+get_iface_prio("en"  ++ _) -> 1;
+get_iface_prio("wl"  ++ _) -> 2;
+get_iface_prio("tun" ++ _) -> 3;
+get_iface_prio("lo"  ++ _) -> 4;
+get_iface_prio(_)          -> 100.
+
+
+-spec hostname() ->
+    inet:hostname().
+hostname() ->
+    {ok, Name} = inet:gethostname(),
+    Name.
 
 -spec
 log_level(string()  ) -> atom().
@@ -213,6 +317,12 @@ time_interval_mul(3) -> 60;
 time_interval_mul(2) -> 1000;
 time_interval_mul(1) -> 1000.
 
+-spec proplist(yaml_config() | undefined) ->
+    proplists:proplist() | undefined.
+proplist(undefined) ->
+    undefined;
+proplist(Config) ->
+    [{erlang:list_to_existing_atom(Key), Value} || {Key, Value} <- Config].
 
 -spec ip(string()) ->
     inet:ip_address().
@@ -267,3 +377,13 @@ probability(Prob) when is_number(Prob) andalso 0 =< Prob andalso Prob =< 1 ->
     Prob;
 probability(Prob) ->
     throw({'bad probability', Prob}).
+
+-spec contents(filename()) ->
+    binary().
+contents(Filename) ->
+    case file:read_file(Filename) of
+        {ok, Contents} ->
+            Contents;
+        {error, Reason} ->
+            erlang:throw({'could not read file contents', Filename, Reason})
+    end.

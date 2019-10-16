@@ -50,7 +50,7 @@
 -type event() :: term().
 -type aux_state() :: term().
 -type req_ctx() :: mg:request_context().
--type deadline() :: mg_utils:deadline().
+-type deadline() :: mg_deadline:deadline().
 
 -type options() :: #{
     signal_handler => fun((signal(), aux_state(), [event()]) -> {aux_state(), [event()], action()}),
@@ -101,13 +101,14 @@ continuation_repair_test(_C) ->
             (Events) -> TestRunner ! {sink_events, Events}, ok
         end
     },
-    _Pid = start_automaton(Options, NS),
+    Pid = start_automaton(Options, NS),
     ok = start(Options, NS, MachineID, <<>>),
     ?assertReceive({sink_events, [1]}),
     ?assertException(throw, {logic, machine_failed}, call(Options, NS, MachineID, raise)),
     ok = repair(Options, NS, MachineID, <<>>),
     ?assertReceive({sink_events, [2, 3]}),
-    ?assertEqual([1, 2, 3], get_history(Options, NS, MachineID)).
+    ?assertEqual([1, 2, 3], get_history(Options, NS, MachineID)),
+    ok = stop_automaton(Pid).
 
 %% Processor handlers
 
@@ -164,26 +165,39 @@ dummy_sink_handler(_Events) ->
 start_automaton(Options, NS) ->
     mg_utils:throw_if_error(mg_events_machine:start_link(events_machine_options(Options, NS))).
 
+-spec stop_automaton(pid()) ->
+    ok.
+stop_automaton(Pid) ->
+    ok = proc_lib:stop(Pid, normal, 5000),
+    ok.
+
 -spec events_machine_options(options(), mg:ns()) ->
     mg_events_machine:options().
 events_machine_options(Options, NS) ->
+    Scheduler = #{registry => mg_procreg_gproc, interval => 100},
     #{
         namespace => NS,
         processor => {?MODULE, Options},
         tagging => #{
             namespace => <<NS/binary, "_tags">>,
             storage => mg_storage_memory,
+            worker => #{
+                registry => mg_procreg_gproc
+            },
             pulse => ?MODULE,
             retries => #{}
         },
         machines => #{
             namespace => NS,
             storage => mg_ct_helper:build_storage(NS, mg_storage_memory),
+            worker => #{
+                registry => mg_procreg_gproc
+            },
             pulse => ?MODULE,
             schedulers => #{
-                timers => #{ interval => 100 },
-                timers_retries => #{ interval => 100 },
-                overseer => #{ interval => 100 }
+                timers         => Scheduler,
+                timers_retries => Scheduler,
+                overseer       => Scheduler
             }
         },
         events_storage => mg_ct_helper:build_storage(<<NS/binary, "_sink">>, mg_storage_memory),
@@ -197,7 +211,7 @@ events_machine_options(Options, NS) ->
 -spec start(options(), mg:ns(), mg:id(), term()) ->
     ok.
 start(Options, NS, MachineID, Args) ->
-    Deadline = mg_utils:timeout_to_deadline(3000),
+    Deadline = mg_deadline:from_timeout(3000),
     MgOptions = events_machine_options(Options, NS),
     mg_events_machine:start(MgOptions, MachineID, encode(Args), <<>>, Deadline).
 
@@ -205,7 +219,7 @@ start(Options, NS, MachineID, Args) ->
     term().
 call(Options, NS, MachineID, Args) ->
     HRange = {undefined, undefined, forward},
-    Deadline = mg_utils:timeout_to_deadline(3000),
+    Deadline = mg_deadline:from_timeout(3000),
     MgOptions = events_machine_options(Options, NS),
     mg_events_machine:call(MgOptions, {id, MachineID}, encode(Args), HRange, <<>>, Deadline).
 
@@ -213,7 +227,7 @@ call(Options, NS, MachineID, Args) ->
     ok.
 repair(Options, NS, MachineID, Args) ->
     HRange = {undefined, undefined, forward},
-    Deadline = mg_utils:timeout_to_deadline(3000),
+    Deadline = mg_deadline:from_timeout(3000),
     MgOptions = events_machine_options(Options, NS),
     mg_events_machine:repair(MgOptions, {id, MachineID}, encode(Args), HRange, <<>>, Deadline).
 

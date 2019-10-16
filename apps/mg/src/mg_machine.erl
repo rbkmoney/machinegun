@@ -60,6 +60,7 @@
 %% API
 -export_type([retry_opt             /0]).
 -export_type([suicide_probability   /0]).
+-export_type([scheduler_id          /0]).
 -export_type([scheduler_opt         /0]).
 -export_type([schedulers_opt        /0]).
 -export_type([options               /0]).
@@ -80,6 +81,7 @@
 
 -export([child_spec /2]).
 -export([start_link /1]).
+-export([start_link /2]).
 
 -export([start               /5]).
 -export([simple_repair       /4]).
@@ -108,12 +110,13 @@
 -behaviour(mg_worker).
 -export([handle_load/3, handle_call/5, handle_unload/1]).
 
--define(TIMERS, <<"timers">>).
-
 %%
 %% API
 %%
+-type scheduler_id() :: overseer | timers | timers_retries.
+
 -type scheduler_opt() :: disable | #{
+    registry     => mg_procreg:options(),
     interval     => pos_integer(),
     no_task_wait => pos_integer(),
     limit        => mg_quota_worker:name(),
@@ -134,6 +137,7 @@
     namespace                => mg:ns(),
     storage                  => storage_options(),
     processor                => mg_utils:mod_opts(),
+    worker                   => mg_workers_manager:options(),
     pulse                    => mg_pulse:handler(),
     retries                  => retry_opt(),
     schedulers               => schedulers_opt(),
@@ -186,6 +190,8 @@
 
 -type processor_retry() :: mg_retry:strategy() | undefined.
 
+-type deadline() :: mg_deadline:deadline().
+
 -callback processor_child_spec(_Options) ->
     supervisor:child_spec() | undefined.
 -callback process_machine(Options, ID, Impact, PCtx, ReqCtx, Deadline, MachineState) -> Result when
@@ -194,7 +200,7 @@
     Impact :: processor_impact(),
     PCtx :: processing_context(),
     ReqCtx :: request_context(),
-    Deadline :: mg_utils:deadline(),
+    Deadline :: deadline(),
     MachineState :: machine_state(),
     Result :: processor_result().
 -optional_callbacks([processor_child_spec/1]).
@@ -216,47 +222,86 @@
 child_spec(Options, ChildID) ->
     #{
         id       => ChildID,
-        start    => {?MODULE, start_link, [Options]},
+        start    => {?MODULE, start_link, [Options, ChildID]},
         restart  => permanent,
         type     => supervisor
     }.
 
 -spec start_link(options()) ->
     mg_utils:gen_start_ret().
-start_link(Options) ->
+start_link(Options = #{namespace := NS}) ->
+    start_link(Options, {?MODULE, NS}).
+
+-spec start_link(options(), _ChildID) ->
+    mg_utils:gen_start_ret().
+start_link(Options, ChildID) ->
     mg_utils_supervisor_wrapper:start_link(
-        #{strategy => one_for_all},
-        mg_utils:lists_compact([
-            mg_storage:child_spec(storage_options(Options), storage),
-            processor_child_spec(Options),
-            mg_workers_manager:child_spec(manager_options(Options), manager),
-            scheduler_child_spec(timers        , Options),
-            scheduler_child_spec(timers_retries, Options),
-            scheduler_child_spec(overseer      , Options)
-        ])
+        #{strategy => one_for_one},
+        [
+            machine_sup_child_spec(Options, {ChildID, machine_sup}),
+            scheduler_sup_child_spec(Options, {ChildID, scheduler_sup})
+        ]
     ).
 
--spec start(options(), mg:id(), term(), request_context(), mg_utils:deadline()) ->
+-spec machine_sup_child_spec(options(), _ChildID) ->
+    supervisor:child_spec().
+machine_sup_child_spec(Options, ChildID) ->
+    #{
+        id       => ChildID,
+        start    => {mg_utils_supervisor_wrapper, start_link, [
+            #{strategy => rest_for_one},
+            mg_utils:lists_compact([
+                mg_storage:child_spec(storage_options(Options), storage),
+                processor_child_spec(Options),
+                mg_workers_manager:child_spec(manager_options(Options), manager)
+            ])
+        ]},
+        restart  => permanent,
+        type     => supervisor
+    }.
+
+-spec scheduler_sup_child_spec(options(), _ChildID) ->
+    supervisor:child_spec().
+scheduler_sup_child_spec(Options, ChildID) ->
+    #{
+        id       => ChildID,
+        start    => {mg_utils_supervisor_wrapper, start_link, [
+            #{
+                strategy  => one_for_one,
+                intensity => 10,
+                period    => 30
+            },
+            mg_utils:lists_compact([
+                scheduler_child_spec(timers        , Options),
+                scheduler_child_spec(timers_retries, Options),
+                scheduler_child_spec(overseer      , Options)
+            ])
+        ]},
+        restart  => permanent,
+        type     => supervisor
+    }.
+
+-spec start(options(), mg:id(), term(), request_context(), deadline()) ->
     _Resp | throws().
 start(Options, ID, Args, ReqCtx, Deadline) ->
     call_(Options, ID, {start, Args}, ReqCtx, Deadline).
 
--spec simple_repair(options(), mg:id(), request_context(), mg_utils:deadline()) ->
+-spec simple_repair(options(), mg:id(), request_context(), deadline()) ->
     _Resp | throws().
 simple_repair(Options, ID, ReqCtx, Deadline) ->
     call_(Options, ID, simple_repair, ReqCtx, Deadline).
 
--spec repair(options(), mg:id(), term(), request_context(), mg_utils:deadline()) ->
+-spec repair(options(), mg:id(), term(), request_context(), deadline()) ->
     _Resp | throws().
 repair(Options, ID, Args, ReqCtx, Deadline) ->
     call_(Options, ID, {repair, Args}, ReqCtx, Deadline).
 
--spec call(options(), mg:id(), term(), request_context(), mg_utils:deadline()) ->
+-spec call(options(), mg:id(), term(), request_context(), deadline()) ->
     _Resp | throws().
 call(Options, ID, Call, ReqCtx, Deadline) ->
     call_(Options, ID, {call, Call}, ReqCtx, Deadline).
 
--spec send_timeout(options(), mg:id(), genlib_time:ts(), request_context(), mg_utils:deadline()) ->
+-spec send_timeout(options(), mg:id(), genlib_time:ts(), request_context(), deadline()) ->
     _Resp | throws().
 send_timeout(Options, ID, Timestamp, ReqCtx, Deadline) ->
     call_(Options, ID, {timeout, Timestamp}, ReqCtx, Deadline).
@@ -267,21 +312,21 @@ send_timeout(Options, ID, Timestamp, ReqCtx, Deadline) ->
     Status :: waiting | retrying,
     Timestamp :: genlib_time:ts(),
     ReqCtx :: request_context(),
-    Deadline :: mg_utils:deadline().
+    Deadline :: deadline().
 send_retry_wait(Options, ID, Status, Timestamp, ReqCtx, Deadline) ->
     call_(Options, ID, {retry_wait, {Status, Timestamp}}, ReqCtx, Deadline).
 
--spec resume_interrupted(options(), mg:id(), request_context(), mg_utils:deadline()) ->
+-spec resume_interrupted(options(), mg:id(), request_context(), deadline()) ->
     _Resp | throws().
 resume_interrupted(Options, ID, ReqCtx, Deadline) ->
     call_(Options, ID, resume_interrupted_one, ReqCtx, Deadline).
 
--spec fail(options(), mg:id(), request_context(), mg_utils:deadline()) ->
+-spec fail(options(), mg:id(), request_context(), deadline()) ->
     ok.
 fail(Options, ID, ReqCtx, Deadline) ->
     fail(Options, ID, {error, explicit_fail, []}, ReqCtx, Deadline).
 
--spec fail(options(), mg:id(), mg_utils:exception(), request_context(), mg_utils:deadline()) ->
+-spec fail(options(), mg:id(), mg_utils:exception(), request_context(), deadline()) ->
     ok.
 fail(Options, ID, Exception, ReqCtx, Deadline) ->
     call_(Options, ID, {fail, Exception}, ReqCtx, Deadline).
@@ -322,7 +367,7 @@ search(Options, Query) ->
     % TODO deadline
     mg_storage:search(storage_options(Options), storage_search_query(Query)).
 
--spec call_with_lazy_start(options(), mg:id(), term(), request_context(), mg_utils:deadline(), term()) ->
+-spec call_with_lazy_start(options(), mg:id(), term(), request_context(), deadline(), term()) ->
     _Resp | throws().
 call_with_lazy_start(Options, ID, Call, ReqCtx, Deadline, StartArgs) ->
     try
@@ -363,7 +408,7 @@ reply(#{call_context := CallContext}, Reply) ->
 all_statuses() ->
     [sleeping, waiting, retrying, processing, failed].
 
--spec call_(options(), mg:id(), _, request_context(), mg_utils:deadline()) ->
+-spec call_(options(), mg:id(), _, request_context(), deadline()) ->
     _ | no_return().
 call_(Options, ID, Call, ReqCtx, Deadline) ->
     mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, Call, ReqCtx, Deadline)).
@@ -397,7 +442,7 @@ handle_load(ID, Options, ReqCtx) ->
     },
     load_storage_machine(ReqCtx, State).
 
--spec handle_call(_Call, mg_worker:call_context(), request_context(), mg_utils:deadline(), state()) ->
+-spec handle_call(_Call, mg_worker:call_context(), request_context(), deadline(), state()) ->
     {{reply, _Resp} | noreply, state()}.
 handle_call(Call, CallContext, ReqCtx, Deadline, S=#{storage_machine:=StorageMachine}) ->
     PCtx = new_processing_context(CallContext),
@@ -645,7 +690,7 @@ status_range_index(_) ->
 %% processing
 %%
 
--spec process_simple_repair(request_context(), mg_utils:deadline(), state()) ->
+-spec process_simple_repair(request_context(), deadline(), state()) ->
     state().
 process_simple_repair(ReqCtx, Deadline, State) ->
     #{storage_machine := StorageMachine = #{status := {error, _, OldStatus}}} = State,
@@ -656,7 +701,7 @@ process_simple_repair(ReqCtx, Deadline, State) ->
         State
     ).
 
--spec process(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
+-spec process(processor_impact(), processing_context(), request_context(), deadline(), state()) ->
     state().
 process(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
     RetryStrategy = get_impact_retry_strategy(Impact, Deadline, State),
@@ -672,7 +717,7 @@ process(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
     Impact :: processor_impact(),
     ProcessingCtx :: processing_context(),
     ReqCtx :: request_context(),
-    Deadline :: mg_utils:deadline(),
+    Deadline :: deadline(),
     State :: state(),
     Retry :: processor_retry().
 process_with_retry(_, _, _, _, #{storage_machine := unknown} = State, _) ->
@@ -711,7 +756,7 @@ process_retry_next_step(undefined) ->
 process_retry_next_step(RetryStrategy) ->
     genlib_retry:next_step(RetryStrategy).
 
--spec get_impact_retry_strategy(processor_impact(), mg_utils:deadline(), state()) ->
+-spec get_impact_retry_strategy(processor_impact(), deadline(), state()) ->
     processor_retry().
 get_impact_retry_strategy(continuation, Deadline, #{options := Options}) ->
     retry_strategy(continuation, Options, Deadline);
@@ -735,7 +780,7 @@ handle_transient_exception(_Reason, State) ->
     Exception :: mg_utils:exception(),
     Impact :: processor_impact() | undefined,
     ReqCtx :: request_context(),
-    Deadline :: mg_utils:deadline().
+    Deadline :: deadline().
 handle_exception(Exception, Impact, ReqCtx, Deadline, State) ->
     #{options := Options, id := ID, namespace := NS, storage_machine := StorageMachine} = State,
     ok = emit_beat(Options, #mg_machine_lifecycle_failed{
@@ -755,7 +800,7 @@ handle_exception(Exception, Impact, ReqCtx, Deadline, State) ->
             transit_state(ReqCtx, Deadline, NewStorageMachine, State)
     end.
 
--spec process_unsafe(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
+-spec process_unsafe(processor_impact(), processing_context(), request_context(), deadline(), state()) ->
     state().
 process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machine := StorageMachine}) ->
     ok = emit_pre_process_beats(Impact, ReqCtx, Deadline, State),
@@ -801,19 +846,24 @@ try_start_timer_task(Timestamp, Status, ReqCtx, State) ->
             ID = maps:get(id, State),
             NS = maps:get(namespace, State),
             TaskInfo = mg_queue_timer:build_task_info(ID, Timestamp, Status),
-            try_add_scheduler_task(NS, ID, ?TIMERS, TaskInfo, ReqCtx, State);
+            try_add_scheduler_task(NS, ID, timers, TaskInfo, ReqCtx, State);
         false ->
             ok
     end.
 
--spec try_add_scheduler_task(mg:ns(), mg:id(), Sheduler, TaskInfo, ReqCtx, State) -> ok when
-    Sheduler :: mg_scheduler:name(),
+-spec try_add_scheduler_task(mg:ns(), mg:id(), Scheduler, TaskInfo, ReqCtx, State) -> ok when
+    Scheduler :: scheduler_id(),
     ReqCtx :: request_context(),
     TaskInfo :: mg_scheduler:task_info(),
     State :: state().
 try_add_scheduler_task(NS, ID, Scheduler, TaskInfo, ReqCtx, State) ->
     try
-        mg_scheduler:add_task(NS, Scheduler, TaskInfo)
+        case get_scheduler_ref(Scheduler, State) of
+            SchedulerRef = #{} ->
+                mg_scheduler:add_task(SchedulerRef, TaskInfo);
+            undefined ->
+                ok
+        end
     catch
         throw:({transient, {scheduler_unavailable, _Details}} = Reason):Stacktrace ->
             #{options := Options} = State,
@@ -827,7 +877,17 @@ try_add_scheduler_task(NS, ID, Scheduler, TaskInfo, ReqCtx, State) ->
             ok
     end.
 
--spec call_processor(processor_impact(), processing_context(), request_context(), mg_utils:deadline(), state()) ->
+-spec get_scheduler_ref(scheduler_id(), state()) ->
+    mg_scheduler:ref_options() | undefined.
+get_scheduler_ref(Scheduler, #{namespace := NS, options := Options}) ->
+    case maps:get(schedulers, Options, #{}) of
+        #{Scheduler := #{registry := Registry}} ->
+            #{namespace => NS, name => Scheduler, registry => Registry};
+        #{} ->
+            undefined
+    end.
+
+-spec call_processor(processor_impact(), processing_context(), request_context(), deadline(), state()) ->
     processor_result().
 call_processor(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
     #{options := Options, id := ID, storage_machine := #{state := MachineState}} = State,
@@ -845,7 +905,7 @@ processor_child_spec(Options) ->
 -spec reschedule(ProcessingCtx, ReqCtx, Deadline, state()) -> state() when
     ProcessingCtx :: processing_context(),
     ReqCtx :: request_context(),
-    Deadline :: mg_utils:deadline().
+    Deadline :: deadline().
 reschedule(ProcessingCtx, ReqCtx, Deadline, State) ->
     #{id:= ID, options := Options, namespace := NS} = State,
     try
@@ -880,7 +940,7 @@ reschedule(ProcessingCtx, ReqCtx, Deadline, State) ->
 
 -spec reschedule_unsafe(ReqCtx, Deadline, state()) -> Result when
     ReqCtx :: request_context(),
-    Deadline :: mg_utils:deadline(),
+    Deadline :: deadline(),
     Result :: {ok, state(), genlib_time:ts(), non_neg_integer()}.
 reschedule_unsafe(ReqCtx, Deadline, State) ->
     #{storage_machine := #{status := MachineStatus}} = State,
@@ -888,7 +948,7 @@ reschedule_unsafe(ReqCtx, Deadline, State) ->
 
 -spec reschedule_unsafe(MachineStatus, ReqCtx, Deadline, state()) -> Result when
     ReqCtx :: request_context(),
-    Deadline :: mg_utils:deadline(),
+    Deadline :: deadline(),
     MachineStatus :: machine_regular_status(),
     Result :: {ok, state(), genlib_time:ts(), non_neg_integer()}.
 reschedule_unsafe({waiting, _, _, _}, ReqCtx, Deadline, State) ->
@@ -939,7 +999,7 @@ wrap_reply_action(Wrapper, {reply, R}) ->
     {reply, {Wrapper, R}}.
 
 
--spec transit_state(request_context(), mg_utils:deadline(), storage_machine(), state()) ->
+-spec transit_state(request_context(), deadline(), storage_machine(), state()) ->
     state().
 transit_state(_ReqCtx, _Deadline, NewStorageMachine, State=#{storage_machine := OldStorageMachine})
     when NewStorageMachine =:= OldStorageMachine
@@ -963,7 +1023,7 @@ transit_state(ReqCtx, Deadline, NewStorageMachine, State) ->
         storage_context := NewStorageContext
     }.
 
--spec remove_from_storage(request_context(), mg_utils:deadline(), state()) ->
+-spec remove_from_storage(request_context(), deadline(), state()) ->
     state().
 remove_from_storage(ReqCtx, Deadline, State) ->
     #{namespace := NS, id := ID, options := Options, storage_context := StorageContext} = State,
@@ -983,7 +1043,7 @@ remove_from_storage(ReqCtx, Deadline, State) ->
     }),
     State#{storage_machine := nonexistent, storage_context := undefined}.
 
--spec retry_strategy(retry_subj(), options(), mg_utils:deadline()) ->
+-spec retry_strategy(retry_subj(), options(), deadline()) ->
     mg_retry:strategy().
 retry_strategy(Subj, Options, Deadline) ->
     retry_strategy(Subj, Options, Deadline, undefined, undefined).
@@ -991,7 +1051,7 @@ retry_strategy(Subj, Options, Deadline) ->
 -spec retry_strategy(Subj, Options, Deadline, InitialTs, Attempt) -> mg_retry:strategy() when
     Subj :: retry_subj(),
     Options :: options(),
-    Deadline :: mg_utils:deadline(),
+    Deadline :: deadline(),
     InitialTs :: genlib_time:ts() | undefined,
     Attempt :: non_neg_integer() | undefined.
 retry_strategy(Subj, Options, Deadline, InitialTs, Attempt) ->
@@ -1001,16 +1061,16 @@ retry_strategy(Subj, Options, Deadline, InitialTs, Attempt) ->
 
 -spec constrain_retry_strategy(Policy, Deadline, InitialTs, Attempt) -> mg_retry:strategy() when
     Policy :: mg_retry:policy(),
-    Deadline :: mg_utils:deadline(),
+    Deadline :: deadline(),
     InitialTs :: genlib_time:ts() | undefined,
     Attempt :: non_neg_integer() | undefined.
 constrain_retry_strategy(Policy, undefined, InitialTs, Attempt) ->
     mg_retry:new_strategy(Policy, InitialTs, Attempt);
 constrain_retry_strategy(Policy, Deadline, InitialTs, Attempt) ->
-    Timeout = mg_utils:deadline_to_timeout(Deadline),
+    Timeout = mg_deadline:to_timeout(Deadline),
     mg_retry:new_strategy({timecap, Timeout, Policy}, InitialTs, Attempt).
 
--spec emit_pre_process_beats(processor_impact(), request_context(), mg_utils:deadline(), state()) ->
+-spec emit_pre_process_beats(processor_impact(), request_context(), deadline(), state()) ->
     ok.
 emit_pre_process_beats(Impact, ReqCtx, Deadline, State) ->
     #{id := ID, options := #{namespace := NS} = Options} = State,
@@ -1023,7 +1083,7 @@ emit_pre_process_beats(Impact, ReqCtx, Deadline, State) ->
     }),
     emit_pre_process_timer_beats(Impact, ReqCtx, Deadline, State).
 
--spec emit_pre_process_timer_beats(processor_impact(), request_context(), mg_utils:deadline(), state()) ->
+-spec emit_pre_process_timer_beats(processor_impact(), request_context(), deadline(), state()) ->
     ok.
 emit_pre_process_timer_beats(timeout, ReqCtx, Deadline, State) ->
     #{
@@ -1043,7 +1103,7 @@ emit_pre_process_timer_beats(timeout, ReqCtx, Deadline, State) ->
 emit_pre_process_timer_beats(_Impact, _ReqCtx, _Deadline, _State) ->
     ok.
 
--spec emit_post_process_beats(processor_impact(), request_context(), mg_utils:deadline(), integer(), state()) ->
+-spec emit_post_process_beats(processor_impact(), request_context(), deadline(), integer(), state()) ->
     ok.
 emit_post_process_beats(Impact, ReqCtx, Deadline, Duration, State) ->
     #{id := ID, options := #{namespace := NS} = Options} = State,
@@ -1057,7 +1117,7 @@ emit_post_process_beats(Impact, ReqCtx, Deadline, Duration, State) ->
     }),
     emit_post_process_timer_beats(Impact, ReqCtx, Deadline, Duration, State).
 
--spec emit_post_process_timer_beats(processor_impact(), request_context(), mg_utils:deadline(), integer(), state()) ->
+-spec emit_post_process_timer_beats(processor_impact(), request_context(), deadline(), integer(), state()) ->
     ok.
 emit_post_process_timer_beats(timeout, ReqCtx, Deadline, Duration, State) ->
     #{
@@ -1106,13 +1166,16 @@ emit_machine_load_beat(Options, Namespace, ID, ReqCtx, _StorageMachine) ->
 
 -spec manager_options(options()) ->
     mg_workers_manager:options().
-manager_options(Options) ->
-    #{
-        name           => maps:get(namespace, Options),
-        pulse          => maps:get(pulse, Options),
-        worker_options => #{
-            worker => {?MODULE, Options}
-        }
+manager_options(Options = #{namespace := NS, worker := ManagerOptions, pulse := Pulse}) ->
+    ManagerOptions#{
+        name           => NS,
+        pulse          => Pulse,
+        worker_options => maps:merge(
+            maps:get(worker_options, ManagerOptions, #{}),
+            #{
+                worker => {?MODULE, Options}
+            }
+        )
     }.
 
 -spec storage_options(options()) ->
@@ -1121,17 +1184,26 @@ storage_options(#{namespace := NS, storage := StorageOptions}) ->
     {Mod, Options} = mg_utils:separate_mod_opts(StorageOptions, #{}),
     {Mod, Options#{name => {NS, ?MODULE, machines}}}.
 
--spec scheduler_child_spec(overseer | timers | timers_retries, options()) ->
+-spec scheduler_child_spec(scheduler_id(), options()) ->
     supervisor:child_spec() | undefined.
 scheduler_child_spec(SchedulerID, Options) ->
     case maps:get(SchedulerID, maps:get(schedulers, Options, #{}), disable) of
         disable ->
             undefined;
         Config ->
-            mg_scheduler:child_spec(scheduler_options(SchedulerID, Options, Config), SchedulerID)
+            mg_scheduler:child_spec(
+                scheduler_reg_name(SchedulerID, Options),
+                scheduler_options(SchedulerID, Options, Config),
+                SchedulerID
+            )
     end.
 
--spec scheduler_options(overseer | timers | timers_retries, options(), scheduler_opt()) ->
+-spec scheduler_reg_name(scheduler_id(), options()) ->
+    _RegName.
+scheduler_reg_name(SchedulerID, #{namespace := NS}) ->
+    {scheduler, {NS, SchedulerID}}.
+
+-spec scheduler_options(scheduler_id(), options(), scheduler_opt()) ->
     mg_scheduler:options().
 scheduler_options(timers, Options, Config) ->
     HandlerOptions = #{
@@ -1139,16 +1211,16 @@ scheduler_options(timers, Options, Config) ->
         reschedule_timeout => maps:get(reschedule_timeout, Options, undefined),
         timer_queue => waiting
     },
-    scheduler_options(?TIMERS, mg_queue_timer, Options, HandlerOptions, Config);
+    scheduler_options(timers, mg_queue_timer, Options, HandlerOptions, Config);
 scheduler_options(timers_retries, Options, Config) ->
     HandlerOptions = #{
         processing_timeout => maps:get(timer_processing_timeout, Options, undefined),
         reschedule_timeout => maps:get(reschedule_timeout, Options, undefined),
         timer_queue => retrying
     },
-    scheduler_options(<<"timers_retries">>, mg_queue_timer, Options, HandlerOptions, Config);
+    scheduler_options(timers_retries, mg_queue_timer, Options, HandlerOptions, Config);
 scheduler_options(overseer, Options, Config) ->
-    scheduler_options(<<"overseer">>, mg_queue_interrupted, Options, #{}, Config).
+    scheduler_options(overseer, mg_queue_interrupted, Options, #{}, Config).
 
 -spec scheduler_options(mg_scheduler:name(), module(), options(), map(), scheduler_opt()) ->
     mg_scheduler:options().
@@ -1172,6 +1244,7 @@ scheduler_options(Name, HandlerMod, Options, HandlerOptions, Config) ->
     genlib_map:compact(#{
         namespace => NS,
         name => Name,
+        registry => maps:get(registry, Config),
         queue_handler => Handler,
         task_handler => Handler,
         pulse => Pulse,
