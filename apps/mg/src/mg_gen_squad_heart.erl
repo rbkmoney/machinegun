@@ -127,13 +127,10 @@ handle_call(Call, From, St) ->
     {noreply, St}.
 
 -type cast() ::
-    {self, pid()} |
     {members, [pid()]}.
 
 -spec handle_cast(cast(), st()) ->
     {noreply, st()}.
-handle_cast({self, Pid}, St = #st{self = undefined}) ->
-    {noreply, St#st{self = Pid}};
 handle_cast({members, Members}, St = #st{}) ->
     {noreply, St#st{members = Members}};
 handle_cast(Cast, St) ->
