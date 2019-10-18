@@ -16,28 +16,26 @@
 
 -module(mg_queue_timer).
 
--behaviour(mg_scheduler).
--behaviour(mg_scheduler_worker).
+-export([build_task/2]).
+-export([build_task/3]).
 
-
--export([build_task_info/2]).
--export([build_task_info/3]).
-
-%% mg_scheduler callbacks
+-behaviour(mg_queue_scanner).
 -export([init/1]).
--export([search_new_tasks/3]).
+-export([search_tasks/3]).
 
-%% mg_scheduler_worker callbacks
+-behaviour(mg_scheduler_worker).
 -export([execute_task/2]).
 
 %% Types
 
+-type seconds() :: non_neg_integer().
 -type options() :: #{
     namespace := mg:ns(),
     scheduler_name := mg_scheduler:name(),
     pulse := mg_pulse:handler(),
     machine := mg_machine:options(),
     timer_queue := waiting | retrying,
+    lookahead => seconds(),
     processing_timeout => timeout(),
     reschedule_timeout => timeout()
 }.
@@ -52,12 +50,12 @@
 
 -type task_id() :: mg:id().
 -type task_payload() :: #{
-    machine_id := mg:id(),
-    target_timestamp := timestamp_s(),
     status := undefined | mg_machine:machine_regular_status()
 }.
--type task_info() :: mg_scheduler:task_info(task_id(), task_payload()).
--type timestamp_s() :: genlib_time:ts().  % in seconds
+-type target_time() :: mg_queue_task:target_time().
+-type task() :: mg_queue_task:task(task_id(), task_payload()).
+-type scan_status() :: mg_queue_scanner:scan_status().
+-type scan_limit() :: mg_queue_scanner:scan_limit().
 -type req_ctx() :: mg:request_context().
 
 -define(DEFAULT_PROCESSING_TIMEOUT, 60000).  % 1 minute
@@ -72,48 +70,44 @@
 init(_Options) ->
     {ok, #state{}}.
 
--spec(build_task_info(mg:id(), genlib_time:ts()) -> task_info()).
-build_task_info(ID, Timestamp) ->
-    build_task_info(ID, Timestamp, undefined).
+-spec build_task(mg:id(), target_time()) ->
+    task().
+build_task(ID, Timestamp) ->
+    build_task(ID, Timestamp, undefined).
 
--spec(build_task_info(mg:id(), genlib_time:ts(), undefined | mg_machine:machine_regular_status()) -> task_info()).
-build_task_info(ID, Timestamp, Status) ->
+-spec build_task(mg:id(), target_time(), undefined | mg_machine:machine_regular_status()) ->
+    task().
+build_task(ID, Timestamp, Status) ->
     CreateTime = erlang:monotonic_time(),
     #{
-        id => ID,
-        payload => #{
-            machine_id => ID,
-            target_timestamp => Timestamp,
-            status => Status
-        },
-        created_at => CreateTime,
+        id          => ID,
+        payload     => #{status => Status},
+        created_at  => CreateTime,
         target_time => Timestamp,
-        machine_id => ID
+        machine_id  => ID
     }.
 
--spec search_new_tasks(Options, Limit, State) -> {ok, Status, Result, State} when
-    Options :: options(),
-    Limit :: non_neg_integer(),
-    Result :: [task_info()],
-    Status :: mg_scheduler:search_status(),
-    State :: state().
-search_new_tasks(#{timer_queue := TimerMode} = Options, Limit, State) ->
+-spec search_tasks(options(), scan_limit(), state()) ->
+    {{scan_status(), [task()]}, state()}.
+search_tasks(#{timer_queue := TimerMode} = Options, Limit, State) ->
+    Lookahead = maps:get(lookahead, Options, 0),
     MachineOptions = machine_options(Options),
-    Query = {TimerMode, 1, genlib_time:unow()},
+    Query = {TimerMode, 1, mg_queue_task:current_time() + Lookahead},
     {Timers, Continuation} = mg_machine:search(MachineOptions, Query, Limit),
-    Tasks = [
-        build_task_info(ID, Ts) || {Ts, ID} <- Timers
-    ],
-    {ok, get_status(Continuation), Tasks, State}.
+    {Tasks, Count} = lists:foldl(
+        fun ({Ts, ID}, {Acc, C}) -> {[build_task(ID, Ts) | Acc], C + 1} end,
+        {[], 0},
+        Timers
+    ),
+    {{get_status(Count, Limit, Continuation), Tasks}, State}.
 
--spec execute_task(options(), task_info()) ->
+-spec execute_task(options(), task()) ->
     ok.
-execute_task(#{timer_queue := TimerMode} = Options, #{payload := Payload}) ->
+execute_task(
+    #{timer_queue := TimerMode} = Options,
+    #{id := MachineID, payload := Payload, target_time := TargetTimestamp}
+) ->
     MachineOptions = machine_options(Options),
-    #{
-        machine_id := MachineID,
-        target_timestamp := TargetTimestamp
-    } = Payload,
     Status =
         case maps:get(status, Payload) of
             undefined ->
@@ -121,6 +115,8 @@ execute_task(#{timer_queue := TimerMode} = Options, #{payload := Payload}) ->
             S ->
                 S
         end,
+    % TODO
+    % Do we really need to check this _every_ other task?
     case {TimerMode, Status} of
         {waiting, {waiting, Timestamp, ReqCtx, _Timeout}} when Timestamp =:= TargetTimestamp ->
             call_timeout(Options, MachineID, Timestamp, ReqCtx);
@@ -137,7 +133,7 @@ execute_task(#{timer_queue := TimerMode} = Options, #{payload := Payload}) ->
 machine_options(#{machine := MachineOptions}) ->
     MachineOptions.
 
--spec call_timeout(options(), mg:id(), timestamp_s(), req_ctx()) ->
+-spec call_timeout(options(), mg:id(), mg_queue_task:target_time(), req_ctx()) ->
     ok.
 call_timeout(Options, MachineID, Timestamp, ReqCtx) ->
     Timeout = maps:get(processing_timeout, Options, ?DEFAULT_PROCESSING_TIMEOUT),
@@ -152,7 +148,7 @@ call_timeout(Options, MachineID, Timestamp, ReqCtx) ->
             call_retry_wait(Options, MachineID, Timestamp, ReqCtx)
     end.
 
--spec call_retry_wait(options(), mg:id(), timestamp_s(), req_ctx()) ->
+-spec call_retry_wait(options(), mg:id(), mg_queue_task:target_time(), req_ctx()) ->
     ok.
 call_retry_wait(#{timer_queue := TimerMode} = Options, MachineID, Timestamp, ReqCtx) ->
     MachineOptions = machine_options(Options),
@@ -160,9 +156,14 @@ call_retry_wait(#{timer_queue := TimerMode} = Options, MachineID, Timestamp, Req
     Deadline = mg_deadline:from_timeout(Timeout),
     ok = mg_machine:send_retry_wait(MachineOptions, MachineID, TimerMode, Timestamp, ReqCtx, Deadline).
 
--spec get_status(mg_storage:continuation()) ->
-    mg_scheduler:search_status().
-get_status(undefined) ->
+-spec get_status(non_neg_integer(), scan_limit(), mg_storage:continuation()) ->
+    mg_queue_scanner:scan_status().
+get_status(_Count, _Limit, undefined) ->
     completed;
-get_status(_Other) ->
+get_status(Count, Limit, _Other) when Count < Limit ->
+    % NOTE
+    % For some reason continuation is not `undefined` even when there are less results than asked
+    % for.
+    completed;
+get_status(_Count, _Limit, _Other) ->
     continue.

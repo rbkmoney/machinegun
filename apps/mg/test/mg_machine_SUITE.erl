@@ -200,8 +200,7 @@ stop_automaton(Pid) ->
     mg_machine:options().
 automaton_options(C) ->
     Scheduler = #{
-        registry => ?config(registry, C),
-        interval => 1000
+        scan_interval => #{continue => 1000, completed => 15000}
     },
     #{
         namespace => <<"test">>,

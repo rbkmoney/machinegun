@@ -14,64 +14,63 @@
 %%% limitations under the License.
 %%%
 
-%%% We
+%%% Queue scanner is responsible for grabbing tasks from a persistent store and distributing them
+%%% among a set of schedulers.
+%%%
+%%% Queue scanners on some set of nodes organize into a squad, so that there's (at least) one
+%%% process responsible for scanning a store, thus there's no statically designated leader, members
+%%% are free to come and go as they like.
+%%%
+%%% Distribution process DOES NOT take into account processing locality (_allocate tasks near
+%%% idling machines_), it just splits tasks uniformly among a set of known schedulers.
 
 -module(mg_queue_scanner).
 
--type milliseconds() :: pos_integer().
-
--type name() :: mg_procreg:name().
--type scan_status() :: continue | completed.
+-type scheduler_id()  :: mg_scheduler:id().
+-type scan_status()   :: continue | completed.
 -type scan_interval() :: #{scan_status() => milliseconds()}.
+-type scan_limit()    :: non_neg_integer().
+-type milliseconds()  :: pos_integer().
 
 -type options() :: #{
-    scheduler     := mg_procreg:ref(),
     queue_handler := queue_handler(),
-    interval      => scan_interval(),
+    scan_interval => scan_interval(),
+    scan_limit    => scan_limit(),
     squad_opts    => mg_gen_squad:opts(),
     pulse         => mg_pulse:handler()
 }.
 
 -export_type([options/0]).
+-export_type([queue_handler/0]).
 -export_type([scan_status/0]).
+-export_type([scan_interval/0]).
+-export_type([scan_limit/0]).
 
 %%
 
--type task_id() :: any().
--type task_payload() :: any().
+-type task() :: mg_queue_task:task().
+
 -type queue_state() :: any().
 -type queue_options() :: any().
 -type queue_handler() :: mg_utils:mod_opts(queue_options()).
 
--type task(TaskID, TaskPayload) :: #{
-    id          := TaskID,
-    payload     := TaskPayload,
-    created_at  := integer(),  % erlang monotonic time
-    target_time => genlib_time:ts(),  % unix timestamp in seconds
-    machine_id  => mg:id()
-}.
-
--type task() :: task(task_id(), task_payload()).
-
 -callback child_spec(queue_options(), atom()) -> supervisor:child_spec() | undefined.
 -callback init(queue_options()) -> {ok, queue_state()}.
--callback search_new_tasks(Options, Limit, State) -> {ok, Status, Result, State} when
+-callback search_tasks(Options, Limit, State) -> {{Status, Tasks}, State} when
     Options :: queue_options(),
-    Limit :: non_neg_integer(),
-    Result :: [task()],
-    Status :: scan_status(),
-    State :: queue_state().
+    Limit   :: scan_limit(),
+    Tasks   :: [task()],
+    Status  :: scan_status(),
+    State   :: queue_state().
 
 -optional_callbacks([child_spec/2]).
 
--export_type([task/2]).
--export_type([task/0]).
-
 %%
 
+-define(DEFAULT_LIMIT, 100).
 -define(DEFAULT_INTERVAL, #{
-    continue  => 1000, % 1 second
-    completed => 1000  % 1 second
+    continue  => 1000,  % 1 second
+    completed => 15000  % 15 seconds
 }).
 
 -define(DISCOVER_TIMEOUT , 1000).
@@ -79,6 +78,7 @@
 
 -export([child_spec/3]).
 -export([start_link/2]).
+-export([where_is/1]).
 
 -behaviour(mg_gen_squad).
 -export([init/1]).
@@ -90,29 +90,50 @@
 
 %%
 
--spec child_spec(name(), options(), _ChildID) ->
+-spec child_spec(scheduler_id(), options(), _ChildID) ->
     supervisor:child_spec().
-child_spec(Name, Options, ChildID) ->
-    #{
-        id       => ChildID,
-        start    => {?MODULE, start_link, [Name, Options]},
-        restart  => permanent,
-        type     => worker
-    }.
+child_spec(SchedulerID, Options, ChildID) ->
+    mg_utils_supervisor_wrapper:child_spec(
+        #{strategy => rest_for_one},
+        mg_utils:lists_compact([
+            handler_child_spec(Options, {ChildID, handler}),
+            #{
+                id       => {ChildID, scanner},
+                start    => {?MODULE, start_link, [SchedulerID, Options]},
+                restart  => permanent,
+                type     => worker
+            }
+        ]),
+        ChildID
+    ).
 
--spec start_link(name(), options()) ->
-    mg_utils:gen_start_ret().
-start_link(Name, Options) ->
-    SquadOpts = maps:get(squad_opts, Options, #{}),
-    mg_gen_squad:start_link(reg_name(Name), ?MODULE, {Name, Options}, SquadOpts).
+-spec handler_child_spec(options(), _ChildID) ->
+    supervisor:child_spec() | undefined.
+handler_child_spec(#{queue_handler := Handler}, ChildID) ->
+    mg_utils:apply_mod_opts_if_defined(Handler, child_spec, undefined, [ChildID]).
 
 %%
 
+-spec start_link(scheduler_id(), options()) ->
+    mg_utils:gen_start_ret().
+start_link(SchedulerID, Options) ->
+    SquadOpts = maps:get(squad_opts, Options, #{}),
+    mg_gen_squad:start_link(self_reg_name(SchedulerID), ?MODULE, {SchedulerID, Options}, SquadOpts).
+
+-spec where_is(scheduler_id()) ->
+    pid() | undefined.
+where_is(SchedulerID) ->
+    mg_utils:gen_ref_to_pid(self_ref(SchedulerID)).
+
+%%
+
+-type queue_handler_state() :: {queue_handler(), queue_state()}.
+
 -record(st, {
-    name          :: name(),
-    scheduler     :: mg_procreg:ref(),
-    queue_handler :: mg_utils:mod_opts(queue_state()),
+    scheduler_id  :: scheduler_id(),
+    queue_handler :: queue_handler_state(),
     interval      :: scan_interval(),
+    limit         :: non_neg_integer(),
     timer         :: reference() | undefined,
     pulse         :: mg_pulse:handler() | undefined
 }).
@@ -122,31 +143,34 @@ start_link(Name, Options) ->
 -type rank() :: mg_gen_squad:rank().
 -type squad() :: mg_gen_squad:squad().
 
--spec init({name(), options()}) ->
+-spec init({scheduler_id(), options()}) ->
     {ok, st()}.
-init({Name, Options}) ->
-    #st{
-        name          = Name,
-        scheduler     = maps:get(scheduler, Options),
+init({SchedulerID, Options}) ->
+    {ok, #st{
+        scheduler_id  = SchedulerID,
         queue_handler = init_handler(maps:get(queue_handler, Options)),
-        interval      = maps:merge(?DEFAULT_INTERVAL, maps:get(interval, Options, #{})),
+        interval      = maps:merge(?DEFAULT_INTERVAL, maps:get(scan_interval, Options, #{})),
+        limit         = maps:get(scan_limit, Options, ?DEFAULT_LIMIT),
         pulse         = maps:get(pulse, Options, undefined)
-    }.
+    }}.
 
 -spec discover(st()) ->
     {ok, [pid()], st()}.
-discover(St = #st{name = Name}) ->
+discover(St = #st{scheduler_id = SchedulerID}) ->
     Nodes = erlang:nodes(),
-    Pids = multicall(Nodes, mg_utils, gen_ref_to_pid, [ref(Name)], ?DISCOVER_TIMEOUT),
+    Pids = multicall(Nodes, ?MODULE, where_is, [SchedulerID], ?DISCOVER_TIMEOUT),
     {ok, lists:filter(fun erlang:is_pid/1, Pids), St}.
 
 -spec handle_rank_change(rank(), squad(), st()) ->
     {noreply, st()}.
 handle_rank_change(leader, Squad, St) ->
-    % well then start right away
+    % NOTE
+    % Starting right away.
+    % This may cause excessive storage resource usage if leader is flapping frequently enough.
+    % However, it's hard for me to devise a scenario which would cause such flapping.
     {noreply, handle_scan(Squad, St)};
 handle_rank_change(follower, _Squad, St) ->
-    % no more scanning for you today
+    % No more scanning for you today.
     {noreply, cancel_timer(St)}.
 
 -spec handle_cast(_Cast, rank(), squad(), st()) ->
@@ -176,7 +200,7 @@ handle_info(scan, leader, Squad, St) ->
 handle_info(scan, follower, _Squad, St) ->
     {noreply, St};
 handle_info(Info, Rank, _Squad, St) ->
-    ok = logger:error(
+    ok = logger:warning(
         "unexpected mg_gen_squad info received: ~p, rank ~p, state ~p",
         [Info, Rank, St]
     ),
@@ -186,25 +210,26 @@ handle_info(Info, Rank, _Squad, St) ->
 -spec handle_scan(mg_gen_squad:squad(), st()) ->
     st().
 handle_scan(Squad, St0) ->
-    ScanStartedAt = now_ms(),
-    {{ScanStatus, Tasks}, St1} = scan_queue(St0),
+    ScanStartedAt = erlang:monotonic_time(),
+    {{ScanStatus, Tasks}, St1} = scan_queue(ScanStartedAt, St0),
     ok = disseminate_tasks(Tasks, Squad, St1),
     start_timer(ScanStartedAt, ScanStatus, St1).
 
--spec scan_queue(st()) ->
+-spec scan_queue(integer(), st()) ->
     {{scan_status(), [task()]}, st()}.
-scan_queue(St = #st{queue_handler = Handler, pulse = Pulse}) ->
-    {Result, Handler1} = try
-        run_handler(Handler, search_tasks, [])
+scan_queue(ScanStartedAt, St = #st{queue_handler = HandlerState, limit = Limit}) ->
+    {Result, HandlerStateNext} = try
+        run_handler(HandlerState, search_tasks, [Limit])
     catch
         throw:({ErrorType, _Details} = Reason):Stacktrace when
             ErrorType =:= transient orelse
             ErrorType =:= timeout
         ->
-            ok = mg_pulse:handle_beat(Pulse, {search, {failed, {throw, Reason, Stacktrace}}}),
-            {{continue, []}, Handler}
+            ok = emit_scan_error_beat({throw, Reason, Stacktrace}, St),
+            {{continue, []}, HandlerState}
     end,
-    {Result, St#st{queue_handler = Handler1}}.
+    ok = emit_scan_success_beat(Result, ScanStartedAt, St),
+    {Result, St#st{queue_handler = HandlerStateNext}}.
 
 -spec disseminate_tasks([task()], squad(), st()) ->
     ok.
@@ -212,13 +237,13 @@ disseminate_tasks(Tasks, Squad, St) ->
     %% Take all known members, there's at least one which is `self()`
     Members = mg_gen_squad:members(Squad),
     %% Try to find out which schedulers are here, getting their pids
-    Schedulers = inquire_schedulers(Members, St),
+    SchedulerPids = inquire_schedulers(Members, St),
     %% Partition tasks uniformly among known schedulers
-    Partitions = mg_utils:partition(Tasks, Schedulers),
-    %% Distribute shares of tasks among schedulers
+    Partitions = mg_utils:partition(Tasks, SchedulerPids),
+    %% Distribute shares of tasks among schedulers, sending directly to pids
     maps:fold(
-        fun (Scheduler, TasksShare, _) ->
-            mg_scheduler:add_tasks(Scheduler, TasksShare)
+        fun (SchedulerPid, TasksShare, _) ->
+            mg_scheduler:distribute_tasks(SchedulerPid, TasksShare)
         end,
         ok,
         Partitions
@@ -226,9 +251,9 @@ disseminate_tasks(Tasks, Squad, St) ->
 
 -spec inquire_schedulers([pid()], st()) ->
     [pid()].
-inquire_schedulers(Members, #st{scheduler = SchedulerRef}) ->
+inquire_schedulers(Members, #st{scheduler_id = SchedulerID}) ->
     Nodes = lists:map(fun erlang:node/1, Members),
-    multicall(Nodes, mg_utils, gen_ref_to_pid, [SchedulerRef], ?INQUIRY_TIMEOUT).
+    multicall(Nodes, mg_scheduler, where_is, [SchedulerID], ?INQUIRY_TIMEOUT).
 
 %%
 
@@ -236,12 +261,19 @@ inquire_schedulers(Members, #st{scheduler = SchedulerRef}) ->
     [_Result].
 multicall(Nodes, Module, Function, Args, Timeout) ->
     {Results, BadNodes} = rpc:multicall(Nodes, Module, Function, Args, Timeout),
-    _ = logger:warning("error making rpc to non-existent nodes: ~p", [BadNodes]),
+    _ = BadNodes == [] orelse
+        logger:warning(
+            "error making rpc ~p:~p(~p) to non-existent nodes: ~p",
+            [Module, Function, Args, BadNodes]
+        ),
     lists:filter(
         fun
             ({badrpc, Reason}) ->
                 % Yeah, we don't know offending node here. Cool, huh?
-                _ = logger:warning("error making rpc: ~p", [Reason]),
+                _ = logger:warning(
+                    "error making rpc ~p:~p(~p): ~p",
+                    [Module, Function, Args, Reason]
+                ),
                 false;
             (_) ->
                 true
@@ -255,7 +287,8 @@ multicall(Nodes, Module, Function, Args, Timeout) ->
     st().
 start_timer(RefTime, Status, St = #st{interval = Interval}) ->
     Timeout = maps:get(Status, Interval),
-    St#st{timer = erlang:send_after(RefTime + Timeout, self(), scan, [{abs, true}])}.
+    FireTime = erlang:convert_time_unit(RefTime, native, millisecond) + Timeout,
+    St#st{timer = erlang:send_after(FireTime, self(), scan, [{abs, true}])}.
 
 -spec cancel_timer(st()) ->
     st().
@@ -265,34 +298,52 @@ cancel_timer(St = #st{timer = TRef}) when is_reference(TRef) ->
 cancel_timer(St) ->
     St.
 
--spec now_ms() ->
-    integer().
-now_ms() ->
-    erlang:monotonic_time(millisecond).
-
 %%
 
--spec init_handler(mg_utils:mod_opts()) ->
-    mg_utils:mod_opts().
+-spec init_handler(queue_handler()) ->
+    queue_handler_state().
 init_handler(Handler) ->
-    {Module, _} = mg_utils:separate_mod_opts(Handler),
-    InitialSt = mg_utils:apply_mod_opts(Handler, init),
-    {Module, InitialSt}.
+    {ok, InitialState} = mg_utils:apply_mod_opts(Handler, init),
+    {Handler, InitialState}.
 
--spec run_handler(mg_utils:mod_opts(T), _Function :: atom(), _Args :: list()) ->
-    {_Result, mg_utils:mod_opts(T)}.
-run_handler(Handler = {Module, _}, Function, Args) ->
-    {Result, NextSt} = mg_utils:apply_mod_opts(Handler, Function, Args),
-    {Result, {Module, NextSt}}.
+-spec run_handler(queue_handler_state(), _Function :: atom(), _Args :: list()) ->
+    {_Result, queue_handler_state()}.
+run_handler({Handler, State}, Function, Args) ->
+    {Result, NextState} = mg_utils:apply_mod_opts(Handler, Function, Args ++ [State]),
+    {Result, {Handler, NextState}}.
 
 %%
 
--spec reg_name(mg_procreg:name()) ->
+-spec self_reg_name(scheduler_id()) ->
     mg_procreg:reg_name().
-reg_name(Name) ->
-    mg_procreg:reg_name(mg_procreg_gproc, Name).
+self_reg_name(SchedulerID) ->
+    mg_procreg:reg_name(mg_procreg_gproc, {?MODULE, SchedulerID}).
 
--spec ref(mg_procreg:name()) ->
+-spec self_ref(scheduler_id()) ->
     mg_procreg:ref().
-ref(Name) ->
-    mg_procreg:ref(mg_procreg_gproc, Name).
+self_ref(SchedulerID) ->
+    mg_procreg:ref(mg_procreg_gproc, {?MODULE, SchedulerID}).
+
+%%
+
+-include_lib("mg/include/pulse.hrl").
+
+-spec emit_scan_error_beat(mg_utils:exception(), st()) ->
+    ok.
+emit_scan_error_beat(Exception, #st{pulse = Pulse, scheduler_id = {Name, NS}}) ->
+    mg_pulse:handle_beat(Pulse, #mg_scheduler_search_error{
+        namespace = NS,
+        scheduler_name = Name,
+        exception = Exception
+    }).
+
+-spec emit_scan_success_beat({scan_status(), [task()]}, integer(), st()) ->
+    ok.
+emit_scan_success_beat({ScanStatus, Tasks}, StartedAt, #st{pulse = Pulse, scheduler_id = {Name, NS}}) ->
+    mg_pulse:handle_beat(Pulse, #mg_scheduler_search_success{
+        namespace = NS,
+        scheduler_name = Name,
+        status = ScanStatus,
+        tasks = Tasks,
+        duration = erlang:monotonic_time() - StartedAt
+    }).

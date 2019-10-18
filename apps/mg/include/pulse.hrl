@@ -54,6 +54,14 @@
 
 %% Scheduler
 
+-record(mg_scheduler_search_success, {
+    namespace :: mg:ns(),
+    scheduler_name :: mg_scheduler:name(),
+    status :: mg_queue_scanner:scan_status(),
+    tasks :: [mg_queue_task:task()],
+    duration :: non_neg_integer()  % in native units
+}).
+
 -record(mg_scheduler_search_error, {
     namespace :: mg:ns(),
     scheduler_name :: mg_scheduler:name(),
