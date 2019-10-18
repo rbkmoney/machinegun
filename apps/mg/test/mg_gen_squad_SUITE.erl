@@ -78,13 +78,15 @@ squad_view_consistency_holds(_) ->
         discovery => #{initial_interval => 200, refresh_interval => 1000},
         promotion => #{min_squad_age => 3}
     },
-    Members = [Leader | Followers] = lists:map(fun (_) -> start_member(Opts) end, lists:seq(1, N)),
+    Members = lists:map(fun (_) -> start_member(Opts) end, lists:seq(1, N)),
     ok = lists:foreach(fun ({M0, M1}) -> gen_server:cast(M0, {known, [M1]}) end, neighbours(Members)),
+    LeaderView = {Leader, _, _} = ?assertReceive({_, leader, _}),
+    Followers = Members -- [Leader],
     _ = [?assertReceive({Follower, follower, _}) || Follower <- Followers],
-    SquadViews = lists:sort([gen_server:call(M, report) || M <- Members]),
-    [LeaderView | FollowerViews] = SquadViews,
+    LeaderView = gen_server:call(Leader, report),
+    FollowerViews = [gen_server:call(M, report) || M <- Followers],
+    SquadViews = [LeaderView | FollowerViews],
     _ = ?assertMatch({Leader, leader, _}, LeaderView),
-    _ = ?assertReceive(LeaderView),
     _ = [?assertMatch({_, follower, _}, V) || V <- FollowerViews],
     MembersViews = [ordsets:from_list([Pid | Ms]) || {Pid, _, Ms} <- SquadViews],
     _ = [?assertEqual(N, ordsets:size(V)) || V <- MembersViews],
@@ -102,12 +104,21 @@ squad_shrinks_consistently(_) ->
         discovery => #{initial_interval => 200, refresh_interval => 1000},
         promotion => #{min_squad_age => 3}
     },
-    Members = [Leader | Rest] = lists:map(fun (_) -> start_member(Opts) end, lists:seq(1, N)),
+    Members = lists:map(fun (_) -> start_member(Opts) end, lists:seq(1, N)),
     ok = lists:foreach(fun ({M0, M1}) -> gen_server:cast(M0, {known, [M1]}) end, neighbours(Members)),
-    _ = ?assertReceive({Leader, leader, Rest}),
-    _ = [?assertReceive({Follower, follower, _}) || Follower <- Rest],
-    _ = [?assertReceive({Follower, leader, SquadRest}) || [Follower | SquadRest] <- [Rest | tails(Rest)]],
-    _ = ?assertEqual([lists:last(Members)], lists:filter(fun erlang:is_process_alive/1, Members)),
+    {Leader, _, _} = ?assertReceive({_, leader, _}),
+    _ = [?assertReceive({Follower, follower, _}) || Follower <- Members, Follower /= Leader],
+    Exhaust = fun
+        Exhaust([LeaderLeft]) ->
+            LeaderLeft;
+        Exhaust(Ms) ->
+            {_, _, Left} = ?assertReceive({_, leader, _}),
+            _ = ?assertMatch([_], Ms -- Left),
+            _ = ?assertNoReceive(50),
+            Exhaust(Left)
+    end,
+    LeaderLast = Exhaust(Members),
+    _ = ?assertEqual([LeaderLast], lists:filter(fun erlang:is_process_alive/1, Members)),
     ok.
 
 -spec start_member(mg_gen_squad:opts()) ->
@@ -115,11 +126,6 @@ squad_shrinks_consistently(_) ->
 start_member(Opts) ->
     {ok, Pid} = mg_gen_squad:start_link(?MODULE, #{runner => self(), known => []}, Opts),
     Pid.
-
--spec tails(list(A)) ->
-    list(list(A)).
-tails([_ | T]) -> [T | tails(T)];
-tails([])      -> [].
 
 -spec neighbours([T]) ->
     [{T, T}].
