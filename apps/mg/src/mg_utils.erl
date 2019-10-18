@@ -102,7 +102,7 @@
 
 -type gen_ref() ::
       atom()
-    | {atom(), atom()}
+    | {atom(), node()}
     | {global, atom()}
     | {via, atom(), term()}
     | pid()
