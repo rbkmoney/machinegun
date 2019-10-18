@@ -11,8 +11,8 @@
     ?assertReceive(__Expr, 1000)
 ).
 
--define(assertReceive(__Expr, __Timeout), (begin
-    receive (__Expr) -> ok after (__Timeout) ->
+-define(assertReceive(__Expr, __Timeout), (fun () ->
+    receive (__Expr) = __V -> __V after (__Timeout) ->
         erlang:error({assertReceive, [
             {module, ?MODULE},
             {line, ?LINE},
@@ -20,13 +20,13 @@
             {mailbox, ?flushMailbox([])}
         ]})
     end
-end)).
+end)()).
 
 -define(assertNoReceive(),
     ?assertNoReceive(1000)
 ).
 
--define(assertNoReceive(__Timeout), (begin
+-define(assertNoReceive(__Timeout), (fun () ->
     receive __Message ->
         erlang:error({assertNoReceive, [
             {module, ?MODULE},
@@ -35,6 +35,6 @@ end)).
         ]})
     after (__Timeout) -> ok
     end
-end)).
+end)()).
 
 -endif.
