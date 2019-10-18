@@ -377,13 +377,8 @@ namespaces(YamlConfig) ->
 namespace({NameStr, NSYamlConfig}, YamlConfig) ->
     Name = ?C:utf_bin(NameStr),
     Timeout = fun(TimeoutName, Default) ->
-        ?C:time_interval(?C:conf([TimeoutName], NSYamlConfig, Default), ms)
+        timeout(TimeoutName, NSYamlConfig, Default, ms)
     end,
-    SchedulerConfig = #{
-        registry     => procreg(YamlConfig),
-        interval     => 1000,
-        limit        => <<"scheduler_tasks_total">>
-    },
     {Name, #{
         storage   => storage(Name, YamlConfig),
         processor => #{
@@ -419,27 +414,51 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             case ?C:conf([timers], NSYamlConfig, undefined) of
                 "disabled" ->
                     #{};
-                _ ->
+                SchedulerConfig ->
                     #{
-                        timers         => SchedulerConfig#{share => 2},
-                        timers_retries => SchedulerConfig#{share => 1}
+                        timers         => timer_scheduler(2, SchedulerConfig),
+                        timers_retries => timer_scheduler(1, SchedulerConfig)
                     }
             end,
             case ?C:conf([overseer], NSYamlConfig, undefined) of
                 "disabled" ->
                     #{};
-                _ ->
+                SchedulerConfig ->
                     #{
-                        overseer => SchedulerConfig#{
-                            no_task_wait => 10 * 60 * 1000,  % 10 min
-                            share        => 0
-                        }
+                        overseer => overseer_scheduler(0, SchedulerConfig)
                     }
             end
         ),
         event_sinks => [event_sink(ES) || ES <- ?C:conf([event_sinks], NSYamlConfig, [])],
         suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0))
     }}.
+
+scheduler(Share, Config) ->
+    #{
+        scan_limit    => ?C:conf([scan_limit], Config, 5000),
+        task_quota    => <<"scheduler_tasks_total">>,
+        task_share    => Share
+    }.
+
+timer_scheduler(Share, Config) ->
+    (scheduler(Share, Config))#{
+        scan_interval => #{
+            continue  => 1000,
+            completed => timeout(scan_interval, Config, "15s", ms)
+        },
+        target_cutoff => timeout(scan_interval, Config, "15s", sec)
+    }.
+
+overseer_scheduler(Share, Config) ->
+    (scheduler(Share, Config))#{
+        scan_interval => #{
+            continue  => 1000,
+            completed => 10 * 60 * 1000
+        }
+    }.
+
+timeout(Name, Config, Default, Unit) ->
+    ?C:time_interval(?C:conf([Name], Config, Default), Unit).
 
 event_sink_ns(YamlConfig) ->
     #{

@@ -105,8 +105,10 @@ namespaces:
             url: http://localhost:8022/processor
             pool_size: 50
             http_keep_alive_timeout: 10s
-        timers: disabled
-        overseer: enabled
+        timers:
+            scan_interval: 30s
+            scan_limit: 1000
+        overseer: disabled
 snowflake_machine_id: 1
 # memory storage backend
 storage:
