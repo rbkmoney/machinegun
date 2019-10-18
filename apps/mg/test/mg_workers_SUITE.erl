@@ -104,9 +104,22 @@ end_per_suite(C) ->
 -spec init_per_group(group_name(), config()) ->
     config().
 init_per_group(with_gproc, C) ->
-    [{registry, mg_procreg_gproc} | C];
+    [
+        {registry, mg_procreg_gproc},
+        {runner_retry_strategy, #{
+            noproc  => genlib_retry:linear(3, 100),
+            default => finish
+        }} | C
+    ];
 init_per_group(with_consuela, C) ->
-    [{registry, {mg_procreg_consuela, #{}}} | C];
+    [
+        {registry, {mg_procreg_consuela, #{}}},
+        {runner_retry_strategy, #{
+            noproc     => genlib_retry:linear(3, 100),
+            noregistry => genlib_retry:linear(3, 500),
+            default    => finish
+        }} | C
+    ];
 init_per_group(base, C) ->
     C.
 
@@ -218,6 +231,8 @@ wait_worker_unload(WorkerPid, Timeout) ->
         Timeout -> erlang:error(unload_timed_out)
     end.
 
+-type retry_strategy() :: #{_Reason => genlib_retry:strategy()}.
+
 -spec stress_test(config()) ->
     _.
 stress_test(C) ->
@@ -225,21 +240,27 @@ stress_test(C) ->
     RunnersCount  = 80 * Concurrency,
     WorkersCount  = 4 * Concurrency,
     UnloadTimeout = 100, % чтобы машины выгружались в процессе теста
+    RetryStrategy = ?config(runner_retry_strategy, C),
+    Job = fun (ManagerOptions, _N, RetrySt) ->
+        stress_test_do_test_call(ManagerOptions, WorkersCount, RetrySt)
+    end,
     ok = run_load_test(#{
         duration        => 10 * 1000,
         runners         => RunnersCount,
-        job             => fun (ManagerOptions, _N) -> stress_test_do_test_call(ManagerOptions, WorkersCount) end,
+        job             => {Job, RetryStrategy},
         manager_options => workers_options(UnloadTimeout, #{link_pid=>erlang:self()}, C)
     }).
 
--spec stress_test_do_test_call(mg_workers_manager:options(), pos_integer()) ->
+-spec stress_test_do_test_call(mg_workers_manager:options(), pos_integer(), retry_strategy()) ->
     ok.
-stress_test_do_test_call(Options, WorkersCount) ->
+stress_test_do_test_call(Options, WorkersCount, RetrySt) ->
     ID = rand:uniform(WorkersCount),
     % проверим, что отвечают действительно на наш запрос
     Call = {hello, erlang:make_ref()},
-    Call = mg_workers_manager:call(Options, ID, Call, ?req_ctx, mg_deadline:default()),
-    ok.
+    case mg_workers_manager:call(Options, ID, Call, ?req_ctx, mg_deadline:default()) of
+        Call            -> ok;
+        {error, Reason} -> maybe_retry(Reason, RetrySt)
+    end.
 
 -spec manager_contention_test(config()) ->
     _.
@@ -247,52 +268,76 @@ manager_contention_test(C) ->
     Concurrency   = erlang:system_info(schedulers),
     RunnersCount  = 80 * Concurrency,
     UnloadTimeout = 100, % чтобы машины выгружались в процессе теста
+    RetryStrategy = ?config(runner_retry_strategy, C),
     ok = run_load_test(#{
         duration        => 10 * 1000,
         runners         => RunnersCount,
-        job             => fun manager_contention_test_call/2,
+        job             => {fun manager_contention_test_call/3, RetryStrategy},
         manager_options => workers_options(UnloadTimeout, 10 * Concurrency, #{link_pid=>erlang:self()}, C)
     }).
 
--spec manager_contention_test_call(mg_workers_manager:options(), pos_integer()) ->
+-spec manager_contention_test_call(mg_workers_manager:options(), pos_integer(), retry_strategy()) ->
     ok.
-manager_contention_test_call(Options, N) ->
+manager_contention_test_call(Options, N, RetrySt) ->
     % проверим, что отвечают действительно на наш запрос
     Call = {hello, erlang:make_ref()},
     case mg_workers_manager:call(Options, N, Call, ?req_ctx, mg_deadline:default()) of
-        Call ->
-            ok;
-        {error, {transient, _}} ->
-            ok
+        Call                           -> ok;
+        {error, {transient, overload}} -> ok;
+        {error, Reason}                -> maybe_retry(Reason, RetrySt)
+    end.
+
+-spec maybe_retry(_Reason, retry_strategy()) ->
+    {ok, retry_strategy()}.
+maybe_retry(Reason, RetrySt) ->
+    Class = case Reason of
+        {transient, noproc}   -> noproc;
+        {transient, normal}   -> noproc;
+        {transient, shutdown} -> noproc;
+        {transient, {registry_unavailable, timeout}} -> noregistry;
+        _ -> default
+    end,
+    {ID, Retry} = case maps:find(Class, RetrySt) of
+        {ok, R} -> {Class, R};
+        error   -> {default, maps:get(default, RetrySt)}
+    end,
+    case genlib_retry:next_step(Retry) of
+        {wait, Timeout, RetryLeft} ->
+            _ = ct:pal(warning, "~p retrying error: ~p, retries left: ~p", [self(), Reason, RetryLeft]),
+            ok = timer:sleep(Timeout),
+            {ok, RetrySt#{ID := RetryLeft}};
+        finish ->
+            _ = ct:pal(warning, "~p unretryable error: ~p", [self(), Reason]),
+            erlang:error(Reason)
     end.
 
 -type load_options() :: #{
     duration        := timeout(),
     workers         := pos_integer(),
     runners         := pos_integer(),
-    job             := load_job_fun(),
+    job             := {load_job_fun(), _InitialState},
     manager_options := mg_workers_manager:options()
 }.
 
--type load_job_fun() :: fun((load_options(), _N :: pos_integer()) -> _).
+-type load_job_fun() :: fun((_N :: pos_integer()) -> no_return()).
 
 -spec run_load_test(load_options()) ->
     _.
 run_load_test(#{
     duration        := Duration,
     runners         := RunnersCount,
-    job             := Job,
+    job             := {Job, St0},
     manager_options := ManagerOptions = #{worker_options := WorkerOptions}
 } = Options) ->
     _ = ct:pal("running load test ~p", [Options]),
     Ts = now_diff(0),
     WorkersPid = start_workers(ManagerOptions),
     _ = ct:pal("===> [~p] start workers done", [now_diff(Ts)]),
-    RunnersPid = [stress_test_start_process(Job, ManagerOptions, N) || N <- lists:seq(1, RunnersCount)],
+    RunnerPids = [stress_test_start_process(ManagerOptions, Job, N, St0) || N <- lists:seq(1, RunnersCount)],
     _ = ct:pal("===> [~p] start runners done", [now_diff(Ts)]),
     ok = timer:sleep(Duration),
     _ = ct:pal("===> [~p] sleep done", [now_diff(Ts)]),
-    ok = mg_ct_helper:stop_wait_all(RunnersPid, shutdown, RunnersCount * 10),
+    ok = mg_ct_helper:stop_wait_all(RunnerPids, shutdown, RunnersCount * 10),
     _ = ct:pal("===> [~p] stop runners done", [now_diff(Ts)]),
     ok = wait_machines_unload(maps:get(unload_timeout, WorkerOptions, 60 * 1000)),
     ok = stop_workers(WorkersPid),
@@ -303,16 +348,18 @@ run_load_test(#{
 now_diff(Ts) ->
     erlang:system_time(millisecond) - Ts.
 
--spec stress_test_start_process(load_job_fun(), mg_workers_manager:options(), _N :: pos_integer()) ->
+-spec stress_test_start_process(mg_workers_manager:options(), load_job_fun(), _N :: pos_integer(), _State) ->
     pid().
-stress_test_start_process(Job, ManagerOptions, N) ->
-    erlang:spawn_link(fun() -> stress_test_process(Job, ManagerOptions, N) end).
-
--spec stress_test_process(load_job_fun(), mg_workers_manager:options(), _N :: pos_integer()) ->
-    no_return().
-stress_test_process(Job, ManagerOptions, N) ->
-    _ = Job(ManagerOptions, N),
-    stress_test_process(Job, ManagerOptions, N).
+stress_test_start_process(Options, Job, N, State) ->
+    Runner = fun Runner (St) ->
+        case Job(Options, N, St) of
+            {ok, St1} -> Runner(St1);
+            ok        -> Runner(St)
+        end
+    end,
+    erlang:spawn_link(fun () ->
+        Runner(State)
+    end).
 
 -spec workers_options(non_neg_integer(), worker_params(), config()) ->
     mg_workers_manager:options().
