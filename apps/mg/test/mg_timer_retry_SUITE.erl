@@ -27,7 +27,7 @@
 
 %% tests
 -export([transient_fail/1]).
--export([permament_fail/1]).
+-export([permanent_fail/1]).
 
 %% mg_machine
 -behaviour(mg_machine).
@@ -58,7 +58,7 @@ groups() ->
     [
        {all, [parallel, shuffle], [
            transient_fail,
-           permament_fail
+           permanent_fail
        ]}
     ].
 
@@ -114,10 +114,10 @@ transient_fail(_C) ->
 
     ok = stop_automaton(Pid).
 
--spec permament_fail(config()) ->
+-spec permanent_fail(config()) ->
     _.
-permament_fail(_C) ->
-    BinTestName = genlib:to_binary(permament_fail),
+permanent_fail(_C) ->
+    BinTestName = genlib:to_binary(permanent_fail),
     NS = BinTestName,
     ID = BinTestName,
     Options = automaton_options(NS, {intervals, [1000]}),
