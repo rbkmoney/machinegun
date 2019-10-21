@@ -102,7 +102,7 @@ consuela(YamlConfig) ->
                 }
             }}
         ] end),
-        conf_with([consuela, registry], YamlConfig, fun (RegConfig) -> [
+        conf_with([consuela, registry], YamlConfig, [], fun (RegConfig) -> [
             {registry, #{
                 nodename  => ?C:conf([nodename], RegConfig, ?C:hostname()),
                 namespace => ?C:utf_bin(?C:conf([namespace], RegConfig, "mg")),
