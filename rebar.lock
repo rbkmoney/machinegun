@@ -41,7 +41,7 @@
  {<<"kafka_protocol">>,{pkg,<<"kafka_protocol">>,<<"2.2.7">>},1},
  {<<"logger_logstash_formatter">>,
   {git,"git@github.com:rbkmoney/logger_logstash_formatter.git",
-       {ref,"54c371215e3d73b2a868bc6375e523f95e826fe3"}},
+       {ref,"288287980a972d363359fcc2f935a99385a32b93"}},
   0},
  {<<"metrics">>,{pkg,<<"metrics">>,<<"1.0.1">>},2},
  {<<"mg_proto">>,
