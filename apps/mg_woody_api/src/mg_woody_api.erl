@@ -68,7 +68,7 @@
 }.
 -type config_element() ::
       {woody_server   , woody_server()                 }
-    | {health_checkers, [erl_health:checker()]         }
+    | {health_check   , erl_health:check()             }
     | {namespaces     , #{mg:ns() => events_machines()}}
     | {event_sink_ns  , event_sink_ns()                }
 .
@@ -141,8 +141,9 @@ event_sink_ns_child_spec(Config, ChildID) ->
 -spec woody_server_child_spec(config(), atom()) ->
     supervisor:child_spec().
 woody_server_child_spec(Config, ChildID) ->
-    WoodyConfig    = proplists:get_value(woody_server   , Config),
-    HealthCheckers = proplists:get_value(health_checkers, Config),
+    WoodyConfig = proplists:get_value(woody_server, Config),
+    HealthCheck = proplists:get_value(health_check, Config, #{}),
+    HealthRoute = erl_health_handle:get_route(enable_health_logging(HealthCheck)),
     woody_server:child_spec(
         ChildID,
         #{
@@ -158,11 +159,15 @@ woody_server_child_spec(Config, ChildID) ->
                 mg_woody_api_automaton :handler(api_automaton_options (Config)),
                 mg_woody_api_event_sink:handler(api_event_sink_options(Config))
             ],
-            additional_routes => [
-                erl_health_handle:get_route(HealthCheckers)
-            ]
+            additional_routes => [HealthRoute]
         }
     ).
+
+-spec enable_health_logging(erl_health:check()) ->
+    erl_health:check().
+enable_health_logging(Check) ->
+    EvHandler = {erl_health_event_handler, []},
+    maps:map(fun (_, V = {_, _, _}) -> #{runner => V, event_handler => EvHandler} end, Check).
 
 -spec woody_metrics_handler_childspec() ->
     supervisor:child_spec().

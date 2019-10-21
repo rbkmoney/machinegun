@@ -16,7 +16,7 @@
  {<<"crc32cer">>,{pkg,<<"crc32cer">>,<<"0.1.3">>},2},
  {<<"erl_health">>,
   {git,"https://github.com/rbkmoney/erlang-health.git",
-       {ref,"2575c7b63d82a92de54d2d27e504413675e64811"}},
+       {ref,"3a80bb43a93eb0e7a940d19912d9e35c2cbe91f9"}},
   0},
  {<<"folsom">>,
   {git,"git@github.com:folsom-project/folsom.git",

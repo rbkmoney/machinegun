@@ -257,7 +257,7 @@ hackney(_YamlConfig) ->
 mg_woody_api(YamlConfig) ->
     [
         {woody_server   , woody_server   (YamlConfig)},
-        {health_checkers, health_checkers(YamlConfig)},
+        {health_check   , health_check   (YamlConfig)},
         {quotas         , quotas         (YamlConfig)},
         {namespaces     , namespaces     (YamlConfig)},
         {event_sink_ns  , event_sink_ns  (YamlConfig)}
@@ -285,19 +285,26 @@ woody_server(YamlConfig) ->
         })
     }.
 
-health_checkers(YamlConfig) ->
-    conf_with([limits, disk], YamlConfig, [], fun (DiskConfig) ->
-        [{erl_health, disk, [?C:conf([path], DiskConfig, "/"), percent(?C:conf([value], DiskConfig))]}]
-    end) ++
-    relative_memory_limit(YamlConfig, [], fun ({TypeStr, Limit}) ->
-        Type =
-            case TypeStr of
-                "total"   -> total;
-                "cgroups" -> cg_memory
-            end,
-        [{erl_health, Type, [Limit]}]
-    end) ++
-    [{erl_health, service, [service_name(YamlConfig)]}].
+health_check(YamlConfig) ->
+    lists:foldl(
+        fun maps:merge/2,
+        #{},
+        [
+            conf_with([limits, disk], YamlConfig, #{}, fun (DiskConfig) ->
+                DiskPath = ?C:conf([path], DiskConfig, "/"),
+                #{disk => {erl_health, disk, [DiskPath, percent(?C:conf([value], DiskConfig))]}}
+            end),
+            relative_memory_limit(YamlConfig, #{}, fun ({TypeStr, Limit}) ->
+                Type =
+                    case TypeStr of
+                        "total"   -> total;
+                        "cgroups" -> cg_memory
+                    end,
+                #{memory => {erl_health, Type, [Limit]}}
+            end),
+            #{service => {erl_health, service, [service_name(YamlConfig)]}}
+        ]
+    ).
 
 quotas(YamlConfig) ->
     SchedulerLimit = ?C:conf([limits, scheduler_tasks], YamlConfig, 5000),
@@ -536,9 +543,6 @@ conf_if(YamlConfigPath, YamlConfig, Value) ->
         true  -> Value;
         false -> []
     end.
-
-conf_with(YamlConfigPath, YamlConfig, Fun) ->
-    Fun(?C:conf(YamlConfigPath, YamlConfig)).
 
 conf_with(YamlConfigPath, YamlConfig, Default, FunOrVal) ->
     case ?C:conf(YamlConfigPath, YamlConfig, undefined) of
