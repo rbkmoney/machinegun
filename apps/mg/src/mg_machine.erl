@@ -87,7 +87,6 @@
 -export([repair              /5]).
 -export([call                /5]).
 -export([send_timeout        /5]).
--export([send_retry_wait     /6]).
 -export([resume_interrupted  /4]).
 -export([fail                /4]).
 -export([fail                /5]).
@@ -306,16 +305,6 @@ call(Options, ID, Call, ReqCtx, Deadline) ->
 send_timeout(Options, ID, Timestamp, ReqCtx, Deadline) ->
     call_(Options, ID, {timeout, Timestamp}, ReqCtx, Deadline).
 
--spec send_retry_wait(Options, ID, Status, Timestamp, ReqCtx, Deadline) -> _Resp | throws() when
-    Options :: options(),
-    ID :: mg:id(),
-    Status :: waiting | retrying,
-    Timestamp :: genlib_time:ts(),
-    ReqCtx :: request_context(),
-    Deadline :: deadline().
-send_retry_wait(Options, ID, Status, Timestamp, ReqCtx, Deadline) ->
-    call_(Options, ID, {retry_wait, {Status, Timestamp}}, ReqCtx, Deadline).
-
 -spec resume_interrupted(options(), mg:id(), request_context(), deadline()) ->
     _Resp | throws().
 resume_interrupted(Options, ID, ReqCtx, Deadline) ->
@@ -508,16 +497,8 @@ handle_call(Call, CallContext, ReqCtx, Deadline, S=#{storage_machine:=StorageMac
             when Ts0 =:= Ts1 ->
             {noreply, process(timeout, PCtx, ReqCtx, Deadline, S)};
         {{timeout, _}, #{status:=_}} ->
-            {{reply, {ok, ok}}, S};
+            {{reply, {ok, ok}}, S}
 
-        {{retry_wait, {waiting, Ts0}}, #{status:={waiting, Ts1, _, _}}}
-            when Ts0 =:= Ts1 ->
-            {noreply, reschedule(PCtx, ReqCtx, Deadline, S)};
-        {{retry_wait, {retrying, Ts0}}, #{status:={retrying, Ts1, _, _, _}}}
-            when Ts0 =:= Ts1 ->
-            {noreply, reschedule(PCtx, ReqCtx, Deadline, S)};
-        {{retry_wait, _}, #{status:=_}} ->
-            {{reply, {error, {logic, invalid_reschedule_request}}}, S}
     end.
 
 -spec handle_unload(state()) ->
@@ -749,6 +730,8 @@ process_with_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State, RetryStrategy
             ok = do_reply_action({reply, {error, Reason}}, ProcessingCtx),
             NewState = handle_transient_exception(Reason, State),
             case process_retry_next_step(RetryStrategy) of
+                ignore when Impact == timeout ->
+                    reschedule(ReqCtx, undefined, NewState);
                 ignore ->
                     NewState;
                 finish ->
@@ -860,11 +843,14 @@ call_processor(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
 processor_child_spec(Options) ->
     mg_utils:apply_mod_opts_if_defined(get_options(processor, Options), processor_child_spec, undefined).
 
--spec reschedule(ProcessingCtx, ReqCtx, Deadline, state()) -> state() when
-    ProcessingCtx :: processing_context(),
+-spec reschedule(ReqCtx, Deadline, state()) -> state() when
     ReqCtx :: request_context(),
     Deadline :: deadline().
-reschedule(ProcessingCtx, ReqCtx, Deadline, State) ->
+reschedule(_, _, #{storage_machine := unknown} = State) ->
+    % После попыток обработать вызов пришли в неопредленное состояние.
+    % На этом уровне больше ничего не сделать, пусть разбираются выше.
+    State;
+reschedule(ReqCtx, Deadline, State) ->
     #{id:= ID, options := Options, namespace := NS} = State,
     try
         {ok, NewState, Target, Attempt} = reschedule_unsafe(ReqCtx, Deadline, State),
@@ -876,7 +862,6 @@ reschedule(ProcessingCtx, ReqCtx, Deadline, State) ->
             target_timestamp = Target,
             attempt = Attempt
         }),
-        ok = do_reply_action({reply, ok}, ProcessingCtx),
         NewState
     catch
         throw:(Reason=({ErrorType, _Details})):ST when ?can_be_retried(ErrorType) ->
@@ -888,12 +873,7 @@ reschedule(ProcessingCtx, ReqCtx, Deadline, State) ->
                 deadline = Deadline,
                 exception = Exception
             }),
-            ok = do_reply_action({reply, {error, Reason}}, ProcessingCtx),
-            handle_transient_exception(Reason, State);
-        Class:Reason:ST ->
-            Exception = {Class, Reason, ST},
-            ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
-            handle_exception(Exception, ReqCtx, Deadline, State)
+            handle_transient_exception(Reason, State)
     end.
 
 -spec reschedule_unsafe(ReqCtx, Deadline, state()) -> Result when

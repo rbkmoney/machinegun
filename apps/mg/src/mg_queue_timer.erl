@@ -138,23 +138,7 @@ machine_options(#{machine := MachineOptions}) ->
 call_timeout(Options, MachineID, Timestamp, ReqCtx) ->
     Timeout = maps:get(processing_timeout, Options, ?DEFAULT_PROCESSING_TIMEOUT),
     Deadline = mg_deadline:from_timeout(Timeout),
-    try
-        mg_machine:send_timeout(machine_options(Options), MachineID, Timestamp, ReqCtx, Deadline)
-    catch
-        throw:{ErrorType, _Details} when
-            ErrorType =:= transient orelse
-            ErrorType =:= timeout
-        ->
-            call_retry_wait(Options, MachineID, Timestamp, ReqCtx)
-    end.
-
--spec call_retry_wait(options(), mg:id(), mg_queue_task:target_time(), req_ctx()) ->
-    ok.
-call_retry_wait(#{timer_queue := TimerMode} = Options, MachineID, Timestamp, ReqCtx) ->
-    MachineOptions = machine_options(Options),
-    Timeout = maps:get(reschedule_timeout, Options, ?DEFAULT_RESCHEDULE_TIMEOUT),
-    Deadline = mg_deadline:from_timeout(Timeout),
-    ok = mg_machine:send_retry_wait(MachineOptions, MachineID, TimerMode, Timestamp, ReqCtx, Deadline).
+    ok = mg_machine:send_timeout(machine_options(Options), MachineID, Timestamp, ReqCtx, Deadline).
 
 -spec get_status(non_neg_integer(), scan_limit(), mg_storage:continuation()) ->
     mg_queue_scanner:scan_status().
