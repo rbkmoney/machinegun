@@ -43,9 +43,10 @@
 
 -type envelope() :: {'$squad', payload()}.
 
+-type pulse() :: mg_gen_squad_pulse:handler().
 -type opts() :: #{
     heartbeat => mg_gen_squad:heartbeat_opts(),
-    pulse     => mg_gen_squad_pulse:handler()
+    pulse     => pulse()
 }.
 
 -export_type([message/0]).
@@ -68,13 +69,13 @@ update_members(Members, HeartPid) ->
 
 %%
 
--spec broadcast(message(), pid(), [pid()], [pid()], _Ctx, mg_gen_squad_pulse:handler()) ->
+-spec broadcast(message(), pid(), [pid()], [pid()], _Ctx, pulse() | undefined) ->
     ok.
 broadcast(Message, Self, Members, Recepients, Ctx, Pulse) ->
     Payload = mk_payload(Message, Self, Members),
     Sender = fun (Pid) -> gen_server:cast(Pid, {'$squad', Payload}) end,
     _ = lists:foreach(Sender, Recepients),
-    _ = mg_gen_squad_pulse:handle_beat(Pulse, {{broadcast, Payload}, {sent, Recepients, Ctx}}),
+    _ = beat({{broadcast, Payload}, {sent, Recepients, Ctx}}, Pulse),
     ok.
 
 -spec mk_payload(message(), _Self :: pid(), _Members :: [pid()]) ->
@@ -176,11 +177,13 @@ monitor_self(St = #st{self = Self}) ->
 
 %%
 
--spec beat(mg_gen_squad_pulse:beat(), st() | opts()) ->
+-spec beat(mg_gen_squad_pulse:beat(), st() | opts() | pulse() | undefined) ->
     _.
 beat(Beat, #st{opts = Opts}) ->
     beat(Beat, Opts);
-beat(Beat, #{pulse := Handler}) ->
+beat(Beat, Opts = #{}) ->
+    beat(Beat, maps:get(pulse, Opts, undefined));
+beat(Beat, Handler) when Handler /= undefined ->
     mg_gen_squad_pulse:handle_beat(Handler, Beat);
-beat(_Beat, _St) ->
+beat(_Beat, undefined) ->
     ok.
