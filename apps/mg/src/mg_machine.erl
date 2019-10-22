@@ -900,37 +900,21 @@ reschedule(ProcessingCtx, ReqCtx, Deadline, State) ->
     ReqCtx :: request_context(),
     Deadline :: deadline(),
     Result :: {ok, state(), genlib_time:ts(), non_neg_integer()}.
-reschedule_unsafe(ReqCtx, Deadline, State) ->
-    #{storage_machine := #{status := MachineStatus}} = State,
-    reschedule_unsafe(MachineStatus, ReqCtx, Deadline, State).
-
--spec reschedule_unsafe(MachineStatus, ReqCtx, Deadline, state()) -> Result when
-    ReqCtx :: request_context(),
-    Deadline :: deadline(),
-    MachineStatus :: machine_regular_status(),
-    Result :: {ok, state(), genlib_time:ts(), non_neg_integer()}.
-reschedule_unsafe({waiting, _, _, _}, ReqCtx, Deadline, State) ->
-    #{storage_machine := StorageMachine, options := Options} = State,
-    RetryStrategy = retry_strategy(timers, Options, undefined),
-    case genlib_retry:next_step(RetryStrategy) of
-        {wait, Timeout, _NewRetryStrategy} ->
-            Now = genlib_time:unow(),
-            Target = get_schedule_target(Timeout),
-            NewStatus = {retrying, Target, Now, NewAttempt = 0, ReqCtx},
-            NewStorageMachine = StorageMachine#{status => NewStatus},
-            {ok, transit_state(ReqCtx, Deadline, NewStorageMachine, State), Target, NewAttempt};
-        finish ->
-            throw({permanent, timer_retries_exhausted})
-    end;
-reschedule_unsafe({retrying, _, Start, Attempt, _}, ReqCtx, Deadline, State) ->
-    #{storage_machine := StorageMachine, options := Options} = State,
+reschedule_unsafe(ReqCtx, Deadline, State = #{
+    storage_machine := StorageMachine = #{status := Status},
+    options         := Options
+}) ->
+    {Start, Attempt} = case Status of
+        {waiting, _, _, _}     -> {genlib_time:unow(), 0};
+        {retrying, _, S, A, _} -> {S, A + 1}
+    end,
     RetryStrategy = retry_strategy(timers, Options, undefined, Start, Attempt),
     case genlib_retry:next_step(RetryStrategy) of
         {wait, Timeout, _NewRetryStrategy} ->
             Target = get_schedule_target(Timeout),
-            NewStatus = {retrying, Target, Start, NewAttempt = Attempt + 1, ReqCtx},
+            NewStatus = {retrying, Target, Start, Attempt, ReqCtx},
             NewStorageMachine = StorageMachine#{status => NewStatus},
-            {ok, transit_state(ReqCtx, Deadline, NewStorageMachine, State), Target, NewAttempt};
+            {ok, transit_state(ReqCtx, Deadline, NewStorageMachine, State), Target, Attempt};
         finish ->
             throw({permanent, timer_retries_exhausted})
     end.
