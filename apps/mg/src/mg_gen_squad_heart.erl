@@ -68,17 +68,14 @@ update_members(Members, HeartPid) ->
 
 %%
 
--spec broadcast(message(), pid(), [pid()], [pid()], _Ctx, opts()) ->
+-spec broadcast(message(), pid(), [pid()], [pid()], _Ctx, mg_gen_squad_pulse:handler()) ->
     ok.
-broadcast(Message, Self, Members, Recepients, Ctx, Opts) ->
+broadcast(Message, Self, Members, Recepients, Ctx, Pulse) ->
     Payload = mk_payload(Message, Self, Members),
-    lists:foreach(
-        fun (Pid) ->
-            _ = gen_server:cast(Pid, {'$squad', Payload}),
-            _ = beat({{broadcast, Payload}, {sent, Pid, Ctx}}, Opts)
-        end,
-        Recepients
-    ).
+    Sender = fun (Pid) -> gen_server:cast(Pid, {'$squad', Payload}) end,
+    _ = lists:foreach(Sender, Recepients),
+    _ = mg_gen_squad_pulse:handle_beat(Pulse, {{broadcast, Payload}, {sent, Recepients, Ctx}}),
+    ok.
 
 -spec mk_payload(message(), _Self :: pid(), _Members :: [pid()]) ->
     payload().
@@ -165,8 +162,9 @@ defer_heartbeat(St = #st{timer = undefined, opts = #{heartbeat := HeartbeatOpts}
 
 -spec handle_heartbeat(reference(), st()) ->
     st().
-handle_heartbeat(TRef, St = #st{timer = TRef, self = Self, members = Members}) ->
-    ok = broadcast(howdy, Self, Members, Members, heartbeat, St#st.opts),
+handle_heartbeat(TRef, St = #st{timer = TRef, self = Self, members = Members, opts = Opts}) ->
+    Pulse = maps:get(pulse, Opts, undefined),
+    ok = broadcast(howdy, Self, Members, Members, heartbeat, Pulse),
     ok = gen_server:cast(Self, St#st.feedback),
     St#st{timer = undefined}.
 
