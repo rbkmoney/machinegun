@@ -14,11 +14,6 @@
 %%% limitations under the License.
 %%%
 
-%%% Squad behaviour
-%%%
-%%% A squad is a group of processes (usually distributed over a cluster of
-%%% nodes) with dynamic membership which choose a leader among themselves
-%%% in a simple yet only eventually consistent manner.
 -module(mg_gen_squad_pulse).
 
 -callback handle_beat(_Options, beat()) ->
