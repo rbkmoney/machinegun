@@ -470,7 +470,7 @@ handle_call(Call, CallContext, ReqCtx, Deadline, S=#{storage_machine:=StorageMac
         {{start, _   }, #{status:=_}} -> {{reply, {error, {logic, machine_already_exist}}}, S};
 
         % fail
-        {{fail, Exception}, _} -> {{reply, ok}, handle_exception(Exception, undefined, ReqCtx, Deadline, S)};
+        {{fail, Exception}, _} -> {{reply, ok}, handle_exception(Exception, ReqCtx, Deadline, S)};
 
         % сюда мы не должны попадать если машина не падала во время обработки запроса
         % (когда мы переходили в стейт processing)
@@ -720,7 +720,7 @@ process(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
     catch
         Class:Reason:ST ->
             ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
-            handle_exception({Class, Reason, ST}, Impact, ReqCtx, Deadline, State)
+            handle_exception({Class, Reason, ST}, ReqCtx, Deadline, State)
     end.
 
 -spec process_with_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State, Retry) -> State when
@@ -786,12 +786,11 @@ handle_transient_exception({storage_unavailable, _Details}, State) ->
 handle_transient_exception(_Reason, State) ->
     State.
 
--spec handle_exception(Exception, Impact, ReqCtx, Deadline, state()) -> state() when
+-spec handle_exception(Exception, ReqCtx, Deadline, state()) -> state() when
     Exception :: mg_utils:exception(),
-    Impact :: processor_impact() | undefined,
     ReqCtx :: request_context(),
     Deadline :: deadline().
-handle_exception(Exception, Impact, ReqCtx, Deadline, State) ->
+handle_exception(Exception, ReqCtx, Deadline, State) ->
     #{options := Options, id := ID, namespace := NS, storage_machine := StorageMachine} = State,
     ok = emit_beat(Options, #mg_machine_lifecycle_failed{
         namespace = NS,
@@ -800,12 +799,12 @@ handle_exception(Exception, Impact, ReqCtx, Deadline, State) ->
         deadline = Deadline,
         exception = Exception
     }),
-    case {Impact, StorageMachine} of
-        {_, nonexistent} ->
+    case StorageMachine of
+        nonexistent ->
             State;
-        {_, #{status := {error, _, _}}} ->
+        #{status := {error, _, _}} ->
             State;
-        {_, #{status := OldStatus}} ->
+        #{status := OldStatus} ->
             NewStorageMachine = StorageMachine#{status => {error, Exception, OldStatus}},
             transit_state(ReqCtx, Deadline, NewStorageMachine, State)
     end.
@@ -894,7 +893,7 @@ reschedule(ProcessingCtx, ReqCtx, Deadline, State) ->
         Class:Reason:ST ->
             Exception = {Class, Reason, ST},
             ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
-            handle_exception(Exception, undefined, ReqCtx, Deadline, State)
+            handle_exception(Exception, ReqCtx, Deadline, State)
     end.
 
 -spec reschedule_unsafe(ReqCtx, Deadline, state()) -> Result when
