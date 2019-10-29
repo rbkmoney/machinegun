@@ -107,6 +107,9 @@ namespaces:
             http_keep_alive_timeout: 10s
         timers: disabled
         overseer: enabled
+        # maximum number of events that will be stored inside of machine state
+        # must be non negative integer, default is 0
+        max_internal_events: 5
 snowflake_machine_id: 1
 # memory storage backend
 storage:

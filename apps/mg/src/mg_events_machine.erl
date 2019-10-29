@@ -111,7 +111,8 @@
     machines                   => mg_machine:options(),
     pulse                      => mg_pulse:handler(),
     event_sinks                => [mg_events_sink:handler()],
-    default_processing_timeout => timeout()
+    default_processing_timeout => timeout(),
+    max_internal_events        => non_neg_integer()
 }.
 -type storage_options() :: mg_utils:mod_opts(map()).  % like mg_storage:options() except `name`
 
@@ -217,6 +218,7 @@ ref2id(Options, {tag, Tag}) ->
 %% mg_processor handler
 %%
 -type state() :: #{
+    events          => [mg_events:event()],
     events_range    => mg_events:events_range(),
     aux_state       => aux_state(),
     delayed_actions => delayed_actions(),
@@ -290,7 +292,7 @@ process_machine_(Options, ID, {Subj, {Args, HRange}}, _, ReqCtx, Deadline, State
         end,
     NewState = add_delayed_actions(DelayedActions, State),
     {noreply, {continue, Reply}, NewState};
-process_machine_(Options, ID, continuation, PCtx, ReqCtx, Deadline, State = #{delayed_actions := DelayedActions}) ->
+process_machine_(Options, ID, continuation, PCtx, ReqCtx, Deadline, State0 = #{delayed_actions := DelayedActions}) ->
     % отложенные действия (эвент синк, тэг)
     %
     % надо понимать, что:
@@ -304,9 +306,10 @@ process_machine_(Options, ID, continuation, PCtx, ReqCtx, Deadline, State = #{de
     %
     % действия должны обязательно произойти в конце концов (таймаута нет), либо машина должна упасть
     #{add_tag := Tag, add_events := Events} = DelayedActions,
+    {State, ExternalEvents} = split_events(Options, State0, Events),
     ok = push_events_to_event_sinks(Options, ID, ReqCtx, Deadline, Events),
     ok =                    add_tag(Options, ID, ReqCtx, Deadline, Tag   ),
-    ok =               store_events(Options, ID, ReqCtx, Events),
+    ok =               store_events(Options, ID, ReqCtx, ExternalEvents),
 
     ReplyAction =
         case PCtx of
@@ -344,6 +347,34 @@ add_tag(Options, ID, ReqCtx, Deadline, Tag) ->
                             tags_machine_options(Options), Tag, ID, ReqCtx, Deadline
                         )
             end
+    end.
+
+-spec split_events(options(), state(), [mg_events:event()]) ->
+    {state(), [mg_events:event()]}.
+split_events(_Options, State, []) ->
+    {State, []};
+split_events(Options, State = #{events_range := undefined}, NewEvents) ->
+    do_split_events(Options, State, NewEvents);
+split_events(_Options, State = #{events := Events, events_range := {_, Last}}, NewEvents)
+    when Last > erlang:length(Events) ->
+    % этот кейс разрешает сразу две ситуации:
+    %   - для старых машин, когда уже были сохранены события отдельно от состояния
+    %   - для новых машин, когда значение max_internal_events было увеличено после того,
+    %     как события были сохранены отдельно из-за превышения лимита
+    {State, NewEvents};
+split_events(Options, State, NewEvents) ->
+    do_split_events(Options, State, NewEvents).
+
+-spec do_split_events(options(), state(), [mg_events:event()]) ->
+    {state(), [mg_events:event()]}.
+do_split_events(#{max_internal_events := Max}, State = #{events := Events}, NewEvents) ->
+    N = erlang:max(0, Max - erlang:length(Events)),
+    case N >= erlang:length(NewEvents) of
+        true ->
+            {State#{events => Events ++ NewEvents}, []};
+        false ->
+            {Internal, External} = lists:split(N, NewEvents),
+            {State#{events => Events ++ Internal}, External}
     end.
 
 -spec store_events(options(), mg:id(), request_context(), [mg_events:event()]) ->
@@ -526,9 +557,15 @@ get_option(Subj, Options) ->
 -spec machine(options(), mg:id(), state(), [mg_events:event()], mg_events:history_range()) ->
     machine().
 machine(Options = #{namespace := Namespace}, ID, State, ExtraEvents, HRange) ->
-    #{events_range := EventsRange, aux_state := AuxState, timer := Timer} = State,
+    #{
+        events       := Events,
+        events_range := EventsRange,
+        aux_state    := AuxState,
+        timer        := Timer
+    } = State,
     RangeGetters = [RG ||
         RG = {Range, _Getter} <- [
+            {compute_events_range(Events)      , extra_event_getter(Events)},
             {compute_events_range(ExtraEvents) , extra_event_getter(ExtraEvents)},
             {EventsRange                       , storage_event_getter(Options, ID)}
         ],
@@ -648,12 +685,19 @@ compute_events_range([#{id := ID} | _] = Events) ->
 -spec state_to_opaque(state()) ->
     mg_storage:opaque().
 state_to_opaque(State) ->
-    #{events_range := EventsRange, aux_state := AuxState, delayed_actions := DelayedActions, timer := Timer} = State,
-    [3,
+    #{
+        events          := Events,
+        events_range    := EventsRange,
+        aux_state       := AuxState,
+        delayed_actions := DelayedActions,
+        timer           := Timer
+    } = State,
+    [4,
         mg_events:events_range_to_opaque(EventsRange),
         mg_events:content_to_opaque(AuxState),
         mg_events:maybe_to_opaque(DelayedActions, fun delayed_actions_to_opaque/1),
-        mg_events:maybe_to_opaque(Timer, fun int_timer_to_opaque/1)
+        mg_events:maybe_to_opaque(Timer, fun int_timer_to_opaque/1),
+        mg_events:events_to_opaques(Events)
     ].
 
 -spec opaque_to_state(mg_storage:opaque()) ->
@@ -661,6 +705,7 @@ state_to_opaque(State) ->
 %% при создании есть момент (continuation) когда ещё нет стейта
 opaque_to_state(null) ->
     #{
+        events          => [],
         events_range    => undefined,
         aux_state       => {#{}, <<>>},
         delayed_actions => undefined,
@@ -668,6 +713,7 @@ opaque_to_state(null) ->
     };
 opaque_to_state([1, EventsRange, AuxState, DelayedActions]) ->
     #{
+        events          => [],
         events_range    => mg_events:opaque_to_events_range(EventsRange),
         aux_state       => {#{}, AuxState},
         delayed_actions => mg_events:maybe_from_opaque(DelayedActions, fun opaque_to_delayed_actions/1),
@@ -680,6 +726,15 @@ opaque_to_state([2, EventsRange, AuxState, DelayedActions, Timer]) ->
     };
 opaque_to_state([3, EventsRange, AuxState, DelayedActions, Timer]) ->
     #{
+        events          => [],
+        events_range    => mg_events:opaque_to_events_range(EventsRange),
+        aux_state       => mg_events:opaque_to_content(AuxState),
+        delayed_actions => mg_events:maybe_from_opaque(DelayedActions, fun opaque_to_delayed_actions/1),
+        timer           => mg_events:maybe_from_opaque(Timer, fun opaque_to_int_timer/1)
+    };
+opaque_to_state([4, EventsRange, AuxState, DelayedActions, Timer, Events]) ->
+    #{
+        events          => mg_events:opaques_to_events(Events),
         events_range    => mg_events:opaque_to_events_range(EventsRange),
         aux_state       => mg_events:opaque_to_content(AuxState),
         delayed_actions => mg_events:maybe_from_opaque(DelayedActions, fun opaque_to_delayed_actions/1),

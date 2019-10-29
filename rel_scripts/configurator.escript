@@ -445,7 +445,8 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             end
         ),
         event_sinks => [event_sink(ES) || ES <- ?C:conf([event_sinks], NSYamlConfig, [])],
-        suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0))
+        suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0)),
+        max_internal_events => ?C:conf([max_internal_events], NSYamlConfig, 0)
     }}.
 
 event_sink_ns(YamlConfig) ->

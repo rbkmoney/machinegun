@@ -205,7 +205,8 @@ events_machine_options(Options, NS) ->
             {?MODULE, Options}
         ],
         pulse => ?MODULE,
-        default_processing_timeout => timer:seconds(10)
+        default_processing_timeout => timer:seconds(10),
+        max_internal_events => 5
     }.
 
 -spec start(options(), mg:ns(), mg:id(), term()) ->

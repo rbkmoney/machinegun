@@ -59,7 +59,8 @@
     retries                    := mg_machine:retry_opt(),
     schedulers                 := mg_machine:schedulers_opt(),
     default_processing_timeout := timeout(),
-    suicide_probability        => mg_machine:suicide_probability()
+    suicide_probability        => mg_machine:suicide_probability(),
+    max_internal_events        := non_neg_integer()
 }.
 -type event_sink_ns() :: #{
     default_processing_timeout := timeout(),
@@ -210,7 +211,8 @@ events_machine_options(NS, Config) ->
         events_storage             => EventsStorage,
         event_sinks                => EventSinks,
         pulse                      => pulse(),
-        default_processing_timeout => maps:get(default_processing_timeout, NSConfigs)
+        default_processing_timeout => maps:get(default_processing_timeout, NSConfigs),
+        max_internal_events        => maps:get(max_internal_events, NSConfigs, 0)
     }.
 
 -spec event_sink_options(mg_events_sink:handler(), config()) ->
