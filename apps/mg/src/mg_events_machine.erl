@@ -112,7 +112,7 @@
     pulse                      => mg_pulse:handler(),
     event_sinks                => [mg_events_sink:handler()],
     default_processing_timeout => timeout(),
-    max_internal_events        => non_neg_integer()
+    event_stash_size           => non_neg_integer()
 }.
 -type storage_options() :: mg_utils:mod_opts(map()).  % like mg_storage:options() except `name`
 
@@ -359,7 +359,7 @@ split_events(_Options, State = #{events := Events, events_range := {_, Last}}, N
     when Last > erlang:length(Events) ->
     % этот кейс разрешает сразу две ситуации:
     %   - для старых машин, когда уже были сохранены события отдельно от состояния
-    %   - для новых машин, когда значение max_internal_events было увеличено после того,
+    %   - для новых машин, когда значение event_stash_size было увеличено после того,
     %     как события были сохранены отдельно из-за превышения лимита
     {State, NewEvents};
 split_events(Options, State, NewEvents) ->
@@ -367,7 +367,7 @@ split_events(Options, State, NewEvents) ->
 
 -spec do_split_events(options(), state(), [mg_events:event()]) ->
     {state(), [mg_events:event()]}.
-do_split_events(#{max_internal_events := Max}, State = #{events := Events}, NewEvents) ->
+do_split_events(#{event_stash_size := Max}, State = #{events := Events}, NewEvents) ->
     N = erlang:max(0, Max - erlang:length(Events)),
     case N >= erlang:length(NewEvents) of
         true ->

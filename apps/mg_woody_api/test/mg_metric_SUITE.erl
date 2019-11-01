@@ -119,7 +119,7 @@ mg_woody_api_config(_C) ->
                     storage   => {exponential, {max_total_timeout, 1000}, 1, 10},
                     timers    => {exponential, {max_total_timeout, 1000}, 1, 10}
                 },
-                max_internal_events => 5
+                event_stash_size => 5
             }
         }},
         {event_sink_ns, #{

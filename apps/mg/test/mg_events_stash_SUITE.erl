@@ -46,7 +46,7 @@
 -type options() :: #{
     processor := processor(),
     namespace := mg:ns(),
-    max_internal_events := non_neg_integer()
+    event_stash_size := non_neg_integer()
 }.
 
 -type test_name() :: atom().
@@ -91,14 +91,14 @@ stash_enlarge_test(_C) ->
             end
         }},
         namespace => <<"event_stash_test">>,
-        max_internal_events => 3
+        event_stash_size => 3
     },
     Pid0 = start_automaton(Options0),
     ok = start(Options0, MachineID, [1, 2]),
     ok = call(Options0, MachineID, {emit, [3, 4]}),
     ?assertEqual([1, 2, 3, 4], get_history(Options0, MachineID)),
     ok = stop_automaton(Pid0),
-    Options1 = Options0#{max_internal_events => 5},
+    Options1 = Options0#{event_stash_size => 5},
     Pid1 = start_automaton(Options1),
     ok = call(Options1, MachineID, {emit, [5, 6]}),
     ?assertEqual([1, 2, 3, 4, 5, 6], get_history(Options1, MachineID)),
@@ -118,14 +118,14 @@ stash_shrink_test(_C) ->
             end
         }},
         namespace => <<"event_stash_test">>,
-        max_internal_events => 5
+        event_stash_size => 5
     },
     Pid0 = start_automaton(Options0),
     ok = start(Options0, MachineID, [1, 2]),
     ok = call(Options0, MachineID, {emit, [3, 4, 5]}),
     ?assertEqual([1, 2, 3, 4, 5], get_history(Options0, MachineID)),
     ok = stop_automaton(Pid0),
-    Options1 = Options0#{max_internal_events => 3},
+    Options1 = Options0#{event_stash_size => 3},
     Pid1 = start_automaton(Options1),
     ok = call(Options1, MachineID, {emit, [6, 7]}),
     ?assertEqual([1, 2, 3, 4, 5, 6, 7], get_history(Options1, MachineID)),
@@ -241,7 +241,7 @@ events_machine_options(Options) ->
         ],
         pulse => ?MODULE,
         default_processing_timeout => timer:seconds(10),
-        max_internal_events => maps:get(max_internal_events, Options)
+        event_stash_size => maps:get(event_stash_size, Options)
     }.
 
 %%
