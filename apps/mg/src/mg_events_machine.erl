@@ -351,30 +351,15 @@ add_tag(Options, ID, ReqCtx, Deadline, Tag) ->
 
 -spec split_events(options(), state(), [mg_events:event()]) ->
     {state(), [mg_events:event()]}.
-split_events(_Options, State, []) ->
-    {State, []};
-split_events(Options, State = #{events_range := undefined}, NewEvents) ->
-    do_split_events(Options, State, NewEvents);
-split_events(_Options, State = #{events := Events, events_range := {_, Last}}, NewEvents)
-    when Last > erlang:length(Events) ->
-    % этот кейс разрешает сразу две ситуации:
-    %   - для старых машин, когда уже были сохранены события отдельно от состояния
-    %   - для новых машин, когда значение event_stash_size было увеличено после того,
-    %     как события были сохранены отдельно из-за превышения лимита
-    {State, NewEvents};
-split_events(Options, State, NewEvents) ->
-    do_split_events(Options, State, NewEvents).
-
--spec do_split_events(options(), state(), [mg_events:event()]) ->
-    {state(), [mg_events:event()]}.
-do_split_events(#{event_stash_size := Max}, State = #{events := Events}, NewEvents) ->
-    N = erlang:max(0, Max - erlang:length(Events)),
-    case N >= erlang:length(NewEvents) of
+split_events(#{event_stash_size := Max}, State = #{events := EventStash}, NewEvents) ->
+    Events = EventStash ++ NewEvents,
+    Len = erlang:length(Events),
+    case Len > Max of
         true ->
-            {State#{events => Events ++ NewEvents}, []};
+            {External, Internal} = lists:split(Len - Max, Events),
+            {State#{events => Internal}, External};
         false ->
-            {Internal, External} = lists:split(N, NewEvents),
-            {State#{events => Events ++ Internal}, External}
+            {State#{events => Events}, []}
     end.
 
 -spec store_events(options(), mg:id(), request_context(), [mg_events:event()]) ->
