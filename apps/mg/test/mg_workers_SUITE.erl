@@ -295,6 +295,7 @@ maybe_retry(Reason, RetrySt) ->
         {transient, normal}   -> noproc;
         {transient, shutdown} -> noproc;
         {transient, {registry_unavailable, timeout}} -> noregistry;
+        {transient, {registry_unavailable, {unknown,timeout}}} -> noregistry;
         _ -> default
     end,
     {ID, Retry} = case maps:find(Class, RetrySt) of
