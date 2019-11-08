@@ -285,6 +285,10 @@ dequeue_task(Rank = {TargetTime, _}, {TaskSet, Queue, Counter}) ->
         TargetTime ->
             {{ok, Task}, {TaskSetLeft, QueueLeft, Counter}};
         _Different ->
+            % NOTE
+            % It's not the same task we have in the task set. Well just consider it outdated because
+            % the queue can hold stale tasks, in contrast to the task set which can hold only single
+            % task with some ID that is considered actual.
             {outdated, {TaskSet, QueueLeft, Counter}}
     end.
 
