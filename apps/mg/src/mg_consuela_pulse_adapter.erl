@@ -23,7 +23,6 @@
     | registry_server
     | session_keeper
     | zombie_reaper
-    | leader
     | discovery_server
     | presence_session
     .
@@ -34,7 +33,6 @@
         | {registry_server  , consuela_registry_server:beat()}
         | {session_keeper   , consuela_session_keeper:beat()}
         | {zombie_reaper    , consuela_zombie_reaper:beat()}
-        | {leader           , consuela_leader_supervisor:beat()}
         | {discovery_server , consuela_discovery_server:beat()}
         | {presence_session , consuela_presence_session:beat()}
     }.
@@ -58,7 +56,6 @@ pulse(Producer, Handler) ->
     (consuela_registry_server:beat()   , {registry_server  , mg_pulse:handler()}) -> _;
     (consuela_session_keeper:beat()    , {session_keeper   , mg_pulse:handler()}) -> _;
     (consuela_zombie_reaper:beat()     , {zombie_reaper    , mg_pulse:handler()}) -> _;
-    (consuela_leader_supervisor:beat() , {leader           , mg_pulse:handler()}) -> _;
     (consuela_discovery_server:beat()  , {discovery_server , mg_pulse:handler()}) -> _;
     (consuela_presence_session:beat()  , {presence_session , mg_pulse:handler()}) -> _.
 

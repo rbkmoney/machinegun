@@ -222,32 +222,6 @@ format_consuela_beat({zombie_reaper, {{zombie, {Rid, Name, Pid}}, Status}}) ->
     end,
     {Level, Format, [{registration_id, Rid} | Context]};
 
-%% leader sup
-format_consuela_beat({leader, {{leader, Name}, Status}}) ->
-    case Status of
-        {started, Pid} ->
-            {info, {"leader ~p started", [Name]}, [
-                {mg_pulse_event_id, consuela_leader_sup_started},
-                {leader_pid, Pid}
-            ]};
-        {down, Pid, Reason} ->
-            {info, {"leader ~p looks down from here", [Name]}, [
-                {mg_pulse_event_id, consuela_leader_sup_down},
-                {leader_pid, Pid},
-                {error, [{reason, genlib:print(Reason, 500)}]}
-            ]}
-    end;
-format_consuela_beat({leader, {{warden, Name}, {started, Pid}}}) ->
-    {info, {"leader ~p warden started", [Name]}, [
-        {mg_pulse_event_id, consuela_leader_warden_started},
-        {warden_pid, Pid}
-    ]};
-format_consuela_beat({leader, {{warden, Name}, {stopped, Pid}}}) ->
-    {info, {"leader ~p warden stopped", [Name]}, [
-        {mg_pulse_event_id, consuela_leader_warden_stopped},
-        {warden_pid, Pid}
-    ]};
-
 %% discovery
 format_consuela_beat({discovery_server, {discovery, Status}}) ->
     case Status of
