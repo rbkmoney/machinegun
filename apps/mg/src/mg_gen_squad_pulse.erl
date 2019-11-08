@@ -24,9 +24,9 @@
     {rank,
         {changed, mg_gen_squad:rank()}} |
     {{member, pid()},
-        {added, mg_gen_squad:member()} |
+        added |
         {refreshed, mg_gen_squad:member()} |
-        {removed, _Reason :: lost | {down, _}}} |
+        {removed, mg_gen_squad:member(), _Reason :: lost | {down, _}}} |
     {{broadcast, mg_gen_squad_heart:payload()},
         {sent, [pid()], _Ctx} |
         received} |

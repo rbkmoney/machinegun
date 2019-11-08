@@ -430,7 +430,7 @@ add_members(Members, Squad, Opts) ->
     squad().
 add_member(Pid, Squad, Opts) when not is_map_key(Pid, Squad) ->
     Member = watch_member(Pid, Opts),
-    _ = beat({{member, Pid}, {added, Member}}, Opts),
+    _ = beat({{member, Pid}, added}, Opts),
     Squad#{Pid => Member};
 add_member(_Pid, Squad, _Opts) ->
     Squad.
@@ -446,9 +446,9 @@ refresh_member(_Pid, Squad, _Opts) ->
 
 -spec remove_member(pid(), member(), _Reason :: lost | {down, _}, squad(), opts()) ->
     squad().
-remove_member(Pid, Member0, Reason, Squad, Opts) when is_map_key(Pid, Squad) ->
-    _ = unwatch_member(Member0, Opts),
-    _ = beat({{member, Pid}, {removed, Reason}}, Opts),
+remove_member(Pid, Member, Reason, Squad, Opts) when is_map_key(Pid, Squad) ->
+    _ = unwatch_member(Member, Opts),
+    _ = beat({{member, Pid}, {removed, Member, Reason}}, Opts),
     maps:remove(Pid, Squad);
 remove_member(_Pid, _Member, _Reason, Squad, _Opts) ->
     Squad.
