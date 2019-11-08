@@ -26,6 +26,7 @@
 -type beat() ::
       mg_pulse:beat()
     | mg_consuela_pulse_adapter:beat()
+    | mg_queue_scanner:beat()
     | #woody_event{}
     | #woody_request_handle_error{}.
 

@@ -46,6 +46,9 @@
 -export_type([scan_interval/0]).
 -export_type([scan_limit/0]).
 
+-type beat() :: {squad, {atom(), mg_gen_squad_pulse:beat(), _ExtraMeta}}.
+-export_type([beat/0]).
+
 %%
 
 -type task() :: mg_queue_task:task().
@@ -88,6 +91,9 @@
 -export([handle_cast/4]).
 -export([handle_info/4]).
 
+-behaviour(mg_gen_squad_pulse).
+-export([handle_beat/2]).
+
 %%
 
 -spec child_spec(scheduler_id(), options(), _ChildID) ->
@@ -117,7 +123,13 @@ handler_child_spec(#{queue_handler := Handler}, ChildID) ->
 -spec start_link(scheduler_id(), options()) ->
     mg_utils:gen_start_ret().
 start_link(SchedulerID, Options) ->
-    SquadOpts = maps:get(squad_opts, Options, #{}),
+    SquadOpts = maps:merge(
+        maps:get(squad_opts, Options, #{}),
+        maps:map(
+            fun (pulse, Pulse) -> {?MODULE, {Pulse, SchedulerID}} end,
+            maps:with([pulse], Options)
+        )
+    ),
     mg_gen_squad:start_link(self_reg_name(SchedulerID), ?MODULE, {SchedulerID, Options}, SquadOpts).
 
 -spec where_is(scheduler_id()) ->
@@ -347,3 +359,12 @@ emit_scan_success_beat({ScanStatus, Tasks}, StartedAt, #st{pulse = Pulse, schedu
         tasks = Tasks,
         duration = erlang:monotonic_time() - StartedAt
     }).
+
+%%
+
+-spec handle_beat(mg_gen_squad_pulse:beat(), {mg_pulse:handler(), scheduler_id()}) ->
+    _.
+handle_beat(Beat, {Handler, {Name, NS}}) ->
+    Producer = queue_scanner,
+    Extra = [{scheduler_type, Name}, {namespace, NS}],
+    mg_pulse:handle_beat(Handler, {squad, {Producer, Beat, Extra}}).
