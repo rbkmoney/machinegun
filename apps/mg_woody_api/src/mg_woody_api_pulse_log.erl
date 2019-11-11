@@ -403,7 +403,7 @@ format_unexpected_beat({Type, Message}, Meta) ->
 add_event_id(EventID, Meta) ->
     add_meta({mg_pulse_event_id, EventID}, Meta).
 
--spec add_meta(meta(), meta()) ->
+-spec add_meta(meta() | {atom(), any()}, meta()) ->
     meta().
 add_meta(Meta, MetaAcc) when is_list(Meta) ->
     Meta ++ MetaAcc;
