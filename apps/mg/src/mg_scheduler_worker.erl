@@ -24,8 +24,8 @@
 -export([start_task/2]).
 
 %% Internal API
--export([do_start_task/4]).
--export([execute/4]).
+-export([do_start_task/3]).
+-export([execute/3]).
 
 -callback execute_task(Options :: any(), task()) -> ok.
 
@@ -72,26 +72,23 @@ start_link(SchedulerID, Options) ->
 -spec start_task(scheduler_id(), task()) ->
     {ok, pid(), monitor()} | {error, _}.
 start_task(SchedulerID, Task) ->
-    Starter = erlang:make_ref(),
-    case supervisor:start_child(self_ref(SchedulerID), [Task, Starter]) of
+    case supervisor:start_child(self_ref(SchedulerID), [Task]) of
         {ok, Pid} ->
             Monitor = erlang:monitor(process, Pid),
-            _ = Pid ! Starter,
             {ok, Pid, Monitor};
         Error ->
             Error
     end.
 
--spec do_start_task(scheduler_id(), options(), task(), reference()) ->
+-spec do_start_task(scheduler_id(), options(), task()) ->
     mg_utils:gen_start_ret().
-do_start_task(SchedulerID, Options, Task, Starter) ->
-    proc_lib:start_link(?MODULE, execute, [SchedulerID, Options, Task, Starter]).
+do_start_task(SchedulerID, Options, Task) ->
+    proc_lib:start_link(?MODULE, execute, [SchedulerID, Options, Task]).
 
--spec execute(scheduler_id(), options(), task(), reference()) ->
+-spec execute(scheduler_id(), options(), task()) ->
     ok.
-execute(SchedulerID, #{task_handler := Handler} = Options, Task, Starter) ->
+execute(SchedulerID, #{task_handler := Handler} = Options, Task) ->
     ok = proc_lib:init_ack({ok, self()}),
-    ok = receive Starter -> ok end,
     Start = erlang:monotonic_time(),
     ok = emit_start_beat(Task, SchedulerID, Options),
     ok = try
