@@ -362,9 +362,9 @@ emit_scan_success_beat({ScanStatus, Tasks}, StartedAt, #st{pulse = Pulse, schedu
 
 %%
 
--spec handle_beat(mg_gen_squad_pulse:beat(), {mg_pulse:handler(), scheduler_id()}) ->
+-spec handle_beat({mg_pulse:handler(), scheduler_id()}, mg_gen_squad_pulse:beat()) ->
     _.
-handle_beat(Beat, {Handler, {Name, NS}}) ->
+handle_beat({Handler, {Name, NS}}, Beat) ->
     Producer = queue_scanner,
     Extra = [{scheduler_type, Name}, {namespace, NS}],
     mg_pulse:handle_beat(Handler, {squad, {Producer, Beat, Extra}}).
