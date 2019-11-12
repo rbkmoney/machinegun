@@ -196,15 +196,15 @@ split_search_result(SearchResult, IndexLimit) ->
 
 -spec generate_search_response({search_result(), search_result()}) ->
     {search_result(), continuation()}.
-generate_search_response({[], _Remains}) ->
-    {[], undefined};
-generate_search_response({SearchResult, _Remains}) ->
-    {SearchResult, generate_continuation(SearchResult)}.
+generate_search_response({SearchResult, []}) ->
+    {SearchResult, undefined};
+generate_search_response({SearchResult, Remains}) ->
+    {SearchResult, generate_continuation(Remains)}.
 
 -spec generate_continuation(search_result()) ->
     continuation().
-generate_continuation(Result) ->
-    term_to_binary(lists:last(Result)).
+generate_continuation([StoppedAt | _]) ->
+    term_to_binary(StoppedAt).
 
 -spec do_put(mg_storage:key(), context(), mg_storage:value(), [mg_storage:index_update()], state()) ->
     {context(), state()}.
@@ -371,8 +371,8 @@ try_fail(_Prob, _Border, _Error) ->
     list().
 start_from_elem(_, [])  ->
     [];
-start_from_elem(Item, [Item|Tail]) ->
-    Tail;
+start_from_elem(Item, [Item|_] = Items) ->
+    Items;
 start_from_elem(Item, [_|Tail]) ->
     start_from_elem(Item, Tail).
 
