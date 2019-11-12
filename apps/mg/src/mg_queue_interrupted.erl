@@ -75,8 +75,6 @@ search_tasks(Options, Limit, #state{continuation = Continuation} = State) ->
         }
         || ID <- IDs
     ],
-    % TODO
-    % Check results are partial?
     {{get_status(NewContinuation), Tasks}, State#state{continuation = NewContinuation}}.
 
 -spec execute_task(options(), task()) ->
