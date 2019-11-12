@@ -46,7 +46,7 @@
 }.
 
 -record(state, {
-    pending :: search()
+    pending :: search() | undefined
 }).
 
 -opaque state() :: #state{}.
