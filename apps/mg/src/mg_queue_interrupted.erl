@@ -82,15 +82,9 @@ search_tasks(Options, Limit, #state{continuation = Continuation} = State) ->
 -spec execute_task(options(), task()) ->
     ok.
 execute_task(Options, #{machine_id := MachineID}) ->
-    MachineOptions = machine_options(Options),
-    case mg_machine:get_status(MachineOptions, MachineID) of
-        {processing, ReqCtx} ->
-            Timeout = maps:get(processing_timeout, Options, ?DEFAULT_PROCESSING_TIMEOUT),
-            Deadline = mg_deadline:from_timeout(Timeout),
-            ok = mg_machine:resume_interrupted(MachineOptions, MachineID, ReqCtx, Deadline);
-        _Other ->
-            ok
-    end.
+    Timeout = maps:get(processing_timeout, Options, ?DEFAULT_PROCESSING_TIMEOUT),
+    Deadline = mg_deadline:from_timeout(Timeout),
+    ok = mg_machine:resume_interrupted(machine_options(Options), MachineID, Deadline).
 
 %% Internals
 

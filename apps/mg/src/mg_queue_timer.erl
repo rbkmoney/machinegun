@@ -17,7 +17,6 @@
 -module(mg_queue_timer).
 
 -export([build_task/2]).
--export([build_task/3]).
 
 -behaviour(mg_queue_scanner).
 -export([init/1]).
@@ -49,14 +48,11 @@
 %% Internal types
 
 -type task_id() :: mg:id().
--type task_payload() :: #{
-    status := undefined | mg_machine:machine_regular_status()
-}.
+-type task_payload() :: #{}.
 -type target_time() :: mg_queue_task:target_time().
 -type task() :: mg_queue_task:task(task_id(), task_payload()).
 -type scan_status() :: mg_queue_scanner:scan_status().
 -type scan_limit() :: mg_queue_scanner:scan_limit().
--type req_ctx() :: mg:request_context().
 
 -define(DEFAULT_PROCESSING_TIMEOUT, 60000).  % 1 minute
 -define(DEFAULT_RESCHEDULE_TIMEOUT, 60000).  % 1 minute
@@ -73,15 +69,10 @@ init(_Options) ->
 -spec build_task(mg:id(), target_time()) ->
     task().
 build_task(ID, Timestamp) ->
-    build_task(ID, Timestamp, undefined).
-
--spec build_task(mg:id(), target_time(), undefined | mg_machine:machine_regular_status()) ->
-    task().
-build_task(ID, Timestamp, Status) ->
     CreateTime = erlang:monotonic_time(),
     #{
         id          => ID,
-        payload     => #{status => Status},
+        payload     => #{},
         created_at  => CreateTime,
         target_time => Timestamp,
         machine_id  => ID
@@ -103,42 +94,27 @@ search_tasks(#{timer_queue := TimerMode} = Options, Limit, State) ->
 
 -spec execute_task(options(), task()) ->
     ok.
-execute_task(
-    #{timer_queue := TimerMode} = Options,
-    #{id := MachineID, payload := Payload, target_time := TargetTimestamp}
-) ->
-    MachineOptions = machine_options(Options),
-    Status =
-        case maps:get(status, Payload) of
-            undefined ->
-                mg_machine:get_status(MachineOptions, MachineID);
-            S ->
-                S
-        end,
-    % TODO
-    % Do we really need to check this _every_ other task?
-    case {TimerMode, Status} of
-        {waiting, {waiting, Timestamp, ReqCtx, _Timeout}} when Timestamp =:= TargetTimestamp ->
-            call_timeout(Options, MachineID, Timestamp, ReqCtx);
-        {retrying, {retrying, Timestamp, _Start, _Attempt, ReqCtx}} when Timestamp =:= TargetTimestamp ->
-            call_timeout(Options, MachineID, Timestamp, ReqCtx);
-        _Other ->
-            ok
-    end.
+execute_task(Options, #{id := MachineID, target_time := Timestamp}) ->
+    call_timeout(Options, MachineID, Timestamp).
 
 %% Internals
+
+-spec call_timeout(options(), mg:id(), mg_queue_task:target_time()) ->
+    ok.
+call_timeout(Options, MachineID, Timestamp) ->
+    %% NOTE
+    %% Machine identified by `MachineID` may in fact already have processed timeout signal so that
+    % the task we're in is already stale, and we could shed it by reading the machine status. But we
+    % expect that most tasks are not stale yet and most of the time machine is online, therefore
+    % it's very likely that reading machine status is just unnecessary.
+    Timeout = maps:get(processing_timeout, Options, ?DEFAULT_PROCESSING_TIMEOUT),
+    Deadline = mg_deadline:from_timeout(Timeout),
+    ok = mg_machine:send_timeout(machine_options(Options), MachineID, Timestamp, Deadline).
 
 -spec machine_options(options()) ->
     mg_machine:options().
 machine_options(#{machine := MachineOptions}) ->
     MachineOptions.
-
--spec call_timeout(options(), mg:id(), mg_queue_task:target_time(), req_ctx()) ->
-    ok.
-call_timeout(Options, MachineID, Timestamp, ReqCtx) ->
-    Timeout = maps:get(processing_timeout, Options, ?DEFAULT_PROCESSING_TIMEOUT),
-    Deadline = mg_deadline:from_timeout(Timeout),
-    ok = mg_machine:send_timeout(machine_options(Options), MachineID, Timestamp, ReqCtx, Deadline).
 
 -spec get_status(non_neg_integer(), scan_limit(), mg_storage:continuation()) ->
     mg_queue_scanner:scan_status().

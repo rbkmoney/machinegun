@@ -86,8 +86,8 @@
 -export([simple_repair       /4]).
 -export([repair              /5]).
 -export([call                /5]).
--export([send_timeout        /5]).
--export([resume_interrupted  /4]).
+-export([send_timeout        /4]).
+-export([resume_interrupted  /3]).
 -export([fail                /4]).
 -export([fail                /5]).
 -export([get                 /2]).
@@ -190,6 +190,7 @@
 -type processor_retry() :: mg_retry:strategy() | undefined.
 
 -type deadline() :: mg_deadline:deadline().
+-type maybe(T) :: T | undefined.
 
 -callback processor_child_spec(_Options) ->
     supervisor:child_spec() | undefined.
@@ -300,15 +301,15 @@ repair(Options, ID, Args, ReqCtx, Deadline) ->
 call(Options, ID, Call, ReqCtx, Deadline) ->
     call_(Options, ID, {call, Call}, ReqCtx, Deadline).
 
--spec send_timeout(options(), mg:id(), genlib_time:ts(), request_context(), deadline()) ->
+-spec send_timeout(options(), mg:id(), genlib_time:ts(), deadline()) ->
     _Resp | throws().
-send_timeout(Options, ID, Timestamp, ReqCtx, Deadline) ->
-    call_(Options, ID, {timeout, Timestamp}, ReqCtx, Deadline).
+send_timeout(Options, ID, Timestamp, Deadline) ->
+    call_(Options, ID, {timeout, Timestamp}, undefined, Deadline).
 
--spec resume_interrupted(options(), mg:id(), request_context(), deadline()) ->
+-spec resume_interrupted(options(), mg:id(), deadline()) ->
     _Resp | throws().
-resume_interrupted(Options, ID, ReqCtx, Deadline) ->
-    call_(Options, ID, resume_interrupted_one, ReqCtx, Deadline).
+resume_interrupted(Options, ID, Deadline) ->
+    call_(Options, ID, resume_interrupted_one, undefined, Deadline).
 
 -spec fail(options(), mg:id(), request_context(), deadline()) ->
     ok.
@@ -397,7 +398,7 @@ reply(#{call_context := CallContext}, Reply) ->
 all_statuses() ->
     [sleeping, waiting, retrying, processing, failed].
 
--spec call_(options(), mg:id(), _, request_context(), deadline()) ->
+-spec call_(options(), mg:id(), _, maybe(request_context()), deadline()) ->
     _ | no_return().
 call_(Options, ID, Call, ReqCtx, Deadline) ->
     mg_utils:throw_if_error(mg_workers_manager:call(manager_options(Options), ID, Call, ReqCtx, Deadline)).
@@ -441,7 +442,7 @@ handle_load(ID, Options, ReqCtx) ->
     ),
     load_storage_machine(ReqCtx, State2).
 
--spec handle_call(_Call, mg_worker:call_context(), request_context(), deadline(), state()) ->
+-spec handle_call(_Call, mg_worker:call_context(), maybe(request_context()), deadline(), state()) ->
     {{reply, _Resp} | noreply, state()}.
 handle_call(Call, CallContext, ReqCtx, Deadline, S=#{storage_machine:=StorageMachine}) ->
     PCtx = new_processing_context(CallContext),
@@ -490,12 +491,12 @@ handle_call(Call, CallContext, ReqCtx, Deadline, S=#{storage_machine:=StorageMac
         {simple_repair, #{status:=_              }} -> {{reply, {error, {logic, machine_already_working}}}, S};
 
         % timers
-        {{timeout, Ts0}, #{status:={waiting, Ts1, _, _}}}
+        {{timeout, Ts0}, #{status:={waiting, Ts1, InitialReqCtx, _}}}
             when Ts0 =:= Ts1 ->
-            {noreply, process(timeout, PCtx, ReqCtx, Deadline, S)};
-        {{timeout, Ts0}, #{status:={retrying, Ts1, _, _, _}}}
+            {noreply, process(timeout, PCtx, InitialReqCtx, Deadline, S)};
+        {{timeout, Ts0}, #{status:={retrying, Ts1, _, _, InitialReqCtx}}}
             when Ts0 =:= Ts1 ->
-            {noreply, process(timeout, PCtx, ReqCtx, Deadline, S)};
+            {noreply, process(timeout, PCtx, InitialReqCtx, Deadline, S)};
         {{timeout, _}, #{status:=_}} ->
             {{reply, {ok, ok}}, S}
 
@@ -956,10 +957,10 @@ transit_state(ReqCtx, Deadline, NewStorageMachine = #{status := Status}, State) 
 
 -spec handle_status_transition(machine_status(), state()) ->
     _.
-handle_status_transition({waiting, TargetTimestamp, _, _} = Status, State) ->
-    try_send_timer_task(timers, TargetTimestamp, Status, State);
-handle_status_transition({retrying, TargetTimestamp, _, _, _} = Status, State) ->
-    try_send_timer_task(timers_retries, TargetTimestamp, Status, State);
+handle_status_transition({waiting, TargetTimestamp, _, _}, State) ->
+    try_send_timer_task(timers, TargetTimestamp, State);
+handle_status_transition({retrying, TargetTimestamp, _, _, _}, State) ->
+    try_send_timer_task(timers_retries, TargetTimestamp, State);
 handle_status_transition(_Status, _State) ->
     ok.
 
@@ -975,16 +976,16 @@ try_acquire_scheduler(SchedulerType, State = #{schedulers := Schedulers, options
             State
     end.
 
--spec try_send_timer_task(scheduler_type(), mg_queue_task:target_time(), machine_regular_status(), state()) ->
+-spec try_send_timer_task(scheduler_type(), mg_queue_task:target_time(), state()) ->
     ok.
-try_send_timer_task(SchedulerType, TargetTime, Status, #{id := ID, schedulers := Schedulers}) ->
+try_send_timer_task(SchedulerType, TargetTime, #{id := ID, schedulers := Schedulers}) ->
     case maps:get(SchedulerType, Schedulers, undefined) of
         {SchedulerID, Cutoff} ->
             % Ok let's send if it's not too far in the future.
             CurrentTime = mg_queue_task:current_time(),
             case TargetTime =< CurrentTime + Cutoff of
                 true ->
-                    Task = mg_queue_timer:build_task(ID, TargetTime, Status),
+                    Task = mg_queue_timer:build_task(ID, TargetTime),
                     mg_scheduler:send_task(SchedulerID, Task);
                 false ->
                     ok
