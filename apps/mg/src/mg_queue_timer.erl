@@ -38,8 +38,17 @@
     processing_timeout => timeout(),
     reschedule_timeout => timeout()
 }.
+
+-type search() :: {
+    mg_machine:search_query(),
+    scan_limit(),
+    mg_storage:continuation() | undefined
+}.
+
 -record(state, {
+    pending :: search()
 }).
+
 -opaque state() :: #state{}.
 
 -export_type([state/0]).
@@ -80,17 +89,34 @@ build_task(ID, Timestamp) ->
 
 -spec search_tasks(options(), scan_limit(), state()) ->
     {{scan_status(), [task()]}, state()}.
-search_tasks(#{timer_queue := TimerMode} = Options, Limit, State) ->
+search_tasks(Options, Limit, State = #state{pending = undefined}) ->
+    search_tasks(Options, Limit, State#state{pending = construct_search(Options, Limit)});
+search_tasks(Options, _Limit, State = #state{pending = Search}) ->
+    {Timers, SearchNext} = execute_search(Options, Search),
+    Status = get_status(SearchNext),
+    Tasks = [build_task(ID, Ts) || {Ts, ID} <- Timers],
+    {{Status, Tasks}, State#state{pending = SearchNext}}.
+
+-spec construct_search(options(), scan_limit()) ->
+    search().
+construct_search(#{timer_queue := TimerMode} = Options, Limit) ->
     Lookahead = maps:get(lookahead, Options, 0),
-    MachineOptions = machine_options(Options),
     Query = {TimerMode, 1, mg_queue_task:current_time() + Lookahead},
-    {Timers, Continuation} = mg_machine:search(MachineOptions, Query, Limit),
-    {Tasks, Count} = lists:foldl(
-        fun ({Ts, ID}, {Acc, C}) -> {[build_task(ID, Ts) | Acc], C + 1} end,
-        {[], 0},
-        Timers
-    ),
-    {{get_status(Count, Limit, Continuation), Tasks}, State}.
+    {Query, Limit, undefined}.
+
+-spec execute_search(options(), search()) ->
+    {[_Result], search() | undefined}.
+execute_search(Options, Search = {Query, Limit, undefined}) ->
+    handle_search_result(mg_machine:search(machine_options(Options), Query, Limit), Search);
+execute_search(Options, Search = {Query, Limit, Continuation}) ->
+    handle_search_result(mg_machine:search(machine_options(Options), Query, Limit, Continuation), Search).
+
+-spec handle_search_result(mg_storage:search_result(), search()) ->
+    {[_Result], search() | undefined}.
+handle_search_result({Results, undefined}, _Search) ->
+    {Results, undefined}; % search is finished
+handle_search_result({Results, Continuation}, {Query, Limit, _}) ->
+    {Results, {Query, Limit, Continuation}}.
 
 -spec execute_task(options(), task()) ->
     ok.
@@ -116,14 +142,9 @@ call_timeout(Options, MachineID, Timestamp) ->
 machine_options(#{machine := MachineOptions}) ->
     MachineOptions.
 
--spec get_status(non_neg_integer(), scan_limit(), mg_storage:continuation()) ->
+-spec get_status(search() | undefined) ->
     mg_queue_scanner:scan_status().
-get_status(_Count, _Limit, undefined) ->
+get_status(undefined) ->
     completed;
-get_status(Count, Limit, _Other) when Count < Limit ->
-    % NOTE
-    % For some reason continuation is not `undefined` even when there are less results than asked
-    % for.
-    completed;
-get_status(_Count, _Limit, _Other) ->
+get_status(_Search) ->
     continue.
