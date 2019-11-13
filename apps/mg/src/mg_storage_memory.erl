@@ -171,10 +171,10 @@ do_search({IndexName, QueryValue, inf, _}, State = #{indexes := Indexes}) ->
     {Res, State};
 do_search({IndexName, QueryValue, IndexLimit, undefined}, State = #{indexes := Indexes}) ->
     Res = do_search_index(maps:get(IndexName, Indexes, []), QueryValue),
-    {generate_search_response(split_search_result(Res, IndexLimit)), State};
+    {split_search_result(Res, IndexLimit), State};
 do_search({IndexName, QueryValue, IndexLimit, Cont}, State = #{indexes := Indexes}) ->
     Res = find_continuation(do_search_index(maps:get(IndexName, Indexes, []), QueryValue), Cont),
-    {generate_search_response(split_search_result(Res, IndexLimit)), State}.
+    {split_search_result(Res, IndexLimit), State}.
 
 -spec find_continuation(search_result(), continuation()) ->
     search_result().
@@ -185,26 +185,20 @@ find_continuation(Result, Cont) ->
     start_from_elem(Key, Result).
 
 -spec split_search_result(search_result(), mg_storage:index_limit()) ->
-    {search_result(), search_result()}.
-split_search_result(SearchResult, IndexLimit) ->
-    case IndexLimit >= erlang:length(SearchResult) of
-        true ->
-            {SearchResult, []};
-        false ->
-            lists:split(IndexLimit, SearchResult)
-    end.
-
--spec generate_search_response({search_result(), search_result()}) ->
     {search_result(), continuation()}.
-generate_search_response({SearchResult, []}) ->
-    {SearchResult, undefined};
-generate_search_response({SearchResult, Remains}) ->
-    {SearchResult, generate_continuation(Remains)}.
+split_search_result(SearchResult, IndexLimit) ->
+    case IndexLimit > erlang:length(SearchResult) of
+        true ->
+            {SearchResult, undefined};
+        false ->
+            {SearchResultFinal, _} = lists:split(IndexLimit, SearchResult),
+            {SearchResultFinal, generate_continuation(SearchResultFinal)}
+    end.
 
 -spec generate_continuation(search_result()) ->
     continuation().
-generate_continuation([StoppedAt | _]) ->
-    term_to_binary(StoppedAt).
+generate_continuation(Result) ->
+    term_to_binary(lists:last(Result)).
 
 -spec do_put(mg_storage:key(), context(), mg_storage:value(), [mg_storage:index_update()], state()) ->
     {context(), state()}.
@@ -371,8 +365,8 @@ try_fail(_Prob, _Border, _Error) ->
     list().
 start_from_elem(_, [])  ->
     [];
-start_from_elem(Item, [Item|_] = Items) ->
-    Items;
+start_from_elem(Item, [Item|Tail]) ->
+    Tail;
 start_from_elem(Item, [_|Tail]) ->
     start_from_elem(Item, Tail).
 
