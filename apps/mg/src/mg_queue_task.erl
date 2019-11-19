@@ -22,7 +22,7 @@
 
 -type task(TaskID, TaskPayload) :: #{
     id          := TaskID,
-    payload     := TaskPayload,
+    payload     => TaskPayload,
     created_at  := integer(),  % erlang monotonic time
     machine_id  := mg:id(),
     target_time => target_time()

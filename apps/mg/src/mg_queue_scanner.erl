@@ -26,25 +26,27 @@
 
 -module(mg_queue_scanner).
 
--type scheduler_id()  :: mg_scheduler:id().
--type scan_status()   :: continue | completed.
--type scan_interval() :: #{scan_status() => milliseconds()}.
--type scan_limit()    :: non_neg_integer().
--type milliseconds()  :: pos_integer().
+-type scheduler_id() :: mg_scheduler:id().
+-type scan_delay()   :: milliseconds().
+-type scan_limit()   :: non_neg_integer().
+-type scan_ahead()   :: {_A :: float(), _B :: scan_limit()}. % as in A×X + B
+
+-type milliseconds()  :: non_neg_integer().
 
 -type options() :: #{
-    queue_handler := queue_handler(),
-    scan_interval => scan_interval(),
-    scan_limit    => scan_limit(),
-    squad_opts    => mg_gen_squad:opts(),
-    pulse         => mg_pulse:handler()
+    queue_handler  := queue_handler(),
+    max_scan_limit   => scan_limit() | unlimited,
+    scan_ahead       => scan_ahead(),
+    retry_scan_delay => scan_delay(),
+    squad_opts       => mg_gen_squad:opts(),
+    pulse            => mg_pulse:handler()
 }.
 
 -export_type([options/0]).
 -export_type([queue_handler/0]).
--export_type([scan_status/0]).
--export_type([scan_interval/0]).
+-export_type([scan_delay/0]).
 -export_type([scan_limit/0]).
+-export_type([scan_ahead/0]).
 
 -type beat() :: {squad, {atom(), mg_gen_squad_pulse:beat(), _ExtraMeta}}.
 -export_type([beat/0]).
@@ -59,22 +61,20 @@
 
 -callback child_spec(queue_options(), atom()) -> supervisor:child_spec() | undefined.
 -callback init(queue_options()) -> {ok, queue_state()}.
--callback search_tasks(Options, Limit, State) -> {{Status, Tasks}, State} when
+-callback search_tasks(Options, Limit, State) -> {{Delay, Tasks}, State} when
     Options :: queue_options(),
     Limit   :: scan_limit(),
     Tasks   :: [task()],
-    Status  :: scan_status(),
+    Delay   :: scan_delay(),
     State   :: queue_state().
 
 -optional_callbacks([child_spec/2]).
 
 %%
 
--define(DEFAULT_LIMIT, 100).
--define(DEFAULT_INTERVAL, #{
-    continue  => 1000,  % 1 second
-    completed => 15000  % 15 seconds
-}).
+-define(DEFAULT_MAX_LIMIT        , unlimited).
+-define(DEFAULT_SCAN_AHEAD       , {1.0, 0}).
+-define(DEFAULT_RETRY_SCAN_DELAY , 1000).
 
 -define(DISCOVER_TIMEOUT , 1000).
 -define(INQUIRY_TIMEOUT  , 1000).
@@ -144,8 +144,9 @@ where_is(SchedulerID) ->
 -record(st, {
     scheduler_id  :: scheduler_id(),
     queue_handler :: queue_handler_state(),
-    interval      :: scan_interval(),
-    limit         :: non_neg_integer(),
+    max_limit     :: scan_limit(),
+    scan_ahead    :: scan_ahead(),
+    retry_delay   :: scan_delay(),
     timer         :: reference() | undefined,
     pulse         :: mg_pulse:handler() | undefined
 }).
@@ -161,8 +162,9 @@ init({SchedulerID, Options}) ->
     {ok, #st{
         scheduler_id  = SchedulerID,
         queue_handler = init_handler(maps:get(queue_handler, Options)),
-        interval      = maps:merge(?DEFAULT_INTERVAL, maps:get(scan_interval, Options, #{})),
-        limit         = maps:get(scan_limit, Options, ?DEFAULT_LIMIT),
+        max_limit     = maps:get(max_scan_limit, Options, ?DEFAULT_MAX_LIMIT),
+        scan_ahead    = maps:get(scan_ahead, Options, ?DEFAULT_SCAN_AHEAD),
+        retry_delay   = maps:get(retry_scan_delay, Options, ?DEFAULT_RETRY_SCAN_DELAY),
         pulse         = maps:get(pulse, Options, undefined)
     }}.
 
@@ -221,15 +223,21 @@ handle_info(Info, Rank, _Squad, St) ->
 
 -spec handle_scan(mg_gen_squad:squad(), st()) ->
     st().
-handle_scan(Squad, St0) ->
-    ScanStartedAt = erlang:monotonic_time(),
-    {{ScanStatus, Tasks}, St1} = scan_queue(ScanStartedAt, St0),
-    ok = disseminate_tasks(Tasks, Squad, St1),
-    start_timer(ScanStartedAt, ScanStatus, St1).
+handle_scan(Squad, St0 = #st{max_limit = MaxLimit}) ->
+    StartedAt = erlang:monotonic_time(),
+    %% Try to find out which schedulers are here, getting their statuses
+    Schedulers = inquire_schedulers(Squad, St0),
+    %% Compute total limit given capacity left on each scheduler
+    Capacities = [compute_adjusted_capacity(S, St0) || S <- Schedulers],
+    Limit = erlang:min(lists:sum(Capacities), MaxLimit),
+    {{Delay, Tasks}, St1} = scan_queue(StartedAt, Limit, St0),
+    %% Distribute tasks taking into account respective capacities
+    ok = disseminate_tasks(Tasks, Schedulers, Capacities, St1),
+    start_timer(StartedAt, Delay, St1).
 
--spec scan_queue(integer(), st()) ->
-    {{scan_status(), [task()]}, st()}.
-scan_queue(ScanStartedAt, St = #st{queue_handler = HandlerState, limit = Limit}) ->
+-spec scan_queue(integer(), scan_limit(), st()) ->
+    {{scan_delay(), [task()]}, st()}.
+scan_queue(StartedAt, Limit, St = #st{queue_handler = HandlerState, retry_delay = RetryDelay}) ->
     {Result, HandlerStateNext} = try
         run_handler(HandlerState, search_tasks, [Limit])
     catch
@@ -238,34 +246,37 @@ scan_queue(ScanStartedAt, St = #st{queue_handler = HandlerState, limit = Limit})
             ErrorType =:= timeout
         ->
             ok = emit_scan_error_beat({throw, Reason, Stacktrace}, St),
-            {{continue, []}, HandlerState}
+            {{RetryDelay, []}, HandlerState}
     end,
-    ok = emit_scan_success_beat(Result, ScanStartedAt, St),
+    ok = emit_scan_success_beat(Result, Limit, StartedAt, St),
     {Result, St#st{queue_handler = HandlerStateNext}}.
 
--spec disseminate_tasks([task()], squad(), st()) ->
+-spec disseminate_tasks([task()], [mg_scheduler:status()], [scan_limit()], st()) ->
     ok.
-disseminate_tasks(Tasks, Squad, St) ->
-    %% Take all known members, there's at least one which is `self()`
-    Members = mg_gen_squad:members(Squad),
-    %% Try to find out which schedulers are here, getting their pids
-    SchedulerPids = inquire_schedulers(Members, St),
-    %% Partition tasks uniformly among known schedulers
-    Partitions = mg_utils:partition(Tasks, SchedulerPids),
+disseminate_tasks(Tasks, Schedulers, Capacities, _St) ->
+    %% Partition tasks among known schedulers proportionally to their capacities
+    Partitions = mg_utils:partition(Tasks, lists:zip(Schedulers, Capacities)),
     %% Distribute shares of tasks among schedulers, sending directly to pids
     maps:fold(
-        fun (SchedulerPid, TasksShare, _) ->
-            mg_scheduler:distribute_tasks(SchedulerPid, TasksShare)
+        fun (_Scheduler = #{pid := Pid}, TasksShare, _) ->
+            mg_scheduler:distribute_tasks(Pid, TasksShare)
         end,
         ok,
         Partitions
     ).
 
--spec inquire_schedulers([pid()], st()) ->
-    [pid()].
-inquire_schedulers(Members, #st{scheduler_id = SchedulerID}) ->
+-spec inquire_schedulers(mg_gen_squad:squad(), st()) ->
+    [mg_scheduler:status()].
+inquire_schedulers(Squad, #st{scheduler_id = SchedulerID}) ->
+    %% Take all known members, there's at least one which is `self()`
+    Members = mg_gen_squad:members(Squad),
     Nodes = lists:map(fun erlang:node/1, Members),
-    multicall(Nodes, mg_scheduler, where_is, [SchedulerID], ?INQUIRY_TIMEOUT).
+    multicall(Nodes, mg_scheduler, inquire, [SchedulerID], ?INQUIRY_TIMEOUT).
+
+-spec compute_adjusted_capacity(mg_scheduler:status(), st()) ->
+    scan_limit().
+compute_adjusted_capacity(#{waiting_tasks := W, capacity := C}, #st{scan_ahead = {A, B}}) ->
+    erlang:max(erlang:round(A * erlang:max(C - W, 0)) + B, 0).
 
 %%
 
@@ -295,11 +306,10 @@ multicall(Nodes, Module, Function, Args, Timeout) ->
 
 %%
 
--spec start_timer(integer(), scan_status(), st()) ->
+-spec start_timer(integer(), scan_delay(), st()) ->
     st().
-start_timer(RefTime, Status, St = #st{interval = Interval}) ->
-    Timeout = maps:get(Status, Interval),
-    FireTime = erlang:convert_time_unit(RefTime, native, millisecond) + Timeout,
+start_timer(RefTime, Delay, St) ->
+    FireTime = erlang:convert_time_unit(RefTime, native, millisecond) + Delay,
     St#st{timer = erlang:send_after(FireTime, self(), scan, [{abs, true}])}.
 
 -spec cancel_timer(st()) ->
@@ -349,14 +359,15 @@ emit_scan_error_beat(Exception, #st{pulse = Pulse, scheduler_id = {Name, NS}}) -
         exception = Exception
     }).
 
--spec emit_scan_success_beat({scan_status(), [task()]}, integer(), st()) ->
+-spec emit_scan_success_beat({scan_delay(), [task()]}, scan_limit(), integer(), st()) ->
     ok.
-emit_scan_success_beat({ScanStatus, Tasks}, StartedAt, #st{pulse = Pulse, scheduler_id = {Name, NS}}) ->
+emit_scan_success_beat({Delay, Tasks}, Limit, StartedAt, #st{pulse = Pulse, scheduler_id = {Name, NS}}) ->
     mg_pulse:handle_beat(Pulse, #mg_scheduler_search_success{
         namespace = NS,
         scheduler_name = Name,
-        status = ScanStatus,
+        delay = Delay,
         tasks = Tasks,
+        limit = Limit,
         duration = erlang:monotonic_time() - StartedAt
     }).
 

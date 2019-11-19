@@ -441,26 +441,23 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
 
 scheduler(Share, Config) ->
     #{
-        scan_limit    => ?C:conf([scan_limit], Config, 5000),
-        task_quota    => <<"scheduler_tasks_total">>,
-        task_share    => Share
+        max_scan_limit => ?C:conf([scan_limit], Config, 5000),
+        task_quota     => <<"scheduler_tasks_total">>,
+        task_share     => Share
     }.
 
 timer_scheduler(Share, Config) ->
     (scheduler(Share, Config))#{
-        scan_interval => #{
-            continue  => 1000,
-            completed => timeout(scan_interval, Config, "15s", ms)
-        },
-        target_cutoff => timeout(scan_interval, Config, "15s", sec)
+        capacity       => ?C:conf([capacity], Config, 1000),
+        min_scan_delay => 1000,
+        target_cutoff  => timeout(scan_interval, Config, "60s", sec)
     }.
 
 overseer_scheduler(Share, Config) ->
     (scheduler(Share, Config))#{
-        scan_interval => #{
-            continue  => 1000,
-            completed => 10 * 60 * 1000
-        }
+        capacity       => ?C:conf([capacity], Config, 1000),
+        min_scan_delay => 1000,
+        rescan_delay   => 10 * 60 * 1000
     }.
 
 timeout(Name, Config, Default, Unit) ->

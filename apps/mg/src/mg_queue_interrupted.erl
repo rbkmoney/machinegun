@@ -26,11 +26,14 @@
 
 %% Types
 
+-type milliseconds() :: non_neg_integer().
 -type options() :: #{
     namespace := mg:ns(),
     scheduler_name := mg_scheduler:name(),
     pulse := mg_pulse:handler(),
     machine := mg_machine:options(),
+    min_scan_delay => milliseconds(),
+    rescan_delay => milliseconds(),
     processing_timeout => timeout()
 }.
 -record(state, {
@@ -46,7 +49,7 @@
 -type task_id() :: mg:id().
 -type task_payload() :: #{}.
 -type task() :: mg_queue_task:task(task_id(), task_payload()).
--type scan_status() :: mg_queue_scanner:scan_status().
+-type scan_delay() :: mg_queue_scanner:scan_delay().
 
 -define(DEFAULT_PROCESSING_TIMEOUT, 60000).  % 1 minute
 
@@ -60,7 +63,7 @@ init(_Options) ->
     {ok, #state{continuation = undefined}}.
 
 -spec search_tasks(options(), _Limit :: non_neg_integer(), state()) ->
-    {{scan_status(), [task()]}, state()}.
+    {{scan_delay(), [task()]}, state()}.
 search_tasks(Options, Limit, #state{continuation = Continuation} = State) ->
     MachineOptions = machine_options(Options),
     Query = processing,
@@ -69,13 +72,14 @@ search_tasks(Options, Limit, #state{continuation = Continuation} = State) ->
     Tasks = [
         #{
             id => ID,
-            payload => #{},
             created_at => CreateTime,
             machine_id => ID
         }
         || ID <- IDs
     ],
-    {{get_status(NewContinuation), Tasks}, State#state{continuation = NewContinuation}}.
+    Delay = get_delay(NewContinuation, Options),
+    NewState = State#state{continuation = NewContinuation},
+    {{Delay, Tasks}, NewState}.
 
 -spec execute_task(options(), task()) ->
     ok.
@@ -91,9 +95,9 @@ execute_task(Options, #{machine_id := MachineID}) ->
 machine_options(#{machine := MachineOptions}) ->
     MachineOptions.
 
--spec get_status(mg_storage:continuation()) ->
-    scan_status().
-get_status(undefined) ->
-    completed;
-get_status(_Other) ->
-    continue.
+-spec get_delay(mg_storage:continuation(), options()) ->
+    scan_delay().
+get_delay(undefined, Options) ->
+    maps:get(rescan_delay, Options, 10 * 60 * 1000);
+get_delay(_Other, Options) ->
+    maps:get(min_scan_delay, Options, 1000).

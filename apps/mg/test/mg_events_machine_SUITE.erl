@@ -174,12 +174,7 @@ stop_automaton(Pid) ->
 -spec events_machine_options(options(), mg:ns()) ->
     mg_events_machine:options().
 events_machine_options(Options, NS) ->
-    Scheduler = #{
-        scan_interval => #{
-            continue  =>   100,
-            completed => 15000
-        }
-    },
+    Scheduler = #{},
     #{
         namespace => NS,
         processor => {?MODULE, Options},

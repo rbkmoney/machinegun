@@ -20,18 +20,20 @@
 
 -type options() :: #{
     % manager
-    schedule_interval => non_neg_integer(),
-    quota_name        := mg_quota_worker:name(),
-    quota_share       => mg_quota:share(),
+    start_interval   => non_neg_integer(),
+    capacity         := non_neg_integer(),
+    quota_name       := mg_quota_worker:name(),
+    quota_share      => mg_quota:share(),
     % scanner
-    queue_handler     := mg_queue_scanner:queue_handler(),
-    scan_interval     => mg_queue_scanner:scan_interval(),
-    scan_limit        => mg_queue_scanner:scan_limit(),
-    squad_opts        => mg_gen_squad:opts(),
+    queue_handler    := mg_queue_scanner:queue_handler(),
+    max_scan_limit   => mg_queue_scanner:scan_limit() | unlimited,
+    scan_ahead       => mg_queue_scanner:scan_ahead(),
+    retry_scan_delay => mg_queue_scanner:scan_delay(),
+    squad_opts       => mg_gen_squad:opts(),
     % workers
-    task_handler      := mg_utils:mod_opts(),
+    task_handler     := mg_utils:mod_opts(),
     % common
-    pulse             => mg_pulse:handler()
+    pulse            => mg_pulse:handler()
 }.
 
 -export_type([options/0]).
@@ -54,9 +56,18 @@ child_spec(ID, Options, ChildID) ->
 -spec start_link(id(), options()) ->
     mg_utils:gen_start_ret().
 start_link(SchedulerID, Options) ->
-    ManagerOptions = maps:with([schedule_interval, quota_name, quota_share, pulse], Options),
-    ScannerOptions = maps:with([queue_handler, scan_interval, scan_limit, squad_opts, pulse], Options),
-    WorkerOptions = maps:with([task_handler, pulse], Options),
+    ManagerOptions = maps:with(
+        [start_interval, capacity, quota_name, quota_share, pulse],
+        Options
+    ),
+    ScannerOptions = maps:with(
+        [queue_handler, max_scan_limit, scan_ahead, retry_scan_delay, squad_opts, pulse],
+        Options
+    ),
+    WorkerOptions = maps:with(
+        [task_handler, pulse],
+        Options
+    ),
     mg_utils_supervisor_wrapper:start_link(
         #{strategy => one_for_all},
         mg_utils:lists_compact([

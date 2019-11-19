@@ -114,16 +114,22 @@
 -type seconds() :: non_neg_integer().
 -type scheduler_type() :: overseer | timers | timers_retries.
 -type scheduler_opt() :: disable | #{
-    % how often to scan persistent store for queued tasks
-    scan_interval := mg_queue_scanner:scan_interval(),
+    % how much tasks in total scheduler is ready to enqueue for processing
+    capacity => non_neg_integer(),
+    % wait at least this delay before subsequent scanning of persistent store for queued tasks
+    min_scan_delay => mg_queue_scanner:scan_delay(),
+    % wait at most this delay before subsequent scanning attempts when queue appears to be empty
+    rescan_delay => mg_queue_scanner:scan_delay(),
     % how many tasks to fetch at most
-    scan_limit    => mg_queue_scanner:scan_limit(),
+    max_scan_limit => mg_queue_scanner:scan_limit(),
+    % by how much to adjust limit to account for possibly duplicated tasks
+    scan_ahead => mg_queue_scanner:scan_ahead(),
     % how many seconds in future a task can be for it to be sent to the local scheduler
     target_cutoff => seconds(),
     % name of quota limiting number of active tasks
-    task_quota    => mg_quota_worker:name(),
+    task_quota => mg_quota_worker:name(),
     % share of quota limit
-    task_share    => mg_quota:share()
+    task_share => mg_quota:share()
 }.
 -type retry_subj() :: storage | processor | timers | continuation.
 -type retry_opt() :: #{
@@ -141,7 +147,6 @@
     retries                  => retry_opt(),
     schedulers               => schedulers_opt(),
     suicide_probability      => suicide_probability(),
-    reschedule_timeout       => timeout(),
     timer_processing_timeout => timeout()
 }.
 
@@ -385,9 +390,8 @@ reply(#{call_context := CallContext}, Reply) ->
 %%
 %% Internal API
 %%
--define(DEFAULT_RETRY_POLICY, {exponential, infinity, 2, 10, 60 * 1000}).
--define(DEFAULT_TIMER_PROCESSING_TIMEOUT, 60000).
--define(DEFAULT_RESCHEDULING_TIMEOUT, 60000).
+-define(DEFAULT_RETRY_POLICY       , {exponential, infinity, 2, 10, 60 * 1000}).
+-define(DEFAULT_SCHEDULER_CAPACITY , 1000).
 
 -define(can_be_retried(ErrorType), ErrorType =:= transient orelse ErrorType =:= timeout).
 
@@ -980,7 +984,7 @@ try_acquire_scheduler(SchedulerType, State = #{schedulers := Schedulers, options
     ok.
 try_send_timer_task(SchedulerType, TargetTime, #{id := ID, schedulers := Schedulers}) ->
     case maps:get(SchedulerType, Schedulers, undefined) of
-        {SchedulerID, Cutoff} ->
+        {SchedulerID, Cutoff} when is_integer(Cutoff) ->
             % Ok let's send if it's not too far in the future.
             CurrentTime = mg_queue_task:current_time(),
             case TargetTime =< CurrentTime + Cutoff of
@@ -990,6 +994,9 @@ try_send_timer_task(SchedulerType, TargetTime, #{id := ID, schedulers := Schedul
                 false ->
                     ok
             end;
+        {_SchedulerID, undefined} ->
+            % No defined cutoff, can't make decisions.
+            ok;
         undefined ->
             % No scheduler to send task to.
             ok
@@ -1185,13 +1192,17 @@ scheduler_options(SchedulerType, Options, Config) when
     end,
     HandlerOptions = #{
         processing_timeout => maps:get(timer_processing_timeout, Options, undefined),
-        reschedule_timeout => maps:get(reschedule_timeout, Options, undefined),
         timer_queue        => TimerQueue,
+        min_scan_delay     => maps:get(min_scan_delay, Config, undefined),
         lookahead          => scheduler_cutoff(Config)
     },
     scheduler_options(mg_queue_timer, Options, HandlerOptions, Config);
 scheduler_options(overseer, Options, Config) ->
-    scheduler_options(mg_queue_interrupted, Options, #{}, Config).
+    HandlerOptions = #{
+        min_scan_delay => maps:get(min_scan_delay, Config, undefined),
+        rescan_delay   => maps:get(rescan_delay, Config, undefined)
+    },
+    scheduler_options(mg_queue_interrupted, Options, HandlerOptions, Config).
 
 -spec scheduler_options(module(), options(), map(), scheduler_opt()) ->
     mg_scheduler_sup:options().
@@ -1208,25 +1219,24 @@ scheduler_options(HandlerMod, Options, HandlerOptions, Config) ->
     )),
     Handler = {HandlerMod, FullHandlerOptions},
     genlib_map:compact(#{
+        capacity => maps:get(capacity, Config, ?DEFAULT_SCHEDULER_CAPACITY),
         quota_name => maps:get(task_quota, Config, unlimited),
         quota_share => maps:get(task_share, Config, 1),
         queue_handler => Handler,
-        scan_interval => maps:get(scan_interval, Config),
-        scan_limit => maps:get(scan_limit, Config, undefined),
+        max_scan_limit => maps:get(max_scan_limit, Config, undefined),
+        scan_ahead => maps:get(scan_ahead, Config, undefined),
         task_handler => Handler,
         pulse => Pulse
     }).
 
 -spec scheduler_cutoff(scheduler_opt()) ->
     seconds().
-scheduler_cutoff(Config = #{scan_interval := ScanInterval}) ->
-    case maps:get(target_cutoff, Config, undefined) of
-        Cutoff when is_integer(Cutoff) ->
-            Cutoff;
-        undefined ->
-            MaxInterval = lists:max(maps:values(ScanInterval)),
-            erlang:convert_time_unit(MaxInterval, millisecond, second)
-    end.
+scheduler_cutoff(#{target_cutoff := Cutoff}) ->
+    Cutoff;
+scheduler_cutoff(#{min_scan_delay := MinScanDelay}) ->
+    erlang:convert_time_unit(MinScanDelay, millisecond, second);
+scheduler_cutoff(#{}) ->
+    undefined.
 
 -spec get_options(atom(), options()) ->
     _.

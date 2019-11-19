@@ -260,7 +260,6 @@ machine_options(NS, Config) ->
     Options = maps:with(
         [
             retries,
-            reschedule_timeout,
             timer_processing_timeout
         ],
         Config

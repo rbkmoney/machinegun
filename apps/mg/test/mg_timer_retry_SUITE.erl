@@ -180,8 +180,8 @@ stop_automaton(Pid) ->
     mg_machine:options().
 automaton_options(NS, RetryPolicy) ->
     Scheduler = #{
-        scan_interval => #{continue => 1000, completed => 15000},
-        target_cutoff => 15
+        min_scan_interval => 1000,
+        target_cutoff     => 15
     },
     #{
         namespace => NS,

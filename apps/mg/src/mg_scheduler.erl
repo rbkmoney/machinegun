@@ -18,8 +18,8 @@
 
 -export([child_spec/3]).
 -export([start_link/2]).
--export([where_is/1]).
 
+-export([inquire/1]).
 -export([send_task/2]).
 -export([distribute_tasks/2]).
 
@@ -33,6 +33,7 @@
 %% Types
 -type options() :: #{
     start_interval => non_neg_integer(),
+    capacity       := non_neg_integer(),
     quota_name     := mg_quota_worker:name(),
     quota_share    => mg_quota:share(),
     pulse          => mg_pulse:handler()
@@ -48,26 +49,43 @@
 -export_type([id/0]).
 -export_type([name/0]).
 -export_type([options/0]).
+-export_type([status/0]).
 
 %% Internal types
 -record(state, {
     id :: id(),
     pulse :: mg_pulse:handler(),
+    capacity :: non_neg_integer(),
     quota_name :: mg_quota_worker:name(),
     quota_share :: mg_quota:share(),
     quota_reserved :: mg_quota:resource() | undefined,
     timer :: timer:tref(),
-    waiting_tasks :: waiting_tasks(),
+    waiting_tasks :: task_queue(),
     active_tasks :: #{task_id() => pid()},
     task_monitors :: #{monitor() => task_id()}
 }).
 -type state() :: #state{}.
 -type monitor() :: reference().
 
+%%
+
 -type task_set() :: #{task_id() => task()}.
 -type task_rank() :: {target_time(), integer()}.
--type task_queue() :: gb_trees:tree(task_rank(), task_id()).
--type waiting_tasks() :: {task_set(), task_queue(), integer()}.
+
+-record(task_queue, {
+    runnable = #{}              :: task_set(),
+    runqueue = gb_trees:empty() :: gb_trees:tree(task_rank(), task_id()),
+    counter  = 1                :: integer()
+}).
+
+-type task_queue() :: #task_queue{}.
+
+-type status() :: #{
+    pid           := pid(),
+    active_tasks  := non_neg_integer(),
+    waiting_tasks := non_neg_integer(),
+    capacity      := pos_integer()
+}.
 
 %%
 %% API
@@ -87,10 +105,10 @@ child_spec(ID, Options, ChildID) ->
 start_link(ID, Options) ->
     gen_server:start_link(self_reg_name(ID), ?MODULE, {ID, Options}, []).
 
--spec where_is(id()) ->
-    pid() | undefined.
-where_is(ID) ->
-    mg_utils:gen_ref_to_pid(self_ref(ID)).
+-spec inquire(id()) ->
+    status().
+inquire(ID) ->
+    gen_server:call(self_ref(ID), inquire).
 
 -spec send_task(id(), task()) ->
     ok.
@@ -110,18 +128,27 @@ init({ID, Options}) ->
     {ok, TimerRef} = timer:send_interval(maps:get(start_interval, Options, 1000), start),
     {ok, #state{
         id = ID,
+        capacity = maps:get(capacity, Options),
         pulse = maps:get(pulse, Options, undefined),
         quota_name = maps:get(quota_name, Options),
         quota_share = maps:get(quota_share, Options, 1),
         quota_reserved = undefined,
         active_tasks = #{},
         task_monitors = #{},
-        waiting_tasks = {#{}, gb_trees:empty(), 0},
+        waiting_tasks = #task_queue{},
         timer = TimerRef
     }}.
 
 -spec handle_call(Call :: any(), mg_utils:gen_server_from(), state()) ->
     mg_utils:gen_server_handle_call_ret(state()).
+handle_call(inquire, _From, State) ->
+    Status = #{
+        pid           => self(),
+        active_tasks  => get_active_task_count(State),
+        waiting_tasks => get_waiting_task_count(State),
+        capacity      => State#state.capacity
+    },
+    {reply, Status, State};
 handle_call(Call, From, State) ->
     ok = logger:error("unexpected gen_server call received: ~p from ~p", [Call, From]),
     {noreply, State}.
@@ -189,27 +216,28 @@ forget_about_task(Monitor, State) ->
 -spec add_tasks([task()], state()) ->
     state().
 add_tasks(Tasks, State = #state{waiting_tasks = WaitingTasks}) ->
-    {NewTasksCount, NewWaitingTasks} = lists:foldl(fun enqueue_task/2, {0, WaitingTasks}, Tasks),
+    NewWaitingTasks = lists:foldl(fun enqueue_task/2, WaitingTasks, Tasks),
+    NewTasksCount = get_task_queue_size(NewWaitingTasks) - get_task_queue_size(WaitingTasks),
     ok = emit_new_tasks_beat(NewTasksCount, State),
     State#state{waiting_tasks = NewWaitingTasks}.
 
--spec enqueue_task(task(), {non_neg_integer(), waiting_tasks()}) ->
-    {non_neg_integer(), waiting_tasks()}.
-enqueue_task(Task = #{id := TaskID}, {N, {TaskSet, Queue, Counter}}) ->
+-spec enqueue_task(task(), task_queue()) ->
+    task_queue().
+enqueue_task(
+    Task = #{id := TaskID},
+    Queue = #task_queue{runnable = Runnable, runqueue = RQ, counter = Counter}
+) ->
+    TargetTime = maps:get(target_time, Task, 0),
     % TODO
     % Blindly overwriting a task with same ID here if there's one. This is not the best strategy out
     % there but sufficient enough. For example we could overwrite most recent legit task with an
     % outdated one appointed a bit late by some remote queue scanner.
-    {NewN, NewTaskSet} = case maps:is_key(TaskID, TaskSet) of
-        true  -> {N    , TaskSet#{TaskID := Task}};
-        false -> {N + 1, TaskSet#{TaskID => Task}}
-    end,
-    TargetTime = maps:get(target_time, Task, 0),
+    NewRunnable = Runnable#{TaskID => Task},
     % NOTE
     % Inclusion of the unique counter value here helps to ensure FIFO semantics among tasks with the
     % same target timestamp.
-    NewQueue = gb_trees:insert({TargetTime, Counter}, TaskID, Queue),
-    {NewN, {NewTaskSet, NewQueue, Counter + 1}}.
+    NewRQ = gb_trees:insert({TargetTime, Counter}, TaskID, RQ),
+    Queue#task_queue{runnable = NewRunnable, runqueue = NewRQ, counter = Counter + 1}.
 
 -spec start_new_tasks(state()) ->
     state().
@@ -220,7 +248,7 @@ start_new_tasks(State = #state{quota_reserved = Reserved, waiting_tasks = Waitin
     Iterator = make_iterator(CurrentTime, WaitingTasks),
     start_multiple_tasks(NewTasksNumber, Iterator, State).
 
--spec start_multiple_tasks(non_neg_integer(), waiting_tasks_iterator(), state()) ->
+-spec start_multiple_tasks(non_neg_integer(), task_queue_iterator(), state()) ->
     state().
 start_multiple_tasks(0, _Iterator, State) ->
     State;
@@ -235,7 +263,7 @@ start_multiple_tasks(N, Iterator, State) when N > 0 ->
         {Rank, TaskID, IteratorNext} when not is_map_key(TaskID, ActiveTasks) ->
             % Task appears not to be running on the scheduler...
             case dequeue_task(Rank, WaitingTasks) of
-                {{ok, Task}, NewWaitingTasks} ->
+                {Task = #{}, NewWaitingTasks} ->
                     % ...so let's start it.
                     {ok, Pid, Monitor} = mg_scheduler_worker:start_task(ID, Task),
                     NewState = State#state{
@@ -256,16 +284,16 @@ start_multiple_tasks(N, Iterator, State) when N > 0 ->
             State
     end.
 
--type waiting_tasks_iterator() ::
+-type task_queue_iterator() ::
     {gb_trees:iter(task_rank(), task_id()), target_time()}.
 
--spec make_iterator(target_time(), waiting_tasks()) ->
-    waiting_tasks_iterator().
-make_iterator(TargetTimeCutoff, {_, Queue, _}) ->
+-spec make_iterator(target_time(), task_queue()) ->
+    task_queue_iterator().
+make_iterator(TargetTimeCutoff, #task_queue{runqueue = Queue}) ->
     {gb_trees:iterator(Queue), TargetTimeCutoff}.
 
--spec next_task(waiting_tasks_iterator()) ->
-    {task_rank(), task_id(), waiting_tasks_iterator()} | none.
+-spec next_task(task_queue_iterator()) ->
+    {task_rank(), task_id(), task_queue_iterator()} | none.
 next_task({Iterator, TargetTimeCutoff}) ->
     case gb_trees:next(Iterator) of
         {{TargetTime, _} = Rank, TaskID, IteratorNext} when TargetTime =< TargetTimeCutoff ->
@@ -276,21 +304,29 @@ next_task({Iterator, TargetTimeCutoff}) ->
             none
     end.
 
--spec dequeue_task(task_rank(), waiting_tasks()) ->
-    {{ok, task()} | outdated, waiting_tasks()}.
-dequeue_task(Rank = {TargetTime, _}, {TaskSet, Queue, Counter}) ->
-    {TaskID, QueueLeft} = gb_trees:take(Rank, Queue),
-    {Task, TaskSetLeft} = maps:take(TaskID, TaskSet),
-    case maps:get(target_time, Task, 0) of
-        TargetTime ->
-            {{ok, Task}, {TaskSetLeft, QueueLeft, Counter}};
-        _Different ->
+-spec dequeue_task(task_rank(), task_queue()) ->
+    {task() | outdated, task_queue()}.
+dequeue_task(Rank = {TargetTime, _}, Queue = #task_queue{runnable = Runnable, runqueue = RQ}) ->
+    {TaskID, RQLeft} = gb_trees:take(Rank, RQ),
+    case maps:take(TaskID, Runnable) of
+        {Task = #{target_time := TargetTime}, RunnableLeft} ->
+            {Task, Queue#task_queue{runnable = RunnableLeft, runqueue = RQLeft}};
+        {_DifferentTask, _} ->
             % NOTE
             % It's not the same task we have in the task set. Well just consider it outdated because
             % the queue can hold stale tasks, in contrast to the task set which can hold only single
             % task with some ID that is considered actual.
-            {outdated, {TaskSet, QueueLeft, Counter}}
+            {outdated, Queue#task_queue{runqueue = RQLeft}};
+        error ->
+            % NOTE
+            % No such task in the task set. Well just consider it outdated too.
+            {outdated, Queue#task_queue{runqueue = RQLeft}}
     end.
+
+-spec get_task_queue_size(task_queue()) ->
+    non_neg_integer().
+get_task_queue_size(#task_queue{runnable = Runnable}) ->
+    maps:size(Runnable).
 
 -spec update_reserved(state()) ->
     state().
@@ -313,8 +349,8 @@ get_active_task_count(#state{active_tasks = ActiveTasks}) ->
 
 -spec get_waiting_task_count(state()) ->
     non_neg_integer().
-get_waiting_task_count(#state{waiting_tasks = {TaskSet, _, _}}) ->
-    maps:size(TaskSet).
+get_waiting_task_count(#state{waiting_tasks = WaitingTasks}) ->
+    get_task_queue_size(WaitingTasks).
 
 %% logging
 

@@ -107,6 +107,7 @@ namespaces:
         timers:
             scan_interval: 30s
             scan_limit: 1000
+            capacity: 500
         overseer: disabled
 snowflake_machine_id: 1
 # memory storage backend

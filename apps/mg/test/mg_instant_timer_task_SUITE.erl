@@ -194,10 +194,7 @@ stop_automaton(Pid) ->
     mg_machine:options().
 automaton_options(NS) ->
     Scheduler = #{
-        scan_interval => #{
-            continue  => timer:hours(1),
-            completed => timer:hours(1)
-        }
+        min_scan_delay => timer:hours(1)
     },
     #{
         namespace => NS,

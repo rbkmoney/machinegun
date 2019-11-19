@@ -199,9 +199,7 @@ stop_automaton(Pid) ->
 -spec automaton_options(config()) ->
     mg_machine:options().
 automaton_options(C) ->
-    Scheduler = #{
-        scan_interval => #{continue => 1000, completed => 15000}
-    },
+    Scheduler = #{},
     #{
         namespace => <<"test">>,
         processor => ?MODULE,

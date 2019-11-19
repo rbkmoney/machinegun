@@ -135,8 +135,8 @@ automaton_options(NS) ->
             processor      => {intervals, [1]}
         },
         schedulers => #{
-            timers         => #{scan_interval => #{continue => 100, completed => 15000}},
-            timers_retries => #{scan_interval => #{continue => 100, completed => 15000}}
+            timers         => #{min_scan_delay => 1000},
+            timers_retries => #{min_scan_delay => 1000}
         }
     }.
 
