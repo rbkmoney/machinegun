@@ -230,14 +230,15 @@ handle_scan(Squad, St0 = #st{max_limit = MaxLimit}) ->
     %% Compute total limit given capacity left on each scheduler
     Capacities = [compute_adjusted_capacity(S, St0) || S <- Schedulers],
     Limit = erlang:min(lists:sum(Capacities), MaxLimit),
-    {{Delay, Tasks}, St1} = scan_queue(StartedAt, Limit, St0),
+    {{Delay, Tasks}, St1} = scan_queue(Limit, St0),
     %% Distribute tasks taking into account respective capacities
     ok = disseminate_tasks(Tasks, Schedulers, Capacities, St1),
     start_timer(StartedAt, Delay, St1).
 
--spec scan_queue(integer(), scan_limit(), st()) ->
+-spec scan_queue(scan_limit(), st()) ->
     {{scan_delay(), [task()]}, st()}.
-scan_queue(StartedAt, Limit, St = #st{queue_handler = HandlerState, retry_delay = RetryDelay}) ->
+scan_queue(Limit, St = #st{queue_handler = HandlerState, retry_delay = RetryDelay}) ->
+    StartedAt = erlang:monotonic_time(),
     {Result, HandlerStateNext} = try
         run_handler(HandlerState, search_tasks, [Limit])
     catch
