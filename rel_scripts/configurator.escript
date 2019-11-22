@@ -417,7 +417,7 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             continuation => {exponential, infinity, 2, 10, 60 * 1000}
         },
         schedulers => maps:merge(
-            case ?C:conf([timers], NSYamlConfig, undefined) of
+            case ?C:conf([timers], NSYamlConfig, []) of
                 "disabled" ->
                     #{};
                 SchedulerConfig ->
@@ -426,7 +426,7 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
                         timers_retries => timer_scheduler(1, SchedulerConfig)
                     }
             end,
-            case ?C:conf([overseer], NSYamlConfig, undefined) of
+            case ?C:conf([overseer], NSYamlConfig, []) of
                 "disabled" ->
                     #{};
                 SchedulerConfig ->
