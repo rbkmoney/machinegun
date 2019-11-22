@@ -410,10 +410,12 @@ add_event_id(EventID, Meta) ->
 
 -spec add_meta(meta() | {atom(), any()}, meta()) ->
     meta().
-add_meta(Meta, MetaAcc) when is_list(Meta) ->
+add_meta(Meta, MetaAcc) when is_list(Meta), is_list(MetaAcc) ->
     Meta ++ MetaAcc;
+add_meta(Meta, MetaAcc) when is_list(MetaAcc) ->
+    [Meta | MetaAcc];
 add_meta(Meta, MetaAcc) ->
-    [Meta | MetaAcc].
+    add_meta(Meta, [MetaAcc]).
 
 -spec extract_meta(atom(), any()) ->
     [meta()] | meta().
