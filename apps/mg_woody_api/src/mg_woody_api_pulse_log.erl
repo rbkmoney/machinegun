@@ -40,7 +40,7 @@ handle_beat(undefined, Beat) ->
 %% Internals
 
 -define(beat_to_meta(RecordName, Record),
-    [{mg_pulse_event_id, RecordName} | lists:flatten([
+    [{mg_pulse_event_id, RecordName} | lists:foldl(fun add_meta/2, [], [
         extract_meta(FieldName, Value) ||
         {FieldName, Value} <- lists:zip(
             record_info(fields, RecordName),
@@ -104,7 +104,13 @@ format_beat(#mg_timer_lifecycle_rescheduling_error{exception = {_, Reason, _}} =
 
 format_beat({consuela, Beat = {Producer, _}}) ->
     {Level, Format, Context} = format_consuela_beat(Beat),
-    {Level, Format, [{consuela_producer, Producer} | Context]};
+    {Level, Format, add_meta({consuela_producer, Producer}, Context)};
+
+format_beat({squad, {Producer, Beat, Extra}}) ->
+    {Level, Format, Context} = format_squad_beat(Beat),
+    Meta0 = lists:foldl(fun add_meta/2, Context, [extract_meta(Name, Value) || {Name, Value} <- Extra]),
+    Meta1 = add_meta({squad_producer, Producer}, Meta0),
+    {Level, Format, Meta1};
 
 format_beat(_Beat) ->
     undefined.
@@ -222,32 +228,6 @@ format_consuela_beat({zombie_reaper, {{zombie, {Rid, Name, Pid}}, Status}}) ->
     end,
     {Level, Format, [{registration_id, Rid} | Context]};
 
-%% leader sup
-format_consuela_beat({leader, {{leader, Name}, Status}}) ->
-    case Status of
-        {started, Pid} ->
-            {info, {"leader ~p started", [Name]}, [
-                {mg_pulse_event_id, consuela_leader_sup_started},
-                {leader_pid, Pid}
-            ]};
-        {down, Pid, Reason} ->
-            {info, {"leader ~p looks down from here", [Name]}, [
-                {mg_pulse_event_id, consuela_leader_sup_down},
-                {leader_pid, Pid},
-                {error, [{reason, genlib:print(Reason, 500)}]}
-            ]}
-    end;
-format_consuela_beat({leader, {{warden, Name}, {started, Pid}}}) ->
-    {info, {"leader ~p warden started", [Name]}, [
-        {mg_pulse_event_id, consuela_leader_warden_started},
-        {warden_pid, Pid}
-    ]};
-format_consuela_beat({leader, {{warden, Name}, {stopped, Pid}}}) ->
-    {info, {"leader ~p warden stopped", [Name]}, [
-        {mg_pulse_event_id, consuela_leader_warden_stopped},
-        {warden_pid, Pid}
-    ]};
-
 %% discovery
 format_consuela_beat({discovery_server, {discovery, Status}}) ->
     case Status of
@@ -349,23 +329,86 @@ format_consuela_beat({_Producer, {{monitor, MRef}, Status}}) ->
         fired ->
             {debug, {"monitor ~p fired", [MRef]}, [{mg_pulse_event_id, consuela_monitor_fired}]}
     end;
-format_consuela_beat({_Producer, {unexpected, {Type, Message}}}) ->
-    case Type of
-        {call, From} ->
-            {warning, {"received unexpected call from ~p: ~p", [From, Message]}, [
-                {mg_pulse_event_id, consuela_unexpected_call}
-            ]};
-        cast ->
-            {warning, {"received unexpected cast: ~p", [Message]}, [
-                {mg_pulse_event_id, consuela_unexpected_cast}
-            ]};
-        info ->
-            {warning, {"received unexpected info: ~p", [Message]}, [
-                {mg_pulse_event_id, consuela_unexpected_info}
-            ]}
-    end;
+format_consuela_beat({_Producer, {unexpected, Unexpected = {Type, _}}}) ->
+    format_unexpected_beat(Unexpected, add_event_id(case Type of
+        {call, _} -> consuela_unexpected_call;
+        cast      -> consuela_unexpected_cast;
+        info      -> consuela_unexpected_info
+    end, []));
 format_consuela_beat({_Producer, Beat}) ->
     {warning, {"unknown or mishandled consuela beat: ~p", [Beat]}, []}.
+
+%% squad
+-spec format_squad_beat(mg_gen_squad_pulse:beat()) ->
+    log_msg() | undefined.
+format_squad_beat({rank, {changed, Rank}}) ->
+    {info, {"rank changed to: ~p", [Rank]}, [
+        {mg_pulse_event_id, squad_rank_changed},
+        {squad_rank, Rank}
+    ]};
+format_squad_beat({{member, Pid}, Status}) ->
+    case Status of
+        added ->
+            {info, {"member ~p added", [Pid]}, add_event_id(squad_member_added, [])};
+        {refreshed, Member} ->
+            Meta = extract_meta(squad_member, Member),
+            {debug, {"member ~p refreshed", [Pid]}, add_event_id(squad_member_added, Meta)};
+        {removed, Member, Reason} ->
+            Meta = extract_meta(squad_member, Member),
+            {info, {"member ~p removed", [Pid, Reason]}, add_event_id(squad_member_removed, Meta)}
+    end;
+format_squad_beat({{broadcast, _}, _}) ->
+    undefined;
+format_squad_beat({{timer, TRef}, Status}) ->
+    case Status of
+        {started, Timeout, Msg} ->
+            Meta = add_event_id(consuela_timer_started, [{timeout, Timeout}]),
+            {debug, {"timer ~p armed to fire ~p after ~p ms", [TRef, Msg, Timeout]}, Meta};
+        cancelled ->
+            {debug, {"timer ~p cancelled", [TRef]}, add_event_id(consuela_timer_fired, [])};
+        {fired, Msg} ->
+            {debug, {"timer ~p fired ~p", [TRef, Msg]}, add_event_id(consuela_timer_reset, [])}
+    end;
+format_squad_beat({{monitor, MRef}, Status}) ->
+    case Status of
+        {started, Pid} ->
+            {debug, {"monitor ~p set on ~p", [MRef, Pid]}, add_event_id(consuela_monitor_set, [])};
+        {fired, Pid, Reason} ->
+            Meta = add_event_id(consuela_monitor_fired, []),
+            {debug, {"monitor ~p on ~p fired: ~p", [MRef, Pid, Reason]}, Meta}
+    end;
+format_squad_beat({unexpected, Unexpected = {Type, _}}) ->
+    format_unexpected_beat(Unexpected, add_event_id(case Type of
+        {call, _} -> squad_unexpected_call;
+        cast      -> squad_unexpected_cast;
+        info      -> squad_unexpected_info
+    end, []));
+format_squad_beat(Beat) ->
+    {warning, {"unknown or mishandled squad beat: ~p", [Beat]}, []}.
+
+-spec format_unexpected_beat(Beat, meta()) ->
+    log_msg() when Beat :: {{call, _From} | cast | info, _Message}.
+format_unexpected_beat({Type, Message}, Meta) ->
+    case Type of
+        {call, From} ->
+            {warning, {"received unexpected call from ~p: ~p", [From, Message]}, Meta};
+        cast ->
+            {warning, {"received unexpected cast: ~p", [Message]}, Meta};
+        info ->
+            {warning, {"received unexpected info: ~p", [Message]}, Meta}
+    end.
+
+-spec add_event_id(atom(), meta()) ->
+    meta().
+add_event_id(EventID, Meta) ->
+    add_meta({mg_pulse_event_id, EventID}, Meta).
+
+-spec add_meta(meta() | {atom(), any()}, meta()) ->
+    meta().
+add_meta(Meta, MetaAcc) when is_list(Meta) ->
+    Meta ++ MetaAcc;
+add_meta(Meta, MetaAcc) ->
+    [Meta | MetaAcc].
 
 -spec extract_meta(atom(), any()) ->
     [meta()] | meta().
@@ -403,6 +446,11 @@ extract_meta(machine_ref, {tag, MachineTag}) ->
     {machine_tag, MachineTag};
 extract_meta(namespace, NS) ->
     {machine_ns, NS};
+extract_meta(squad_member, Member) ->
+    {squad_member, [
+        {age          , maps:get(age, Member, 0)},
+        {last_contact , maps:get(last_contact, Member, 0)}
+    ]};
 extract_meta(Name, Value) ->
     {Name, Value}.
 

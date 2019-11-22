@@ -16,23 +16,24 @@
 
 -module(mg_queue_interrupted).
 
--behaviour(mg_scheduler).
--behaviour(mg_scheduler_worker).
 
-%% mg_scheduler callbacks
+-behaviour(mg_queue_scanner).
 -export([init/1]).
--export([search_new_tasks/3]).
+-export([search_tasks/3]).
 
-%% mg_scheduler_worker callbacks
+-behaviour(mg_scheduler_worker).
 -export([execute_task/2]).
 
 %% Types
 
+-type milliseconds() :: non_neg_integer().
 -type options() :: #{
     namespace := mg:ns(),
     scheduler_name := mg_scheduler:name(),
     pulse := mg_pulse:handler(),
     machine := mg_machine:options(),
+    min_scan_delay => milliseconds(),
+    rescan_delay => milliseconds(),
     processing_timeout => timeout()
 }.
 -record(state, {
@@ -46,12 +47,9 @@
 %% Internal types
 
 -type task_id() :: mg:id().
--type task_payload() :: #{
-    machine_id := mg:id(),
-    target_timestamp := timestamp_s()
-}.
--type task_info() :: mg_scheduler:task_info(task_id(), task_payload()).
--type timestamp_s() :: genlib_time:ts().  % in seconds
+-type task_payload() :: #{}.
+-type task() :: mg_queue_task:task(task_id(), task_payload()).
+-type scan_delay() :: mg_queue_scanner:scan_delay().
 
 -define(DEFAULT_PROCESSING_TIMEOUT, 60000).  % 1 minute
 
@@ -64,13 +62,9 @@
 init(_Options) ->
     {ok, #state{continuation = undefined}}.
 
--spec search_new_tasks(Options, Limit, State) -> {ok, Status, Result, State} when
-    Options :: options(),
-    Limit :: non_neg_integer(),
-    Result :: [task_info()],
-    Status :: mg_scheduler:search_status(),
-    State :: state().
-search_new_tasks(Options, Limit, #state{continuation = Continuation} = State) ->
+-spec search_tasks(options(), _Limit :: non_neg_integer(), state()) ->
+    {{scan_delay(), [task()]}, state()}.
+search_tasks(Options, Limit, #state{continuation = Continuation} = State) ->
     MachineOptions = machine_options(Options),
     Query = processing,
     {IDs, NewContinuation} = mg_machine:search(MachineOptions, Query, Limit, Continuation),
@@ -78,33 +72,21 @@ search_new_tasks(Options, Limit, #state{continuation = Continuation} = State) ->
     Tasks = [
         #{
             id => ID,
-            payload => #{
-                machine_id => ID
-            },
             created_at => CreateTime,
             machine_id => ID
         }
         || ID <- IDs
     ],
-    {ok, get_status(NewContinuation), Tasks, State#state{continuation = NewContinuation}}.
+    Delay = get_delay(NewContinuation, Options),
+    NewState = State#state{continuation = NewContinuation},
+    {{Delay, Tasks}, NewState}.
 
--spec execute_task(options(), task_info()) ->
+-spec execute_task(options(), task()) ->
     ok.
-execute_task(Options, TaskInfo) ->
-    MachineOptions = machine_options(Options),
-    #{
-        payload := #{
-            machine_id := MachineID
-        }
-    } = TaskInfo,
-    case mg_machine:get_status(MachineOptions, MachineID) of
-        {processing, ReqCtx} ->
-            Timeout = maps:get(processing_timeout, Options, ?DEFAULT_PROCESSING_TIMEOUT),
-            Deadline = mg_deadline:from_timeout(Timeout),
-            ok = mg_machine:resume_interrupted(MachineOptions, MachineID, ReqCtx, Deadline);
-        _Other ->
-            ok
-    end.
+execute_task(Options, #{machine_id := MachineID}) ->
+    Timeout = maps:get(processing_timeout, Options, ?DEFAULT_PROCESSING_TIMEOUT),
+    Deadline = mg_deadline:from_timeout(Timeout),
+    ok = mg_machine:resume_interrupted(machine_options(Options), MachineID, Deadline).
 
 %% Internals
 
@@ -113,9 +95,9 @@ execute_task(Options, TaskInfo) ->
 machine_options(#{machine := MachineOptions}) ->
     MachineOptions.
 
--spec get_status(mg_storage:continuation()) ->
-    mg_scheduler:search_status().
-get_status(undefined) ->
-    completed;
-get_status(_Other) ->
-    continue.
+-spec get_delay(mg_storage:continuation(), options()) ->
+    scan_delay().
+get_delay(undefined, Options) ->
+    maps:get(rescan_delay, Options, 10 * 60 * 1000);
+get_delay(_Other, Options) ->
+    maps:get(min_scan_delay, Options, 1000).

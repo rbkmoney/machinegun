@@ -301,6 +301,10 @@ content(Body) ->
 -spec mg_woody_api_config(config()) ->
     list().
 mg_woody_api_config(C) ->
+    Scheduler = #{
+        scan_interval => #{continue => 500, completed => 15000},
+        task_quota    => <<"scheduler_tasks_total">>
+    },
     [
         {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, limits => #{}}},
         {quotas, [
@@ -319,9 +323,9 @@ mg_woody_api_config(C) ->
                 },
                 default_processing_timeout => 5000,
                 schedulers => #{
-                    timers         => #{ interval => 100, limit => <<"scheduler_tasks_total">> },
-                    timers_retries => #{ interval => 100, limit => <<"scheduler_tasks_total">> },
-                    overseer       => #{ interval => 100, limit => <<"scheduler_tasks_total">> }
+                    timers         => Scheduler,
+                    timers_retries => Scheduler,
+                    overseer       => Scheduler
                 },
                 retries => #{
                     storage   => {exponential, infinity, 1, 10},
@@ -683,6 +687,9 @@ mwc_get_events_machine(_C) ->
 -spec config_with_multiple_event_sinks(config()) ->
     _.
 config_with_multiple_event_sinks(_C) ->
+    Scheduler = #{
+        scan_interval => #{continue => 500, completed => 15000}
+    },
     Config = [
         {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, limits => #{}}},
         {namespaces, #{
@@ -694,9 +701,9 @@ config_with_multiple_event_sinks(_C) ->
                 },
                 default_processing_timeout => 30000,
                 schedulers => #{
-                    timers         => #{ interval => 100 },
-                    timers_retries => #{ interval => 100 },
-                    overseer       => #{ interval => 100 }
+                    timers         => Scheduler,
+                    timers_retries => Scheduler,
+                    overseer       => Scheduler
                 },
                 retries => #{},
                 event_sinks => [{mg_events_sink_machine, #{name => default, machine_id => <<"SingleES">>}}]
@@ -709,9 +716,9 @@ config_with_multiple_event_sinks(_C) ->
                 },
                 default_processing_timeout => 5000,
                 schedulers => #{
-                    timers         => #{ interval => 100 },
-                    timers_retries => #{ interval => 100 },
-                    overseer       => #{ interval => 100 }
+                    timers         => Scheduler,
+                    timers_retries => Scheduler,
+                    overseer       => Scheduler
                 },
                 retries => #{},
                 event_sinks => [
