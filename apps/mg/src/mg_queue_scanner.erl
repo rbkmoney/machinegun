@@ -34,7 +34,7 @@
 -type milliseconds()  :: non_neg_integer().
 
 -type options() :: #{
-    queue_handler  := queue_handler(),
+    queue_handler    := queue_handler(),
     max_scan_limit   => scan_limit() | unlimited,
     scan_ahead       => scan_ahead(),
     retry_scan_delay => scan_delay(),
