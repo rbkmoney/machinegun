@@ -107,10 +107,15 @@ format_beat({consuela, Beat = {Producer, _}}) ->
     {Level, Format, add_meta({consuela_producer, Producer}, Context)};
 
 format_beat({squad, {Producer, Beat, Extra}}) ->
-    {Level, Format, Context} = format_squad_beat(Beat),
-    Meta0 = lists:foldl(fun add_meta/2, Context, [extract_meta(Name, Value) || {Name, Value} <- Extra]),
-    Meta1 = add_meta({squad_producer, Producer}, Meta0),
-    {Level, Format, Meta1};
+    case format_squad_beat(Beat) of
+        {Level, Format, Context} ->
+            MetaExtra = [extract_meta(Name, Value) || {Name, Value} <- Extra],
+            Meta0 = lists:foldl(fun add_meta/2, Context, MetaExtra),
+            Meta1 = add_meta({squad_producer, Producer}, Meta0),
+            {Level, Format, Meta1};
+        undefined ->
+            undefined
+    end;
 
 format_beat(_Beat) ->
     undefined.
