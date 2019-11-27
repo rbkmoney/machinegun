@@ -177,7 +177,7 @@ stop_automaton(Pid) ->
 -spec events_machine_options(options(), mg:ns()) ->
     mg_events_machine:options().
 events_machine_options(Options, NS) ->
-    Scheduler = #{registry => mg_procreg_gproc, interval => 100},
+    Scheduler = #{},
     #{
         namespace => NS,
         processor => {?MODULE, Options},

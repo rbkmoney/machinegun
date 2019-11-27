@@ -96,6 +96,19 @@ create_metric(#mg_timer_process_finished{namespace = NS, queue = Queue, duration
         create_bin_inc([mg, timer, process, NS, Queue, duration], duration, Duration)
     ];
 % scheduler
+create_metric(#mg_scheduler_search_success{
+    scheduler_name = Name,
+    namespace = NS,
+    delay = DelayMs,
+    duration = Duration
+}) ->
+    [
+        create_inc([mg, scheduler, NS, Name, scan, success]),
+        create_delay_inc([mg, scheduler, NS, Name, scan, delay], DelayMs),
+        create_bin_inc([mg, scheduler, NS, Name, scan, duration], duration, Duration)
+    ];
+create_metric(#mg_scheduler_search_error{scheduler_name = Name, namespace = NS}) ->
+    [create_inc([mg, scheduler, NS, Name, scan, error])];
 create_metric(#mg_scheduler_task_error{scheduler_name = Name, namespace = NS}) ->
     [create_inc([mg, scheduler, NS, Name, task, error])];
 create_metric(#mg_scheduler_new_tasks{scheduler_name = Name, namespace = NS, new_tasks_count = Count}) ->

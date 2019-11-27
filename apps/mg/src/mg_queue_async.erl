@@ -16,14 +16,11 @@
 
 -module(mg_queue_async).
 
--behaviour(mg_scheduler).
--behaviour(mg_scheduler_worker).
-
-%% mg_scheduler callbacks
+-behaviour(mg_queue_scanner).
 -export([init/1]).
--export([search_new_tasks/3]).
+-export([search_tasks/3]).
 
-%% mg_scheduler_worker callbacks
+-behaviour(mg_scheduler_worker).
 -export([execute_task/2]).
 
 %% Types
@@ -49,7 +46,8 @@
 -type task_payload() :: #{
     machine_id := mg:id()
 }.
--type task_info() :: mg_scheduler:task_info(task_id(), task_payload()).
+-type task() :: mg_queue_task:task(task_id(), task_payload()).
+-type scan_delay() :: mg_queue_scanner:scan_delay().
 
 -define(DEFAULT_PROCESSING_TIMEOUT, 60000).  % 1 minute
 
@@ -62,13 +60,9 @@
 init(_Options) ->
     {ok, #state{continuation = undefined}}.
 
--spec search_new_tasks(Options, Limit, State) -> {ok, Status, Result, State} when
-    Options :: options(),
-    Limit :: non_neg_integer(),
-    Result :: [task_info()],
-    Status :: mg_scheduler:search_status(),
-    State :: state().
-search_new_tasks(Options, Limit, #state{continuation = Continuation} = State) ->
+-spec search_tasks(options(), _Limit :: non_neg_integer(), state()) ->
+    {{scan_delay(), [task()]}, state()}.
+search_tasks(Options, Limit, #state{continuation = Continuation} = State) ->
     MachineOptions = machine_options(Options),
     Query = async,
     {IDs, NewContinuation} = mg_machine:search(MachineOptions, Query, Limit, Continuation),
@@ -84,9 +78,11 @@ search_new_tasks(Options, Limit, #state{continuation = Continuation} = State) ->
         }
         || ID <- IDs
     ],
-    {ok, get_status(NewContinuation), Tasks, State#state{continuation = NewContinuation}}.
+    Delay = get_delay(NewContinuation, Options),
+    NewState = State#state{continuation = NewContinuation},
+    {{Delay, Tasks}, NewState}.
 
--spec execute_task(options(), task_info()) ->
+-spec execute_task(options(), task()) ->
     ok.
 execute_task(Options, TaskInfo) ->
     MachineOptions = machine_options(Options),
@@ -106,9 +102,9 @@ execute_task(Options, TaskInfo) ->
 machine_options(#{machine := MachineOptions}) ->
     MachineOptions.
 
--spec get_status(mg_storage:continuation()) ->
-    mg_scheduler:search_status().
-get_status(undefined) ->
-    completed;
-get_status(_Other) ->
-    continue.
+-spec get_delay(mg_storage:continuation(), options()) ->
+    scan_delay().
+get_delay(undefined, Options) ->
+    maps:get(rescan_delay, Options, 10 * 60 * 1000);
+get_delay(_Other, Options) ->
+    maps:get(min_scan_delay, Options, 1000).

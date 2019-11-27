@@ -135,8 +135,8 @@ automaton_options(NS) ->
             processor      => {intervals, [1]}
         },
         schedulers => #{
-            timers         => #{registry => mg_procreg_gproc, interval => 100},
-            timers_retries => #{registry => mg_procreg_gproc, interval => 100}
+            timers         => #{min_scan_delay => 1000},
+            timers_retries => #{min_scan_delay => 1000}
         }
     }.
 

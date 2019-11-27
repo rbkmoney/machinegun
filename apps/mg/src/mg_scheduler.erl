@@ -16,391 +16,325 @@
 
 -module(mg_scheduler).
 
--include_lib("mg/include/pulse.hrl").
-
--behaviour(gen_server).
-
 -export([child_spec/3]).
 -export([start_link/2]).
 
--export([add_task/2]).
+-export([inquire/1]).
+-export([send_task/2]).
+-export([distribute_tasks/2]).
 
 %% gen_server callbacks
+-behaviour(gen_server).
 -export([init/1]).
 -export([handle_info/2]).
 -export([handle_cast/2]).
 -export([handle_call/3]).
--export([code_change/3]).
--export([terminate/2]).
-
--callback child_spec(queue_options(), atom()) -> supervisor:child_spec() | undefined.
--callback init(queue_options()) -> {ok, queue_state()}.
--callback search_new_tasks(Options, Limit, State) -> {ok, Status, Result, State} when
-    Options :: queue_options(),
-    Limit :: non_neg_integer(),
-    Result :: [task_info()],
-    Status :: search_status(),
-    State :: queue_state().
-
--optional_callbacks([child_spec/2]).
 
 %% Types
 -type options() :: #{
-    namespace := mg:ns(),
-    name := name(),
-    registry := mg_procreg:options(),
-    queue_handler := queue_handler(),
-    task_handler := mg_utils:mod_opts(),
-    pulse := mg_pulse:handler(),
-    quota_name := mg_quota_worker:name(),
-    quota_share => mg_quota:share(),
-    no_task_wait => timeout(),
-    search_interval => timeout()
+    start_interval => non_neg_integer(),
+    capacity       := non_neg_integer(),
+    quota_name     := mg_quota_worker:name(),
+    quota_share    => mg_quota:share(),
+    pulse          => mg_pulse:handler()
 }.
--type task_info(TaskID, TaskPayload) :: #{
-    id := TaskID,
-    payload := TaskPayload,
-    created_at := integer(),  % erlang monotonic time
-    target_time => genlib_time:ts(),  % unix timestamp in seconds
-    machine_id => mg:id()
-}.
--type ref_options() :: #{
-    namespace := mg:ns(),
-    name      := name(),
-    registry  := mg_procreg:options()
-}.
--type task_info() :: task_info(task_id(), task_payload()).
--type search_status() :: continue | completed.
--type name() :: atom().
 
+-type name() :: atom().
+-type id() :: {name(), mg:ns()}.
+
+-type task_id() :: mg_queue_task:id().
+-type task() :: mg_queue_task:task().
+-type target_time() :: mg_queue_task:target_time().
+
+-export_type([id/0]).
 -export_type([name/0]).
 -export_type([options/0]).
--export_type([ref_options/0]).
--export_type([task_info/0]).
--export_type([task_info/2]).
--export_type([search_status/0]).
+-export_type([status/0]).
 
 %% Internal types
 -record(state, {
-    ns :: mg:ns(),
-    name :: name(),
-    queue_handler :: queue_handler(),
-    queue_state :: queue_state(),
+    id :: id(),
     pulse :: mg_pulse:handler(),
-    options :: options(),
+    capacity :: non_neg_integer(),
     quota_name :: mg_quota_worker:name(),
     quota_share :: mg_quota:share(),
     quota_reserved :: mg_quota:resource() | undefined,
-    timer :: reference(),
-    search_interval :: timeout(),
-    no_task_wait :: timeout(),
+    timer :: timer:tref(),
+    waiting_tasks :: task_queue(),
     active_tasks :: #{task_id() => pid()},
-    waiting_tasks :: queue:queue(task_id()),
-    tasks_info :: #{task_id() => task_info()},
     task_monitors :: #{monitor() => task_id()}
 }).
 -type state() :: #state{}.
--type task_id() :: any().
 -type monitor() :: reference().
--type queue_state() :: any().
--type task_payload() :: any().
--type queue_options() :: any().
--type queue_handler() :: mg_utils:mod_opts(queue_options()).
 
--define(DEFAULT_SEARCH_INTERVAL, 1000).  % 1 second
--define(DEFAULT_NO_TASK_WAIT, 1000).  % 1 second
--define(SEARCH_MESSAGE, search_new_tasks).
--define(SEARCH_NUMBER, 10).
+%%
+
+-type task_set() :: #{task_id() => task()}.
+-type task_rank() :: {target_time(), integer()}.
+
+-record(task_queue, {
+    runnable = #{}              :: task_set(),
+    runqueue = gb_trees:empty() :: gb_trees:tree(task_rank(), task_id()),
+    counter  = 1                :: integer()
+}).
+
+-type task_queue() :: #task_queue{}.
+
+-type status() :: #{
+    pid           := pid(),
+    active_tasks  := non_neg_integer(),
+    waiting_tasks := non_neg_integer(),
+    capacity      := pos_integer()
+}.
 
 %%
 %% API
 %%
 
--spec child_spec(_RegName, options(), _ChildID) ->
+-spec child_spec(id(), options(), _ChildID) ->
     supervisor:child_spec().
-child_spec(RegName, Options, ChildID) ->
+child_spec(ID, Options, ChildID) ->
     #{
-        id       => ChildID,
-        start    => {?MODULE, start_link, [RegName, Options]},
-        restart  => permanent,
-        type     => supervisor
+        id    => ChildID,
+        start => {?MODULE, start_link, [ID, Options]},
+        type  => worker
     }.
 
--spec start_link(_RegName, options()) ->
+-spec start_link(id(), options()) ->
     mg_utils:gen_start_ret().
-start_link(RegName, #{registry := ProcregOptions, queue_handler := Handler} = Options) ->
-    mg_procreg:start_supervisor(
-        ProcregOptions,
-        RegName,
-        #{strategy => one_for_all},
-        mg_utils:lists_compact([
-            mg_scheduler_worker:child_spec(Options, tasks),
-            handler_child_spec(Handler, queue_handler),
-            manager_child_spec(Options, manager)
-        ])
-    ).
+start_link(ID, Options) ->
+    gen_server:start_link(self_reg_name(ID), ?MODULE, {ID, Options}, []).
 
+-spec inquire(id()) ->
+    status().
+inquire(ID) ->
+    gen_server:call(self_ref(ID), inquire).
 
--spec add_task(ref_options(), task_info()) ->
+-spec send_task(id(), task()) ->
     ok.
-add_task(Options = #{registry := ProcregOptions}, TaskInfo) ->
-    try
-        mg_procreg:call(ProcregOptions, wrap_id(Options), {add_task, TaskInfo})
-    catch
-        exit:Reason ->
-            erlang:throw({transient, {scheduler_unavailable, Reason}})
-    end.
+send_task(ID, Task) ->
+    gen_server:cast(self_ref(ID), {tasks, [Task]}).
+
+-spec distribute_tasks(pid(), [task()]) ->
+    ok.
+distribute_tasks(Pid, Tasks) when is_pid(Pid) ->
+    gen_server:cast(Pid, {tasks, Tasks}).
 
 %% gen_server callbacks
 
--spec init(options()) ->
+-spec init({id(), options()}) ->
     mg_utils:gen_server_init_ret(state()).
-init(Options) ->
-    SearchInterval = maps:get(search_interval, Options, ?DEFAULT_SEARCH_INTERVAL),
-    NoTaskWait = maps:get(no_task_wait, Options, ?DEFAULT_NO_TASK_WAIT),
-    Name = maps:get(name, Options),
-    NS = maps:get(namespace, Options),
-    QueueHandler = maps:get(queue_handler, Options),
-    {ok, QueueState} = handler_init(QueueHandler),
+init({ID, Options}) ->
+    {ok, TimerRef} = timer:send_interval(maps:get(start_interval, Options, 1000), start),
     {ok, #state{
-        ns = NS,
-        name = Name,
-        queue_handler = QueueHandler,
-        queue_state = QueueState,
-        pulse = maps:get(pulse, Options),
-        options = Options,
+        id = ID,
+        capacity = maps:get(capacity, Options),
+        pulse = maps:get(pulse, Options, undefined),
         quota_name = maps:get(quota_name, Options),
         quota_share = maps:get(quota_share, Options, 1),
         quota_reserved = undefined,
-        search_interval = SearchInterval,
-        no_task_wait = NoTaskWait,
         active_tasks = #{},
         task_monitors = #{},
-        tasks_info = #{},
-        waiting_tasks = queue:new(),
-        timer = erlang:send_after(SearchInterval, self(), ?SEARCH_MESSAGE)
+        waiting_tasks = #task_queue{},
+        timer = TimerRef
     }}.
 
 -spec handle_call(Call :: any(), mg_utils:gen_server_from(), state()) ->
     mg_utils:gen_server_handle_call_ret(state()).
-handle_call({add_task, TaskInfo}, _From, State0) ->
-    State1 = add_tasks([TaskInfo], State0),
-    State2 = maybe_update_reserved(State1),
-    State3 = start_new_tasks(State2),
-    {reply, ok, State3};
+handle_call(inquire, _From, State) ->
+    Status = #{
+        pid           => self(),
+        active_tasks  => get_active_task_count(State),
+        waiting_tasks => get_waiting_task_count(State),
+        capacity      => State#state.capacity
+    },
+    {reply, Status, State};
 handle_call(Call, From, State) ->
     ok = logger:error("unexpected gen_server call received: ~p from ~p", [Call, From]),
     {noreply, State}.
 
--spec handle_cast(Cast :: any(), state()) ->
+-type cast() ::
+    {tasks, [task()]}.
+
+-spec handle_cast(cast(), state()) ->
     mg_utils:gen_server_handle_cast_ret(state()).
+handle_cast({tasks, Tasks}, State0) ->
+    State1 = add_tasks(Tasks, State0),
+    State2 = maybe_update_reserved(State1),
+    State3 = start_new_tasks(State2),
+    {noreply, State3};
 handle_cast(Cast, State) ->
     ok = logger:error("unexpected gen_server cast received: ~p", [Cast]),
     {noreply, State}.
 
--spec handle_info(Info :: any(), state()) ->
+-type info() ::
+    {'DOWN', monitor(), process, pid(), _Info} |
+    start.
+
+-spec handle_info(info(), state()) ->
     mg_utils:gen_server_handle_info_ret(state()).
-handle_info(?SEARCH_MESSAGE, State0) ->
-    {SearchStatus, State1} = search_new_tasks(State0),
-    Timeout = get_timer_timeout(SearchStatus, State1),
-    State2 = restart_timer(?SEARCH_MESSAGE, Timeout, State1),
-    State3 = update_reserved(State2),
-    State4 = start_new_tasks(State3),
-    {noreply, State4};
 handle_info({'DOWN', Monitor, process, _Object, _Info}, State0) ->
     State1 = forget_about_task(Monitor, State0),
+    State2 = start_new_tasks(State1),
+    {noreply, State2};
+handle_info(start, State0) ->
+    State1 = update_reserved(State0),
     State2 = start_new_tasks(State1),
     {noreply, State2};
 handle_info(Info, State) ->
     ok = logger:error("unexpected gen_server info received: ~p", [Info]),
     {noreply, State}.
 
--spec code_change(OldVsn :: any(), state(), Extra :: any()) ->
-    mg_utils:gen_server_code_change_ret(state()).
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
-
--spec terminate(Reason :: any(), state()) ->
-    ok.
-terminate(_Reason, _State) ->
-    ok.
-
-%% Internlas
-
--spec manager_child_spec(options(), atom()) ->
-    supervisor:child_spec().
-manager_child_spec(Options = #{registry := ProcregOptions}, ChildID) ->
-    #{
-        id       => ChildID,
-        start    => {mg_procreg, start_link, [ProcregOptions, wrap_id(Options), ?MODULE, Options, []]},
-        restart  => permanent,
-        shutdown => 5000
-    }.
-
 % Process registration
 
--spec wrap_id(options() | ref_options()) ->
-    term().
-wrap_id(#{name := Name, namespace := NS}) ->
-    {?MODULE, {Name, NS}}.
+-spec self_reg_name(id()) ->
+    mg_procreg:reg_name().
+self_reg_name(ID) ->
+    mg_procreg:reg_name(mg_procreg_gproc, {?MODULE, ID}).
 
-% Callback helpers
-
--spec handler_init(queue_handler()) ->
-    {ok, queue_state()}.
-handler_init(Handler) ->
-    mg_utils:apply_mod_opts(Handler, init).
-
--spec handler_search(Handler, Limit, State) -> {ok, Status, Result, State} when
-    Handler :: queue_handler(),
-    Limit :: non_neg_integer(),
-    Result :: [task_info()],
-    Status :: search_status(),
-    State :: queue_state().
-handler_search(Handler, Limit, State) ->
-    mg_utils:apply_mod_opts(Handler, search_new_tasks, [Limit, State]).
-
--spec handler_child_spec(queue_options(), atom()) ->
-    supervisor:child_spec() | undefined.
-handler_child_spec(Handler, ChildID) ->
-    mg_utils:apply_mod_opts_if_defined(Handler, child_spec, undefined, [ChildID]).
-
-% Timer
-
--spec restart_timer(any(), timeout(), state()) -> state().
-restart_timer(Message, Timeout, #state{timer = TimerRef} = State) ->
-    _ = erlang:cancel_timer(TimerRef),
-    State#state{timer = erlang:send_after(Timeout, self(), Message)}.
-
--spec get_timer_timeout(search_status(), state()) ->
-    timeout().
-get_timer_timeout(continue, State) ->
-    State#state.search_interval;
-get_timer_timeout(completed, State) ->
-    State#state.no_task_wait.
+-spec self_ref(id()) ->
+    mg_procreg:ref().
+self_ref(ID) ->
+    mg_procreg:ref(mg_procreg_gproc, {?MODULE, ID}).
 
 % Helpers
 
 -spec forget_about_task(monitor(), state()) ->
     state().
 forget_about_task(Monitor, State) ->
-    #state{active_tasks = Tasks, tasks_info = TaskInfo, task_monitors = Monitors} = State,
+    #state{active_tasks = Tasks, task_monitors = Monitors} = State,
     case maps:find(Monitor, Monitors) of
         {ok, TaskID} ->
             State#state{
                 active_tasks = maps:remove(TaskID, Tasks),
-                task_monitors = maps:remove(Monitor, Monitors),
-                tasks_info = maps:remove(TaskID, TaskInfo)
+                task_monitors = maps:remove(Monitor, Monitors)
             };
         error ->
             State
     end.
 
--spec add_tasks([task_info()], state()) ->
+-spec add_tasks([task()], state()) ->
     state().
-add_tasks([], State) ->
-    State;
-add_tasks(NewTasks, State) ->
-    #state{tasks_info = TasksInfo, waiting_tasks = WaitingTasks} = State,
-    UnknownTasks = [Task || #{id := ID} = Task <- NewTasks, maps:is_key(ID, TasksInfo) =:= false],
-    NewWaitingTasks = queue:join(WaitingTasks, queue:from_list([ID || #{id := ID} <- UnknownTasks])),
-    NewTasksInfo = maps:merge(TasksInfo, maps:from_list([{ID, Info} || #{id := ID} = Info <- UnknownTasks])),
-    ok = emit_new_tasks_beat(UnknownTasks, State),
-    State#state{tasks_info = NewTasksInfo, waiting_tasks = NewWaitingTasks}.
+add_tasks(Tasks, State = #state{waiting_tasks = WaitingTasks}) ->
+    NewWaitingTasks = lists:foldl(fun enqueue_task/2, WaitingTasks, Tasks),
+    NewTasksCount = get_task_queue_size(NewWaitingTasks) - get_task_queue_size(WaitingTasks),
+    ok = emit_new_tasks_beat(NewTasksCount, State),
+    State#state{waiting_tasks = NewWaitingTasks}.
 
--spec search_new_tasks(state()) ->
-    {search_status(), state()}.
-search_new_tasks(#state{tasks_info = TaskInfo} = State) ->
-    TasksNeeded = get_search_number(State),
-    case maps:size(TaskInfo) of
-        TotalKnownTasks when TotalKnownTasks < TasksNeeded ->
-            {ok, Status, NewTasks, NewState} = try_search_tasks(TasksNeeded, State),
-            {Status, add_tasks(NewTasks, NewState)};
-        TotalKnownTasks when TotalKnownTasks >= TasksNeeded ->
-            {continue, State}
-    end.
-
--spec get_search_number(state()) ->
-    non_neg_integer().
-get_search_number(#state{quota_reserved = undefined}) ->
-    ?SEARCH_NUMBER;
-get_search_number(#state{quota_reserved = Reserved}) ->
-    erlang:max(Reserved * 2, ?SEARCH_NUMBER).
-
--spec try_search_tasks(non_neg_integer(), state()) ->
-    {ok, search_status(), [task_info()], state()}.
-try_search_tasks(SearchLimit, State) ->
-    #state{
-        queue_state = HandlerState,
-        queue_handler = Handler
-    } = State,
-    {ok, Status, NewTasks, NewHandlerState} = try
-        handler_search(Handler, SearchLimit, HandlerState)
-    catch
-        throw:({ErrorType, _Details} = Reason):ST when
-            ErrorType =:= transient orelse
-            ErrorType =:= timeout
-        ->
-            Exception = {throw, Reason, ST},
-            ok = emit_search_error_beat(Exception, State),
-            {ok, continue, [], HandlerState}
-    end,
-    {ok, Status, NewTasks, State#state{queue_state = NewHandlerState}}.
+-spec enqueue_task(task(), task_queue()) ->
+    task_queue().
+enqueue_task(
+    Task = #{id := TaskID},
+    Queue = #task_queue{runnable = Runnable, runqueue = RQ, counter = Counter}
+) ->
+    TargetTime = maps:get(target_time, Task, 0),
+    % TODO
+    % Blindly overwriting a task with same ID here if there's one. This is not the best strategy out
+    % there but sufficient enough. For example we could overwrite most recent legit task with an
+    % outdated one appointed a bit late by some remote queue scanner.
+    NewRunnable = Runnable#{TaskID => Task},
+    % NOTE
+    % Inclusion of the unique counter value here helps to ensure FIFO semantics among tasks with the
+    % same target timestamp.
+    NewRQ = gb_trees:insert({TargetTime, Counter}, TaskID, RQ),
+    Queue#task_queue{runnable = NewRunnable, runqueue = NewRQ, counter = Counter + 1}.
 
 -spec start_new_tasks(state()) ->
     state().
-start_new_tasks(State) ->
-    #state{
-        quota_reserved = Reserved,
-        active_tasks = ActiveTasks
-    } = State,
-    TotalActiveTasks = maps:size(ActiveTasks),
+start_new_tasks(State = #state{quota_reserved = Reserved, waiting_tasks = WaitingTasks}) ->
+    TotalActiveTasks = get_active_task_count(State),
     NewTasksNumber = erlang:max(Reserved - TotalActiveTasks, 0),
-    start_multiple_tasks(NewTasksNumber, State).
+    CurrentTime = genlib_time:unow(),
+    Iterator = make_iterator(CurrentTime, WaitingTasks),
+    start_multiple_tasks(NewTasksNumber, Iterator, State).
 
--spec start_multiple_tasks(non_neg_integer(), state()) ->
+-spec start_multiple_tasks(non_neg_integer(), task_queue_iterator(), state()) ->
     state().
-start_multiple_tasks(0, State) ->
+start_multiple_tasks(0, _Iterator, State) ->
     State;
-start_multiple_tasks(N, State) when N > 0 ->
+start_multiple_tasks(N, Iterator, State) when N > 0 ->
     #state{
-        ns = NS,
-        name = Name,
-        tasks_info = TasksInfo,
+        id = ID,
         waiting_tasks = WaitingTasks,
         active_tasks = ActiveTasks,
         task_monitors = Monitors
     } = State,
-    case queue:out(WaitingTasks) of
-        {{value, TaskID}, NewWaitingTasks} ->
-            TaskInfo = maps:get(TaskID, TasksInfo),
-            {ok, Pid} = mg_scheduler_worker:start_task(NS, Name, TaskInfo),
-            Monitor = erlang:monitor(process, Pid),
-            NewState = State#state{
-                waiting_tasks = NewWaitingTasks,
-                active_tasks = ActiveTasks#{TaskID => Pid},
-                task_monitors = Monitors#{Monitor => TaskID}
-            },
-            start_multiple_tasks(N - 1, NewState);
-        {empty, WaitingTasks} ->
+    case next_task(Iterator) of
+        {Rank, TaskID, IteratorNext} when not is_map_key(TaskID, ActiveTasks) ->
+            % Task appears not to be running on the scheduler...
+            case dequeue_task(Rank, WaitingTasks) of
+                {Task = #{}, NewWaitingTasks} ->
+                    % ...so let's start it.
+                    {ok, Pid, Monitor} = mg_scheduler_worker:start_task(ID, Task),
+                    NewState = State#state{
+                        waiting_tasks = NewWaitingTasks,
+                        active_tasks = ActiveTasks#{TaskID => Pid},
+                        task_monitors = Monitors#{Monitor => TaskID}
+                    },
+                    start_multiple_tasks(N - 1, IteratorNext, NewState);
+                {outdated, NewWaitingTasks} ->
+                    % ...but the queue entry seems outdated, let's skip.
+                    NewState = State#state{waiting_tasks = NewWaitingTasks},
+                    start_multiple_tasks(N, IteratorNext, NewState)
+            end;
+        {_Rank, _TaskID, IteratorNext} ->
+            % Task is running already, possibly with earlier target time, let's leave it for later.
+            start_multiple_tasks(N, IteratorNext, State);
+        none ->
             State
     end.
 
+-type task_queue_iterator() ::
+    {gb_trees:iter(task_rank(), task_id()), target_time()}.
+
+-spec make_iterator(target_time(), task_queue()) ->
+    task_queue_iterator().
+make_iterator(TargetTimeCutoff, #task_queue{runqueue = Queue}) ->
+    {gb_trees:iterator(Queue), TargetTimeCutoff}.
+
+-spec next_task(task_queue_iterator()) ->
+    {task_rank(), task_id(), task_queue_iterator()} | none.
+next_task({Iterator, TargetTimeCutoff}) ->
+    case gb_trees:next(Iterator) of
+        {{TargetTime, _} = Rank, TaskID, IteratorNext} when TargetTime =< TargetTimeCutoff ->
+            {Rank, TaskID, {IteratorNext, TargetTimeCutoff}};
+        {{TargetTime, _}, _, _} when TargetTime > TargetTimeCutoff ->
+            none;
+        none ->
+            none
+    end.
+
+-spec dequeue_task(task_rank(), task_queue()) ->
+    {task() | outdated, task_queue()}.
+dequeue_task(Rank = {TargetTime, _}, Queue = #task_queue{runnable = Runnable, runqueue = RQ}) ->
+    {TaskID, RQLeft} = gb_trees:take(Rank, RQ),
+    case maps:take(TaskID, Runnable) of
+        {Task = #{target_time := TargetTime}, RunnableLeft} ->
+            {Task, Queue#task_queue{runnable = RunnableLeft, runqueue = RQLeft}};
+        {_DifferentTask, _} ->
+            % NOTE
+            % It's not the same task we have in the task set. Well just consider it outdated because
+            % the queue can hold stale tasks, in contrast to the task set which can hold only single
+            % task with some ID that is considered actual.
+            {outdated, Queue#task_queue{runqueue = RQLeft}};
+        error ->
+            % NOTE
+            % No such task in the task set. Well just consider it outdated too.
+            {outdated, Queue#task_queue{runqueue = RQLeft}}
+    end.
+
+-spec get_task_queue_size(task_queue()) ->
+    non_neg_integer().
+get_task_queue_size(#task_queue{runnable = Runnable}) ->
+    maps:size(Runnable).
+
 -spec update_reserved(state()) ->
     state().
-update_reserved(State) ->
-    #state{
-        ns = NS,
-        name = Name,
-        tasks_info = TaskInfo,
-        quota_name = Quota,
-        quota_share = QuotaShare,
-        active_tasks = ActiveTasks
-    } = State,
-    TotalKnownTasks = maps:size(TaskInfo),
-    TotalActiveTasks = maps:size(ActiveTasks),
+update_reserved(State = #state{id = ID, quota_name = Quota, quota_share = QuotaShare}) ->
+    TotalActiveTasks = get_active_task_count(State),
+    TotalKnownTasks = TotalActiveTasks + get_waiting_task_count(State),
     ClientOptions = #{
-        client_id => {NS, Name},
+        client_id => ID,
         share => QuotaShare
     },
     Reserved = mg_quota_worker:reserve(ClientOptions, TotalActiveTasks, TotalKnownTasks, Quota),
@@ -408,34 +342,37 @@ update_reserved(State) ->
     ok = emit_reserved_beat(TotalActiveTasks, TotalKnownTasks, Reserved, NewState),
     NewState.
 
+-spec get_active_task_count(state()) ->
+    non_neg_integer().
+get_active_task_count(#state{active_tasks = ActiveTasks}) ->
+    maps:size(ActiveTasks).
+
+-spec get_waiting_task_count(state()) ->
+    non_neg_integer().
+get_waiting_task_count(#state{waiting_tasks = WaitingTasks}) ->
+    get_task_queue_size(WaitingTasks).
+
 %% logging
+
+-include_lib("mg/include/pulse.hrl").
 
 -spec emit_beat(mg_pulse:handler(), mg_pulse:beat()) -> ok.
 emit_beat(Handler, Beat) ->
     ok = mg_pulse:handle_beat(Handler, Beat).
 
--spec emit_new_tasks_beat([task_info()], state()) ->
+-spec emit_new_tasks_beat(non_neg_integer(), state()) ->
     ok.
-emit_new_tasks_beat(NewTasks, #state{pulse = Pulse, ns = NS, name = Name}) ->
+emit_new_tasks_beat(NewTasksCount, #state{pulse = Pulse, id = {Name, NS}}) ->
     emit_beat(Pulse, #mg_scheduler_new_tasks{
         namespace = NS,
         scheduler_name = Name,
-        new_tasks_count = erlang:length(NewTasks)
-    }).
-
--spec emit_search_error_beat(mg_utils:exception(), state()) ->
-    ok.
-emit_search_error_beat(Exception, #state{pulse = Pulse, ns = NS, name = Name}) ->
-    emit_beat(Pulse, #mg_scheduler_search_error{
-        namespace = NS,
-        scheduler_name = Name,
-        exception = Exception
+        new_tasks_count = NewTasksCount
     }).
 
 -spec emit_reserved_beat(non_neg_integer(), non_neg_integer(), mg_quota:resource(), state()) ->
     ok.
 emit_reserved_beat(Active, Total, Reserved, State) ->
-    #state{pulse = Pulse, ns = NS, name = Name, quota_name = Quota} = State,
+    #state{pulse = Pulse, id = {Name, NS}, quota_name = Quota} = State,
     emit_beat(Pulse, #mg_scheduler_quota_reserved{
         namespace = NS,
         scheduler_name = Name,
@@ -445,7 +382,8 @@ emit_reserved_beat(Active, Total, Reserved, State) ->
         quota_reserved = Reserved
     }).
 
--spec(maybe_update_reserved(state()) -> state()).
+-spec maybe_update_reserved(state()) ->
+    state().
 maybe_update_reserved(#state{quota_reserved = undefined} = State) ->
     update_reserved(State);
 maybe_update_reserved(State) ->
