@@ -98,7 +98,7 @@ pool_child_spec(_Options, Name) ->
 -spec process_machine(_Options, mg:id(), mg_machine:processor_impact(), _, _, _, mg_machine:machine_state()) ->
     mg_machine:processor_result() | no_return().
 process_machine(_, _, {init, _}, _, ?req_ctx, _, null) ->
-    {{reply, ok}, build_timer(), []};
+    {{reply, ok}, build_timer(), [], []};
 process_machine(_, _, timeout, _, ?req_ctx, _, _State) ->
     erlang:throw({transient, timeout_oops}).
 

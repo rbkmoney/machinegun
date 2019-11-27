@@ -35,6 +35,7 @@
 
 %% events generation
 -export([generate_events_with_range/2]).
+-export([get_last_event_id/1]).
 
 %% packer to opaque and kv
 -export([events_range_to_opaque/1]).

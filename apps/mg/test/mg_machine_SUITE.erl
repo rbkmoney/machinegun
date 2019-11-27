@@ -161,21 +161,21 @@ pool_child_spec(_Options, Name) ->
     mg_machine:processor_result() | no_return().
 process_machine(_, _, {_, fail}, _, ?req_ctx, _, _) ->
     _ = exit(1),
-    {noreply, sleep, []};
+    {noreply, sleep, [], []};
 process_machine(_, _, {init, {TestKey, TestValue}}, _, ?req_ctx, _, null) ->
-    {{reply, ok}, sleep, [TestKey, TestValue]};
+    {{reply, ok}, sleep, [], [TestKey, TestValue]};
 process_machine(_, _, {call, get}, _, ?req_ctx, _, [TestKey, TestValue]) ->
-    {{reply, TestValue}, sleep, [TestKey, TestValue]};
+    {{reply, TestValue}, sleep, [], [TestKey, TestValue]};
 process_machine(_, _, {call, increment}, _, ?req_ctx, _, [TestKey, TestValue]) ->
-    {{reply, ok}, sleep, [TestKey, TestValue + 1]};
+    {{reply, ok}, sleep, [], [TestKey, TestValue + 1]};
 process_machine(_, _, {call, delayed_increment}, _, ?req_ctx, _, State) ->
-    {{reply, ok}, {wait, genlib_time:unow() + 1, ?req_ctx, 5000}, State};
+    {{reply, ok}, {wait, genlib_time:unow() + 1, ?req_ctx, 5000}, [], State};
 process_machine(_, _, {call, remove}, _, ?req_ctx, _, State) ->
-    {{reply, ok}, remove, State};
+    {{reply, ok}, remove, [], State};
 process_machine(_, _, timeout, _, ?req_ctx, _, [TestKey, TestValue]) ->
-    {noreply, sleep, [TestKey, TestValue + 1]};
+    {noreply, sleep, [], [TestKey, TestValue + 1]};
 process_machine(_, _, {repair, repair_arg}, _, ?req_ctx, _, [TestKey, TestValue]) ->
-    {{reply, repaired}, sleep, [TestKey, TestValue]}.
+    {{reply, repaired}, sleep, [], [TestKey, TestValue]}.
 
 %%
 %% utils

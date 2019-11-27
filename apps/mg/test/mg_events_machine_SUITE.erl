@@ -104,8 +104,11 @@ continuation_repair_test(_C) ->
     Pid = start_automaton(Options, NS),
     ok = start(Options, NS, MachineID, <<>>),
     ?assertReceive({sink_events, [1]}),
+    _ = call(Options, NS, MachineID, raise),
+    timer:sleep(100), % wait machine to fail (sending events to event_sink is asynchronous)
     ?assertException(throw, {logic, machine_failed}, call(Options, NS, MachineID, raise)),
     ok = repair(Options, NS, MachineID, <<>>),
+    timer:sleep(100),
     ?assertReceive({sink_events, [2, 3]}),
     ?assertEqual([1, 2, 3], get_history(Options, NS, MachineID)),
     ok = stop_automaton(Pid).

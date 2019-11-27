@@ -145,7 +145,7 @@ process_machine(Options, EventSinkID, Impact, _PCtx, _ReqCtx, _Deadline, PackedS
             {_        , _   } -> opaque_to_state(PackedState)
         end,
     NewState = process_machine_(Options, EventSinkID, Impact, State),
-    {{reply, ok}, sleep, state_to_opaque(NewState)}.
+    {{reply, ok}, sleep, [], state_to_opaque(NewState)}.
 
 -spec process_machine_(ns_options(), mg:id(), mg_machine:processor_impact(), state()) ->
     state().

@@ -134,7 +134,7 @@ pool_child_spec(_Options, Name) ->
 process_machine(_, _, Impact, _, ReqCtx, _, EncodedState) ->
     State = decode_state(EncodedState),
     {Reply, Action, NewState} = do_process_machine(Impact, ReqCtx, State),
-    {Reply, try_set_timer(NewState, Action), encode_state(NewState)}.
+    {Reply, try_set_timer(NewState, Action), [], encode_state(NewState)}.
 
 -spec do_process_machine(mg_machine:processor_impact(), mg_machine:request_context(), machine_state()) ->
     mg_machine:processor_result().

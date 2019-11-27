@@ -202,13 +202,13 @@ pool_child_spec(_Options, Name) ->
 -spec process_machine(_Options, mg:id(), mg_machine:processor_impact(), _, _, _, mg_machine:machine_state()) ->
     mg_machine:processor_result() | no_return().
 process_machine(_, _, {init, FlowAction}, _, ReqCtx, _Deadline, AS) ->
-    {{reply, ok}, map_flow_action(FlowAction, ReqCtx), AS};
+    {{reply, ok}, map_flow_action(FlowAction, ReqCtx), [], AS};
 process_machine(_, _, {call, FlowAction}, _, ReqCtx, _Deadline, AS) ->
-    {{reply, ok}, map_flow_action(FlowAction, ReqCtx), AS};
+    {{reply, ok}, map_flow_action(FlowAction, ReqCtx), [], AS};
 % process_machine(_, _, timeout, ReqCtx, ?req_ctx, AS) ->
-%     {noreply, sleep, AS};
+%     {noreply, sleep, [], AS};
 process_machine(_, _, {repair, FlowAction}, _, ReqCtx, _Deadline, AS) ->
-    {{reply, ok}, map_flow_action(FlowAction, ReqCtx), AS}.
+    {{reply, ok}, map_flow_action(FlowAction, ReqCtx), [], AS}.
 
 -spec map_flow_action(flow_action(), mg:request_context()) ->
     mg_machine:processor_flow_action().

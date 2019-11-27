@@ -441,6 +441,14 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
                             share        => 0
                         }
                     }
+            end,
+            case ?C:conf([async], NSYamlConfig, undefined) of
+                "disabled" ->
+                    #{};
+                _ ->
+                    #{
+                        async => SchedulerConfig
+                    }
             end
         ),
         event_sinks => [event_sink(ES) || ES <- ?C:conf([event_sinks], NSYamlConfig, [])],

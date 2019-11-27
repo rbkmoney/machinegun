@@ -69,20 +69,20 @@ resolve(Options, Tag) ->
 -spec process_machine(_, mg:id(), mg_machine:processor_impact(), _, _, _, mg_machine:machine_state()) ->
     mg_machine:processor_result().
 process_machine(_, _, {init, undefined}, _, _, _, _) ->
-    {{reply, ok}, sleep, state_to_opaque(undefined)};
+    {{reply, ok}, sleep, [], state_to_opaque(undefined)};
 process_machine(_, _, {repair, undefined}, _, _, _, State) ->
-    {{reply, ok}, sleep, State};
+    {{reply, ok}, sleep, [], State};
 process_machine(_, _, {call, {add, ID}}, _, _, _, PackedState) ->
     case opaque_to_state(PackedState) of
         undefined ->
-            {{reply, ok}, sleep, state_to_opaque(ID)};
+            {{reply, ok}, sleep, [], state_to_opaque(ID)};
         ID ->
-            {{reply, ok}, sleep, PackedState};
+            {{reply, ok}, sleep, [], PackedState};
         OtherID ->
-            {{reply, {already_exists, OtherID}}, sleep, PackedState}
+            {{reply, {already_exists, OtherID}}, sleep, [], PackedState}
     end;
 process_machine(_, _, {call, {replace, ID}}, _, _, _, _) ->
-    {{reply, ok}, sleep, state_to_opaque(ID)}.
+    {{reply, ok}, sleep, [], state_to_opaque(ID)}.
 
 %%
 %% local

@@ -88,7 +88,7 @@
 -define(EMPTY_ID, <<"">>).
 -define(Tag, <<"tag">>).
 -define(Ref, {tag, ?Tag}).
--define(ES_ID, <<"test_event_sink">>).
+-define(ES_ID, <<"test_event_sink_2">>).
 
 -define(DEADLINE_TIMEOUT, 1000).
 

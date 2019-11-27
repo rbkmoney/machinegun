@@ -145,15 +145,15 @@ pool_child_spec(_Options, Name) ->
 -spec process_machine(_Options, mg:id(), mg_machine:processor_impact(), _, _, _, mg_machine:machine_state()) ->
     mg_machine:processor_result() | no_return().
 process_machine(_, _, {init, Mode}, _, ?req_ctx, _, null) ->
-    {{reply, ok}, build_timer(), [Mode, 0]};
+    {{reply, ok}, build_timer(), [], [Mode, 0]};
 process_machine(_, _, {call, get}, _, ?req_ctx, _, [_Mode, Counter] = State) ->
-    {{reply, Counter}, build_timer(), State};
+    {{reply, Counter}, build_timer(), [], State};
 process_machine(_, _, {call, {set_mode, NewMode}}, _, ?req_ctx, _, [_Mode, Counter]) ->
-    {{reply, ok}, build_timer(), [NewMode, Counter]};
+    {{reply, ok}, build_timer(), [], [NewMode, Counter]};
 process_machine(_, _, timeout, _, ?req_ctx, _, [<<"normal">>, _Counter] = State) ->
-    {{reply, ok}, build_timer(), State};
+    {{reply, ok}, build_timer(), [], State};
 process_machine(_, _, timeout, _, ?req_ctx, _, [<<"counting">> = Mode, Counter]) ->
-    {{reply, ok}, build_timer(), [Mode, Counter + 1]};
+    {{reply, ok}, build_timer(), [], [Mode, Counter + 1]};
 process_machine(_, _, timeout, _, ?req_ctx, _, [<<"failing">>, _Counter]) ->
     erlang:throw({transient, oops}).
 

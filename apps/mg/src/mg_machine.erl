@@ -76,6 +76,7 @@
 -export_type([processor_result      /0]).
 -export_type([processor_reply_action/0]).
 -export_type([processor_flow_action /0]).
+-export_type([processor_flags       /0]).
 -export_type([search_query          /0]).
 -export_type([machine_regular_status/0]).
 
@@ -90,6 +91,8 @@
 -export([send_timeout        /5]).
 -export([send_retry_wait     /6]).
 -export([resume_interrupted  /4]).
+-export([resume_async_action /4]).
+-export([update              /6]).
 -export([fail                /4]).
 -export([fail                /5]).
 -export([get                 /2]).
@@ -113,7 +116,7 @@
 %%
 %% API
 %%
--type scheduler_id() :: overseer | timers | timers_retries.
+-type scheduler_id() :: async | overseer | timers | timers_retries.
 
 -type scheduler_opt() :: disable | #{
     registry     => mg_procreg:options(),
@@ -129,7 +132,8 @@
 -type schedulers_opt() :: #{
     timers           => scheduler_opt(),
     timers_retries   => scheduler_opt(),
-    overseer         => scheduler_opt()
+    overseer         => scheduler_opt(),
+    async            => scheduler_opt()
 }.
 -type suicide_probability() :: float() | integer() | undefined. % [0, 1]
 
@@ -162,6 +166,8 @@
     | {processing, request_context()}
 .
 -type machine_status() :: machine_regular_status() | {error, Reason::term(), machine_regular_status()}.
+-type machine_flags() :: [machine_flag()].
+-type machine_flag() :: processor_flag().
 
 %%
 
@@ -177,6 +183,8 @@
     | {call   , term()}
     |  timeout
     |  continuation
+    |  async
+    | {update, module(), term()}
 .
 -type processor_reply_action() :: noreply  | {reply, _}.
 -type processor_flow_action() ::
@@ -184,8 +192,17 @@
     | {wait, genlib_time:ts(), request_context(), HandlingTimeout::pos_integer()}
     | {continue, processing_state()}
     |  remove
+    |  keep
+    |  update
 .
--type processor_result() :: {processor_reply_action(), processor_flow_action(), machine_state()}.
+-type processor_flag() :: async.
+-type processor_flags() :: [processor_flag()].
+-type processor_result() :: {
+    processor_reply_action(),
+    processor_flow_action(),
+    processor_flags(),
+    machine_state()
+}.
 -type request_context() :: mg:request_context().
 
 -type processor_retry() :: mg_retry:strategy() | undefined.
@@ -213,6 +230,7 @@
     | {retrying, From::genlib_time:ts(), To::genlib_time:ts()}
     |  processing
     |  failed
+    |  async
 .
 
 %%
@@ -274,7 +292,8 @@ scheduler_sup_child_spec(Options, ChildID) ->
             mg_utils:lists_compact([
                 scheduler_child_spec(timers        , Options),
                 scheduler_child_spec(timers_retries, Options),
-                scheduler_child_spec(overseer      , Options)
+                scheduler_child_spec(overseer      , Options),
+                scheduler_child_spec(async         , Options)
             ])
         ]},
         restart  => permanent,
@@ -320,6 +339,16 @@ send_retry_wait(Options, ID, Status, Timestamp, ReqCtx, Deadline) ->
     _Resp | throws().
 resume_interrupted(Options, ID, ReqCtx, Deadline) ->
     call_(Options, ID, resume_interrupted_one, ReqCtx, Deadline).
+
+-spec resume_async_action(options(), mg:id(), request_context(), deadline()) ->
+    _Resp | throws().
+resume_async_action(Options, ID, ReqCtx, Deadline) ->
+    call_(Options, ID, resume_async_action, ReqCtx, Deadline).
+
+-spec update(options(), mg:id(), module(), term(), request_context(), deadline()) ->
+    _Resp | throws().
+update(Options, ID, Module, Args, ReqCtx, Deadline) ->
+    call_(Options, ID, {update, Module, Args}, ReqCtx, Deadline).
 
 -spec fail(options(), mg:id(), request_context(), deadline()) ->
     ok.
@@ -425,6 +454,7 @@ call_(Options, ID, Call, ReqCtx, Deadline) ->
 }.
 
 -type storage_machine() :: #{
+    flags  => machine_flags(),
     status => machine_status(),
     state  => machine_state()
 }.
@@ -472,6 +502,13 @@ handle_call(Call, CallContext, ReqCtx, Deadline, S=#{storage_machine:=StorageMac
 
         % ничего не просходит, просто убеждаемся, что машина загружена
         {resume_interrupted_one, _} -> {{reply, {ok, ok}}, S};
+
+        {resume_async_action, _} ->
+            S1 = process(async, PCtx, ReqCtx, Deadline, S),
+            {{reply, {ok, ok}}, S1};
+        {{update, _, _} = Update, _} ->
+            S1 = process(Update, PCtx, ReqCtx, Deadline, S),
+            {{reply, {ok, ok}}, S1};
 
         % call
         {{call  , SubCall}, #{status:= sleeping         }} ->
@@ -537,6 +574,7 @@ new_processing_context(CallContext) ->
     storage_machine().
 new_storage_machine() ->
     #{
+        flags  => [],
         status => sleeping,
         state  => null
     }.
@@ -628,7 +666,8 @@ opaque_to_machine_status(Opaque) ->
 %%
 %% indexes
 %%
--define(status_idx , {integer, <<"status"      >>}).
+-define(async_idx, {integer, <<"async">>}).
+-define(status_idx, {integer, <<"status">>}).
 -define(waiting_idx, {integer, <<"waiting_date">>}).
 -define(retrying_idx, {integer, <<"retrying_date">>}).
 
@@ -644,6 +683,8 @@ storage_search_query(Query, Limit) ->
 
 -spec storage_search_query(search_query()) ->
     mg_storage:index_query().
+storage_search_query(async) ->
+    {?async_idx, 1};
 storage_search_query(sleeping) ->
     {?status_idx, 1};
 storage_search_query(waiting) ->
@@ -661,8 +702,19 @@ storage_search_query({retrying, FromTs, ToTs}) ->
 
 -spec storage_machine_to_indexes(storage_machine()) ->
     [mg_storage:index_update()].
-storage_machine_to_indexes(#{status := Status}) ->
-    status_index(Status) ++ status_range_index(Status).
+storage_machine_to_indexes(#{flags := Flags, status := Status} = StorageMachine) ->
+    Flags = maps:get(flags, StorageMachine, []),
+    flags_index(Flags) ++ status_index(Status) ++ status_range_index(Status).
+
+-spec flags_index(machine_flags()) ->
+    [mg_storage:index_update()].
+flags_index(Flags) ->
+    [flag_index(Flag) || Flag <- Flags].
+
+-spec flag_index(machine_flag()) ->
+    mg_storage:index_update().
+flag_index(async) ->
+    {?async_idx, 1}.
 
 -spec status_index(machine_status()) ->
     [mg_storage:index_update()].
@@ -805,12 +857,12 @@ handle_exception(Exception, Impact, ReqCtx, Deadline, State) ->
 process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machine := StorageMachine}) ->
     ok = emit_pre_process_beats(Impact, ReqCtx, Deadline, State),
     ProcessStart = erlang:monotonic_time(),
-    {ReplyAction, Action, NewMachineState} =
+    {ReplyAction, Action, Flags, NewMachineState} =
         call_processor(Impact, ProcessingCtx, ReqCtx, Deadline, State),
     ProcessDuration = erlang:monotonic_time() - ProcessStart,
     ok = emit_post_process_beats(Impact, ReqCtx, Deadline, ProcessDuration, State),
     ok = try_suicide(State, ReqCtx),
-    NewStorageMachine0 = StorageMachine#{state := NewMachineState},
+    NewStorageMachine0 = StorageMachine#{state := NewMachineState, flags => Flags},
     NewState =
         case Action of
             {continue, _} ->
@@ -824,10 +876,15 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
                 ok = try_start_timer_task(Timestamp, Status, ReqCtx, State),
                 NewStorageMachine = NewStorageMachine0#{status := Status},
                 transit_state(ReqCtx, Deadline, NewStorageMachine, State);
+            keep ->
+                State;
+            update ->
+                transit_state(ReqCtx, Deadline, NewStorageMachine0, State);
             remove ->
                 remove_from_storage(ReqCtx, Deadline, State)
         end,
     ok = do_reply_action(wrap_reply_action(ok, ReplyAction), ProcessingCtx),
+    ok = maybe_process_async(ReqCtx, NewState),
     case Action of
         {continue, NewProcessingSubState} ->
             % продолжение обработки машины делается без дедлайна
@@ -836,6 +893,20 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
         _ ->
             NewState
     end.
+
+-spec maybe_process_async(request_context(), state()) ->
+    ok.
+maybe_process_async(ReqCtx, #{storage_machine := #{flags := Flags}} = State) ->
+    case lists:member(async, Flags) of
+        true ->
+            _ = call_processor(async, undefined, ReqCtx, undefined, State),
+            % _ =process(async, undefined, ReqCtx, undefined, State),
+            ok;
+        false ->
+            ok
+    end;
+maybe_process_async(_ReqCtx, _State) ->
+    ok.
 
 -spec try_start_timer_task(genlib_time:ts(), machine_regular_status(), request_context(), state()) ->
     ok.
@@ -1220,7 +1291,12 @@ scheduler_options(timers_retries, Options, Config) ->
     },
     scheduler_options(timers_retries, mg_queue_timer, Options, HandlerOptions, Config);
 scheduler_options(overseer, Options, Config) ->
-    scheduler_options(overseer, mg_queue_interrupted, Options, #{}, Config).
+    scheduler_options(overseer, mg_queue_interrupted, Options, #{}, Config);
+scheduler_options(async, Options, Config) ->
+    HandlerOptions = #{
+        processing_timeout => maps:get(timer_processing_timeout, Options, undefined)
+    },
+    scheduler_options(async, mg_queue_async, Options, HandlerOptions, Config).
 
 -spec scheduler_options(mg_scheduler:name(), module(), options(), map(), scheduler_opt()) ->
     mg_scheduler:options().

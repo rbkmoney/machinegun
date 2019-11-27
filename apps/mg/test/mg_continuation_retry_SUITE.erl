@@ -92,10 +92,10 @@ continuation_delayed_retries_test(_C) ->
     mg_machine:processor_result() | no_return().
 process_machine(_, _, {init, InitState}, _, ?REQ_CTX, _, null) ->
     _ = ets:new(?ETS_NS, [set, named_table, public]),
-    {{reply, ok}, sleep, InitState};
+    {{reply, ok}, sleep, [], InitState};
 process_machine(_, _, {call, test}, _, ?REQ_CTX, _, State) ->
     true = ets:insert(?ETS_NS, {fail_count, 0}),
-    {{reply, ok}, {continue, #{}}, State};
+    {{reply, ok}, {continue, #{}}, [], State};
 process_machine(_, _, continuation, _, ?REQ_CTX, _, _State) ->
     FailCount = get_fail_count(),
     ok = update_fail_count(FailCount + 1),
