@@ -132,9 +132,14 @@ init_per_group(activities, C) ->
 
 -spec end_per_group(group_name(), config()) ->
     ok.
-end_per_group(_, C) ->
+end_per_group(Name, C) when
+    Name == legacy_activities;
+    Name == modern_activities
+->
     ok = proc_lib:stop(?config(processor_pid, C)),
-    mg_ct_helper:stop_applications(?config(group_apps, C)).
+    mg_ct_helper:stop_applications(?config(group_apps, C));
+end_per_group(_, _C) ->
+    ok.
 
 -spec start_mg_woody_api(group_name(), config()) ->
     config().
