@@ -102,9 +102,8 @@ create_metric(#mg_scheduler_search_success{
     delay = DelayMs,
     duration = Duration
 }) ->
-    [
+    create_delay_inc([mg, scheduler, NS, Name, scan, delay], DelayMs) ++ [
         create_inc([mg, scheduler, NS, Name, scan, success]),
-        create_delay_inc([mg, scheduler, NS, Name, scan, delay], DelayMs),
         create_bin_inc([mg, scheduler, NS, Name, scan, duration], duration, Duration)
     ];
 create_metric(#mg_scheduler_search_error{scheduler_name = Name, namespace = NS}) ->
