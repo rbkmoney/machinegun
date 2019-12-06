@@ -24,7 +24,6 @@
 %% internal types
 -type metric() :: how_are_you:metric().
 -type metrics() :: [metric()].
--type nested_metrics() :: metrics() | [nested_metrics()].
 -type metric_key() :: how_are_you:metric_key().
 -type beat() :: mg_woody_api_pulse:beat().
 -type impact_tag() :: atom().
