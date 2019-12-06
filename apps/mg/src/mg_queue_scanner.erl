@@ -259,6 +259,9 @@ scan_queue(Limit, St = #st{queue_handler = HandlerState, retry_delay = RetryDela
 
 -spec disseminate_tasks([task()], [mg_scheduler:status()], [scan_limit()], st()) ->
     ok.
+disseminate_tasks(Tasks, [_Scheduler = #{pid := Pid}], _Capacities, _St) ->
+    %% A single scheduler, just send him all tasks optimizing away meaningless partitioning
+    mg_scheduler:distribute_tasks(Pid, Tasks);
 disseminate_tasks(Tasks, Schedulers, Capacities, _St) ->
     %% Partition tasks among known schedulers proportionally to their capacities
     Partitions = mg_utils:partition(Tasks, lists:zip(Schedulers, Capacities)),
