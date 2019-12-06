@@ -116,7 +116,7 @@ init_per_group(base, C) ->
 -spec end_per_group(group_name(), config()) ->
     _.
 end_per_group(base, C) ->
-    true = erlang:exit(?config(processor_pid, C), kill),
+    ok = proc_lib:stop(?config(processor_pid, C)),
     mg_ct_helper:stop_applications(?config(apps, C));
 end_per_group(_, C) ->
     C.

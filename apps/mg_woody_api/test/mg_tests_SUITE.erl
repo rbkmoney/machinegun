@@ -358,7 +358,7 @@ mg_woody_api_config(C) ->
 -spec end_per_group(group_name(), config()) ->
     ok.
 end_per_group(_, C) ->
-    true = erlang:exit(?config(processor_pid, C), kill),
+    ok = proc_lib:stop(?config(processor_pid, C)),
     mg_ct_helper:stop_applications(?config(apps, C)).
 
 %%

@@ -421,18 +421,18 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             case ?C:conf([timers], NSYamlConfig, []) of
                 "disabled" ->
                     #{};
-                SchedulerConfig ->
+                TimersConfig ->
                     #{
-                        timers         => timer_scheduler(2, SchedulerConfig),
-                        timers_retries => timer_scheduler(1, SchedulerConfig)
+                        timers         => timer_scheduler(2, TimersConfig),
+                        timers_retries => timer_scheduler(1, TimersConfig)
                     }
             end,
             case ?C:conf([overseer], NSYamlConfig, []) of
                 "disabled" ->
                     #{};
-                SchedulerConfig ->
+                OverseerConfig ->
                     #{
-                        overseer => overseer_scheduler(0, SchedulerConfig)
+                        overseer => overseer_scheduler(0, OverseerConfig)
                     }
             end
         ),

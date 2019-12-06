@@ -186,6 +186,8 @@ find_continuation(Result, Cont) ->
 
 -spec split_search_result(search_result(), mg_storage:index_limit()) ->
     {search_result(), continuation()}.
+split_search_result([] = SearchResult, _IndexLimit) ->
+    {SearchResult, undefined};
 split_search_result(SearchResult, IndexLimit) ->
     case IndexLimit > erlang:length(SearchResult) of
         true ->

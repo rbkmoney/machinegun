@@ -83,7 +83,7 @@ init_per_suite(C) ->
 -spec end_per_suite(config()) ->
     ok.
 end_per_suite(C) ->
-    true = erlang:exit(?config(processor_pid, C), kill),
+    ok = proc_lib:stop(?config(processor_pid, C)),
     mg_ct_helper:stop_applications(?config(apps, C)).
 
 -spec mg_woody_api_config(config()) ->
