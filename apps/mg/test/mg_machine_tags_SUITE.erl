@@ -76,7 +76,7 @@ init_per_suite(C) ->
 -spec end_per_suite(config()) ->
     ok.
 end_per_suite(C) ->
-    true = erlang:exit(?config(pid, C), kill),
+    ok = proc_lib:stop(?config(pid, C)),
     mg_ct_helper:stop_applications(?config(apps, C)).
 
 
