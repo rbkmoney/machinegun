@@ -223,17 +223,22 @@ handle_info(Info, Rank, _Squad, St) ->
 
 -spec handle_scan(mg_gen_squad:squad(), st()) ->
     st().
-handle_scan(Squad, St0 = #st{max_limit = MaxLimit}) ->
+handle_scan(Squad, St0 = #st{max_limit = MaxLimit, retry_delay = RetryDelay}) ->
     StartedAt = erlang:monotonic_time(),
     %% Try to find out which schedulers are here, getting their statuses
-    Schedulers = inquire_schedulers(Squad, St0),
-    %% Compute total limit given capacity left on each scheduler
-    Capacities = [compute_adjusted_capacity(S, St0) || S <- Schedulers],
-    Limit = erlang:min(lists:sum(Capacities), MaxLimit),
-    {{Delay, Tasks}, St1} = scan_queue(Limit, St0),
-    %% Distribute tasks taking into account respective capacities
-    ok = disseminate_tasks(Tasks, Schedulers, Capacities, St1),
-    start_timer(StartedAt, Delay, St1).
+    case inquire_schedulers(Squad, St0) of
+        Schedulers = [_ | _] ->
+            %% Compute total limit given capacity left on each scheduler
+            Capacities = [compute_adjusted_capacity(S, St0) || S <- Schedulers],
+            Limit = erlang:min(lists:sum(Capacities), MaxLimit),
+            {{Delay, Tasks}, St1} = scan_queue(Limit, St0),
+            %% Distribute tasks taking into account respective capacities
+            ok = disseminate_tasks(Tasks, Schedulers, Capacities, St1),
+            start_timer(StartedAt, Delay, St1);
+        [] ->
+            %% No one to distribute tasks to, let's retry
+            start_timer(StartedAt, RetryDelay, St0)
+    end.
 
 -spec scan_queue(scan_limit(), st()) ->
     {{scan_delay(), [task()]}, st()}.
