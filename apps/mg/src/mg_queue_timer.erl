@@ -70,10 +70,8 @@ init(_Options) ->
 -spec build_task(mg:id(), target_time()) ->
     task().
 build_task(ID, Timestamp) ->
-    CreateTime = erlang:monotonic_time(),
     #{
         id          => ID,
-        created_at  => CreateTime,
         target_time => Timestamp,
         machine_id  => ID
     }.
