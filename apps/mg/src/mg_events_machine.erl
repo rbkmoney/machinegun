@@ -132,9 +132,9 @@ start_link(Options) ->
     mg_utils_supervisor_wrapper:start_link(
         #{strategy => one_for_all},
         mg_utils:lists_compact([
-            mg_machine     :child_spec(machine_options       (Options), automaton),
+            mg_storage     :child_spec(events_storage_options(Options), events_storage),
             mg_machine_tags:child_spec(tags_machine_options  (Options), tags     ),
-            mg_storage     :child_spec(events_storage_options(Options), events_storage)
+            mg_machine     :child_spec(machine_options       (Options), automaton)
         ])
     ).
 
