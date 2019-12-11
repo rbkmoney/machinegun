@@ -147,14 +147,15 @@ emit_start_beat(Task, {Name, NS}, Options) ->
 
 -spec emit_finish_beat(task(), integer(), integer(), scheduler_id(), options()) ->
     ok.
-emit_finish_beat(#{created_at := Create} = Task, Start, End, {Name, NS}, Options) ->
+emit_finish_beat(#{target_time := TargetTime} = Task, StartedAt, FinishedAt, {Name, NS}, Options) ->
+    ScheduledOn = erlang:convert_time_unit(TargetTime, second, native),
     emit_beat(Options, #mg_scheduler_task_finished{
         namespace = NS,
         scheduler_name = Name,
         task_delay = get_delay(Task),
         machine_id = maps:get(machine_id, Task, undefined),
-        waiting_in_queue = Start - Create,  % in native units
-        process_duration = End - Start  % in native units
+        waiting_in_queue = StartedAt - ScheduledOn, % in native units
+        process_duration = FinishedAt - StartedAt  % in native units
     }).
 
 -spec emit_error_beat(task(), mg_utils:exception(), scheduler_id(), options()) ->

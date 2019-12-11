@@ -65,18 +65,11 @@ init(_Options) ->
 -spec search_tasks(options(), _Limit :: non_neg_integer(), state()) ->
     {{scan_delay(), [task()]}, state()}.
 search_tasks(Options, Limit, #state{continuation = Continuation} = State) ->
+    CurrentTime = mg_queue_task:current_time(),
     MachineOptions = machine_options(Options),
     Query = processing,
     {IDs, NewContinuation} = mg_machine:search(MachineOptions, Query, Limit, Continuation),
-    CreateTime = erlang:monotonic_time(),
-    Tasks = [
-        #{
-            id => ID,
-            created_at => CreateTime,
-            machine_id => ID
-        }
-        || ID <- IDs
-    ],
+    Tasks = [#{id => ID, machine_id => ID, target_time => CurrentTime} || ID <- IDs],
     Delay = get_delay(NewContinuation, Options),
     NewState = State#state{continuation = NewContinuation},
     {{Delay, Tasks}, NewState}.
