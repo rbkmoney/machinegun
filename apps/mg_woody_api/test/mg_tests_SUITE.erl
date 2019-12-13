@@ -54,6 +54,7 @@
 -export([machine_processor_error     /1]).
 -export([failed_machine_call         /1]).
 -export([failed_machine_repair_error /1]).
+-export([failed_machine_repair_business_error/1]).
 -export([failed_machine_repair       /1]).
 -export([failed_machine_simple_repair/1]).
 -export([working_machine_repair      /1]).
@@ -88,7 +89,7 @@
 -define(EMPTY_ID, <<"">>).
 -define(Tag, <<"tag">>).
 -define(Ref, {tag, ?Tag}).
--define(ES_ID, <<"test_event_sink">>).
+-define(ES_ID, <<"test_event_sink_2">>).
 
 -define(DEADLINE_TIMEOUT, 1000).
 
@@ -115,7 +116,7 @@ all() ->
     ].
 
 -spec groups() ->
-    [{group_name(), list(_), test_name()}].
+    [{group_name(), list(_), [test_name()]}].
 groups() ->
     [
         % TODO проверить отмену таймера
@@ -151,6 +152,7 @@ groups() ->
             machine_processor_error,
             failed_machine_call,
             failed_machine_repair_error,
+            failed_machine_repair_business_error,
             failed_machine_repair,
             machine_call_by_id,
             working_machine_repair,
@@ -234,7 +236,13 @@ init_per_group(C) ->
     {ok, ProcessorPid} = mg_test_processor:start(
         {0, 0, 0, 0}, 8023,
         genlib_map:compact(#{
-            processor  => {"/processor", {fun default_signal_handler/1, fun default_call_handler/1}}
+            processor  => {
+                "/processor", {
+                    fun default_signal_handler/1,
+                    fun default_call_handler/1,
+                    fun default_repair_handler/1
+                }
+            }
         })
     ),
 
@@ -251,7 +259,8 @@ init_per_group(C) ->
         C
     ].
 
--spec default_signal_handler(mg:signal_args()) -> mg:signal_result().
+-spec default_signal_handler(mg_events_machine:signal_args()) ->
+    mg_events_machine:signal_result().
 default_signal_handler({Args, _Machine}) ->
     case Args of
         {init, <<"fail" >>} ->
@@ -271,7 +280,8 @@ default_signal_handler({Args, _Machine}) ->
             mg_test_processor:default_result(signal, Args)
     end.
 
--spec default_call_handler(mg:call_args()) -> mg:call_result().
+-spec default_call_handler(mg_events_machine:call_args()) ->
+    mg_events_machine:call_result().
 default_call_handler({Args, #{history := History}}) ->
     Evs = [N || #{body := {_Metadata, N}} <- History],
     SetTimer = {set_timer, {timeout, 1}, {undefined, undefined, forward}, 30},
@@ -290,11 +300,23 @@ default_call_handler({Args, #{history := History}}) ->
         <<"remove">>      -> {Args, {null(), [content(<<"removed">>)]}, #{remove => remove}}
     end.
 
+-spec default_repair_handler(mg_events_machine:repair_args()) ->
+    mg_events_machine:repair_result().
+default_repair_handler({Args, _Machine}) ->
+    case Args of
+        <<"error">> ->
+            erlang:error(error);
+        <<"business_error">> ->
+            erlang:throw(#mg_stateproc_RepairFailed{reason = {bin, <<"because">>}});
+        _ ->
+            {Args, {null(), []}, #{}}
+    end.
+
 -spec null() -> mg_events:content().
 null() ->
     content(null).
 
--spec content(binary()) -> mg_events:content().
+-spec content(mg_storage:opaque()) -> mg_events:content().
 content(Body) ->
     {#{format_version => 42}, Body}.
 
@@ -518,10 +540,16 @@ failed_machine_repair_error(C) ->
     #mg_stateproc_MachineFailed{} =
         (catch mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"error">>)).
 
+-spec failed_machine_repair_business_error(config()) ->
+    _.
+failed_machine_repair_business_error(C) ->
+    #mg_stateproc_RepairFailed{reason = {bin, <<"because">>}} =
+        (catch mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"business_error">>)).
+
 -spec failed_machine_repair(config()) ->
     _.
 failed_machine_repair(C) ->
-    ok = mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"ok">>).
+    <<"ok">> = mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"ok">>).
 
 -spec failed_machine_simple_repair(config()) ->
     _.
@@ -760,7 +788,7 @@ start_machine(C, ID, Args) ->
             ok
     end.
 
--spec create_event(binary(), config(), mg:id()) ->
+-spec create_event(mg_storage:opaque(), config(), mg:id()) ->
     _.
 create_event(Event, C, ID) ->
     mg_automaton_client:call(automaton_options(C), {id, ID}, Event).

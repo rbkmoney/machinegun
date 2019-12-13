@@ -29,15 +29,22 @@
 -export_type([modernizer_function/0]).
 
 -type processor_signal_function() ::
-    fun((mg:signal_args()) -> mg:signal_result()) | default_func.
+    fun((mg_events_machine:signal_args()) -> mg_events_machine:signal_result()) | default_func.
 
 -type processor_call_function() ::
-    fun((mg:call_args()) -> mg:call_result()) | default_func.
+    fun((mg_events_machine:call_args()) -> mg_events_machine:call_result()) | default_func.
+
+-type processor_repair_function() ::
+    fun((mg_events_machine:repair_args()) -> mg_events_machine:repair_result()) | default_func.
 
 -type modernizer_function() ::
     fun((mg_events_modernizer:machine_event()) -> mg_events_modernizer:modernized_event_body()) | default_func.
 
--type processor_functions() :: {processor_signal_function(), processor_call_function()}.
+-type processor_functions() :: {
+    processor_signal_function(),
+    processor_call_function(),
+    processor_repair_function()
+}.
 -type host_address() :: {integer(), integer(), integer(), integer()}.
 
 -type options() :: #{
@@ -89,14 +96,18 @@ start_link(Host, Port, Options) ->
 %%
 -spec handle_function(woody:func(), woody:args(), woody_context:ctx(), processor_functions()) ->
                          {ok, _Result} | no_return().
-handle_function('ProcessSignal', [Args], _WoodyContext, {SignalFun, _CallFun}) ->
+handle_function('ProcessSignal', [Args], _WoodyContext, {SignalFun, _CallFun, _RepairFun}) ->
     UnpackedArgs = mg_woody_api_packer:unpack(signal_args, Args),
     Result = invoke_function(signal, SignalFun, UnpackedArgs),
     {ok, mg_woody_api_packer:pack(signal_result, Result)};
-handle_function('ProcessCall', [Args], _WoodyContext, {_SignalFun, CallFun}) ->
+handle_function('ProcessCall', [Args], _WoodyContext, {_SignalFun, CallFun, _RepairFun}) ->
     UnpackedArgs = mg_woody_api_packer:unpack(call_args, Args),
     Result = invoke_function(call, CallFun, UnpackedArgs),
     {ok, mg_woody_api_packer:pack(call_result, Result)};
+handle_function('ProcessRepair', [Args], _WoodyContext, {_SignalFun, _CallFun, RepairFun}) ->
+    UnpackedArgs = mg_woody_api_packer:unpack(repair_args, Args),
+    Result = invoke_function(repair, RepairFun, UnpackedArgs),
+    {ok, mg_woody_api_packer:pack(repair_result, Result)};
 
 handle_function('ModernizeEvent', [Args], _WoodyContext, ModernizeFun) ->
     MachineEvent = mg_woody_api_packer:unpack(machine_event, Args),
@@ -106,20 +117,24 @@ handle_function('ModernizeEvent', [Args], _WoodyContext, ModernizeFun) ->
 %%
 %% helpers
 %%
--spec invoke_function(signal,    processor_signal_function(), term()) -> mg:signal_result()
-                   ; (call,      processor_call_function(), term())   -> mg:call_result()
+-spec invoke_function(signal,    processor_signal_function(), term()) -> mg_events_machine:signal_result()
+                   ; (call,      processor_call_function(), term())   -> mg_events_machine:call_result()
+                   ; (repair,    processor_repair_function(), term()) -> mg_events_machine:repair_result()
                    ; (modernize, modernizer_function(), term())       -> mg_events_modernizer:modernized_event_body().
 invoke_function(Type, default_func, Args) ->
     default_result(Type, Args);
 invoke_function(_Type, Func, Args) ->
     Func(Args).
 
--spec default_result(signal    , term()) -> mg:signal_result()
-                  ; (call      , term()) -> mg:call_result()
+-spec default_result(signal    , term()) -> mg_events_machine:signal_result()
+                  ; (call      , term()) -> mg_events_machine:call_result()
+                  ; (repair    , term()) -> mg_events_machine:repair_result()
                   ; (modernize , term()) -> mg_events_modernizer:modernized_event_body().
 default_result(signal, _Args) ->
     {{default_content(), []}, #{timer => undefined, tag => undefined}};
 default_result(call, _Args) ->
+    {<<>>, {default_content(), []}, #{timer => undefined, tag => undefined}};
+default_result(repair, _Args) ->
     {<<>>, {default_content(), []}, #{timer => undefined, tag => undefined}};
 default_result(modernize, #{event := #{body := Body}}) ->
     Body.

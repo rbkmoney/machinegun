@@ -704,6 +704,9 @@ process(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
     try
         process_with_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State, RetryStrategy)
     catch
+        throw:{business, _} = Error:_ST ->
+            ok = do_reply_action({reply, {error, Error}}, ProcessingCtx),
+            State;
         Class:Reason:ST ->
             ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
             handle_exception({Class, Reason, ST}, ReqCtx, Deadline, State)

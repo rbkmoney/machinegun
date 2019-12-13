@@ -37,8 +37,10 @@
 -export_type([signal          /0]).
 -export_type([signal_args     /0]).
 -export_type([call_args       /0]).
+-export_type([repair_args     /0]).
 -export_type([signal_result   /0]).
 -export_type([call_result     /0]).
+-export_type([repair_result   /0]).
 -export_type([request_context /0]).
 
 -export([child_spec   /2]).
@@ -63,13 +65,17 @@
     signal_result().
 -callback process_call(_Options, request_context(), deadline(), call_args()) ->
     call_result().
+-callback process_repair(_Options, request_context(), deadline(), repair_args()) ->
+    repair_result() | no_return().
 -optional_callbacks([processor_child_spec/1]).
 
 %% calls, signals, get_gistory
 -type signal_args    () :: {signal(), machine()}.
 -type call_args      () :: {term(), machine()}.
+-type repair_args    () :: {term(), machine()}.
 -type signal_result  () :: {state_change(), complex_action()}.
 -type call_result    () :: {term(), state_change(), complex_action()}.
+-type repair_result  () :: {term(), state_change(), complex_action()}.
 -type state_change   () :: {aux_state(), [mg_events:body()]}.
 -type signal         () :: {init, term()} | timeout | {repair, term()}.
 -type aux_state      () :: mg_events:content().
@@ -153,9 +159,11 @@ start(Options, ID, Args, ReqCtx, Deadline) ->
         ).
 
 -spec repair(options(), ref(), term(), mg_events:history_range(), request_context(), deadline()) ->
-    ok.
+    _Resp.
+    % ok.
 repair(Options, Ref, Args, HRange, ReqCtx, Deadline) ->
-    ok = mg_machine:repair(
+    % ok = mg_machine:repair(
+        mg_machine:repair(
             machine_options(Options),
             ref2id(Options, Ref),
             {Args, HRange},
@@ -254,6 +262,8 @@ process_machine(Options, ID, Impact, PCtx, ReqCtx, Deadline, PackedState) ->
         catch
             throw:{transient, Reason}:ST ->
                 erlang:raise(throw, {transient, Reason}, ST);
+            throw:{business, _} = Error ->
+                erlang:throw(Error);
             throw:Reason ->
                 erlang:throw({transient, {processor_unavailable, Reason}})
         end,
@@ -284,8 +294,9 @@ process_machine_(Options, ID, {Subj, {Args, HRange}}, _, ReqCtx, Deadline, State
     {Reply, DelayedActions} =
         case Subj of
             init    -> process_signal(Options, ReqCtx, Deadline, {init  , Args}, Machine, EventsRange);
-            repair  -> process_signal(Options, ReqCtx, Deadline, {repair, Args}, Machine, EventsRange);
             timeout -> process_signal(Options, ReqCtx, Deadline,  timeout      , Machine, EventsRange);
+            % repair  -> process_signal(Options, ReqCtx, Deadline, {repair, Args}, Machine, EventsRange);
+            repair  -> process_repair(Options, ReqCtx, Deadline,          Args , Machine, EventsRange);
             call    -> process_call  (Options, ReqCtx, Deadline,          Args , Machine, EventsRange)
         end,
     NewState = add_delayed_actions(DelayedActions, State),
@@ -445,6 +456,13 @@ process_signal(#{processor := Processor}, ReqCtx, Deadline, Signal, Machine, Eve
 process_call(#{processor := Processor}, ReqCtx, Deadline, Args, Machine, EventsRange) ->
     CallArgs = [ReqCtx, Deadline, {Args, Machine}],
     {Resp, StateChange, ComplexAction} = mg_utils:apply_mod_opts(Processor, process_call, CallArgs),
+    {Resp, handle_processing_result(StateChange, ComplexAction, EventsRange, ReqCtx)}.
+
+-spec process_repair(options(), request_context(), deadline(), term(), machine(), mg_events:events_range()) ->
+    {_Resp, delayed_actions()}.
+process_repair(#{processor := Processor}, ReqCtx, Deadline, Args, Machine, EventsRange) ->
+    CallArgs = [ReqCtx, Deadline, {Args, Machine}],
+    {Resp, StateChange, ComplexAction} = mg_utils:apply_mod_opts(Processor, process_repair, CallArgs),
     {Resp, handle_processing_result(StateChange, ComplexAction, EventsRange, ReqCtx)}.
 
 -spec handle_processing_result(state_change(), complex_action(), mg_events:events_range(), request_context()) ->

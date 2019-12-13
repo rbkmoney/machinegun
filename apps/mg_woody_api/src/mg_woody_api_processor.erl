@@ -20,7 +20,7 @@
 %% mg_events_machine handler
 -behaviour(mg_events_machine).
 -export_type([options/0]).
--export([processor_child_spec/1, process_signal/4, process_call/4]).
+-export([processor_child_spec/1, process_signal/4, process_call/4, process_repair/4]).
 
 %%
 %% mg_events_machine handler
@@ -65,6 +65,22 @@ process_call(Options, ReqCtx, Deadline, {Call, Machine}) ->
         ),
     mg_woody_api_packer:unpack(call_result, CallResult).
 
+-spec process_repair(Options, ReqCtx, Deadline, RepairArgs) -> mg_events_machine:repair_result() when
+    Options :: options(),
+    ReqCtx :: mg_events_machine:request_context(),
+    Deadline :: mg_deadline:deadline(),
+    RepairArgs :: mg_events_machine:repair_args().
+process_repair(Options, ReqCtx, Deadline, {Args, Machine}) ->
+    RepairResult =
+        call_processor(
+            Options,
+            ReqCtx,
+            Deadline,
+            'ProcessRepair',
+            [mg_woody_api_packer:pack(repair_args, {Args, Machine})]
+        ),
+    mg_woody_api_packer:unpack(repair_result, RepairResult).
+
 -spec call_processor(options(), mg_events_machine:request_context(), mg_deadline:deadline(), atom(), list(_)) ->
     _Result.
 call_processor(Options, ReqCtx, Deadline, Function, Args) ->
@@ -72,13 +88,16 @@ call_processor(Options, ReqCtx, Deadline, Function, Args) ->
     {ok, TRef} = timer:kill_after(call_duration_limit(Options, Deadline) + 3000),
     try
         WoodyContext = mg_woody_api_utils:set_deadline(Deadline, request_context_to_woody_context(ReqCtx)),
-        {ok, R} =
-            woody_client:call(
-                {{mg_proto_state_processing_thrift, 'Processor'}, Function, Args},
-                Options,
-                WoodyContext
-            ),
-        R
+        woody_client:call(
+            {{mg_proto_state_processing_thrift, 'Processor'}, Function, Args},
+            Options,
+            WoodyContext
+        )
+    of
+        {ok, Reply} ->
+            Reply;
+        {exception, Error} ->
+            erlang:throw({business, Error})
     catch
         error:Reason={woody_error, {_, resource_unavailable, _}} ->
             throw({transient, {processor_unavailable, Reason}});

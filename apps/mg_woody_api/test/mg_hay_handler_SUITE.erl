@@ -96,7 +96,7 @@ init_per_group(base, C) ->
     {ok, ProcessorPid} = mg_test_processor:start(
         {0, 0, 0, 0}, 8023,
         genlib_map:compact(#{
-            processor  => {"/processor", {fun default_signal_handler/1, fun default_call_handler/1}}
+            processor  => {"/processor", {fun default_signal_handler/1, fun default_call_handler/1, default_func}}
         })
     ),
 
@@ -184,11 +184,11 @@ automaton_options(C) -> ?config(automaton_options, C).
 
 %% Processor utils
 
--spec default_signal_handler(mg:signal_args()) -> mg:signal_result().
+-spec default_signal_handler(mg_events_machine:signal_args()) -> mg_events_machine:signal_result().
 default_signal_handler({Args, _Machine}) ->
     mg_test_processor:default_result(signal, Args).
 
--spec default_call_handler(mg:call_args()) -> mg:call_result().
+-spec default_call_handler(mg_events_machine:call_args()) -> mg_events_machine:call_result().
 default_call_handler({Args, _Machine}) ->
     case Args of
         <<"foo">> -> {Args, {null(), [content(<<"bar">>)]}, #{}}
@@ -198,7 +198,7 @@ default_call_handler({Args, _Machine}) ->
 null() ->
     content(null).
 
--spec content(binary()) -> mg_events:content().
+-spec content(mg_storage:opaque()) -> mg_events:content().
 content(Body) ->
     {#{format_version => 42}, Body}.
 

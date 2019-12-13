@@ -30,7 +30,7 @@
 %% mg_events_machine handler
 -behaviour(mg_events_machine).
 -export_type([options/0]).
--export([process_signal/4, process_call/4]).
+-export([process_signal/4, process_call/4, process_repair/4]).
 
 %% mg_events_sink handler
 -behaviour(mg_events_sink).
@@ -46,6 +46,7 @@
 -type machine() :: mg_events_machine:machine().
 -type signal_result() :: mg_events_machine:signal_result().
 -type call_result() :: mg_events_machine:call_result().
+-type repair_result() :: mg_events_machine:repair_result().
 -type action() :: mg_events_machine:complex_action().
 -type event() :: term().
 -type aux_state() :: term().
@@ -90,11 +91,14 @@ continuation_repair_test(_C) ->
     TestRunner = self(),
     Options = #{
         signal_handler => fun
-            ({init, <<>>}, AuxState, []) -> {AuxState, [1], #{}};
-            ({repair, <<>>}, AuxState, [1, 2]) -> {AuxState, [3], #{}}
+            ({init, <<>>}, AuxState, []) -> {AuxState, [1], #{}}
+            % ({repair, <<>>}, AuxState, [1, 2]) -> {AuxState, [3], #{}}
         end,
         call_handler => fun
             (raise, AuxState, [1]) -> {ok, AuxState, [2], #{}}
+        end,
+        repair_handler => fun
+            (<<>>, AuxState, [1, 2]) -> {ok, AuxState, [3], #{}}
         end,
         sink_handler => fun
             ([2]) -> erlang:error(test_error);
@@ -136,6 +140,18 @@ process_call(Options, _ReqCtx, _Deadline, {EncodedCall, Machine}) ->
     StateChange = {AuxStateContent, Events},
     {encode(Result), StateChange, ComplexAction}.
 
+-spec process_repair(options(), req_ctx(), deadline(), mg_events_machine:repair_args()) -> repair_result().
+process_repair(Options, _ReqCtx, _Deadline, {EncodedArgs, Machine}) ->
+    Handler = maps:get(repair_handler, Options, fun dummy_repair_handler/3),
+    {AuxState, History} = decode_machine(Machine),
+    Args = decode(EncodedArgs),
+    ct:pal("call repair handler ~p with [~p, ~p, ~p]", [Handler, Args, AuxState, History]),
+    {Result, NewAuxState, NewEvents, ComplexAction} = Handler(Args, AuxState, History),
+    AuxStateContent = {#{format_version => 1}, encode(NewAuxState)},
+    Events = [{#{format_version => 1}, encode(E)} || E <- NewEvents],
+    StateChange = {AuxStateContent, Events},
+    {encode(Result), StateChange, ComplexAction}.
+
 -spec add_events(options(), mg:ns(), mg:id(), [event()], req_ctx(), deadline()) ->
     ok.
 add_events(Options, _NS, _MachineID, Events, _ReqCtx, _Deadline) ->
@@ -148,9 +164,14 @@ add_events(Options, _NS, _MachineID, Events, _ReqCtx, _Deadline) ->
 dummy_signal_handler(_Signal, AuxState, _Events) ->
     {AuxState, [], #{}}.
 
--spec dummy_call_handler(signal(), aux_state(), [event()]) ->
-    {aux_state(), [event()], action()}.
-dummy_call_handler(_Signal, AuxState, _Events) ->
+-spec dummy_call_handler(call(), aux_state(), [event()]) ->
+    {ok, aux_state(), [event()], action()}.
+dummy_call_handler(_Call, AuxState, _Events) ->
+    {ok, AuxState, [], #{}}.
+
+-spec dummy_repair_handler(term(), aux_state(), [event()]) ->
+    {ok, aux_state(), [event()], action()}.
+dummy_repair_handler(_Args, AuxState, _Events) ->
     {ok, AuxState, [], #{}}.
 
 -spec dummy_sink_handler([event()]) ->
@@ -229,10 +250,11 @@ repair(Options, NS, MachineID, Args) ->
     HRange = {undefined, undefined, forward},
     Deadline = mg_deadline:from_timeout(3000),
     MgOptions = events_machine_options(Options, NS),
-    mg_events_machine:repair(MgOptions, {id, MachineID}, encode(Args), HRange, <<>>, Deadline).
+    Response = mg_events_machine:repair(MgOptions, {id, MachineID}, encode(Args), HRange, <<>>, Deadline),
+    decode(Response).
 
 -spec get_history(options(), mg:ns(), mg:id()) ->
-    ok.
+    [event()].
 get_history(Options, NS, MachineID) ->
     HRange = {undefined, undefined, forward},
     MgOptions = events_machine_options(Options, NS),
