@@ -224,10 +224,9 @@ add_tasks(Tasks, State = #state{waiting_tasks = WaitingTasks}) ->
 -spec enqueue_task(task(), task_queue()) ->
     task_queue().
 enqueue_task(
-    Task = #{id := TaskID},
+    Task = #{id := TaskID, target_time := TargetTime},
     Queue = #task_queue{runnable = Runnable, runqueue = RQ, counter = Counter}
 ) ->
-    TargetTime = maps:get(target_time, Task, 0),
     % TODO
     % Blindly overwriting a task with same ID here if there's one. This is not the best strategy out
     % there but sufficient enough. For example we could overwrite most recent legit task with an
