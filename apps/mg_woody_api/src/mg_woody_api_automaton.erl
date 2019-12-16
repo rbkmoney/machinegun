@@ -62,21 +62,6 @@ handle_function('Start', [NS, ID_, Args], WoodyContext, Options) ->
         ),
     {ok, ok};
 
-% handle_function('Repair', [MachineDesc, Args], WoodyContext, Options) ->
-%     ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
-%     {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
-%     Deadline = get_deadline(NS, WoodyContext, Options),
-%     ok = mg_woody_api_utils:handle_error(
-%             #{namespace => NS, machine_ref => Ref, request_context => ReqCtx, deadline => Deadline},
-%             fun() ->
-%                 mg_events_machine:repair(
-%                     get_machine_options(NS, Options), Ref, unpack(args, Args), Range, ReqCtx, Deadline
-%                 )
-%             end,
-%             pulse(NS, Options)
-%         ),
-%     {ok, ok};
-
 handle_function('Repair', [MachineDesc, Args], WoodyContext, Options) ->
     ReqCtx = mg_woody_api_utils:woody_context_to_opaque(WoodyContext),
     {NS, Ref, Range} = unpack(machine_descriptor, MachineDesc),
