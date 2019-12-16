@@ -54,7 +54,7 @@
 -export([machine_processor_error     /1]).
 -export([failed_machine_call         /1]).
 -export([failed_machine_repair_error /1]).
--export([failed_machine_repair_business_error/1]).
+% -export([failed_machine_repair_business_error/1]).
 -export([failed_machine_repair       /1]).
 -export([failed_machine_simple_repair/1]).
 -export([working_machine_repair      /1]).
@@ -152,7 +152,7 @@ groups() ->
             machine_processor_error,
             failed_machine_call,
             failed_machine_repair_error,
-            failed_machine_repair_business_error,
+            % failed_machine_repair_business_error,
             failed_machine_repair,
             machine_call_by_id,
             working_machine_repair,
@@ -540,11 +540,11 @@ failed_machine_repair_error(C) ->
     #mg_stateproc_MachineFailed{} =
         (catch mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"error">>)).
 
--spec failed_machine_repair_business_error(config()) ->
-    _.
-failed_machine_repair_business_error(C) ->
-    #mg_stateproc_RepairFailed{reason = {bin, <<"because">>}} =
-        (catch mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"business_error">>)).
+% -spec failed_machine_repair_business_error(config()) ->
+%     _.
+% failed_machine_repair_business_error(C) ->
+%     #mg_stateproc_RepairFailed{reason = {bin, <<"because">>}} =
+%         (catch mg_automaton_client:repair(automaton_options(C), {id, ?ID}, <<"business_error">>)).
 
 -spec failed_machine_repair(config()) ->
     _.
