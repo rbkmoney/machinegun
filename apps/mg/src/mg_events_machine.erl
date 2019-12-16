@@ -160,7 +160,6 @@ start(Options, ID, Args, ReqCtx, Deadline) ->
 
 -spec repair(options(), ref(), term(), mg_events:history_range(), request_context(), deadline()) ->
     _Resp.
-    % ok.
 repair(Options, Ref, Args, HRange, ReqCtx, Deadline) ->
     ok = mg_machine:repair(
             machine_options(Options),
