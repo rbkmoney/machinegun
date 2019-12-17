@@ -94,15 +94,14 @@
     namespace :: mg:ns(),
     scheduler_name :: mg_scheduler:name(),
     machine_id :: mg:id() | undefined,
-    task_delay :: timeout() | undefined
+    task_delay :: timeout()
 }).
 
 -record(mg_scheduler_task_finished, {
     namespace :: mg:ns(),
     scheduler_name :: mg_scheduler:name(),
     machine_id :: mg:id() | undefined,
-    task_delay :: timeout() | undefined,
-    waiting_in_queue :: non_neg_integer(),  % in native units
+    task_delay :: timeout(),
     process_duration :: non_neg_integer()  % in native units
 }).
 
