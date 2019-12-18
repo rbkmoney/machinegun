@@ -161,14 +161,13 @@ start(Options, ID, Args, ReqCtx, Deadline) ->
 -spec repair(options(), ref(), term(), mg_events:history_range(), request_context(), deadline()) ->
     _Resp.
 repair(Options, Ref, Args, HRange, ReqCtx, Deadline) ->
-    ok = mg_machine:repair(
-            machine_options(Options),
-            ref2id(Options, Ref),
-            {Args, HRange},
-            ReqCtx,
-            Deadline
-        ),
-    <<"ok">>.
+    mg_machine:repair(
+        machine_options(Options),
+        ref2id(Options, Ref),
+        {Args, HRange},
+        ReqCtx,
+        Deadline
+    ).
 
 -spec simple_repair(options(), ref(), request_context(), deadline()) ->
     ok.
@@ -294,8 +293,7 @@ process_machine_(Options, ID, {Subj, {Args, HRange}}, _, ReqCtx, Deadline, State
         case Subj of
             init    -> process_signal(Options, ReqCtx, Deadline, {init  , Args}, Machine, EventsRange);
             timeout -> process_signal(Options, ReqCtx, Deadline,  timeout      , Machine, EventsRange);
-            repair  -> process_signal(Options, ReqCtx, Deadline, {repair, Args}, Machine, EventsRange);
-            % repair  -> process_repair(Options, ReqCtx, Deadline,          Args , Machine, EventsRange);
+            repair  -> process_repair(Options, ReqCtx, Deadline,          Args , Machine, EventsRange);
             call    -> process_call  (Options, ReqCtx, Deadline,          Args , Machine, EventsRange)
         end,
     NewState = add_delayed_actions(DelayedActions, State),
@@ -457,12 +455,12 @@ process_call(#{processor := Processor}, ReqCtx, Deadline, Args, Machine, EventsR
     {Resp, StateChange, ComplexAction} = mg_utils:apply_mod_opts(Processor, process_call, CallArgs),
     {Resp, handle_processing_result(StateChange, ComplexAction, EventsRange, ReqCtx)}.
 
-% -spec process_repair(options(), request_context(), deadline(), term(), machine(), mg_events:events_range()) ->
-%     {_Resp, delayed_actions()}.
-% process_repair(#{processor := Processor}, ReqCtx, Deadline, Args, Machine, EventsRange) ->
-%     CallArgs = [ReqCtx, Deadline, {Args, Machine}],
-%     {Resp, StateChange, ComplexAction} = mg_utils:apply_mod_opts(Processor, process_repair, CallArgs),
-%     {Resp, handle_processing_result(StateChange, ComplexAction, EventsRange, ReqCtx)}.
+-spec process_repair(options(), request_context(), deadline(), term(), machine(), mg_events:events_range()) ->
+    {_Resp, delayed_actions()}.
+process_repair(#{processor := Processor}, ReqCtx, Deadline, Args, Machine, EventsRange) ->
+    RepairArgs = [ReqCtx, Deadline, {Args, Machine}],
+    {Resp, StateChange, ComplexAction} = mg_utils:apply_mod_opts(Processor, process_repair, RepairArgs),
+    {Resp, handle_processing_result(StateChange, ComplexAction, EventsRange, ReqCtx)}.
 
 -spec handle_processing_result(state_change(), complex_action(), mg_events:events_range(), request_context()) ->
     delayed_actions().

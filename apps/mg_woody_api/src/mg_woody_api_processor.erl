@@ -76,10 +76,14 @@ process_repair(Options, ReqCtx, Deadline, {Args, Machine}) ->
             Options,
             ReqCtx,
             Deadline,
-            'ProcessRepair',
-            [mg_woody_api_packer:pack(repair_args, {Args, Machine})]
+            % 'ProcessRepair',
+            % [mg_woody_api_packer:pack(repair_args, {Args, Machine})]
+            'ProcessSignal',
+            [mg_woody_api_packer:pack(signal_args, {{repair, Args}, Machine})]
         ),
-    mg_woody_api_packer:unpack(repair_result, RepairResult).
+    % mg_woody_api_packer:unpack(repair_result, RepairResult).
+    {StateChange, ComplexAction} = mg_woody_api_packer:unpack(signal_result, RepairResult),
+    {<<"ok">>, StateChange, ComplexAction}.
 
 -spec call_processor(options(), mg_events_machine:request_context(), mg_deadline:deadline(), atom(), list(_)) ->
     _Result.

@@ -91,15 +91,14 @@ continuation_repair_test(_C) ->
     TestRunner = self(),
     Options = #{
         signal_handler => fun
-            ({init, <<>>}, AuxState, []) -> {AuxState, [1], #{}};
-            ({repair, <<>>}, AuxState, [1, 2]) -> {AuxState, [3], #{}} % FIXME: remove after switch to new repair
+            ({init, <<>>}, AuxState, []) -> {AuxState, [1], #{}}
         end,
         call_handler => fun
             (raise, AuxState, [1]) -> {ok, AuxState, [2], #{}}
         end,
-        % repair_handler => fun
-        %     (<<>>, AuxState, [1, 2]) -> {ok, AuxState, [3], #{}}
-        % end,
+        repair_handler => fun
+            (<<>>, AuxState, [1, 2]) -> {ok, AuxState, [3], #{}}
+        end,
         sink_handler => fun
             ([2]) -> erlang:error(test_error);
             (Events) -> TestRunner ! {sink_events, Events}, ok
@@ -250,10 +249,8 @@ repair(Options, NS, MachineID, Args) ->
     HRange = {undefined, undefined, forward},
     Deadline = mg_deadline:from_timeout(3000),
     MgOptions = events_machine_options(Options, NS),
-    <<"ok">> = mg_events_machine:repair(MgOptions, {id, MachineID}, encode(Args), HRange, <<>>, Deadline),
-    ok.
-    % Response = mg_events_machine:repair(MgOptions, {id, MachineID}, encode(Args), HRange, <<>>, Deadline),
-    % decode(Response).
+    Response = mg_events_machine:repair(MgOptions, {id, MachineID}, encode(Args), HRange, <<>>, Deadline),
+    decode(Response).
 
 -spec get_history(options(), mg:ns(), mg:id()) ->
     [event()].

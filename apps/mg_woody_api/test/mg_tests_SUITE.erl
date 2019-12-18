@@ -152,7 +152,7 @@ groups() ->
             machine_processor_error,
             failed_machine_call,
             failed_machine_repair_error,
-            % failed_machine_repair_business_error,
+            % failed_machine_repair_business_error, % FIXME: uncomment after switch to new repair
             failed_machine_repair,
             machine_call_by_id,
             working_machine_repair,
