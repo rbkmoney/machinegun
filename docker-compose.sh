@@ -44,7 +44,7 @@ services:
     labels:
       - "com.basho.riak.cluster.name=riakkv"
     volumes:
-      - ./riak_user.conf:/etc/riak/user.conf:ro
+      - ./test/riak_user.conf:/etc/riak/user.conf:ro
       - schemas:/etc/riak/schemas
   member1:
     &member-node
@@ -59,7 +59,7 @@ services:
       - CLUSTER_NAME=riakkv
       - COORDINATOR_NODE=riakdb
     volumes:
-      - ./riak_user.conf:/etc/riak/user.conf:ro
+      - ./test/riak_user.conf:/etc/riak/user.conf:ro
   member2:
     <<: *member-node
 
@@ -91,9 +91,11 @@ services:
 
   consul1: &consul-server
     image: consul:${CONSUL_VERSION}
+    volumes:
+      - ./test/consul.json:/etc/consul/consul.json
     hostname: consul1
     command:
-      agent -server -retry-join consul0 -client 0.0.0.0
+      agent -server -config-dir=/etc/consul
 
   consul2:
     <<: *consul-server
@@ -102,8 +104,6 @@ services:
   consul0:
     <<: *consul-server
     hostname: consul0
-    command:
-      agent -server -bootstrap-expect 3 -ui -client 0.0.0.0
 
 volumes:
   schemas:
