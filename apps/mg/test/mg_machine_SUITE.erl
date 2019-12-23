@@ -30,7 +30,7 @@
 
 %% mg_machine
 -behaviour(mg_machine).
--export([pool_child_spec/2, process_machine/7]).
+-export([pool_child_spec/2, process_machine/7, process_repair/6]).
 
 -export([start/0]).
 
@@ -173,9 +173,18 @@ process_machine(_, _, {call, delayed_increment}, _, ?req_ctx, _, State) ->
 process_machine(_, _, {call, remove}, _, ?req_ctx, _, State) ->
     {{reply, ok}, remove, State};
 process_machine(_, _, timeout, _, ?req_ctx, _, [TestKey, TestValue]) ->
-    {noreply, sleep, [TestKey, TestValue + 1]};
-process_machine(_, _, {repair, repair_arg}, _, ?req_ctx, _, [TestKey, TestValue]) ->
-    {{reply, repaired}, sleep, [TestKey, TestValue]}.
+    {noreply, sleep, [TestKey, TestValue + 1]}.
+
+-spec process_repair(Options, ID, Args, ReqCtx, Deadline, MachineState) -> Result when
+    Options :: any(),
+    ID :: mg:id(),
+    Args :: term(),
+    ReqCtx :: mg_machine:request_context(),
+    Deadline :: mg_deadline:deadline(),
+    MachineState :: mg_machine:machine_state(),
+    Result :: mg_machine:processor_repair_result().
+process_repair(_Options, _ID, repair_arg, _ReqCtx, _Deadline, [TestKey, TestValue]) ->
+    {ok, {{reply, repaired}, sleep, [TestKey, TestValue]}}.
 
 %%
 %% utils

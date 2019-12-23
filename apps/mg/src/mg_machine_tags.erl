@@ -26,7 +26,7 @@
 
 %% mg_machine handler
 -behaviour(mg_machine).
--export([process_machine/7]).
+-export([process_machine/7, process_repair/6]).
 
 -type options() :: #{
     namespace => mg:ns(),
@@ -62,7 +62,7 @@ resolve(Options, Tag) ->
     end.
 
 %%
-%% mg_machine handler
+%% mg_machine handlers
 %%
 -type state() :: mg:id() | undefined.
 
@@ -70,8 +70,8 @@ resolve(Options, Tag) ->
     mg_machine:processor_result().
 process_machine(_, _, {init, undefined}, _, _, _, _) ->
     {{reply, ok}, sleep, state_to_opaque(undefined)};
-process_machine(_, _, {repair, undefined}, _, _, _, State) ->
-    {{reply, ok}, sleep, State};
+% process_machine(_, _, {repair, undefined}, _, _, _, State) ->
+%     {{reply, ok}, sleep, State};
 process_machine(_, _, {call, {add, ID}}, _, _, _, PackedState) ->
     case opaque_to_state(PackedState) of
         undefined ->
@@ -83,6 +83,11 @@ process_machine(_, _, {call, {add, ID}}, _, _, _, PackedState) ->
     end;
 process_machine(_, _, {call, {replace, ID}}, _, _, _, _) ->
     {{reply, ok}, sleep, state_to_opaque(ID)}.
+
+-spec process_repair(_, mg:id(), _, mg:request_context(), mg_deadline:deadline(), mg_machine:machine_state()) ->
+    mg_machine:processor_repair_result().
+process_repair(_Options, _ID, undefined, _ReqCtx, _Deadline, State) ->
+    {ok, {{reply, ok}, sleep, State}}.
 
 %%
 %% local

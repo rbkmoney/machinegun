@@ -29,7 +29,7 @@
 %% mg_machine
 -behaviour(mg_machine).
 -export([pool_child_spec/2]).
--export([process_machine/7]).
+-export([process_machine/7, process_repair/6]).
 
 -export([start/0]).
 
@@ -135,6 +135,17 @@ process_machine(_, _, Impact, _, ReqCtx, _, EncodedState) ->
     State = decode_state(EncodedState),
     {Reply, Action, NewState} = do_process_machine(Impact, ReqCtx, State),
     {Reply, try_set_timer(NewState, Action), encode_state(NewState)}.
+
+-spec process_repair(Options, ID, Args, ReqCtx, Deadline, MachineState) -> Result when
+    Options :: any(),
+    ID :: mg:id(),
+    Args :: term(),
+    ReqCtx :: mg_machine:request_context(),
+    Deadline :: mg_deadline:deadline(),
+    MachineState :: mg_machine:machine_state(),
+    Result :: mg_machine:processor_repair_result().
+process_repair(_Options, _ID, _Args, _ReqCtx, _Deadline, State) ->
+    {ok, {{reply, ok}, sleep, State}}.
 
 -spec do_process_machine(mg_machine:processor_impact(), mg_machine:request_context(), machine_state()) ->
     mg_machine:processor_result().

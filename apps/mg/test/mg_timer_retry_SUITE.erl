@@ -31,7 +31,7 @@
 
 %% mg_machine
 -behaviour(mg_machine).
--export([pool_child_spec/2, process_machine/7]).
+-export([pool_child_spec/2, process_machine/7, process_repair/6]).
 
 -export([start/0]).
 
@@ -156,6 +156,17 @@ process_machine(_, _, timeout, _, ?req_ctx, _, [<<"counting">> = Mode, Counter])
     {{reply, ok}, build_timer(), [Mode, Counter + 1]};
 process_machine(_, _, timeout, _, ?req_ctx, _, [<<"failing">>, _Counter]) ->
     erlang:throw({transient, oops}).
+
+-spec process_repair(Options, ID, Args, ReqCtx, Deadline, MachineState) -> Result when
+    Options :: any(),
+    ID :: mg:id(),
+    Args :: term(),
+    ReqCtx :: mg_machine:request_context(),
+    Deadline :: mg_deadline:deadline(),
+    MachineState :: mg_machine:machine_state(),
+    Result :: mg_machine:processor_repair_result().
+process_repair(_Options, _ID, _Args, _ReqCtx, _Deadline, State) ->
+    {ok, {{reply, ok}, sleep, State}}.
 
 %%
 %% utils

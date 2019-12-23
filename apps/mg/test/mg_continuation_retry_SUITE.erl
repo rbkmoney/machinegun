@@ -28,7 +28,7 @@
 
 %% mg_machine
 -behaviour(mg_machine).
--export([process_machine/7]).
+-export([process_machine/7, process_repair/6]).
 
 %% Pulse
 -export([handle_beat/2]).
@@ -100,6 +100,11 @@ process_machine(_, _, continuation, _, ?REQ_CTX, _, _State) ->
     FailCount = get_fail_count(),
     ok = update_fail_count(FailCount + 1),
     throw({transient, not_yet}).
+
+-spec process_repair(_Options, mg:id(), term(), _, _, mg_machine:machine_state()) ->
+    mg_machine:processor_repair_result().
+process_repair(_Options, _ID, _Args, _ReqCtx, _Deadline, State) ->
+    {ok, {{reply, ok}, sleep, State}}.
 
 %%
 %% utils

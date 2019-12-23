@@ -149,7 +149,7 @@ process_repair(Options, _ReqCtx, _Deadline, {EncodedArgs, Machine}) ->
     AuxStateContent = {#{format_version => 1}, encode(NewAuxState)},
     Events = [{#{format_version => 1}, encode(E)} || E <- NewEvents],
     StateChange = {AuxStateContent, Events},
-    {encode(Result), StateChange, ComplexAction}.
+    {ok, {encode(Result), StateChange, ComplexAction}}.
 
 -spec add_events(options(), mg:ns(), mg:id(), [event()], req_ctx(), deadline()) ->
     ok.
