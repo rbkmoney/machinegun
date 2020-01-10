@@ -28,7 +28,7 @@
 
 %% mg_machine
 -behaviour(mg_machine).
--export([process_machine/7, process_repair/6]).
+-export([process_machine/7]).
 
 %% Pulse
 -export([handle_beat/2]).
@@ -112,17 +112,6 @@ process_machine(_, _, continuation, _, ?req_ctx, _, #{<<"run">> := [Runtime, Ans
     {noreply, sleep, #{<<"answer">> => Answer}};
 process_machine(_, _, {call, answer}, _, ?req_ctx, _, State) ->
     {{reply, maps:get(<<"answer">>, State, undefined)}, sleep, State}.
-
--spec process_repair(Options, ID, Args, ReqCtx, Deadline, MachineState) -> Result when
-    Options :: any(),
-    ID :: mg:id(),
-    Args :: term(),
-    ReqCtx :: mg_machine:request_context(),
-    Deadline :: mg_deadline:deadline(),
-    MachineState :: mg_machine:machine_state(),
-    Result :: mg_machine:processor_repair_result().
-process_repair(_Options, _ID, _Args, _ReqCtx, _Deadline, State) ->
-    {ok, {{reply, ok}, sleep, State}}.
 
 %%
 %% utils

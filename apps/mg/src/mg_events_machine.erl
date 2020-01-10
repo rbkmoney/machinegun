@@ -54,7 +54,7 @@
 
 %% mg_machine handler
 -behaviour(mg_machine).
--export([processor_child_spec/1, process_machine/7, process_repair/6]).
+-export([processor_child_spec/1, process_machine/7]).
 
 %%
 %% API
@@ -75,9 +75,7 @@
 -type repair_args    () :: {term(), machine()}.
 -type signal_result  () :: {state_change(), complex_action()}.
 -type call_result    () :: {term(), state_change(), complex_action()}.
--type repair_result  () :: {ok, {mg_storage:opaque(), state_change(), complex_action()}} |
-                           {error, repair_error()}.
--type repair_error   () :: {business, mg_proto_state_processing_thrift:'RepairFailed'()}.
+-type repair_result  () :: {term(), state_change(), complex_action()}.
 -type state_change   () :: {aux_state(), [mg_events:body()]}.
 -type signal         () :: {init, term()} | timeout | {repair, term()}.
 -type aux_state      () :: mg_events:content().
@@ -262,38 +260,12 @@ process_machine(Options, ID, Impact, PCtx, ReqCtx, Deadline, PackedState) ->
         catch
             throw:{transient, Reason}:ST ->
                 erlang:raise(throw, {transient, Reason}, ST);
+            throw:{business, _} = Error ->
+                erlang:throw(Error);
             throw:Reason ->
                 erlang:throw({transient, {processor_unavailable, Reason}})
         end,
     {ReplyAction, ProcessingFlowAction, state_to_opaque(NewState)}.
-
--spec process_repair(Options, ID, Args, ReqCtx, Deadline, PackedState) -> Result when
-    Options :: options(),
-    ID :: mg:id(),
-    Args :: term(),
-    ReqCtx :: request_context(),
-    Deadline :: deadline(),
-    PackedState :: mg_machine:machine_state(),
-    Result :: mg_machine:processor_repair_result().
-process_repair(Options, ID, {Args, HRange}, ReqCtx, Deadline, PackedState) ->
-    try
-        State = opaque_to_state(PackedState),
-        {EffectiveState, ExtraEvents} = try_apply_delayed_actions(State),
-        #{events_range := EventsRange} = EffectiveState,
-        Machine = machine(Options, ID, EffectiveState, ExtraEvents, HRange),
-        case process_repair_(Options, ReqCtx, Deadline, Args , Machine, EventsRange) of
-            {ok, {Reply, DelayedActions}} ->
-                NewState = add_delayed_actions(DelayedActions, State),
-                {ok, {noreply, {continue, Reply}, state_to_opaque(NewState)}};
-            {error, _} = Error ->
-                Error
-        end
-    catch
-        throw:{transient, Reason}:ST ->
-            erlang:raise(throw, {transient, Reason}, ST);
-        throw:Reason ->
-            erlang:throw({transient, {processor_unavailable, Reason}})
-    end.
 
 %%
 
@@ -321,6 +293,7 @@ process_machine_(Options, ID, {Subj, {Args, HRange}}, _, ReqCtx, Deadline, State
         case Subj of
             init    -> process_signal(Options, ReqCtx, Deadline, {init  , Args}, Machine, EventsRange);
             timeout -> process_signal(Options, ReqCtx, Deadline,  timeout      , Machine, EventsRange);
+            repair  -> process_repair(Options, ReqCtx, Deadline,          Args , Machine, EventsRange);
             call    -> process_call  (Options, ReqCtx, Deadline,          Args , Machine, EventsRange)
         end,
     NewState = add_delayed_actions(DelayedActions, State),
@@ -482,17 +455,12 @@ process_call(#{processor := Processor}, ReqCtx, Deadline, Args, Machine, EventsR
     {Resp, StateChange, ComplexAction} = mg_utils:apply_mod_opts(Processor, process_call, CallArgs),
     {Resp, handle_processing_result(StateChange, ComplexAction, EventsRange, ReqCtx)}.
 
--spec process_repair_(options(), request_context(), deadline(), term(), machine(), mg_events:events_range()) ->
-    {ok, {mg_storage:opaque(), delayed_actions()}} | {error, repair_error()}.
-process_repair_(#{processor := Processor}, ReqCtx, Deadline, Args, Machine, EventsRange) ->
+-spec process_repair(options(), request_context(), deadline(), term(), machine(), mg_events:events_range()) ->
+    {_Resp, delayed_actions()}.
+process_repair(#{processor := Processor}, ReqCtx, Deadline, Args, Machine, EventsRange) ->
     RepairArgs = [ReqCtx, Deadline, {Args, Machine}],
-    case mg_utils:apply_mod_opts(Processor, process_repair, RepairArgs) of
-        {ok, {Resp, StateChange, ComplexAction}} ->
-            DelayedActions = handle_processing_result(StateChange, ComplexAction, EventsRange, ReqCtx),
-            {ok, {Resp, DelayedActions}};
-        {error, _} = Error ->
-            Error
-    end.
+    {Resp, StateChange, ComplexAction} = mg_utils:apply_mod_opts(Processor, process_repair, RepairArgs),
+    {Resp, handle_processing_result(StateChange, ComplexAction, EventsRange, ReqCtx)}.
 
 -spec handle_processing_result(state_change(), complex_action(), mg_events:events_range(), request_context()) ->
     delayed_actions().

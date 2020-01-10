@@ -39,7 +39,7 @@ processor_child_spec(Options) ->
     SignalArgs :: mg_events_machine:signal_args(),
     Result :: mg_events_machine:signal_result().
 process_signal(Options, ReqCtx, Deadline, {Signal, Machine}) ->
-    {ok, SignalResult} =
+    SignalResult =
         call_processor(
             Options,
             ReqCtx,
@@ -55,7 +55,7 @@ process_signal(Options, ReqCtx, Deadline, {Signal, Machine}) ->
     Deadline :: mg_deadline:deadline(),
     CallArgs :: mg_events_machine:call_args().
 process_call(Options, ReqCtx, Deadline, {Call, Machine}) ->
-    {ok, CallResult} =
+    CallResult =
         call_processor(
             Options,
             ReqCtx,
@@ -81,17 +81,12 @@ process_repair(Options, ReqCtx, Deadline, {Args, Machine}) ->
             'ProcessSignal',
             [mg_woody_api_packer:pack(signal_args, {{repair, Args}, Machine})]
         ),
-    case RepairResult of
-        {ok, Result} ->
-            % {ok, mg_woody_api_packer:unpack(repair_result, Result)};
-            {StateChange, ComplexAction} = mg_woody_api_packer:unpack(signal_result, Result),
-            {ok, {<<"ok">>, StateChange, ComplexAction}};
-        {error, _} ->
-            RepairResult
-    end.
+    % mg_woody_api_packer:unpack(repair_result, RepairResult).
+    {StateChange, ComplexAction} = mg_woody_api_packer:unpack(signal_result, RepairResult),
+    {<<"ok">>, StateChange, ComplexAction}.
 
 -spec call_processor(options(), mg_events_machine:request_context(), mg_deadline:deadline(), atom(), list(_)) ->
-    {ok, term()} | {error, {business, mg_proto_state_processing_thrift:'RepairFailed'()}}.
+    _Result.
 call_processor(Options, ReqCtx, Deadline, Function, Args) ->
     % TODO сделать нормально!
     {ok, TRef} = timer:kill_after(call_duration_limit(Options, Deadline) + 3000),
@@ -103,10 +98,10 @@ call_processor(Options, ReqCtx, Deadline, Function, Args) ->
             WoodyContext
         )
     of
-        {ok, _} = Result ->
-            Result;
+        {ok, Reply} ->
+            Reply;
         {exception, Error} ->
-            {error, {business, Error}}
+            erlang:throw({business, Error})
     catch
         error:Reason={woody_error, {_, resource_unavailable, _}} ->
             throw({transient, {processor_unavailable, Reason}});

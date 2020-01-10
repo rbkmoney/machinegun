@@ -32,7 +32,7 @@
 
 %% mg_machine handler
 -behaviour(mg_machine).
--export([process_machine/7, process_repair/6]).
+-export([process_machine/7]).
 
 %%
 %% API
@@ -123,7 +123,7 @@ repair(Options, EventSinkID, ReqCtx, Deadline) ->
     mg_machine:repair(machine_options(Options), EventSinkID, undefined, ReqCtx, Deadline).
 
 %%
-%% mg_processor handlers
+%% mg_processor handler
 %%
 -type state() :: #{
     events_range => mg_events:events_range()
@@ -157,17 +157,6 @@ process_machine_(Options, EventSinkID, {call, {add_events, SourceNS, SourceMachi
     {SinkEvents, NewState} = generate_sink_events(SourceNS, SourceMachineID, Events, State),
     ok = store_sink_events(Options, EventSinkID, SinkEvents),
     NewState.
-
--spec process_repair(Options, EventSinkID, Args, ReqCtx, Deadline, PackedState) -> Result when
-    Options :: ns_options(),
-    EventSinkID :: mg:id(),
-    Args :: term(),
-    ReqCtx :: mg:request_context(),
-    Deadline :: mg_deadline:deadline(),
-    PackedState :: mg_machine:machine_state(),
-    Result :: mg_machine:processor_repair_result().
-process_repair(_Options, _EventSinkID, undefined, _ReqCtx, _Deadline, PackedState) ->
-    {ok, {{reply, ok}, sleep, PackedState}}.
 
 %%
 

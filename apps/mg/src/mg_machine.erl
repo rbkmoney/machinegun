@@ -73,7 +73,6 @@
 -export_type([processor_impact      /0]).
 -export_type([processing_context    /0]).
 -export_type([processor_result      /0]).
--export_type([processor_repair_result/0]).
 -export_type([processor_reply_action/0]).
 -export_type([processor_flow_action /0]).
 -export_type([search_query          /0]).
@@ -191,7 +190,6 @@
     |  remove
 .
 -type processor_result() :: {processor_reply_action(), processor_flow_action(), machine_state()}.
--type processor_repair_result() :: {ok, processor_result()} | {error, term()}.
 -type request_context() :: mg:request_context().
 
 -type processor_retry() :: mg_retry:strategy() | undefined.
@@ -210,14 +208,6 @@
     Deadline :: deadline(),
     MachineState :: machine_state(),
     Result :: processor_result().
--callback process_repair(Options, ID, Args, ReqCtx, Deadline, MachineState) -> Result when
-    Options :: any(),
-    ID :: mg:id(),
-    Args :: term(),
-    ReqCtx :: request_context(),
-    Deadline :: deadline(),
-    MachineState :: machine_state(),
-    Result :: processor_repair_result().
 -optional_callbacks([processor_child_spec/1]).
 
 -type search_query() ::
@@ -714,6 +704,9 @@ process(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
     try
         process_with_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State, RetryStrategy)
     catch
+        throw:{business, _} = Error ->
+            ok = do_reply_action({reply, {error, Error}}, ProcessingCtx),
+            State;
         Class:Reason:ST ->
             ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
             handle_exception({Class, Reason, ST}, ReqCtx, Deadline, State)
@@ -809,33 +802,14 @@ handle_exception(Exception, ReqCtx, Deadline, State) ->
 
 -spec process_unsafe(processor_impact(), processing_context(), request_context(), deadline(), state()) ->
     state().
-process_unsafe({repair, Args} = Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
+process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machine := StorageMachine}) ->
     ok = emit_pre_process_beats(Impact, ReqCtx, Deadline, State),
     ProcessStart = erlang:monotonic_time(),
-    RepairResult = repair_processor(Args, ReqCtx, Deadline, State),
+    {ReplyAction, Action, NewMachineState} =
+        call_processor(Impact, ProcessingCtx, ReqCtx, Deadline, State),
     ProcessDuration = erlang:monotonic_time() - ProcessStart,
     ok = emit_post_process_beats(Impact, ReqCtx, Deadline, ProcessDuration, State),
     ok = try_suicide(State, ReqCtx),
-    case RepairResult of
-        {ok, Result} ->
-            handle_process_result(Result, ProcessingCtx, ReqCtx, Deadline, State);
-        {error, _} = Error ->
-            ok = reply(ProcessingCtx, Error),
-            State
-    end;
-process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
-    ok = emit_pre_process_beats(Impact, ReqCtx, Deadline, State),
-    ProcessStart = erlang:monotonic_time(),
-    Result = call_processor(Impact, ProcessingCtx, ReqCtx, Deadline, State),
-    ProcessDuration = erlang:monotonic_time() - ProcessStart,
-    ok = emit_post_process_beats(Impact, ReqCtx, Deadline, ProcessDuration, State),
-    ok = try_suicide(State, ReqCtx),
-    handle_process_result(Result, ProcessingCtx, ReqCtx, Deadline, State).
-
--spec handle_process_result(processor_result(), processing_context(), request_context(), deadline(), state()) ->
-    state().
-handle_process_result(Result, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machine := StorageMachine}) ->
-    {ReplyAction, Action, NewMachineState} = Result,
     NewStorageMachine0 = StorageMachine#{state := NewMachineState},
     NewState =
         case Action of
@@ -862,7 +836,6 @@ handle_process_result(Result, ProcessingCtx, ReqCtx, Deadline, State = #{storage
             NewState
     end.
 
-
 -spec call_processor(processor_impact(), processing_context(), request_context(), deadline(), state()) ->
     processor_result().
 call_processor(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
@@ -871,16 +844,6 @@ call_processor(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
         get_options(processor, Options),
         process_machine,
         [ID, Impact, ProcessingCtx, ReqCtx, Deadline, MachineState]
-    ).
-
--spec repair_processor(term(), request_context(), deadline(), state()) ->
-    processor_repair_result().
-repair_processor(Args, ReqCtx, Deadline, State) ->
-    #{options := Options, id := ID, storage_machine := #{state := MachineState}} = State,
-    mg_utils:apply_mod_opts(
-        get_options(processor, Options),
-        process_repair,
-        [ID, Args, ReqCtx, Deadline, MachineState]
     ).
 
 -spec processor_child_spec(options()) ->
