@@ -118,12 +118,10 @@ create_metric(#mg_scheduler_task_finished{} = Beat) ->
     #mg_scheduler_task_finished{
         scheduler_name = Name,
         namespace = NS,
-        waiting_in_queue = Waiting,
         process_duration = Processing
     } = Beat,
     [
         create_inc([mg, scheduler, NS, Name, task, finished]),
-        create_bin_inc([mg, scheduler, NS, Name, task, queue_waiting], duration, Waiting),
         create_bin_inc([mg, scheduler, NS, Name, task, processing], duration, Processing)
     ];
 create_metric(#mg_scheduler_quota_reserved{} = Beat) ->
