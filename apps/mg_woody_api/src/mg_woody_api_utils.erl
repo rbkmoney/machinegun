@@ -56,8 +56,6 @@ handle_error(Ctx, F, Pulse) ->
 
 -spec handle_error(mg_machine:thrown_error() | {logic, namespace_not_found}, [_StackItem]) ->
     no_return().
-handle_error({business, #mg_stateproc_RepairFailed{} = Reason}, _ST) ->
-    woody_error:raise(business, Reason);
 handle_error({logic, Reason}, _ST) ->
     erlang:throw(handle_logic_error(Reason));
 % TODO может Reason не прокидывать дальше?

@@ -149,7 +149,7 @@ process_repair(Options, _ReqCtx, _Deadline, {EncodedArgs, Machine}) ->
     AuxStateContent = {#{format_version => 1}, encode(NewAuxState)},
     Events = [{#{format_version => 1}, encode(E)} || E <- NewEvents],
     StateChange = {AuxStateContent, Events},
-    {encode(Result), StateChange, ComplexAction}.
+    {ok, {encode(Result), StateChange, ComplexAction}}.
 
 -spec add_events(options(), mg:ns(), mg:id(), [event()], req_ctx(), deadline()) ->
     ok.
@@ -249,7 +249,7 @@ repair(Options, NS, MachineID, Args) ->
     HRange = {undefined, undefined, forward},
     Deadline = mg_deadline:from_timeout(3000),
     MgOptions = events_machine_options(Options, NS),
-    Response = mg_events_machine:repair(MgOptions, {id, MachineID}, encode(Args), HRange, <<>>, Deadline),
+    {ok, Response} = mg_events_machine:repair(MgOptions, {id, MachineID}, encode(Args), HRange, <<>>, Deadline),
     decode(Response).
 
 -spec get_history(options(), mg:ns(), mg:id()) ->

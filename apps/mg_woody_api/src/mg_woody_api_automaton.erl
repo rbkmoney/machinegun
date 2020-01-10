@@ -76,7 +76,12 @@ handle_function('Repair', [MachineDesc, Args], WoodyContext, Options) ->
             end,
             pulse(NS, Options)
         ),
-    {ok, pack(repair_response, Response)};
+    case Response of
+        {ok, Reply} ->
+            {ok, pack(repair_response, Reply)};
+        {error, {exception, Reason}} ->
+            woody_error:raise(business, Reason)
+    end;
 
 handle_function('SimpleRepair', [NS, Ref_], WoodyContext, Options) ->
     Deadline = get_deadline(NS, WoodyContext, Options),

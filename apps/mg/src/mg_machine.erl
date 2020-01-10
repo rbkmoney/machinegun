@@ -187,6 +187,7 @@
        sleep
     | {wait, genlib_time:ts(), request_context(), HandlingTimeout::pos_integer()}
     | {continue, processing_state()}
+    |  keep
     |  remove
 .
 -type processor_result() :: {processor_reply_action(), processor_flow_action(), machine_state()}.
@@ -704,9 +705,6 @@ process(Impact, ProcessingCtx, ReqCtx, Deadline, State) ->
     try
         process_with_retry(Impact, ProcessingCtx, ReqCtx, Deadline, State, RetryStrategy)
     catch
-        throw:{business, _} = Error ->
-            ok = do_reply_action({reply, {error, Error}}, ProcessingCtx),
-            State;
         Class:Reason:ST ->
             ok = do_reply_action({reply, {error, {logic, machine_failed}}}, ProcessingCtx),
             handle_exception({Class, Reason, ST}, ReqCtx, Deadline, State)
@@ -823,6 +821,8 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
                 Status = {waiting, Timestamp, HdlReqCtx, HdlTo},
                 NewStorageMachine = NewStorageMachine0#{status := Status},
                 transit_state(ReqCtx, Deadline, NewStorageMachine, State);
+            keep ->
+                State;
             remove ->
                 remove_from_storage(ReqCtx, Deadline, State)
         end,
