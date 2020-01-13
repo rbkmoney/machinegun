@@ -91,7 +91,7 @@ process_repair(Options, ReqCtx, Deadline, {Args, Machine}) ->
     end.
 
 -spec call_processor(options(), mg_events_machine:request_context(), mg_deadline:deadline(), atom(), list(_)) ->
-    {ok, term()} | {error, {exception, mg_proto_state_processing_thrift:'RepairFailed'()}}.
+    {ok, term()} | {error, {failed, mg_proto_state_processing_thrift:'RepairFailed'()}}.
 call_processor(Options, ReqCtx, Deadline, Function, Args) ->
     % TODO сделать нормально!
     {ok, TRef} = timer:kill_after(call_duration_limit(Options, Deadline) + 3000),
@@ -105,8 +105,8 @@ call_processor(Options, ReqCtx, Deadline, Function, Args) ->
     of
         {ok, _} = Result ->
             Result;
-        {exception, _} = Reason ->
-            {error, Reason}
+        {exception, Reason} ->
+            {error, {failed, Reason}}
     catch
         error:Reason={woody_error, {_, resource_unavailable, _}} ->
             throw({transient, {processor_unavailable, Reason}});

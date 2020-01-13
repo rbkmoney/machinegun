@@ -77,7 +77,7 @@
 -type call_result    () :: {term(), state_change(), complex_action()}.
 -type repair_result  () :: {ok, {mg_storage:opaque(), state_change(), complex_action()}} |
                            {error, repair_error()}.
--type repair_error   () :: {exception, mg_proto_state_processing_thrift:'RepairFailed'()}.
+-type repair_error   () :: {failed, term()}.
 -type state_change   () :: {aux_state(), [mg_events:body()]}.
 -type signal         () :: {init, term()} | timeout | {repair, term()}.
 -type aux_state      () :: mg_events:content().

@@ -79,7 +79,7 @@ handle_function('Repair', [MachineDesc, Args], WoodyContext, Options) ->
     case Response of
         {ok, Reply} ->
             {ok, pack(repair_response, Reply)};
-        {error, {exception, Reason}} ->
+        {error, {failed, Reason}} ->
             woody_error:raise(business, Reason)
     end;
 
