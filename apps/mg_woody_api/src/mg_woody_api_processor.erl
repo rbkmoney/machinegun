@@ -78,12 +78,14 @@ process_repair(Options, ReqCtx, Deadline, {Args, Machine}) ->
             Deadline,
             % 'ProcessRepair',
             % [mg_woody_api_packer:pack(repair_args, {Args, Machine})]
+            % FIXME: replace following 2 lines with 2 above after migration to new repair callback
             'ProcessSignal',
             [mg_woody_api_packer:pack(signal_args, {{repair, Args}, Machine})]
         ),
     case RepairResult of
         {ok, Result} ->
             % {ok, mg_woody_api_packer:unpack(repair_result, Result)};
+            % FIXME: replace following 2 lines with 1 above after migration to new repair callback
             {StateChange, ComplexAction} = mg_woody_api_packer:unpack(signal_result, Result),
             {ok, {<<"ok">>, StateChange, ComplexAction}};
         {error, _} ->
