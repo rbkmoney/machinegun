@@ -96,7 +96,10 @@ init_per_group(base, C) ->
     {ok, ProcessorPid} = mg_test_processor:start(
         {0, 0, 0, 0}, 8023,
         genlib_map:compact(#{
-            processor  => {"/processor", {fun default_signal_handler/1, fun default_call_handler/1, default_func}}
+            processor  => {"/processor", #{
+                signal => fun default_signal_handler/1,
+                call   => fun default_call_handler/1
+            }}
         })
     ),
 

@@ -113,7 +113,7 @@ init_per_group(Name = legacy_activities, C0) ->
     {ok, ProcessorPid} = mg_test_processor:start(
         {0, 0, 0, 0}, 8023,
         genlib_map:compact(#{
-            processor  => {"/processor", {default_func, fun legacy_call_handler/1, default_func}}
+            processor  => {"/processor", #{call => fun legacy_call_handler/1}}
         })
     ),
     [{processor_pid, ProcessorPid} | C1];
@@ -122,8 +122,8 @@ init_per_group(Name = modern_activities, C0) ->
     {ok, ProcessorPid} = mg_test_processor:start(
         {0, 0, 0, 0}, 8023,
         genlib_map:compact(#{
-            processor  => {"/processor", {default_func, fun modern_call_handler/1, default_func}},
-            modernizer => {"/modernizer", fun modernize_handler/1}
+            processor  => {"/processor", #{call => fun modern_call_handler/1}},
+            modernizer => {"/modernizer", #{modernize => fun modernize_handler/1}}
         })
     ),
     [{processor_pid, ProcessorPid} | C1];

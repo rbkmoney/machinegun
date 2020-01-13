@@ -237,10 +237,10 @@ init_per_group(C) ->
         {0, 0, 0, 0}, 8023,
         genlib_map:compact(#{
             processor  => {
-                "/processor", {
-                    fun default_signal_handler/1,
-                    fun default_call_handler/1,
-                    fun default_repair_handler/1
+                "/processor", #{
+                    signal => fun default_signal_handler/1,
+                    call   => fun default_call_handler/1,
+                    repair => fun default_repair_handler/1
                 }
             }
         })
