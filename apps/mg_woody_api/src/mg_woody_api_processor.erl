@@ -88,12 +88,12 @@ process_repair(Options, ReqCtx, Deadline, {Args, Machine}) ->
             % FIXME: replace following 2 lines with 1 above after migration to new repair callback
             {StateChange, ComplexAction} = mg_woody_api_packer:unpack(signal_result, Result),
             {ok, {<<"ok">>, StateChange, ComplexAction}};
-        {error, _} ->
-            RepairResult
+        {error, Error} ->
+            {error, {failed, mg_woody_api_packer:unpack(repair_error, Error)}}
     end.
 
 -spec call_processor(options(), mg_events_machine:request_context(), mg_deadline:deadline(), atom(), list(_)) ->
-    {ok, term()} | {error, {failed, mg_proto_state_processing_thrift:'RepairFailed'()}}.
+    {ok, term()} | {error, mg_proto_state_processing_thrift:'RepairFailed'()}.
 call_processor(Options, ReqCtx, Deadline, Function, Args) ->
     % TODO сделать нормально!
     {ok, TRef} = timer:kill_after(call_duration_limit(Options, Deadline) + 3000),
@@ -108,7 +108,7 @@ call_processor(Options, ReqCtx, Deadline, Function, Args) ->
         {ok, _} = Result ->
             Result;
         {exception, Reason} ->
-            {error, {failed, Reason}}
+            {error, Reason}
     catch
         error:Reason={woody_error, {_, resource_unavailable, _}} ->
             throw({transient, {processor_unavailable, Reason}});
