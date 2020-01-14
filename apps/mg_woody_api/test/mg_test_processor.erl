@@ -29,13 +29,13 @@
 -export_type([modernizer_function/0]).
 
 -type processor_signal_function() ::
-    fun((mg_events_machine:signal_args()) -> mg_events_machine:signal_result()) | default_func.
+    fun((mg_events_machine:signal_args()) -> mg_events_machine:signal_result()).
 
 -type processor_call_function() ::
-    fun((mg_events_machine:call_args()) -> mg_events_machine:call_result()) | default_func.
+    fun((mg_events_machine:call_args()) -> mg_events_machine:call_result()).
 
 -type processor_repair_function() ::
-    fun((mg_events_machine:repair_args()) -> mg_events_machine:repair_result()) | default_func.
+    fun((mg_events_machine:repair_args()) -> mg_events_machine:repair_result()).
 
 -type processor_functions() :: #{
     signal => processor_signal_function(),
@@ -44,7 +44,7 @@
 }.
 
 -type modernizer_function() ::
-    fun((mg_events_modernizer:machine_event()) -> mg_events_modernizer:modernized_event_body()) | default_func.
+    fun((mg_events_modernizer:machine_event()) -> mg_events_modernizer:modernized_event_body()).
 
 -type modernizer_functions() :: #{
     modernize => modernizer_function()
@@ -129,11 +129,11 @@ handle_function('ModernizeEvent', [Args], _WoodyContext, Functions) ->
                    ; (repair,    functions(), term()) -> mg_events_machine:repair_result()
                    ; (modernize, functions(), term()) -> mg_events_modernizer:modernized_event_body().
 invoke_function(Type, Functions, Args) ->
-    case maps:get(Type, Functions, default_func) of
-        default_func ->
-            default_result(Type, Args);
-        Fun ->
-            Fun(Args)
+    case maps:find(Type, Functions) of
+        {ok, Fun} ->
+            Fun(Args);
+        error ->
+            default_result(Type, Args)
     end.
 
 -spec default_result(signal    , term()) -> mg_events_machine:signal_result()
