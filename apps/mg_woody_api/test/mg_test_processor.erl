@@ -57,7 +57,7 @@
 
 -type functions() :: processor_functions() | modernizer_functions().
 
--type host_address() :: {integer(), integer(), integer(), integer()}.
+-type host_address() :: inet:ip_address().
 
 %%
 %% API
