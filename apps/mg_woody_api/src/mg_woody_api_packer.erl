@@ -170,7 +170,7 @@ pack(call_response, CallResponse) ->
     pack(opaque, CallResponse);
 pack(repair_response, RepairResponse) ->
     pack(opaque, RepairResponse);
-pack(repair_error, #{<<"reason">> := Reason}) ->
+pack(repair_error, #{reason := Reason}) ->
     #mg_stateproc_RepairFailed{
         reason = pack(opaque, Reason)
     };
@@ -407,7 +407,7 @@ unpack(call_response, CallResponse) ->
 unpack(repair_response, RepairResponse) ->
     unpack(opaque, RepairResponse);
 unpack(repair_error, #mg_stateproc_RepairFailed{reason = Reason}) ->
-    #{<<"reason">> => unpack(opaque, Reason)};
+    #{reason => unpack(opaque, Reason)};
 unpack(signal_args, #mg_stateproc_SignalArgs{signal = Signal, machine = Machine}) ->
     {unpack(signal , Signal), unpack(machine, Machine)};
 unpack(call_args, #mg_stateproc_CallArgs{arg = Args, machine = Machine}) ->
