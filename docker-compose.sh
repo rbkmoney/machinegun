@@ -44,7 +44,7 @@ services:
     labels:
       - "com.basho.riak.cluster.name=riakkv"
     volumes:
-      - ./test/riak_user.conf:/etc/riak/user.conf:ro
+      - ./test_resources/riak_user.conf:/etc/riak/user.conf:ro
       - schemas:/etc/riak/schemas
   member1:
     &member-node
