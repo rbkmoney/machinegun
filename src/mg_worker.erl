@@ -16,7 +16,7 @@
 
 -module(mg_worker).
 
--include_lib("mg/include/pulse.hrl").
+-include_lib("include/pulse.hrl").
 
 %% API
 -export_type([options     /0]).

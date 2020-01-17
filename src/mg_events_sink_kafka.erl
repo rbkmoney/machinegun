@@ -16,7 +16,7 @@
 
 -module(mg_events_sink_kafka).
 
--include_lib("mg/include/pulse.hrl").
+-include_lib("include/pulse.hrl").
 
 %% mg_events_sink handler
 -behaviour(mg_events_sink).

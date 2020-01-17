@@ -353,7 +353,7 @@ get_waiting_task_count(#state{waiting_tasks = WaitingTasks}) ->
 
 %% logging
 
--include_lib("mg/include/pulse.hrl").
+-include_lib("include/pulse.hrl").
 
 -spec emit_beat(mg_pulse:handler(), mg_pulse:beat()) -> ok.
 emit_beat(Handler, Beat) ->

@@ -357,7 +357,7 @@ self_ref(SchedulerID) ->
 
 %%
 
--include_lib("mg/include/pulse.hrl").
+-include_lib("include/pulse.hrl").
 
 -spec emit_scan_error_beat(mg_utils:exception(), st()) ->
     ok.
