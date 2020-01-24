@@ -110,6 +110,9 @@ namespaces:
             scan_limit: 1000
             capacity: 500
         overseer: disabled
+        # maximum number of events that will be stored inside of machine state
+        # must be non negative integer, default is 0
+        event_stash_size: 5
 snowflake_machine_id: 1
 # memory storage backend
 storage:

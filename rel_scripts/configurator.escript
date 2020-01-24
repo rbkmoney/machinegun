@@ -437,7 +437,8 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
             end
         ),
         event_sinks => [event_sink(ES) || ES <- ?C:conf([event_sinks], NSYamlConfig, [])],
-        suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0))
+        suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0)),
+        event_stash_size => ?C:conf([event_stash_size], NSYamlConfig, 0)
     }}.
 
 scheduler(Share, Config) ->

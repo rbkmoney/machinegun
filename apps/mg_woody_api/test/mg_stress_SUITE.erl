@@ -116,7 +116,8 @@ mg_woody_api_config(_C) ->
                     overseer       => Scheduler
                 },
                 retries => #{},
-                event_sinks => [{mg_events_sink_machine, #{name => default, machine_id => ?ES_ID}}]
+                event_sinks => [{mg_events_sink_machine, #{name => default, machine_id => ?ES_ID}}],
+                event_stash_size => 10
             }
         }},
         {event_sink_ns, #{
