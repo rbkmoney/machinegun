@@ -54,6 +54,15 @@
 
 %% Scheduler
 
+-record(mg_scheduler_search_success, {
+    namespace :: mg:ns(),
+    scheduler_name :: mg_scheduler:name(),
+    delay :: mg_queue_scanner:scan_delay(),
+    tasks :: [mg_queue_task:task()],
+    limit :: mg_queue_scanner:scan_limit(),
+    duration :: non_neg_integer()  % in native units
+}).
+
 -record(mg_scheduler_search_error, {
     namespace :: mg:ns(),
     scheduler_name :: mg_scheduler:name(),
@@ -85,15 +94,14 @@
     namespace :: mg:ns(),
     scheduler_name :: mg_scheduler:name(),
     machine_id :: mg:id() | undefined,
-    task_delay :: timeout() | undefined
+    task_delay :: timeout()
 }).
 
 -record(mg_scheduler_task_finished, {
     namespace :: mg:ns(),
     scheduler_name :: mg_scheduler:name(),
     machine_id :: mg:id() | undefined,
-    task_delay :: timeout() | undefined,
-    waiting_in_queue :: non_neg_integer(),  % in native units
+    task_delay :: timeout(),
     process_duration :: non_neg_integer()  % in native units
 }).
 

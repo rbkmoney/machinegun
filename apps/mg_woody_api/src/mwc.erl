@@ -76,11 +76,10 @@ simple_repair(Namespace, ID, Deadline) ->
 
 -spec resume_interrupted_one(scalar(), scalar()) ->
     ok | no_return().
-resume_interrupted_one(Namespace, ID) ->WoodyCtx = woody_context:new(),
+resume_interrupted_one(Namespace, ID) ->
     ok = mg_machine:resume_interrupted(
         m_opts(Namespace),
         id(ID),
-        mg_woody_api_utils:woody_context_to_opaque(WoodyCtx),
         mg_deadline:from_timeout(5000)
     ).
 

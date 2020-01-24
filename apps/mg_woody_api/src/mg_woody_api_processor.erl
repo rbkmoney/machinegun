@@ -20,7 +20,7 @@
 %% mg_events_machine handler
 -behaviour(mg_events_machine).
 -export_type([options/0]).
--export([processor_child_spec/1, process_signal/4, process_call/4]).
+-export([processor_child_spec/1, process_signal/4, process_call/4, process_repair/4]).
 
 %%
 %% mg_events_machine handler
@@ -39,7 +39,7 @@ processor_child_spec(Options) ->
     SignalArgs :: mg_events_machine:signal_args(),
     Result :: mg_events_machine:signal_result().
 process_signal(Options, ReqCtx, Deadline, {Signal, Machine}) ->
-    SignalResult =
+    {ok, SignalResult} =
         call_processor(
             Options,
             ReqCtx,
@@ -55,7 +55,7 @@ process_signal(Options, ReqCtx, Deadline, {Signal, Machine}) ->
     Deadline :: mg_deadline:deadline(),
     CallArgs :: mg_events_machine:call_args().
 process_call(Options, ReqCtx, Deadline, {Call, Machine}) ->
-    CallResult =
+    {ok, CallResult} =
         call_processor(
             Options,
             ReqCtx,
@@ -65,20 +65,50 @@ process_call(Options, ReqCtx, Deadline, {Call, Machine}) ->
         ),
     mg_woody_api_packer:unpack(call_result, CallResult).
 
+-spec process_repair(Options, ReqCtx, Deadline, RepairArgs) -> mg_events_machine:repair_result() when
+    Options :: options(),
+    ReqCtx :: mg_events_machine:request_context(),
+    Deadline :: mg_deadline:deadline(),
+    RepairArgs :: mg_events_machine:repair_args().
+process_repair(Options, ReqCtx, Deadline, {Args, Machine}) ->
+    RepairResult =
+        call_processor(
+            Options,
+            ReqCtx,
+            Deadline,
+            % 'ProcessRepair',
+            % [mg_woody_api_packer:pack(repair_args, {Args, Machine})]
+            % FIXME: replace following 2 lines with 2 above after migration to new repair callback
+            'ProcessSignal',
+            [mg_woody_api_packer:pack(signal_args, {{repair, Args}, Machine})]
+        ),
+    case RepairResult of
+        {ok, Result} ->
+            % {ok, mg_woody_api_packer:unpack(repair_result, Result)};
+            % FIXME: replace following 2 lines with 1 above after migration to new repair callback
+            {StateChange, ComplexAction} = mg_woody_api_packer:unpack(signal_result, Result),
+            {ok, {<<"ok">>, StateChange, ComplexAction}};
+        {error, Error} ->
+            {error, {failed, mg_woody_api_packer:unpack(repair_error, Error)}}
+    end.
+
 -spec call_processor(options(), mg_events_machine:request_context(), mg_deadline:deadline(), atom(), list(_)) ->
-    _Result.
+    {ok, term()} | {error, mg_proto_state_processing_thrift:'RepairFailed'()}.
 call_processor(Options, ReqCtx, Deadline, Function, Args) ->
     % TODO сделать нормально!
     {ok, TRef} = timer:kill_after(call_duration_limit(Options, Deadline) + 3000),
     try
         WoodyContext = mg_woody_api_utils:set_deadline(Deadline, request_context_to_woody_context(ReqCtx)),
-        {ok, R} =
-            woody_client:call(
-                {{mg_proto_state_processing_thrift, 'Processor'}, Function, Args},
-                Options,
-                WoodyContext
-            ),
-        R
+        woody_client:call(
+            {{mg_proto_state_processing_thrift, 'Processor'}, Function, Args},
+            Options,
+            WoodyContext
+        )
+    of
+        {ok, _} = Result ->
+            Result;
+        {exception, Reason} ->
+            {error, Reason}
     catch
         error:Reason={woody_error, {_, resource_unavailable, _}} ->
             throw({transient, {processor_unavailable, Reason}});

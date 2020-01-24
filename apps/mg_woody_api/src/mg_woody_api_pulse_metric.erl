@@ -24,7 +24,6 @@
 %% internal types
 -type metric() :: how_are_you:metric().
 -type metrics() :: [metric()].
--type nested_metrics() :: metrics() | [nested_metrics()].
 -type metric_key() :: how_are_you:metric_key().
 -type beat() :: mg_woody_api_pulse:beat().
 -type impact_tag() :: atom().
@@ -96,6 +95,18 @@ create_metric(#mg_timer_process_finished{namespace = NS, queue = Queue, duration
         create_bin_inc([mg, timer, process, NS, Queue, duration], duration, Duration)
     ];
 % scheduler
+create_metric(#mg_scheduler_search_success{
+    scheduler_name = Name,
+    namespace = NS,
+    delay = DelayMs,
+    duration = Duration
+}) ->
+    create_delay_inc([mg, scheduler, NS, Name, scan, delay], DelayMs) ++ [
+        create_inc([mg, scheduler, NS, Name, scan, success]),
+        create_bin_inc([mg, scheduler, NS, Name, scan, duration], duration, Duration)
+    ];
+create_metric(#mg_scheduler_search_error{scheduler_name = Name, namespace = NS}) ->
+    [create_inc([mg, scheduler, NS, Name, scan, error])];
 create_metric(#mg_scheduler_task_error{scheduler_name = Name, namespace = NS}) ->
     [create_inc([mg, scheduler, NS, Name, task, error])];
 create_metric(#mg_scheduler_new_tasks{scheduler_name = Name, namespace = NS, new_tasks_count = Count}) ->
@@ -107,12 +118,10 @@ create_metric(#mg_scheduler_task_finished{} = Beat) ->
     #mg_scheduler_task_finished{
         scheduler_name = Name,
         namespace = NS,
-        waiting_in_queue = Waiting,
         process_duration = Processing
     } = Beat,
     [
         create_inc([mg, scheduler, NS, Name, task, finished]),
-        create_bin_inc([mg, scheduler, NS, Name, task, queue_waiting], duration, Waiting),
         create_bin_inc([mg, scheduler, NS, Name, task, processing], duration, Processing)
     ];
 create_metric(#mg_scheduler_quota_reserved{} = Beat) ->

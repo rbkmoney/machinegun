@@ -73,6 +73,7 @@ limits:
     scheduler_tasks: 5000
 logging:
     root: /var/log/machinegun
+    burst_limit_enable: false
     sync_mode_qlen:  100
     drop_mode_qlen: 1000
     flush_qlen: 2000
@@ -104,8 +105,11 @@ namespaces:
             url: http://localhost:8022/processor
             pool_size: 50
             http_keep_alive_timeout: 10s
-        timers: disabled
-        overseer: enabled
+        timers:
+            scan_interval: 30s
+            scan_limit: 1000
+            capacity: 500
+        overseer: disabled
         # maximum number of events that will be stored inside of machine state
         # must be non negative integer, default is 0
         event_stash_size: 5

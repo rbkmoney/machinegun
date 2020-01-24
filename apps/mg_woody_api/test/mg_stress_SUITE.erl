@@ -64,7 +64,10 @@ init_per_suite(C) ->
     {ok, ProcessorPid} = mg_test_processor:start(
         {0, 0, 0, 0},
         8023,
-        #{processor => {"/processor", {SignalFunc, CallFunc}}}
+        #{processor => {"/processor", #{
+            signal => SignalFunc,
+            call   => CallFunc
+        }}}
     ),
 
     [
@@ -83,12 +86,15 @@ init_per_suite(C) ->
 -spec end_per_suite(config()) ->
     ok.
 end_per_suite(C) ->
-    true = erlang:exit(?config(processor_pid, C), kill),
+    ok = proc_lib:stop(?config(processor_pid, C)),
     mg_ct_helper:stop_applications(?config(apps, C)).
 
 -spec mg_woody_api_config(config()) ->
     list().
 mg_woody_api_config(_C) ->
+    Scheduler = #{
+        scan_interval => #{continue => 500, completed => 15000}
+    },
     [
         {woody_server, #{
             ip     => {0,0,0,0,0,0,0,0},
@@ -105,9 +111,9 @@ mg_woody_api_config(_C) ->
                 },
                 default_processing_timeout => 5000,
                 schedulers => #{
-                    timers         => #{ interval => 100 },
-                    timers_retries => #{ interval => 100 },
-                    overseer       => #{ interval => 100 }
+                    timers         => Scheduler,
+                    timers_retries => Scheduler,
+                    overseer       => Scheduler
                 },
                 retries => #{},
                 event_sinks => [{mg_events_sink_machine, #{name => default, machine_id => ?ES_ID}}],

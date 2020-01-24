@@ -106,6 +106,7 @@ end_per_suite(C) ->
 init_per_group(with_gproc, C) ->
     [
         {registry, mg_procreg_gproc},
+        {load_pressure, 100},
         {runner_retry_strategy, #{
             noproc  => genlib_retry:linear(3, 100),
             default => finish
@@ -114,6 +115,7 @@ init_per_group(with_gproc, C) ->
 init_per_group(with_consuela, C) ->
     [
         {registry, {mg_procreg_consuela, #{}}},
+        {load_pressure, 40},
         {runner_retry_strategy, #{
             noproc     => genlib_retry:linear(3, 100),
             noregistry => genlib_retry:linear(3, 500),
@@ -237,8 +239,8 @@ wait_worker_unload(WorkerPid, Timeout) ->
     _.
 stress_test(C) ->
     Concurrency   = erlang:system_info(schedulers),
-    RunnersCount  = 80 * Concurrency,
-    WorkersCount  = 4 * Concurrency,
+    RunnersCount  = ?config(load_pressure, C) * Concurrency,
+    WorkersCount  = RunnersCount div 20,
     UnloadTimeout = 100, % чтобы машины выгружались в процессе теста
     RetryStrategy = ?config(runner_retry_strategy, C),
     Job = fun (ManagerOptions, _N, RetrySt) ->
@@ -266,7 +268,7 @@ stress_test_do_test_call(Options, WorkersCount, RetrySt) ->
     _.
 manager_contention_test(C) ->
     Concurrency   = erlang:system_info(schedulers),
-    RunnersCount  = 80 * Concurrency,
+    RunnersCount  = ?config(load_pressure, C) * Concurrency,
     UnloadTimeout = 100, % чтобы машины выгружались в процессе теста
     RetryStrategy = ?config(runner_retry_strategy, C),
     ok = run_load_test(#{

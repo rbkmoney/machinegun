@@ -96,7 +96,10 @@ init_per_group(base, C) ->
     {ok, ProcessorPid} = mg_test_processor:start(
         {0, 0, 0, 0}, 8023,
         genlib_map:compact(#{
-            processor  => {"/processor", {fun default_signal_handler/1, fun default_call_handler/1}}
+            processor  => {"/processor", #{
+                signal => fun default_signal_handler/1,
+                call   => fun default_call_handler/1
+            }}
         })
     ),
 
@@ -116,7 +119,7 @@ init_per_group(base, C) ->
 -spec end_per_group(group_name(), config()) ->
     _.
 end_per_group(base, C) ->
-    true = erlang:exit(?config(processor_pid, C), kill),
+    ok = proc_lib:stop(?config(processor_pid, C)),
     mg_ct_helper:stop_applications(?config(apps, C));
 end_per_group(_, C) ->
     C.
@@ -124,6 +127,9 @@ end_per_group(_, C) ->
 -spec mg_woody_api_config(config()) ->
     list().
 mg_woody_api_config(C) ->
+    Scheduler = #{
+        scan_interval => #{continue => 100, completed => 15000}
+    },
     [
         {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, limits => #{}}},
         {namespaces, #{
@@ -139,9 +145,9 @@ mg_woody_api_config(C) ->
                 },
                 default_processing_timeout => 5000,
                 schedulers => #{
-                    timers         => #{registry => registry(C), interval => 100},
-                    timers_retries => #{registry => registry(C), interval => 100},
-                    overseer       => #{registry => registry(C), interval => 100}
+                    timers         => Scheduler,
+                    timers_retries => Scheduler,
+                    overseer       => Scheduler
                 },
                 retries => #{
                     storage   => {exponential, {max_total_timeout, 1000}, 1, 10},
@@ -182,11 +188,11 @@ automaton_options(C) -> ?config(automaton_options, C).
 
 %% Processor utils
 
--spec default_signal_handler(mg:signal_args()) -> mg:signal_result().
+-spec default_signal_handler(mg_events_machine:signal_args()) -> mg_events_machine:signal_result().
 default_signal_handler({Args, _Machine}) ->
     mg_test_processor:default_result(signal, Args).
 
--spec default_call_handler(mg:call_args()) -> mg:call_result().
+-spec default_call_handler(mg_events_machine:call_args()) -> mg_events_machine:call_result().
 default_call_handler({Args, _Machine}) ->
     case Args of
         <<"foo">> -> {Args, {null(), [content(<<"bar">>)]}, #{}}
@@ -196,7 +202,7 @@ default_call_handler({Args, _Machine}) ->
 null() ->
     content(null).
 
--spec content(binary()) -> mg_events:content().
+-spec content(mg_storage:opaque()) -> mg_events:content().
 content(Body) ->
     {#{format_version => 42}, Body}.
 

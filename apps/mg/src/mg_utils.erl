@@ -71,6 +71,7 @@
 -export([format_exception /1]).
 
 -export([join/2]).
+-export([partition/2]).
 
 -export([lists_compact/1]).
 
@@ -101,7 +102,7 @@
 
 -type gen_ref() ::
       atom()
-    | {atom(), atom()}
+    | {atom(), node()}
     | {global, atom()}
     | {via, atom(), term()}
     | pid()
@@ -329,6 +330,30 @@ format_exception({Class, Reason, Stacktrace}) ->
 join(_    , []   ) -> [];
 join(_    , [H]  ) ->  H;
 join(Delim, [H|T]) -> [H, Delim, join(Delim, T)].
+
+-spec partition([T], [{Owner, Weight}, ...]) ->
+    #{Owner => [T]} when Weight :: non_neg_integer().
+partition(L, Owners = [_ | _]) ->
+    WeightSum = lists:foldl(fun ({_, W}, Acc) -> Acc + W end, 0, Owners),
+    partition(L, Owners, erlang:max(WeightSum, 1), #{}).
+
+-spec partition([T], [{Owner, Weight}, ...], pos_integer(), Acc) ->
+    Acc when Acc :: #{Owner => [T]}, Weight :: non_neg_integer().
+partition([V | Vs], Owners, WeightSum, Acc) ->
+    Owner = pick(rand:uniform(WeightSum), Owners),
+    Acc1 = maps:update_with(Owner, fun (Share) -> [V | Share] end, [V], Acc),
+    partition(Vs, Owners, WeightSum, Acc1);
+partition([], _, _, Acc) ->
+    Acc.
+
+-spec pick(pos_integer(), [{Owner, non_neg_integer()}, ...]) ->
+    Owner.
+pick(Pick, [{Owner, Weight} | _]) when Pick - Weight =< 0 ->
+    Owner;
+pick(_, [{Owner, _}]) ->
+    Owner; % pick at least last one
+pick(Pick, [{_, Weight} | T]) ->
+    pick(Pick - Weight, T).
 
 -spec lists_compact(list(T)) ->
     list(T).

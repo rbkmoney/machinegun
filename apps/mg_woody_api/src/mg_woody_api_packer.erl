@@ -168,6 +168,12 @@ pack(signal, {repair, Args}) ->
     };
 pack(call_response, CallResponse) ->
     pack(opaque, CallResponse);
+pack(repair_response, RepairResponse) ->
+    pack(opaque, RepairResponse);
+pack(repair_error, #{reason := Reason}) ->
+    #mg_stateproc_RepairFailed{
+        reason = pack(opaque, Reason)
+    };
 pack(signal_args, {Signal, Machine}) ->
     #mg_stateproc_SignalArgs{
         signal  = pack(signal , Signal ),
@@ -175,6 +181,11 @@ pack(signal_args, {Signal, Machine}) ->
     };
 pack(call_args, {Args, Machine}) ->
     #mg_stateproc_CallArgs{
+        arg     = pack(args   , Args   ),
+        machine = pack(machine, Machine)
+    };
+pack(repair_args, {Args, Machine}) ->
+    #mg_stateproc_RepairArgs{
         arg     = pack(args   , Args   ),
         machine = pack(machine, Machine)
     };
@@ -193,6 +204,12 @@ pack(call_result, {Response, StateChange, ComplexAction}) ->
 pack(modernize_result, EventBody) ->
     #mg_stateproc_ModernizeEventResult{
         event_payload = pack(event_body, EventBody)
+    };
+pack(repair_result, {Response, StateChange, ComplexAction}) ->
+    #mg_stateproc_RepairResult{
+        response = pack(repair_response, Response     ),
+        change   = pack(state_change   , StateChange  ),
+        action   = pack(complex_action , ComplexAction)
     };
 
 pack(history_range, {After, Limit, Direction}) ->
@@ -387,9 +404,15 @@ unpack(signal, {repair, #mg_stateproc_RepairSignal{arg = Args}}) ->
     {repair, unpack(args, Args)};
 unpack(call_response, CallResponse) ->
     unpack(opaque, CallResponse);
+unpack(repair_response, RepairResponse) ->
+    unpack(opaque, RepairResponse);
+unpack(repair_error, #mg_stateproc_RepairFailed{reason = Reason}) ->
+    #{reason => unpack(opaque, Reason)};
 unpack(signal_args, #mg_stateproc_SignalArgs{signal = Signal, machine = Machine}) ->
     {unpack(signal , Signal), unpack(machine, Machine)};
 unpack(call_args, #mg_stateproc_CallArgs{arg = Args, machine = Machine}) ->
+    {unpack(args, Args), unpack(machine, Machine)};
+unpack(repair_args, #mg_stateproc_RepairArgs{arg = Args, machine = Machine}) ->
     {unpack(args, Args), unpack(machine, Machine)};
 unpack(signal_result, #mg_stateproc_SignalResult{change = StateChange, action = ComplexAction}) ->
     {
@@ -401,6 +424,12 @@ unpack(call_result, #mg_stateproc_CallResult{response=Response, change = StateCh
         unpack(call_response , Response     ),
         unpack(state_change  , StateChange  ),
         unpack(complex_action, ComplexAction)
+    };
+unpack(repair_result, #mg_stateproc_RepairResult{response = Response, change = StateChange, action = ComplexAction}) ->
+    {
+        unpack(repair_response, Response     ),
+        unpack(state_change   , StateChange  ),
+        unpack(complex_action , ComplexAction)
     };
 unpack(modernize_result, #mg_stateproc_ModernizeEventResult{event_payload = EventBody}) ->
     unpack(event_body, EventBody);

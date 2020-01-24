@@ -262,7 +262,6 @@ machine_options(NS, Config) ->
     Options = maps:with(
         [
             retries,
-            reschedule_timeout,
             timer_processing_timeout
         ],
         Config
@@ -272,7 +271,7 @@ machine_options(NS, Config) ->
         namespace           => NS,
         storage             => MachinesStorage,
         worker              => worker_manager_options(Config),
-        schedulers          => maps:map(fun scheduler_options/2, maps:get(schedulers, Config, #{})),
+        schedulers          => maps:get(schedulers, Config, #{}),
         pulse               => pulse(),
         % TODO сделать аналогично в event_sink'е и тэгах
         suicide_probability => maps:get(suicide_probability, Config, undefined)
@@ -287,14 +286,6 @@ worker_manager_options(Config) ->
             sidecar  => mg_woody_api_hay
         },
         maps:get(worker, Config, #{})
-    ).
-
--spec scheduler_options(mg_machine:scheduler_id(), mg_machine:scheduler_opt()) ->
-    mg_machine:scheduler_opt().
-scheduler_options(_SchedulerID, Config) ->
-    maps:merge(
-        #{registry => mg_procreg_gproc},
-        Config
     ).
 
 -spec processor(processor()) ->

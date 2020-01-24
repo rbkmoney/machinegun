@@ -199,10 +199,7 @@ stop_automaton(Pid) ->
 -spec automaton_options(config()) ->
     mg_machine:options().
 automaton_options(C) ->
-    Scheduler = #{
-        registry => ?config(registry, C),
-        interval => 1000
-    },
+    Scheduler = #{},
     #{
         namespace => <<"test">>,
         processor => ?MODULE,

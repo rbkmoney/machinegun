@@ -14,7 +14,7 @@
 
 %% mg_events_machine handler
 -behaviour(mg_events_machine).
--export([process_signal/4, process_call/4]).
+-export([process_signal/4, process_call/4, process_repair/4]).
 
 %% mg_events_sink handler
 -behaviour(mg_events_sink).
@@ -29,6 +29,7 @@
 -type aux_state() :: term().
 -type call() :: term().
 -type call_result() :: mg_events_machine:call_result().
+-type repair_result() :: mg_events_machine:repair_result().
 -type deadline() :: mg_deadline:deadline().
 -type event() :: term().
 -type machine() :: mg_events_machine:machine().
@@ -157,6 +158,18 @@ process_call(Handlers, _ReqCtx, _Deadline, {EncodedCall, Machine}) ->
     StateChange = {AuxStateContent, Events},
     {encode(Result), StateChange, ComplexAction}.
 
+-spec process_repair(options(), req_ctx(), deadline(), mg_events_machine:repair_args()) -> repair_result().
+process_repair(Options, _ReqCtx, _Deadline, {EncodedArgs, Machine}) ->
+    Handler = maps:get(repair_handler, Options, fun dummy_repair_handler/3),
+    {AuxState, History} = decode_machine(Machine),
+    Args = decode(EncodedArgs),
+    ct:pal("call repair handler ~p with [~p, ~p, ~p]", [Handler, Args, AuxState, History]),
+    {Result, NewAuxState, NewEvents, ComplexAction} = Handler(Args, AuxState, History),
+    AuxStateContent = {#{format_version => 1}, encode(NewAuxState)},
+    Events = [{#{format_version => 1}, encode(E)} || E <- NewEvents],
+    StateChange = {AuxStateContent, Events},
+    {ok, {encode(Result), StateChange, ComplexAction}}.
+
 -spec add_events(handlers(), mg:ns(), mg:id(), [event()], req_ctx(), deadline()) ->
     ok.
 add_events(Handlers, _NS, _MachineID, Events, _ReqCtx, _Deadline) ->
@@ -172,6 +185,11 @@ dummy_signal_handler(_Signal, AuxState, _Events) ->
 -spec dummy_call_handler(signal(), aux_state(), [event()]) ->
     {aux_state(), [event()], action()}.
 dummy_call_handler(_Signal, AuxState, _Events) ->
+    {ok, AuxState, [], #{}}.
+
+-spec dummy_repair_handler(term(), aux_state(), [event()]) ->
+    {ok, aux_state(), [event()], action()}.
+dummy_repair_handler(_Args, AuxState, _Events) ->
     {ok, AuxState, [], #{}}.
 
 -spec dummy_sink_handler([event()]) ->

@@ -113,7 +113,7 @@ init_per_group(Name = legacy_activities, C0) ->
     {ok, ProcessorPid} = mg_test_processor:start(
         {0, 0, 0, 0}, 8023,
         genlib_map:compact(#{
-            processor  => {"/processor", {default_func, fun legacy_call_handler/1}}
+            processor  => {"/processor", #{call => fun legacy_call_handler/1}}
         })
     ),
     [{processor_pid, ProcessorPid} | C1];
@@ -122,8 +122,8 @@ init_per_group(Name = modern_activities, C0) ->
     {ok, ProcessorPid} = mg_test_processor:start(
         {0, 0, 0, 0}, 8023,
         genlib_map:compact(#{
-            processor  => {"/processor", {default_func, fun modern_call_handler/1}},
-            modernizer => {"/modernizer", fun modernize_handler/1}
+            processor  => {"/processor", #{call => fun modern_call_handler/1}},
+            modernizer => {"/modernizer", #{modernize => fun modernize_handler/1}}
         })
     ),
     [{processor_pid, ProcessorPid} | C1];
@@ -132,13 +132,21 @@ init_per_group(activities, C) ->
 
 -spec end_per_group(group_name(), config()) ->
     ok.
-end_per_group(_, C) ->
-    true = erlang:exit(?config(processor_pid, C), kill),
-    mg_ct_helper:stop_applications(?config(group_apps, C)).
+end_per_group(Name, C) when
+    Name == legacy_activities;
+    Name == modern_activities
+->
+    ok = proc_lib:stop(?config(processor_pid, C)),
+    mg_ct_helper:stop_applications(?config(group_apps, C));
+end_per_group(_, _C) ->
+    ok.
 
 -spec start_mg_woody_api(group_name(), config()) ->
     config().
 start_mg_woody_api(Name, C) ->
+    Scheduler = #{
+        scan_interval => #{continue => 100, completed => 15000}
+    },
     Config = [
         {woody_server, #{
             ip       => {0,0,0,0,0,0,0,0},
@@ -158,9 +166,9 @@ start_mg_woody_api(Name, C) ->
                     },
                     default_processing_timeout => 5000,
                     schedulers => #{
-                        timers         => #{interval => 100 },
-                        timers_retries => #{interval => 100 },
-                        overseer       => #{interval => 100 }
+                        timers         => Scheduler,
+                        timers_retries => Scheduler,
+                        overseer       => Scheduler
                     },
                     retries => #{}
                 },
@@ -198,8 +206,8 @@ start_mg_woody_api(Name, C) ->
 -type modern_st() :: #{integer() => [mg_storage:opaque()]}.
 -type any_st()    :: {legacy, legacy_st()} | {modern, modern_st()}.
 
--spec legacy_call_handler(mg:call_args()) ->
-    mg:call_result().
+-spec legacy_call_handler(mg_events_machine:call_args()) ->
+    mg_events_machine:call_result().
 legacy_call_handler({[<<"store">>, Element], Machine}) ->
     St = collapse_legacy(Machine),
     case lookup(Element, {legacy, St}) of
@@ -211,8 +219,8 @@ legacy_call_handler({[<<"store">>, Element], Machine}) ->
             {true, {null(), [{#{}, Element}]}, #{}}
     end.
 
--spec modern_call_handler(mg:call_args()) ->
-    mg:call_result().
+-spec modern_call_handler(mg_events_machine:call_args()) ->
+    mg_events_machine:call_result().
 modern_call_handler({[<<"store">>, Element], Machine}) ->
     St = collapse_modern(Machine),
     Hash = erlang:phash2(Element),

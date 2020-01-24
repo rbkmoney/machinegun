@@ -147,7 +147,7 @@ do_process_machine({call, force_timeout}, ?req_ctx = ReqCtx, State) ->
     TimerTarget = genlib_time:unow(),
     {{reply, ok}, sleep, State#machine_state{timer = {TimerTarget, ReqCtx}}};
 do_process_machine(timeout, ?req_ctx, #machine_state{counter = Counter} = State) ->
-    ct:pal("Counter updated to ~p", [Counter]),
+    ct:pal("Counter updated to ~p", [Counter + 1]),
     {{reply, ok}, sleep, State#machine_state{counter = Counter + 1, timer = undefined}}.
 
 -spec encode_state(machine_state()) -> mg_machine:machine_state().
@@ -193,7 +193,9 @@ stop_automaton(Pid) ->
 -spec automaton_options(mg:ns()) ->
     mg_machine:options().
 automaton_options(NS) ->
-    Scheduler = #{registry => mg_procreg_gproc, interval => timer:hours(1)},
+    Scheduler = #{
+        min_scan_delay => timer:hours(1)
+    },
     #{
         namespace => NS,
         processor => ?MODULE,

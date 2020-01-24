@@ -27,8 +27,6 @@
 -export([start_link/5]).
 -export([call/4]).
 
--export([start_supervisor/4]).
-
 -type options() :: #{
     pulse => mg_pulse:handler()
 }.
@@ -77,31 +75,3 @@ call(_Options, Ref, Call, Timeout) ->
     tuple().
 map_error(Details) ->
     {transient, {registry_unavailable, Details}}.
-
-%%
-
--spec start_supervisor(
-    options(),
-    mg_procreg:name(),
-    supervisor:sup_flags(),
-    [supervisor:child_spec()]
-) ->
-    mg_procreg:start_supervisor_ret().
-start_supervisor(Options, Name, SupFlags, ChildSpecs) ->
-    consuela_leader_supervisor:start_link(
-        Name,
-        mg_utils_supervisor_wrapper,
-        {SupFlags, ChildSpecs},
-        leader_sup_options(Options)
-    ).
-
--spec leader_sup_options(options()) ->
-    consuela_leader_supervisor:opts().
-
-leader_sup_options(Options) ->
-    genlib_map:truemap(
-        fun
-            (pulse, Pulse) -> {pulse, mg_consuela_pulse_adapter:pulse(leader, Pulse)}
-        end,
-        Options
-    ).

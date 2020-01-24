@@ -18,76 +18,87 @@
 
 -include_lib("mg/include/pulse.hrl").
 
--export([child_spec/2]).
--export([start_link/1]).
+-export([child_spec/3]).
+-export([start_link/2]).
 
--export([start_task/3]).
+-export([start_task/2]).
 
 %% Internal API
--export([do_start_task/2]).
--export([execute/2]).
+-export([do_start_task/3]).
+-export([execute/3]).
 
--callback execute_task(Options :: any(), task_info()) -> ok.
+-callback execute_task(Options :: any(), task()) -> ok.
 
 %% Internal types
--type options() :: mg_scheduler:options().
--type scheduler_id() :: {mg:ns(), name()}.
--type name() :: mg_scheduler:name().
--type task_info() :: mg_scheduler:task_info().
+-type scheduler_id() :: mg_scheduler:id().
+-type task() :: mg_queue_task:task().
+
+-type options() :: #{
+    task_handler := mg_utils:mod_opts(),
+    pulse        => mg_pulse:handler()
+}.
+
+-type monitor() :: reference().
 
 %%
 %% API
 %%
 
--spec child_spec(options(), _ChildID) ->
+-spec child_spec(scheduler_id(), options(), _ChildID) ->
     supervisor:child_spec().
-child_spec(Options, ChildID) ->
+child_spec(SchedulerID, Options, ChildID) ->
     #{
         id       => ChildID,
-        start    => {?MODULE, start_link, [Options]},
+        start    => {?MODULE, start_link, [SchedulerID, Options]},
         restart  => permanent,
         type     => supervisor
     }.
 
--spec start_link(options()) ->
+-spec start_link(scheduler_id(), options()) ->
     mg_utils:gen_start_ret().
-start_link(#{name := Name, namespace := NS} = Options) ->
+start_link(SchedulerID, Options) ->
     mg_utils_supervisor_wrapper:start_link(
-        self_reg_name({NS, Name}),
+        self_reg_name(SchedulerID),
         #{strategy => simple_one_for_one},
         [
             #{
                 id       => tasks,
-                start    => {?MODULE, do_start_task, [Options]},
+                start    => {?MODULE, do_start_task, [SchedulerID, Options]},
                 restart  => temporary
             }
         ]
     ).
 
--spec start_task(mg:ns(), name(), task_info()) ->
-    mg_utils:gen_start_ret().
-start_task(NS, Name, TaskInfo) ->
-    supervisor:start_child(self_ref({NS, Name}), [TaskInfo]).
+-spec start_task(scheduler_id(), task()) ->
+    {ok, pid(), monitor()} | {error, _}.
+start_task(SchedulerID, Task) ->
+    case supervisor:start_child(self_ref(SchedulerID), [Task]) of
+        {ok, Pid} ->
+            Monitor = erlang:monitor(process, Pid),
+            {ok, Pid, Monitor};
+        Error ->
+            Error
+    end.
 
--spec do_start_task(options(), task_info()) ->
+-spec do_start_task(scheduler_id(), options(), task()) ->
     mg_utils:gen_start_ret().
-do_start_task(Options, TaskInfo) ->
-    proc_lib:start_link(?MODULE, execute, [Options, TaskInfo]).
+do_start_task(SchedulerID, Options, Task) ->
+    proc_lib:start_link(?MODULE, execute, [SchedulerID, Options, Task]).
 
--spec execute(options(), task_info()) ->
+-spec execute(scheduler_id(), options(), task()) ->
     ok.
-execute(#{task_handler := Handler} = Options, TaskInfo) ->
+execute(SchedulerID, #{task_handler := Handler} = Options, Task) ->
     ok = proc_lib:init_ack({ok, self()}),
     Start = erlang:monotonic_time(),
-    ok = emit_start_beat(TaskInfo, Options),
+    ok = emit_start_beat(Task, SchedulerID, Options),
     ok = try
-        ok = mg_utils:apply_mod_opts(Handler, execute_task, [TaskInfo]),
+        ok = mg_utils:apply_mod_opts(Handler, execute_task, [Task]),
         End = erlang:monotonic_time(),
-        ok = emit_finish_beat(TaskInfo, Start, End, Options)
+        ok = emit_finish_beat(Task, Start, End, SchedulerID, Options)
     catch
         Class:Reason:ST ->
             Exception = {Class, Reason, ST},
-            ok = emit_error_beat(TaskInfo, Exception, Options)
+            ok = emit_error_beat(Task, Exception, SchedulerID, Options)
     end.
 
 %% Internlas
@@ -97,12 +108,12 @@ execute(#{task_handler := Handler} = Options, TaskInfo) ->
 -spec self_ref(scheduler_id()) ->
     mg_utils:gen_ref().
 self_ref(ID) ->
-    {via, gproc, {n, l, wrap_id(ID)}}.
+    mg_procreg:ref(mg_procreg_gproc, wrap_id(ID)).
 
 -spec self_reg_name(scheduler_id()) ->
     mg_utils:gen_reg_name().
 self_reg_name(ID) ->
-    {via, gproc, {n, l, wrap_id(ID)}}.
+    mg_procreg:reg_name(mg_procreg_gproc, wrap_id(ID)).
 
 -spec wrap_id(scheduler_id()) ->
     term().
@@ -111,21 +122,20 @@ wrap_id(ID) ->
 
 %% logging
 
--spec emit_beat(options(), mg_pulse:beat()) -> ok.
-emit_beat(#{pulse := Handler}, Beat) ->
-    ok = mg_pulse:handle_beat(Handler, Beat).
+-spec emit_beat(options(), mg_pulse:beat()) ->
+    ok.
+emit_beat(Options, Beat) ->
+    ok = mg_pulse:handle_beat(maps:get(pulse, Options, undefined), Beat).
 
--spec get_delay(task_info()) ->
+-spec get_delay(task()) ->
     timeout().
 get_delay(#{target_time := Target}) ->
     TargetMS = Target * 1000,
-    os:system_time(millisecond) - TargetMS;
-get_delay(#{}) ->
-    undefined.
+    os:system_time(millisecond) - TargetMS.
 
--spec emit_start_beat(task_info(), options()) ->
+-spec emit_start_beat(task(), scheduler_id(), options()) ->
     ok.
-emit_start_beat(Task, #{namespace := NS, name := Name} = Options) ->
+emit_start_beat(Task, {Name, NS}, Options) ->
     emit_beat(Options, #mg_scheduler_task_started{
         namespace = NS,
         scheduler_name = Name,
@@ -133,21 +143,20 @@ emit_start_beat(Task, #{namespace := NS, name := Name} = Options) ->
         machine_id = maps:get(machine_id, Task, undefined)
     }).
 
--spec emit_finish_beat(task_info(), integer(), integer(), options()) ->
+-spec emit_finish_beat(task(), integer(), integer(), scheduler_id(), options()) ->
     ok.
-emit_finish_beat(#{created_at := Create} = Task, Start, End, #{namespace := NS, name := Name} = Options) ->
+emit_finish_beat(Task, StartedAt, FinishedAt, {Name, NS}, Options) ->
     emit_beat(Options, #mg_scheduler_task_finished{
         namespace = NS,
         scheduler_name = Name,
         task_delay = get_delay(Task),
         machine_id = maps:get(machine_id, Task, undefined),
-        waiting_in_queue = Start - Create,  % in native units
-        process_duration = End - Start  % in native units
+        process_duration = FinishedAt - StartedAt  % in native units
     }).
 
--spec emit_error_beat(task_info(), mg_utils:exception(), options()) ->
+-spec emit_error_beat(task(), mg_utils:exception(), scheduler_id(), options()) ->
     ok.
-emit_error_beat(Task, Exception, #{namespace := NS, name := Name} = Options) ->
+emit_error_beat(Task, Exception, {Name, NS}, Options) ->
     emit_beat(Options, #mg_scheduler_task_error{
         namespace = NS,
         scheduler_name = Name,

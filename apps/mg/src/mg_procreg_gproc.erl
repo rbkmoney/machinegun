@@ -27,8 +27,6 @@
 -export([start_link/5]).
 -export([call/4]).
 
--export([start_supervisor/4]).
-
 -type options() :: undefined.
 
 %%
@@ -58,13 +56,3 @@ start_link(_Options, RegName, Module, Args, Opts) ->
     _Reply.
 call(_Options, Ref, Call, Timeout) ->
     gen_server:call(Ref, Call, Timeout).
-
--spec start_supervisor(
-    options(),
-    mg_procreg:name(),
-    supervisor:sup_flags(),
-    [supervisor:child_spec()]
-) ->
-    mg_procreg:start_supervisor_ret().
-start_supervisor(Options, Name, SupFlags, ChildSpecs) ->
-    mg_utils_supervisor_wrapper:start_link(reg_name(Options, Name), SupFlags, ChildSpecs).
