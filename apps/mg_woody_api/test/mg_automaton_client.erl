@@ -45,21 +45,22 @@
     transport_opts => woody_client_thrift_http_transport:options()
 }.
 
--spec start(options(), mg:id(), mg_events_machine:args()) -> ok.
+-spec start(options(), mg:id(), mg_storage:opaque()) -> ok.
 start(Options, ID, Args) ->
     start(Options, ID, Args, undefined).
 
--spec start(options(), mg:id(), mg_events_machine:args(), mg_deadline:deadline()) -> ok.
+-spec start(options(), mg:id(), mg_storage:opaque(), mg_deadline:deadline()) -> ok.
 start(#{ns := NS} = Options, ID, Args, Deadline) ->
     ok = call_service(Options, 'Start', [pack(ns, NS), pack(id, ID), pack(args, Args)], Deadline).
 
--spec repair(options(), mg_events_machine:ref(), mg_events_machine:args()) -> ok.
+-spec repair(options(), mg_events_machine:ref(), mg_storage:opaque()) -> ok.
 repair(Options, Ref, Args) ->
     repair(Options, Ref, Args, undefined).
 
--spec repair(options(), mg_events_machine:ref(), mg_events_machine:args(), mg_deadline:deadline()) -> ok.
+-spec repair(options(), mg_events_machine:ref(), mg_storage:opaque(), mg_deadline:deadline()) -> ok.
 repair(#{ns := NS} = Options, Ref, Args, Deadline) ->
-    ok = call_service(Options, 'Repair', [machine_desc(NS, Ref), pack(args, Args)], Deadline).
+    Response = call_service(Options, 'Repair', [machine_desc(NS, Ref), pack(args, Args)], Deadline),
+    unpack(repair_response, Response).
 
 -spec simple_repair(options(), mg_events_machine:ref()) -> ok.
 simple_repair(Options, Ref) ->
@@ -77,12 +78,13 @@ remove(Options, ID) ->
 remove(#{ns := NS} = Options, ID, Deadline) ->
     ok = call_service(Options, 'Remove', [pack(ns, NS), pack(id, ID)], Deadline).
 
--spec call(options(), mg_events_machine:ref(), mg_events_machine:args()) -> mg:call_resp().
+-spec call(options(), mg_events_machine:ref(), mg_storage:opaque()) ->
+    mg_events_machine:call_resp().
 call(Options, Ref, Args) ->
     call(Options, Ref, Args, undefined).
 
--spec call(options(), mg_events_machine:ref(), mg_events_machine:args(), mg_deadline:deadline()) ->
-    mg:call_resp().
+-spec call(options(), mg_events_machine:ref(), mg_storage:opaque(), mg_deadline:deadline()) ->
+    mg_events_machine:call_resp().
 call(#{ns := NS} = Options, Ref, Args, Deadline) ->
     unpack(
         call_response,

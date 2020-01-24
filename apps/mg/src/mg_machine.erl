@@ -187,6 +187,7 @@
        sleep
     | {wait, genlib_time:ts(), request_context(), HandlingTimeout::pos_integer()}
     | {continue, processing_state()}
+    |  keep
     |  remove
 .
 -type processor_result() :: {processor_reply_action(), processor_flow_action(), machine_state()}.
@@ -820,6 +821,8 @@ process_unsafe(Impact, ProcessingCtx, ReqCtx, Deadline, State = #{storage_machin
                 Status = {waiting, Timestamp, HdlReqCtx, HdlTo},
                 NewStorageMachine = NewStorageMachine0#{status := Status},
                 transit_state(ReqCtx, Deadline, NewStorageMachine, State);
+            keep ->
+                State;
             remove ->
                 remove_from_storage(ReqCtx, Deadline, State)
         end,
