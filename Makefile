@@ -62,9 +62,6 @@ $(SUBTARGETS): %/.git: %
 
 submodules: $(SUBTARGETS)
 
-upgrade-proto:
-	$(REBAR) upgrade mg_proto
-
 compile: submodules
 	$(REBAR) compile
 
