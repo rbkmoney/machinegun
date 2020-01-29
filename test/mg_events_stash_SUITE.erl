@@ -1,35 +1,19 @@
-%%%
-%%% Copyright 2019 RBKmoney
-%%%
-%%% Licensed under the Apache License, Version 2.0 (the "License");
-%%% you may not use this file except in compliance with the License.
-%%% You may obtain a copy of the License at
-%%%
-%%%     http://www.apache.org/licenses/LICENSE-2.0
-%%%
-%%% Unless required by applicable law or agreed to in writing, software
-%%% distributed under the License is distributed on an "AS IS" BASIS,
-%%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-%%% See the License for the specific language governing permissions and
-%%% limitations under the License.
-%%%
+-module(mg_events_stash_SUITE).
 
--module(mg_events_machine_SUITE).
 -include_lib("common_test/include/ct.hrl").
 -include_lib("stdlib/include/assert.hrl").
--include("ct_helper.hrl").
 
-%% tests descriptions
+%% CT
 -export([all           /0]).
 -export([init_per_suite/1]).
 -export([end_per_suite /1]).
 
-%% tests
--export([continuation_repair_test/1]).
+%% Tests
+-export([stash_enlarge_test/1]).
+-export([stash_shrink_test/1]).
 
 %% mg_events_machine handler
 -behaviour(mg_events_machine).
--export_type([options/0]).
 -export([process_signal/4, process_call/4, process_repair/4]).
 
 %% mg_events_sink handler
@@ -41,22 +25,29 @@
 
 %% Internal types
 
+-type action() :: mg_events_machine:complex_action().
+-type aux_state() :: term().
 -type call() :: term().
--type signal() :: mg_events_machine:signal().
--type machine() :: mg_events_machine:machine().
--type signal_result() :: mg_events_machine:signal_result().
 -type call_result() :: mg_events_machine:call_result().
 -type repair_result() :: mg_events_machine:repair_result().
--type action() :: mg_events_machine:complex_action().
--type event() :: term().
--type aux_state() :: term().
--type req_ctx() :: mg:request_context().
 -type deadline() :: mg_deadline:deadline().
+-type event() :: term().
+-type machine() :: mg_events_machine:machine().
+-type req_ctx() :: mg:request_context().
+-type signal() :: mg_events_machine:signal().
+-type signal_result() :: mg_events_machine:signal_result().
 
--type options() :: #{
+
+-type handlers() :: #{
     signal_handler => fun((signal(), aux_state(), [event()]) -> {aux_state(), [event()], action()}),
     call_handler => fun((call(), aux_state(), [event()]) -> {term(), aux_state(), [event()], action()}),
     sink_handler => fun(([event()]) -> ok)
+}.
+-type processor() :: {module(), handlers()}.
+-type options() :: #{
+    processor := processor(),
+    namespace := mg:ns(),
+    event_stash_size := non_neg_integer()
 }.
 
 -type test_name() :: atom().
@@ -68,13 +59,16 @@
     [test_name()].
 all() ->
     [
-       continuation_repair_test
+       stash_enlarge_test,
+       stash_shrink_test
     ].
 
 -spec init_per_suite(config()) ->
     config().
 init_per_suite(C) ->
     Apps = mg_ct_helper:start_applications([mg]),
+    {ok, StoragePid} = mg_storage_memory:start_link(#{name => ?MODULE}),
+    true = erlang:unlink(StoragePid),
     [{apps, Apps} | C].
 
 -spec end_per_suite(config()) ->
@@ -84,40 +78,65 @@ end_per_suite(C) ->
 
 %% Tests
 
--spec continuation_repair_test(config()) -> any().
-continuation_repair_test(_C) ->
-    NS = <<"test">>,
-    MachineID = <<"machine">>,
-    TestRunner = self(),
-    Options = #{
-        signal_handler => fun
-            ({init, <<>>}, AuxState, []) -> {AuxState, [1], #{}}
-        end,
-        call_handler => fun
-            (raise, AuxState, [1]) -> {ok, AuxState, [2], #{}}
-        end,
-        repair_handler => fun
-            (<<>>, AuxState, [1, 2]) -> {ok, AuxState, [3], #{}}
-        end,
-        sink_handler => fun
-            ([2]) -> erlang:error(test_error);
-            (Events) -> TestRunner ! {sink_events, Events}, ok
-        end
+-spec stash_enlarge_test(config()) ->
+    any().
+stash_enlarge_test(_C) ->
+    MachineID = <<"machine_1">>,
+    Options0 = #{
+        processor => {?MODULE, #{
+            signal_handler => fun
+                ({init, NewEvents}, AuxState, []) -> {AuxState, NewEvents, #{}}
+            end,
+            call_handler => fun
+                ({emit, NewEvents}, AuxState, _) -> {ok, AuxState, NewEvents, #{}}
+            end
+        }},
+        namespace => <<"event_stash_test">>,
+        event_stash_size => 3
     },
-    Pid = start_automaton(Options, NS),
-    ok = start(Options, NS, MachineID, <<>>),
-    ?assertReceive({sink_events, [1]}),
-    ?assertException(throw, {logic, machine_failed}, call(Options, NS, MachineID, raise)),
-    ok = repair(Options, NS, MachineID, <<>>),
-    ?assertReceive({sink_events, [2, 3]}),
-    ?assertEqual([1, 2, 3], get_history(Options, NS, MachineID)),
-    ok = stop_automaton(Pid).
+    Pid0 = start_automaton(Options0),
+    ok = start(Options0, MachineID, [1, 2]),
+    ok = call(Options0, MachineID, {emit, [3, 4]}),
+    ?assertEqual([1, 2, 3, 4], get_history(Options0, MachineID)),
+    ok = stop_automaton(Pid0),
+    Options1 = Options0#{event_stash_size => 5},
+    Pid1 = start_automaton(Options1),
+    ok = call(Options1, MachineID, {emit, [5, 6]}),
+    ?assertEqual([1, 2, 3, 4, 5, 6], get_history(Options1, MachineID)),
+    ok = stop_automaton(Pid1).
+
+-spec stash_shrink_test(config()) ->
+    any().
+stash_shrink_test(_C) ->
+    MachineID = <<"machine_2">>,
+    Options0 = #{
+        processor => {?MODULE, #{
+            signal_handler => fun
+                ({init, NewEvents}, AuxState, []) -> {AuxState, NewEvents, #{}}
+            end,
+            call_handler => fun
+                ({emit, NewEvents}, AuxState, _) -> {ok, AuxState, NewEvents, #{}}
+            end
+        }},
+        namespace => <<"event_stash_test">>,
+        event_stash_size => 5
+    },
+    Pid0 = start_automaton(Options0),
+    ok = start(Options0, MachineID, [1, 2]),
+    ok = call(Options0, MachineID, {emit, [3, 4, 5]}),
+    ?assertEqual([1, 2, 3, 4, 5], get_history(Options0, MachineID)),
+    ok = stop_automaton(Pid0),
+    Options1 = Options0#{event_stash_size => 3},
+    Pid1 = start_automaton(Options1),
+    ok = call(Options1, MachineID, {emit, [6, 7]}),
+    ?assertEqual([1, 2, 3, 4, 5, 6, 7], get_history(Options1, MachineID)),
+    ok = stop_automaton(Pid1).
 
 %% Processor handlers
 
--spec process_signal(options(), req_ctx(), deadline(), mg_events_machine:signal_args()) -> signal_result().
-process_signal(Options, _ReqCtx, _Deadline, {EncodedSignal, Machine}) ->
-    Handler = maps:get(signal_handler, Options, fun dummy_signal_handler/3),
+-spec process_signal(handlers(), req_ctx(), deadline(), mg_events_machine:signal_args()) -> signal_result().
+process_signal(Handlers, _ReqCtx, _Deadline, {EncodedSignal, Machine}) ->
+    Handler = maps:get(signal_handler, Handlers, fun dummy_signal_handler/3),
     {AuxState, History} = decode_machine(Machine),
     Signal = decode_signal(EncodedSignal),
     ct:pal("call signal handler ~p with [~p, ~p, ~p]", [Handler, Signal, AuxState, History]),
@@ -127,9 +146,9 @@ process_signal(Options, _ReqCtx, _Deadline, {EncodedSignal, Machine}) ->
     StateChange = {AuxStateContent, Events},
     {StateChange, ComplexAction}.
 
--spec process_call(options(), req_ctx(), deadline(), mg_events_machine:call_args()) -> call_result().
-process_call(Options, _ReqCtx, _Deadline, {EncodedCall, Machine}) ->
-    Handler = maps:get(call_handler, Options, fun dummy_call_handler/3),
+-spec process_call(handlers(), req_ctx(), deadline(), mg_events_machine:call_args()) -> call_result().
+process_call(Handlers, _ReqCtx, _Deadline, {EncodedCall, Machine}) ->
+    Handler = maps:get(call_handler, Handlers, fun dummy_call_handler/3),
     {AuxState, History} = decode_machine(Machine),
     Call = decode(EncodedCall),
     ct:pal("call call handler ~p with [~p, ~p, ~p]", [Handler, Call, AuxState, History]),
@@ -151,10 +170,10 @@ process_repair(Options, _ReqCtx, _Deadline, {EncodedArgs, Machine}) ->
     StateChange = {AuxStateContent, Events},
     {ok, {encode(Result), StateChange, ComplexAction}}.
 
--spec add_events(options(), mg:ns(), mg:id(), [event()], req_ctx(), deadline()) ->
+-spec add_events(handlers(), mg:ns(), mg:id(), [event()], req_ctx(), deadline()) ->
     ok.
-add_events(Options, _NS, _MachineID, Events, _ReqCtx, _Deadline) ->
-    Handler = maps:get(sink_handler, Options, fun dummy_sink_handler/1),
+add_events(Handlers, _NS, _MachineID, Events, _ReqCtx, _Deadline) ->
+    Handler = maps:get(sink_handler, Handlers, fun dummy_sink_handler/1),
     ct:pal("call sink handler ~p with [~p]", [Handler, Events]),
     ok = Handler(decode_events(Events)).
 
@@ -163,9 +182,9 @@ add_events(Options, _NS, _MachineID, Events, _ReqCtx, _Deadline) ->
 dummy_signal_handler(_Signal, AuxState, _Events) ->
     {AuxState, [], #{}}.
 
--spec dummy_call_handler(call(), aux_state(), [event()]) ->
-    {ok, aux_state(), [event()], action()}.
-dummy_call_handler(_Call, AuxState, _Events) ->
+-spec dummy_call_handler(signal(), aux_state(), [event()]) ->
+    {aux_state(), [event()], action()}.
+dummy_call_handler(_Signal, AuxState, _Events) ->
     {ok, AuxState, [], #{}}.
 
 -spec dummy_repair_handler(term(), aux_state(), [event()]) ->
@@ -178,12 +197,19 @@ dummy_repair_handler(_Args, AuxState, _Events) ->
 dummy_sink_handler(_Events) ->
     ok.
 
-%% Utils
+%% Pulse handler
 
--spec start_automaton(options(), mg:ns()) ->
+-spec handle_beat(_, mg_pulse:beat()) ->
+    ok.
+handle_beat(_, Beat) ->
+    ct:pal("~p", [Beat]).
+
+%% Internal functions
+
+-spec start_automaton(options()) ->
     pid().
-start_automaton(Options, NS) ->
-    mg_utils:throw_if_error(mg_events_machine:start_link(events_machine_options(Options, NS))).
+start_automaton(Options) ->
+    mg_utils:throw_if_error(mg_events_machine:start_link(events_machine_options(Options))).
 
 -spec stop_automaton(pid()) ->
     ok.
@@ -191,16 +217,19 @@ stop_automaton(Pid) ->
     ok = proc_lib:stop(Pid, normal, 5000),
     ok.
 
--spec events_machine_options(options(), mg:ns()) ->
+-spec events_machine_options(options()) ->
     mg_events_machine:options().
-events_machine_options(Options, NS) ->
-    Scheduler = #{},
+events_machine_options(Options) ->
+    NS = maps:get(namespace, Options),
+    Scheduler = #{registry => mg_procreg_gproc, interval => 100},
     #{
         namespace => NS,
-        processor => {?MODULE, Options},
+        processor => maps:get(processor, Options),
         tagging => #{
             namespace => <<NS/binary, "_tags">>,
-            storage => mg_storage_memory,
+            storage => {mg_storage_memory, #{
+                existing_storage_name => ?MODULE
+            }},
             worker => #{
                 registry => mg_procreg_gproc
             },
@@ -209,7 +238,9 @@ events_machine_options(Options, NS) ->
         },
         machines => #{
             namespace => NS,
-            storage => mg_ct_helper:build_storage(NS, mg_storage_memory),
+            storage => {mg_storage_memory, #{
+                existing_storage_name => ?MODULE
+            }},
             worker => #{
                 registry => mg_procreg_gproc
             },
@@ -220,44 +251,40 @@ events_machine_options(Options, NS) ->
                 overseer       => Scheduler
             }
         },
-        events_storage => mg_ct_helper:build_storage(<<NS/binary, "_sink">>, mg_storage_memory),
+        events_storage => {mg_storage_memory, #{
+            existing_storage_name => ?MODULE
+        }},
         event_sinks => [
             {?MODULE, Options}
         ],
         pulse => ?MODULE,
         default_processing_timeout => timer:seconds(10),
-        event_stash_size => 5
+        event_stash_size => maps:get(event_stash_size, Options)
     }.
 
--spec start(options(), mg:ns(), mg:id(), term()) ->
+%%
+
+-spec start(options(), mg:id(), term()) ->
     ok.
-start(Options, NS, MachineID, Args) ->
+start(Options, MachineID, Args) ->
     Deadline = mg_deadline:from_timeout(3000),
-    MgOptions = events_machine_options(Options, NS),
+    MgOptions = events_machine_options(Options),
     mg_events_machine:start(MgOptions, MachineID, encode(Args), <<>>, Deadline).
 
--spec call(options(), mg:ns(), mg:id(), term()) ->
+-spec call(options(), mg:id(), term()) ->
     term().
-call(Options, NS, MachineID, Args) ->
+call(Options, MachineID, Args) ->
     HRange = {undefined, undefined, forward},
     Deadline = mg_deadline:from_timeout(3000),
-    MgOptions = events_machine_options(Options, NS),
-    mg_events_machine:call(MgOptions, {id, MachineID}, encode(Args), HRange, <<>>, Deadline).
+    MgOptions = events_machine_options(Options),
+    Result = mg_events_machine:call(MgOptions, {id, MachineID}, encode(Args), HRange, <<>>, Deadline),
+    decode(Result).
 
--spec repair(options(), mg:ns(), mg:id(), term()) ->
+-spec get_history(options(), mg:id()) ->
     ok.
-repair(Options, NS, MachineID, Args) ->
+get_history(Options, MachineID) ->
     HRange = {undefined, undefined, forward},
-    Deadline = mg_deadline:from_timeout(3000),
-    MgOptions = events_machine_options(Options, NS),
-    {ok, Response} = mg_events_machine:repair(MgOptions, {id, MachineID}, encode(Args), HRange, <<>>, Deadline),
-    decode(Response).
-
--spec get_history(options(), mg:ns(), mg:id()) ->
-    [event()].
-get_history(Options, NS, MachineID) ->
-    HRange = {undefined, undefined, forward},
-    MgOptions = events_machine_options(Options, NS),
+    MgOptions = events_machine_options(Options),
     Machine = mg_events_machine:get_machine(MgOptions, {id, MachineID}, HRange),
     {_AuxState, History} = decode_machine(Machine),
     History.
@@ -302,10 +329,3 @@ encode(Value) ->
     term().
 decode(Value) ->
     erlang:binary_to_term(Value, [safe]).
-
-%% Pulse handler
-
--spec handle_beat(_, mg_pulse:beat()) ->
-    ok.
-handle_beat(_, Beat) ->
-    ct:pal("~p", [Beat]).
