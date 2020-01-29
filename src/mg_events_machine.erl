@@ -37,8 +37,10 @@
 -export_type([signal          /0]).
 -export_type([signal_args     /0]).
 -export_type([call_args       /0]).
+-export_type([repair_args     /0]).
 -export_type([signal_result   /0]).
 -export_type([call_result     /0]).
+-export_type([repair_result   /0]).
 -export_type([request_context /0]).
 
 -export([child_spec   /2]).
@@ -63,13 +65,19 @@
     signal_result().
 -callback process_call(_Options, request_context(), deadline(), call_args()) ->
     call_result().
+-callback process_repair(_Options, request_context(), deadline(), repair_args()) ->
+    repair_result() | no_return().
 -optional_callbacks([processor_child_spec/1]).
 
 %% calls, signals, get_gistory
 -type signal_args    () :: {signal(), machine()}.
 -type call_args      () :: {term(), machine()}.
+-type repair_args    () :: {term(), machine()}.
 -type signal_result  () :: {state_change(), complex_action()}.
 -type call_result    () :: {term(), state_change(), complex_action()}.
+-type repair_result  () :: {ok, {term(), state_change(), complex_action()}} |
+                           {error, repair_error()}.
+-type repair_error   () :: {failed, term()}.
 -type state_change   () :: {aux_state(), [mg_events:body()]}.
 -type signal         () :: {init, term()} | timeout | {repair, term()}.
 -type aux_state      () :: mg_events:content().
@@ -153,15 +161,15 @@ start(Options, ID, Args, ReqCtx, Deadline) ->
         ).
 
 -spec repair(options(), ref(), term(), mg_events:history_range(), request_context(), deadline()) ->
-    ok.
+    {ok, _Resp} | {error, repair_error()}.
 repair(Options, Ref, Args, HRange, ReqCtx, Deadline) ->
-    ok = mg_machine:repair(
-            machine_options(Options),
-            ref2id(Options, Ref),
-            {Args, HRange},
-            ReqCtx,
-            Deadline
-        ).
+    mg_machine:repair(
+        machine_options(Options),
+        ref2id(Options, Ref),
+        {Args, HRange},
+        ReqCtx,
+        Deadline
+    ).
 
 -spec simple_repair(options(), ref(), request_context(), deadline()) ->
     ok.
@@ -281,15 +289,7 @@ process_machine_(Options, ID, {Subj, {Args, HRange}}, _, ReqCtx, Deadline, State
     {EffectiveState, ExtraEvents} = try_apply_delayed_actions(State),
     #{events_range := EventsRange} = EffectiveState,
     Machine = machine(Options, ID, EffectiveState, ExtraEvents, HRange),
-    {Reply, DelayedActions} =
-        case Subj of
-            init    -> process_signal(Options, ReqCtx, Deadline, {init  , Args}, Machine, EventsRange);
-            repair  -> process_signal(Options, ReqCtx, Deadline, {repair, Args}, Machine, EventsRange);
-            timeout -> process_signal(Options, ReqCtx, Deadline,  timeout      , Machine, EventsRange);
-            call    -> process_call  (Options, ReqCtx, Deadline,          Args , Machine, EventsRange)
-        end,
-    NewState = add_delayed_actions(DelayedActions, State),
-    {noreply, {continue, Reply}, NewState};
+    process_machine_std(Options, ReqCtx, Deadline, Subj, Args , Machine, EventsRange, State);
 process_machine_(Options, ID, continuation, PCtx, ReqCtx, Deadline, State = #{delayed_actions := DelayedActions}) ->
     % отложенные действия (эвент синк, тэг)
     %
@@ -324,6 +324,34 @@ process_machine_(Options, ID, continuation, PCtx, ReqCtx, Deadline, State = #{de
         end,
     ok = emit_action_beats(Options, ID, ReqCtx, DelayedActions),
     {ReplyAction, FlowAction, NewState}.
+
+-spec process_machine_std(Options, ReqCtx, Deadline, Subj, Args , Machine, EventsRange, State) -> Result when
+    Options :: options(),
+    ReqCtx :: request_context(),
+    Deadline :: deadline(),
+    Subj :: init | repair | call | timeout,
+    Args :: term(),
+    Machine :: machine(),
+    EventsRange :: mg_events:events_range(),
+    State :: state(),
+    Result :: {mg_machine:processor_reply_action(), mg_machine:processor_flow_action(), state()} | no_return().
+process_machine_std(Options, ReqCtx, Deadline, repair, Args , Machine, EventsRange, State) ->
+    case process_repair(Options, ReqCtx, Deadline, Args , Machine, EventsRange) of
+        {ok, {Reply, DelayedActions}} ->
+            NewState = add_delayed_actions(DelayedActions, State),
+            {noreply, {continue, {ok, Reply}}, NewState};
+        {error, _} = Error ->
+            {{reply, Error}, keep, State}
+    end;
+process_machine_std(Options, ReqCtx, Deadline, Subj, Args , Machine, EventsRange, State) ->
+    {Reply, DelayedActions} =
+        case Subj of
+            init    -> process_signal(Options, ReqCtx, Deadline, {init, Args}, Machine, EventsRange);
+            timeout -> process_signal(Options, ReqCtx, Deadline, timeout, Machine, EventsRange);
+            call    -> process_call  (Options, ReqCtx, Deadline, Args, Machine, EventsRange)
+        end,
+    NewState = add_delayed_actions(DelayedActions, State),
+    {noreply, {continue, Reply}, NewState}.
 
 -spec add_tag(options(), mg:id(), request_context(), deadline(), undefined | mg_machine_tags:tag()) ->
     ok.
@@ -446,6 +474,18 @@ process_call(#{processor := Processor}, ReqCtx, Deadline, Args, Machine, EventsR
     CallArgs = [ReqCtx, Deadline, {Args, Machine}],
     {Resp, StateChange, ComplexAction} = mg_utils:apply_mod_opts(Processor, process_call, CallArgs),
     {Resp, handle_processing_result(StateChange, ComplexAction, EventsRange, ReqCtx)}.
+
+-spec process_repair(options(), request_context(), deadline(), term(), machine(), mg_events:events_range()) ->
+    {ok, {mg_storage:opaque(), delayed_actions()}} | {error, repair_error()}.
+process_repair(#{processor := Processor}, ReqCtx, Deadline, Args, Machine, EventsRange) ->
+    RepairArgs = [ReqCtx, Deadline, {Args, Machine}],
+    case mg_utils:apply_mod_opts(Processor, process_repair, RepairArgs) of
+        {ok, {Resp, StateChange, ComplexAction}} ->
+            DelayedActions = handle_processing_result(StateChange, ComplexAction, EventsRange, ReqCtx),
+            {ok, {Resp, DelayedActions}};
+        {error, _} = Error ->
+            Error
+    end.
 
 -spec handle_processing_result(state_change(), complex_action(), mg_events:events_range(), request_context()) ->
     delayed_actions().
