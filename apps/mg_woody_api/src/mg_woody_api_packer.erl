@@ -109,11 +109,7 @@ pack(machine, Machine) ->
         history          = pack(history       , History ),
         history_range    = pack(history_range , HRange  ),
         aux_state        = pack(aux_state     , AuxState),
-        timer            = pack(int_timer     , Timer   ),
-        % DEPRECATED
-        % Нужно удалить сразу, как только процессоры переедут на актуальный протокол, чтобы мы могли
-        % избавиться от необходимости носить потенциально объёмный `aux_state_legacy` по сети.
-        aux_state_legacy = pack(aux_state_legacy , AuxState)
+        timer            = pack(int_timer     , Timer   )
     };
 pack(machine_event, #{ns := NS, id := ID, event := Event}) ->
     #mg_stateproc_MachineEvent{
@@ -379,22 +375,11 @@ unpack(remove_action, #mg_stateproc_RemoveAction{}) ->
 unpack(state_change, MachineStateChange) ->
     #mg_stateproc_MachineStateChange{
         aux_state        = AuxState,
-        events           = EventBodies,
-        % DEPRECATED
-        % Удалить поскорее.
-        aux_state_legacy = AuxStateLegacy,
-        events_legacy    = EventBodiesLegacy
+        events           = EventBodies
     } = MachineStateChange,
     {
-        mg_utils:take_defined([
-            unpack(aux_state                 , AuxState),
-            unpack(aux_state_legacy          , AuxStateLegacy)
-        ]),
-        mg_utils:take_defined([
-            unpack({list, event_body}        , EventBodies),
-            unpack({list, event_body_legacy} , EventBodiesLegacy),
-            unpack({list, event_body}        , [])
-        ])
+        unpack(aux_state, AuxState),
+        unpack({list, event_body}, mg_utils:take_defined([EventBodies, []]))
     };
 unpack(signal, {timeout, #mg_stateproc_TimeoutSignal{}}) ->
     timeout;
