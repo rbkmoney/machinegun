@@ -92,9 +92,6 @@ end_per_suite(C) ->
 -spec mg_woody_api_config(config()) ->
     list().
 mg_woody_api_config(_C) ->
-    Scheduler = #{
-        scan_interval => #{continue => 500, completed => 15000}
-    },
     [
         {woody_server, #{
             ip     => {0,0,0,0,0,0,0,0},
@@ -111,9 +108,7 @@ mg_woody_api_config(_C) ->
                 },
                 default_processing_timeout => 5000,
                 schedulers => #{
-                    timers         => Scheduler,
-                    timers_retries => Scheduler,
-                    overseer       => Scheduler
+                    timers => #{}
                 },
                 retries => #{},
                 event_sinks => [{mg_events_sink_machine, #{name => default, machine_id => ?ES_ID}}],

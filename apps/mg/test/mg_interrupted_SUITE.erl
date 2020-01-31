@@ -130,8 +130,8 @@ stop_automaton(Pid) ->
     mg_machine:options().
 automaton_options(NS, StorageName) ->
     Scheduler = #{
-        min_scan_interval => 1000,
-        target_cutoff     => 15
+        min_scan_delay => 1000,
+        target_cutoff  => 15
     },
     #{
         namespace => NS,

@@ -144,9 +144,6 @@ end_per_group(_, _C) ->
 -spec start_mg_woody_api(group_name(), config()) ->
     config().
 start_mg_woody_api(Name, C) ->
-    Scheduler = #{
-        scan_interval => #{continue => 100, completed => 15000}
-    },
     Config = [
         {woody_server, #{
             ip       => {0,0,0,0,0,0,0,0},
@@ -166,9 +163,7 @@ start_mg_woody_api(Name, C) ->
                     },
                     default_processing_timeout => 5000,
                     schedulers => #{
-                        timers         => Scheduler,
-                        timers_retries => Scheduler,
-                        overseer       => Scheduler
+                        timers => #{}
                     },
                     retries => #{}
                 },
