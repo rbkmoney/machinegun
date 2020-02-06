@@ -14,29 +14,18 @@
 %%% limitations under the License.
 %%%
 
-{application, mg_woody_api, [
-    {description, "Machinegun FSM processor Woody API"},
+{application, machinegun , [
+    {description, "Machinegun FSM processor"},
     {vsn, "1"},
     {registered, []},
-    {mod, {mg_woody_api, []}},
     {applications, [
         kernel,
         stdlib,
-        genlib,
-        rfc3339,
-        mg_proto,
-        woody,
-        yamerl,
-        bear,
-        cg_mon,
-        how_are_you,
-        erl_health,
-        mg
+        mg_woody_api
     ]},
     {env, []},
     {modules, []},
     {maintainers, [
-        "Petr Kozorezov <petr.kozorezov@gmail.com>",
         "Andrey Mayorov <a.mayorov@rbkmoney.com>"
     ]},
     {licenses, []},
