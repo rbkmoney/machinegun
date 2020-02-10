@@ -149,6 +149,15 @@ create_metric(#mg_worker_start_attempt{namespace = NS, msg_queue_len = QLen, msg
         create_bin_inc([mg, workers, NS, start_attempt, queue_usage], fraction, QUsage),
         create_bin_inc([mg, workers, NS, start_attempt, queue_len], queue_length, QLen)
     ];
+% Storage operations
+create_metric(#mg_storage_call_get{namespace = NS}) ->
+    [
+        create_inc([mg, storage, NS, get])
+    ];
+create_metric(#mg_storage_call_put{namespace = NS}) ->
+    [
+        create_inc([mg, storage, NS, put])
+    ];
 % Unknown
 create_metric(_Beat) ->
     [].
