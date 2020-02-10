@@ -197,6 +197,20 @@
     retry_action :: {wait, timeout(), mg_retry:strategy()} | finish
 }).
 
+%% Storage operations
+
+-record(mg_storage_call_get, {
+    namespace :: mg:ns(),
+    machine_id :: mg:id(),
+    timestamp :: genlib_time:ts()
+}).
+
+-record(mg_storage_call_put, {
+    namespace :: mg:ns(),
+    machine_id :: mg:id(),
+    timestamp :: genlib_time:ts()
+}).
+
 %% Workers management
 
 -record(mg_worker_call_attempt, {
