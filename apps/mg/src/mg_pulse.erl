@@ -61,6 +61,9 @@
     % Обслуживание обработчиков машин
     | #mg_worker_call_attempt{}
     | #mg_worker_start_attempt{}
+    % Обслуживание хранилища
+    | #mg_storage_call_get{}
+    | #mg_storage_call_put{}
     % Операции events_sink
     | #mg_events_sink_kafka_sent{}.
 
