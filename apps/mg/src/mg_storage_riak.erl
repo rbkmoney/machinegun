@@ -68,6 +68,7 @@
     port            := inet:port_number(),
     bucket          := bucket(),
     pool_options    := pool_options(),
+    pulse           := mg_pulse:handler(),
     resolve_timeout => timeout(),
     connect_timeout => timeout(),
     request_timeout => timeout(),

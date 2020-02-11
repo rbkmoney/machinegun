@@ -97,6 +97,7 @@
 
 -type storage_options() :: #{
     name := name(),
+    pulse := mg_pulse:handler(),
     sidecar => mg_utils:mod_opts(),
     atom() => any()
 }.
