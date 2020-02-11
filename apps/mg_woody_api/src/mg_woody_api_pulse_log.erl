@@ -360,7 +360,7 @@ format_squad_beat({{member, Pid}, Status}) ->
             {debug, {"member ~p refreshed", [Pid]}, add_event_id(squad_member_added, Meta)};
         {removed, Member, Reason} ->
             Meta = extract_meta(squad_member, Member),
-            {info, {"member ~p removed", [Pid, Reason]}, add_event_id(squad_member_removed, Meta)}
+            {info, {"member ~p removed: ~p", [Pid, Reason]}, add_event_id(squad_member_removed, Meta)}
     end;
 format_squad_beat({{broadcast, _}, _}) ->
     undefined;
