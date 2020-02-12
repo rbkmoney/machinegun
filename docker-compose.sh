@@ -47,6 +47,7 @@ services:
       - ./test/riak_user.conf:/etc/riak/user.conf:ro
       - schemas:/etc/riak/schemas
   member1:
+    &member-node
     image: dr2.rbkmoney.com/rbkmoney/riak-base:b61e6fcc5ba7e7378548d0e0b8d4d8a464b27c67
     labels:
       - "com.basho.riak.cluster.name=riakkv"
@@ -59,6 +60,8 @@ services:
       - COORDINATOR_NODE=riakdb
     volumes:
       - ./test/riak_user.conf:/etc/riak/user.conf:ro
+  member2:
+    <<: *member-node
 
   zookeeper:
     image: confluentinc/cp-zookeeper:${CONFLUENT_PLATFORM_VERSION}
