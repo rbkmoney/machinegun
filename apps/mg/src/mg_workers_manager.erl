@@ -145,7 +145,7 @@ handle_worker_exit(Options, ID, Call, ReqCtx, Deadline, Reason, CanRetry) ->
         {normal    , _MFA}     -> MaybeRetry(normal);
         {shutdown  , _MFA}     -> MaybeRetry(shutdown);
         {timeout   , _MFA}     -> {error, Reason};
-        {killed    , _MFA}     -> {error, {transient, unavailable}};
+        {killed    , _MFA}     -> {error, {timeout, killed}};
         {transient , _Details} -> {error, Reason};
         Unknown                -> {error, {unexpected_exit, Unknown}}
     end.
