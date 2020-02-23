@@ -218,11 +218,11 @@ format_consuela_beat({session_keeper, {session, destroyed}}) ->
 format_consuela_beat({zombie_reaper, {{zombie, {Rid, Name, Pid}}, Status}}) ->
     {Level, Format, Context} = case Status of
         enqueued ->
-            {info, {"enqueued zombie registration ~p as ~p", [Pid, Name]}, [
+            {debug, {"enqueued zombie registration ~p as ~p", [Pid, Name]}, [
                 {mg_pulse_event_id, consuela_zombie_enqueued}
             ]};
         {reaping, succeeded} ->
-            {info, {"reaped zombie registration ~p as ~p", [Pid, Name]}, [
+            {debug, {"reaped zombie registration ~p as ~p", [Pid, Name]}, [
                 {mg_pulse_event_id, consuela_zombie_reaped}
             ]};
         {reaping, {failed, Reason}} ->
