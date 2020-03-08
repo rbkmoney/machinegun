@@ -84,9 +84,16 @@ get_interval(#state{interval = Interval}) ->
 -spec gather_metrics(state()) -> metrics().
 gather_metrics(#state{storage = Storage} = State) ->
     {mg_storage_riak, StorageOptions} = mg_utils:separate_mod_opts(Storage),
-    Metrics = mg_storage_riak:pool_utilization(StorageOptions),
-    KeyPrefix = build_key_prefix(State),
-    [gauge([KeyPrefix, Key], Value) || {Key, Value} <- Metrics].
+    case mg_storage_riak:pool_utilization(StorageOptions) of
+        {ok, Metrics} ->
+            KeyPrefix = build_key_prefix(State),
+            [gauge([KeyPrefix, Key], Value) || {Key, Value} <- Metrics];
+        {error, Reason} ->
+            Namespace = State#state.namespace,
+            StorageType = State#state.storage_type,
+            logger:warning("Can not gather ~p ~p riak pool utilization: ~p", [Namespace, StorageType, Reason]),
+            []
+    end.
 
 %% pooler callbacks
 
