@@ -167,7 +167,7 @@ consul_client(Name, YamlConfig) ->
                 pool =>
                     ?C:conf([consul, pool             ], YamlConfig, Name),
                 max_connections =>
-                    ?C:conf([consul, max_connections  ], YamlConfig, 8),
+                    ?C:conf([consul, max_connections  ], YamlConfig, undefined),
                 max_response_size =>
                     ?C:conf([consul, max_response_size], YamlConfig, undefined),
                 connect_timeout =>

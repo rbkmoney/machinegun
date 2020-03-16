@@ -110,9 +110,19 @@
 %%
 
 -spec pool_utilization(options()) ->
-    [{MetricName :: atom(), Value :: integer()}].
+    {ok, [{MetricName :: atom(), Value :: integer()}]} |
+    {error, {transient, timeout | killed | noproc}}.
 pool_utilization(Options) ->
-    pooler:pool_utilization(pool_name(Options)).
+    try
+        {ok, pooler:pool_utilization(pool_name(Options))}
+    catch
+        exit:{Reason, _MFA} when
+            Reason =:= timeout orelse
+            Reason =:= killed orelse
+            Reason =:= noproc
+        ->
+            {error, {transient, Reason}}
+    end.
 
 %%
 %% internal API

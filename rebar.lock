@@ -46,7 +46,7 @@
  {<<"metrics">>,{pkg,<<"metrics">>,<<"1.0.1">>},2},
  {<<"mg_proto">>,
   {git,"https://github.com/rbkmoney/machinegun_proto",
-       {ref,"3916141f3d60598c4fd6d93e28d3fb3acfc62b25"}},
+       {ref,"eac772bb8446fcd2f439232bf10fa086c336aca6"}},
   0},
  {<<"mimerl">>,{pkg,<<"mimerl">>,<<"1.2.0">>},2},
  {<<"msgpack">>,
