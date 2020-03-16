@@ -47,6 +47,8 @@ start_link(Options) ->
 -type context      () :: {pos_integer(), non_neg_integer()} | undefined.
 -type options      () :: undefined | #{
     name                  := name(),
+    namespace             := mg:ns(),
+    pulse                 := mg_pulse:handler(),
     existing_storage_name => name(),
     random_transient_fail => float()
 }.

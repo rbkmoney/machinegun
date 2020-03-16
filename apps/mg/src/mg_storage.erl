@@ -250,7 +250,7 @@ emit_beat_start({get, _}, #{pulse := Handler, namespace := NS}, StartTimestamp) 
         namespace = NS,
         timestamp = StartTimestamp
     });
-emit_beat_start({put, _, _, _}, #{pulse := Handler, namespace := NS}, StartTimestamp) ->
+emit_beat_start({put, _, _, _, _}, #{pulse := Handler, namespace := NS}, StartTimestamp) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_put_start{
         namespace = NS,
         timestamp = StartTimestamp
@@ -270,16 +270,16 @@ emit_beat_finish({get, _}, #{pulse := Handler, namespace := NS}, FinishTimestamp
         timestamp = FinishTimestamp,
         duration  = Duration
     });
-emit_beat_finish({put, _, _, _}, #{pulse := Handler, namespace := NS}, FinishTimestamp, Duration) ->
+emit_beat_finish({put, _, _, _, _}, #{pulse := Handler, namespace := NS}, FinishTimestamp, Duration) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_put_finish{
         namespace = NS,
         timestamp = FinishTimestamp,
         duration  = Duration
     });
-emit_beat_finish({search, _}, #{pulse := Handler, namespace := NS}, StartTimestamp, Duration) ->
+emit_beat_finish({search, _}, #{pulse := Handler, namespace := NS}, FinishTimestamp, Duration) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_search_finish{
         namespace = NS,
-        timestamp = StartTimestamp,
+        timestamp = FinishTimestamp,
         duration  = Duration
     });
 emit_beat_finish(_Request, #{}, _Timestamp, _Duration) ->
