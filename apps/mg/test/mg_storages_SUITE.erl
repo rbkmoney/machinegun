@@ -38,6 +38,7 @@
 -export([indexes_test_with_limits/1]).
 -export([stress_test             /1]).
 
+-export([handle_beat/2]).
 %%
 %% tests descriptions
 %%
@@ -268,7 +269,7 @@ stress_test_process(ID, ProcessCount, RunCount, Options) ->
 
     receive
         {stop, Reason} ->
-            ct:print("Process: ~p. Number of runs: ~p", [self(), RunCount]),
+            % ct:print("Process: ~p. Number of runs: ~p", [self(), RunCount]),
             exit(Reason)
     after
         0 -> stress_test_process(ID + ProcessCount, ProcessCount, RunCount + 1, Options)
@@ -320,9 +321,11 @@ stop_wait(Pid, Reason, Timeout) ->
 storage_options(riak, Namespace) ->
     {mg_storage_riak, #{
         name         => storage,
+        pulse        => ?MODULE,
         host         => "riakdb",
         port         => 8087,
         bucket       => Namespace,
+        namespace    => <<"some_ns_riak">>,
         pool_options => #{
             init_count          => 1,
             max_count           => 10,
@@ -336,6 +339,8 @@ storage_options(riak, Namespace) ->
     }};
 storage_options(memory, _) ->
     {mg_storage_memory, #{
+        namespace => <<"some_ns_memory">>,
+        pulse => ?MODULE,
         name => storage
     }}.
 
@@ -354,3 +359,8 @@ start_storage(Options) ->
 stop_storage(Pid) ->
     ok = proc_lib:stop(Pid, normal, 5000),
     ok.
+
+-spec handle_beat(_, mg_pulse:beat()) ->
+    ok.
+handle_beat(_, Beat) ->
+    ct:pal("~p", [Beat]).
