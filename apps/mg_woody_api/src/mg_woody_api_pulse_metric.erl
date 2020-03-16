@@ -150,13 +150,32 @@ create_metric(#mg_worker_start_attempt{namespace = NS, msg_queue_len = QLen, msg
         create_bin_inc([mg, workers, NS, start_attempt, queue_len], queue_length, QLen)
     ];
 % Storage operations
-create_metric(#mg_storage_call_get{namespace = NS}) ->
+create_metric(#mg_storage_get_start{namespace = NS}) ->
     [
         create_inc([mg, storage, NS, get])
     ];
-create_metric(#mg_storage_call_put{namespace = NS}) ->
+create_metric(#mg_storage_get_finish{namespace = NS, duration = Duration}) ->
+    [
+        create_inc([mg, storage, NS, get]),
+        create_bin_inc([mg, storage, NS, get, duration], duration, Duration)
+    ];
+create_metric(#mg_storage_put_start{namespace = NS}) ->
     [
         create_inc([mg, storage, NS, put])
+    ];
+create_metric(#mg_storage_put_finish{namespace = NS, duration = Duration}) ->
+    [
+        create_inc([mg, storage, NS, put]),
+        create_bin_inc([mg, scheduler, NS, put, duration], duration, Duration)
+    ];
+create_metric(#mg_storage_search_start{namespace = NS}) ->
+    [
+        create_inc([mg, storage, NS, put])
+    ];
+create_metric(#mg_storage_search_finish{namespace = NS, duration = Duration}) ->
+    [
+        create_inc([mg, storage, NS, put]),
+        create_bin_inc([mg, scheduler, NS, put, duration], duration, Duration)
     ];
 % Unknown
 create_metric(_Beat) ->
