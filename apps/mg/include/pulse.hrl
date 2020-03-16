@@ -199,16 +199,37 @@
 
 %% Storage operations
 
--record(mg_storage_call_get, {
+-record(mg_storage_get_start, {
     namespace :: mg:ns(),
-    machine_id :: mg:id(),
     timestamp :: genlib_time:ts()
 }).
 
--record(mg_storage_call_put, {
+-record(mg_storage_get_finish, {
     namespace :: mg:ns(),
-    machine_id :: mg:id(),
+    timestamp :: genlib_time:ts(),
+    duration :: non_neg_integer()
+}).
+
+-record(mg_storage_put_start, {
+    namespace :: mg:ns(),
     timestamp :: genlib_time:ts()
+}).
+
+-record(mg_storage_put_finish, {
+    namespace :: mg:ns(),
+    timestamp :: genlib_time:ts(),
+    duration :: non_neg_integer()
+}).
+
+-record(mg_storage_search_start, {
+    namespace :: mg:ns(),
+    timestamp :: genlib_time:ts()
+}).
+
+-record(mg_storage_search_finish, {
+    namespace :: mg:ns(),
+    timestamp :: genlib_time:ts(),
+    duration :: non_neg_integer()
 }).
 
 %% Workers management
