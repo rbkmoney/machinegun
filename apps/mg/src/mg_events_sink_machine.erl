@@ -216,7 +216,7 @@ machine_options(Options = #{namespace := Namespace, storage := Storage, worker :
     mg_storage:options().
 events_storage_options(#{namespace := NS, events_storage := StorageOptions}) ->
     {Mod, Options} = mg_utils:separate_mod_opts(StorageOptions, #{}),
-    {Mod, Options#{name => {NS, ?MODULE, events}}}.
+    {Mod, Options#{name => {NS, ?MODULE, events}, namespace => NS}}.
 
 %%
 
