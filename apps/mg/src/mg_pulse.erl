@@ -29,12 +29,12 @@
 %% API
 %%
 -type beat() ::
-    % Таймер
+    % Timer handling
       #mg_timer_lifecycle_created{}
     | #mg_timer_lifecycle_rescheduled{}
     | #mg_timer_lifecycle_rescheduling_error{}
     | #mg_timer_lifecycle_removed{}
-    % Планировщик
+    % Scheduler handling
     | #mg_scheduler_task_add_error{}
     | #mg_scheduler_search_error{}
     | #mg_scheduler_task_error{}
@@ -42,10 +42,10 @@
     | #mg_scheduler_task_started{}
     | #mg_scheduler_task_finished{}
     | #mg_scheduler_quota_reserved{}
-    % Обработка таймера
+    % Timer handling
     | #mg_timer_process_started{}
     | #mg_timer_process_finished{}
-    % Состояние процесса машины
+    % Machine process state
     | #mg_machine_lifecycle_created{}
     | #mg_machine_lifecycle_removed{}
     | #mg_machine_lifecycle_loaded{}
@@ -54,17 +54,21 @@
     | #mg_machine_lifecycle_failed{}
     | #mg_machine_lifecycle_loading_error{}
     | #mg_machine_lifecycle_transient_error{}
-    % Обработка запроса машиной
+    % Machine call handling
     | #mg_machine_process_started{}
     | #mg_machine_process_finished{}
     | #mg_machine_process_transient_error{}
-    % Обслуживание обработчиков машин
+    % Machine worker handling
     | #mg_worker_call_attempt{}
     | #mg_worker_start_attempt{}
-    % Обслуживание хранилища
-    | #mg_storage_call_get{}
-    | #mg_storage_call_put{}
-    % Операции events_sink
+    % Storage calls
+    | #mg_storage_get_start{}
+    | #mg_storage_get_finish{}
+    | #mg_storage_put_start{}
+    | #mg_storage_put_finish{}
+    | #mg_storage_search_start{}
+    | #mg_storage_search_finish{}
+    % Event sink operations
     | #mg_events_sink_kafka_sent{}.
 
 -type handler() :: mg_utils:mod_opts() | undefined.
