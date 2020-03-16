@@ -24,6 +24,7 @@
 %%%  - сделать работу с пачками через функтор и контекст
 %%%
 -module(mg_storage).
+-include_lib("mg/include/pulse.hrl").
 
 %% API
 -export_type([name        /0]).
@@ -78,6 +79,7 @@
 -type context     () :: term().
 -type continuation() :: term(). % undefined означает, что данные кончились
 
+
 %% типизация получилась отвратная, но лучше не вышло :-\
 -type index_name       () :: {binary | integer, binary()}.
 -type index_value      () :: binary() | integer().
@@ -97,6 +99,7 @@
 
 -type storage_options() :: #{
     name := name(),
+    namespace := mg:ns(),
     pulse := mg_pulse:handler(),
     sidecar => mg_utils:mod_opts(),
     atom() => any()
@@ -117,6 +120,9 @@
     | {context(), value()} | undefined
     | search_result()
     | ok.
+
+-type duration() :: non_neg_integer().
+-type timestamp() :: non_neg_integer().
 
 -callback child_spec(storage_options(), atom()) ->
     supervisor:child_spec() | undefined.
@@ -180,7 +186,14 @@ delete(Options, Key, Context) ->
 -spec do_request(options(), request()) ->
     response().
 do_request(Options, Request) ->
-    mg_utils:apply_mod_opts(Options, do_request, [Request]).
+    {_Handler, StorageOptions} = mg_utils:separate_mod_opts(Options, #{}),
+    StartTimestamp = erlang:monotonic_time(),
+    emit_beat_start(Request, StorageOptions, StartTimestamp),
+    Result = mg_utils:apply_mod_opts(Options, do_request, [Request]),
+    FinishTimestamp = erlang:monotonic_time(),
+    Duration = FinishTimestamp - StartTimestamp,
+    emit_beat_finish(Request, StorageOptions, FinishTimestamp, Duration),
+    Result.
 
 %%
 %% Internal API
@@ -226,3 +239,48 @@ sidecar_child_spec(Options, ChildID) ->
         error ->
             undefined
     end.
+
+%%
+%% logging
+%%
+
+-spec emit_beat_start(mg_storage:request(), storage_options(), timestamp()) -> ok.
+emit_beat_start({get, _}, #{pulse := Handler, namespace := NS}, StartTimestamp) ->
+    ok = mg_pulse:handle_beat(Handler, #mg_storage_get_start{
+        namespace = NS,
+        timestamp = StartTimestamp
+    });
+emit_beat_start({put, _, _, _}, #{pulse := Handler, namespace := NS}, StartTimestamp) ->
+    ok = mg_pulse:handle_beat(Handler, #mg_storage_put_start{
+        namespace = NS,
+        timestamp = StartTimestamp
+    });
+emit_beat_start({search, _}, #{pulse := Handler, namespace := NS}, StartTimestamp) ->
+    ok = mg_pulse:handle_beat(Handler, #mg_storage_search_start{
+        namespace = NS,
+        timestamp = StartTimestamp
+    });
+emit_beat_start(_Request, #{}, _StartTimestamp) ->
+    ok.
+
+-spec emit_beat_finish(mg_storage:request(), storage_options(), timestamp(), duration()) -> ok.
+emit_beat_finish({get, _}, #{pulse := Handler, namespace := NS}, FinishTimestamp, Duration) ->
+    ok = mg_pulse:handle_beat(Handler, #mg_storage_get_finish{
+        namespace = NS,
+        timestamp = FinishTimestamp,
+        duration  = Duration
+    });
+emit_beat_finish({put, _, _, _}, #{pulse := Handler, namespace := NS}, FinishTimestamp, Duration) ->
+    ok = mg_pulse:handle_beat(Handler, #mg_storage_put_finish{
+        namespace = NS,
+        timestamp = FinishTimestamp,
+        duration  = Duration
+    });
+emit_beat_finish({search, _}, #{pulse := Handler, namespace := NS}, StartTimestamp) ->
+    ok = mg_pulse:handle_beat(Handler, #mg_storage_search_finish{
+        namespace = NS,
+        timestamp = StartTimestamp
+        duration  = Duration
+    });
+emit_beat_finish(_Request, #{}, _Timestamp, _Duration) ->
+    ok.
