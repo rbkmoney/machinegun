@@ -269,7 +269,7 @@ stress_test_process(ID, ProcessCount, RunCount, Options) ->
 
     receive
         {stop, Reason} ->
-            % ct:print("Process: ~p. Number of runs: ~p", [self(), RunCount]),
+            ct:print("Process: ~p. Number of runs: ~p", [self(), RunCount]),
             exit(Reason)
     after
         0 -> stress_test_process(ID + ProcessCount, ProcessCount, RunCount + 1, Options)
