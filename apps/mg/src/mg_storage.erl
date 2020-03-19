@@ -279,6 +279,4 @@ emit_beat_finish({search, _}, #{pulse := Handler, namespace := NS}, FinishTimest
         namespace = NS,
         timestamp = FinishTimestamp,
         duration  = Duration
-    });
-emit_beat_finish(_Request, #{}, _Timestamp, _Duration) ->
-    ok.
+    }).
