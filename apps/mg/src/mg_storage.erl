@@ -259,6 +259,11 @@ emit_beat_start({search, _}, #{pulse := Handler, namespace := NS}, StartTimestam
     ok = mg_pulse:handle_beat(Handler, #mg_storage_search_start{
         namespace = NS,
         timestamp = StartTimestamp
+    });
+emit_beat_start({delete, _, _}, #{pulse := Handler, namespace := NS}, StartTimestamp) ->
+    ok = mg_pulse:handle_beat(Handler, #mg_storage_delete_start{
+        namespace = NS,
+        timestamp = StartTimestamp
     }).
 
 -spec emit_beat_finish(mg_storage:request(), storage_options(), timestamp(), duration()) -> ok.
@@ -279,4 +284,10 @@ emit_beat_finish({search, _}, #{pulse := Handler, namespace := NS}, FinishTimest
         namespace = NS,
         timestamp = FinishTimestamp,
         duration  = Duration
-    }).
+    })
+emit_beat_finish({delete, _, _}, #{pulse := Handler, namespace := NS}, FinishTimestamp, Duration) ->
+    ok = mg_pulse:handle_beat(Handler, #mg_storage_delete_finish{
+        namespace = NS,
+        timestamp = FinishTimestamp,
+        duration  = Duration
+    });.
