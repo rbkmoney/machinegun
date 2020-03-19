@@ -232,6 +232,17 @@
     duration :: non_neg_integer()
 }).
 
+-record(mg_storage_delete_start, {
+    namespace :: mg:ns(),
+    timestamp :: genlib_time:ts()
+}).
+
+-record(mg_storage_delete_finish, {
+    namespace :: mg:ns(),
+    timestamp :: genlib_time:ts(),
+    duration :: non_neg_integer()
+}).
+
 %% Workers management
 
 -record(mg_worker_call_attempt, {
