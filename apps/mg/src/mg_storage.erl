@@ -284,10 +284,10 @@ emit_beat_finish({search, _}, #{pulse := Handler, namespace := NS}, FinishTimest
         namespace = NS,
         timestamp = FinishTimestamp,
         duration  = Duration
-    })
+    });
 emit_beat_finish({delete, _, _}, #{pulse := Handler, namespace := NS}, FinishTimestamp, Duration) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_delete_finish{
         namespace = NS,
         timestamp = FinishTimestamp,
         duration  = Duration
-    });.
+    }).
