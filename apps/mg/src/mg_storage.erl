@@ -259,9 +259,7 @@ emit_beat_start({search, _}, #{pulse := Handler, namespace := NS}, StartTimestam
     ok = mg_pulse:handle_beat(Handler, #mg_storage_search_start{
         namespace = NS,
         timestamp = StartTimestamp
-    });
-emit_beat_start(_Request, #{}, _StartTimestamp) ->
-    ok.
+    }).
 
 -spec emit_beat_finish(mg_storage:request(), storage_options(), timestamp(), duration()) -> ok.
 emit_beat_finish({get, _}, #{pulse := Handler, namespace := NS}, FinishTimestamp, Duration) ->
