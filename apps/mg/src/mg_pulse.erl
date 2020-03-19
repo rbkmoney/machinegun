@@ -68,6 +68,8 @@
     | #mg_storage_put_finish{}
     | #mg_storage_search_start{}
     | #mg_storage_search_finish{}
+    | #mg_storage_delete_start{}
+    | #mg_storage_delete_finish{}
     % Event sink operations
     | #mg_events_sink_kafka_sent{}.
 
