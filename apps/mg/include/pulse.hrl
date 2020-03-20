@@ -198,7 +198,7 @@
 }).
 
 %% Storage operations
-%% Timestamp and duration are in microseconds
+%% Timestamp and duration are in native units
 
 -record(mg_storage_get_start, {
     namespace :: mg:ns(),
