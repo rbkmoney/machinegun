@@ -121,6 +121,7 @@
     | search_result()
     | ok.
 
+%% Timestamp and duration are in microseconds
 -type duration() :: non_neg_integer().
 -type timestamp() :: non_neg_integer().
 
@@ -187,10 +188,10 @@ delete(Options, Key, Context) ->
     response().
 do_request(Options, Request) ->
     {_Handler, StorageOptions} = mg_utils:separate_mod_opts(Options, #{}),
-    StartTimestamp = erlang:monotonic_time(),
+    StartTimestamp = erlang:system_time(microsecond),
     emit_beat_start(Request, StorageOptions, StartTimestamp),
     Result = mg_utils:apply_mod_opts(Options, do_request, [Request]),
-    FinishTimestamp = erlang:monotonic_time(),
+    FinishTimestamp = erlang:system_time(microsecond),
     Duration = FinishTimestamp - StartTimestamp,
     emit_beat_finish(Request, StorageOptions, FinishTimestamp, Duration),
     Result.
