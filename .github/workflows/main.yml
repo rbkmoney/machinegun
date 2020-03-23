@@ -5,7 +5,7 @@ on: [push]
 env:
   ERLANG_VERSION: 22.1.8
   REGISTRY: docker.io
-  
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -14,6 +14,12 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: true
+
+      - name: Restore rebar3 chache
+        uses: actions/cache@v1
+        with:
+          path: ~/.cache/rebar3
+          key: rebar3-${{ env.ERLANG_VERSION }}
 
       - name: Lint
         run: make wc_lint
