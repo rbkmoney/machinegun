@@ -3,13 +3,13 @@ name: Erlang CI
 on: [push]
 
 env:
-  ERLANG_VERSION: 22.1.8
+  ERLANG_VERSION: 22.3
   REGISTRY: docker.io
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: erlang:22.1.8
+    container: erlang:22.3
 
     steps:
       - uses: actions/checkout@v2
