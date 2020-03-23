@@ -4,7 +4,8 @@ on: [push]
 
 env:
   ERLANG_VERSION: 22.1.8
-
+  REGISTRY: hub.docker.com
+  
 jobs:
   build:
     runs-on: ubuntu-latest
