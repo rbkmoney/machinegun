@@ -12,6 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Init project
+        run: git submodule init
+
       - name: Lint
         run: make wc_lint
 
