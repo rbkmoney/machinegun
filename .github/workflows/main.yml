@@ -3,13 +3,13 @@ name: Erlang CI
 on: [push]
 
 env:
-  ERLANG_VERSION: 22.3
+  ERLANG_VERSION: 22.1.8
+  ## For build_utils
   REGISTRY: docker.io
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: erlang:22.3
 
     steps:
       - uses: actions/checkout@v2
@@ -23,13 +23,4 @@ jobs:
           key: rebar3-${{ env.ERLANG_VERSION }}
 
       - name: Lint
-        run: rebar3 lint
-
-      - name: Compile
-        run: rebar3 compile
-
-      - name: Xref
-        run: rebar3 xref
-
-      - name: Dialyze
-        run: rebar3 dialyzer
+        run: make wc_lint
