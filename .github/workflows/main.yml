@@ -12,12 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Restore rebar3 cache
-        uses: actions/cache@v1
-        with:
-          path: ~/.cache/rebar3
-          key: rebar3-${{ env.ERLANG_VERSION }}
-
       - name: Lint
         run: make wc_lint
 
