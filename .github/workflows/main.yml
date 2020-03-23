@@ -4,7 +4,7 @@ on: [push]
 
 env:
   ERLANG_VERSION: 22.1.8
-  REGISTRY: hub.docker.com
+  REGISTRY: docker.io
   
 jobs:
   build:
