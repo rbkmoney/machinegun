@@ -11,9 +11,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-
-      - name: Init project
-        run: git submodule init
+        with:
+          fetch-depth: 1
 
       - name: Lint
         run: make wc_lint
