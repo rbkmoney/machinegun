@@ -38,7 +38,7 @@ services:
       - kafka3
 
   riakdb:
-    image: dr2.rbkmoney.com/rbkmoney/riak-base:d9dec1c4a69482f5c013bb155f6ccd18cd9d4653
+    image: rbkmoney/riak-base:565e6ecd59be877dea1c23f8c2efebec671c5b35
     environment:
       - CLUSTER_NAME=riakkv
     labels:
@@ -48,7 +48,7 @@ services:
       - schemas:/etc/riak/schemas
   member1:
     &member-node
-    image: dr2.rbkmoney.com/rbkmoney/riak-base:d9dec1c4a69482f5c013bb155f6ccd18cd9d4653
+    image: rbkmoney/riak-base:565e6ecd59be877dea1c23f8c2efebec671c5b35
     labels:
       - "com.basho.riak.cluster.name=riakkv"
     links:
