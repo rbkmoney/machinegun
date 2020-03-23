@@ -9,6 +9,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container: erlang:${{ env.ERLANG_VERSION }}
 
     steps:
       - uses: actions/checkout@v2
@@ -22,16 +23,13 @@ jobs:
           key: rebar3-${{ env.ERLANG_VERSION }}
 
       - name: Lint
-        run: make wc_lint
+        run: rebar3 lint
 
       - name: Compile
-        run: make wc_compile
+        run: rebar3 compile
 
       - name: Xref
-        run: make wc_xref
+        run: rebar3 xref
 
       - name: Dialyze
-        run: make wc_dialyzer
-
-      - name: Run tests
-        run: make wdeps_test
+        run: rebar3 dialyzer
