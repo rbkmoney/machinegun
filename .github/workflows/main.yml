@@ -1,0 +1,35 @@
+name: Erlang CI
+
+on: [push]
+
+env:
+  ERLANG_VERSION: 22.1.8
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+      steps:
+        - uses: actions/checkout@v2
+
+        - name: Restore rebar3 cache
+          uses: actions/cache@v1
+          with:
+            path: ~/.cache/rebar3
+            key: rebar3-${{ env.ERLANG_VERSION }}
+
+        - name: Lint
+          run: make wc_lint
+
+        - name: Compile
+          run: make wc_compile
+
+        - name: Xref
+          run: make wc_xref
+
+        - name: Dialyze
+          run: make wc_dialyzer
+
+        - name: Run tests
+          run: make wdeps_test
+          
