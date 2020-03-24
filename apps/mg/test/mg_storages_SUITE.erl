@@ -320,7 +320,7 @@ stop_wait(Pid, Reason, Timeout) ->
     config().
 storage_options(riak, Namespace) ->
     {mg_storage_riak, #{
-        name         => storage,
+        name         => {<<"some_ns_riak">>, ?MODULE, storage},
         pulse        => ?MODULE,
         host         => "riakdb",
         port         => 8087,
@@ -339,9 +339,9 @@ storage_options(riak, Namespace) ->
     }};
 storage_options(memory, _) ->
     {mg_storage_memory, #{
+        name => {<<"some_ns_memory">>, ?MODULE, storage},
         namespace => <<"some_ns_memory">>,
-        pulse => ?MODULE,
-        name => storage
+        pulse => ?MODULE
     }}.
 
 -spec start_storage(mg_storage:options()) ->
