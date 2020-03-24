@@ -1167,7 +1167,7 @@ manager_options(Options = #{namespace := NS, worker := ManagerOptions, pulse := 
     mg_storage:options().
 storage_options(#{namespace := NS, storage := StorageOptions, pulse := Handler}) ->
     {Mod, Options} = mg_utils:separate_mod_opts(StorageOptions, #{}),
-    {Mod, Options#{name => {NS, ?MODULE, machines}, pulse => Handler, namespace => NS}}.
+    {Mod, Options#{name => {NS, ?MODULE, machines}, pulse => Handler}}.
 
 -spec scheduler_child_spec(scheduler_type(), options()) ->
     supervisor:child_spec() | undefined.

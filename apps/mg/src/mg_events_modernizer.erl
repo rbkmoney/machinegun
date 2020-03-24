@@ -137,4 +137,4 @@ call_handler(#{handler := Handler}, ReqCtx, MachineEvent) ->
     mg_storage:options().
 events_storage_options(#{namespace := NS, events_storage := StorageOptions, pulse := Handler}) ->
     {Mod, Options} = mg_utils:separate_mod_opts(StorageOptions, #{}),
-    {Mod, Options#{name => {NS, mg_events_machine, events_storage}, pulse => Handler, namespace => NS}}.
+    {Mod, Options#{name => {NS, mg_events_machine, events_storage}, pulse => Handler}}.

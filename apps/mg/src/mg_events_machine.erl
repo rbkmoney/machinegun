@@ -565,7 +565,7 @@ machine_options(Options = #{machines := MachinesOptions}) ->
     mg_storage:options().
 events_storage_options(#{namespace := NS, events_storage := StorageOptions, pulse := Handler}) ->
     {Mod, Options} = mg_utils:separate_mod_opts(StorageOptions, #{}),
-    {Mod, Options#{name => {NS, ?MODULE, events}, pulse => Handler, namespace => NS}}.
+    {Mod, Options#{name => {NS, ?MODULE, events}, pulse => Handler}}.
 
 -spec tags_machine_options(options()) ->
     mg_machine_tags:options().
