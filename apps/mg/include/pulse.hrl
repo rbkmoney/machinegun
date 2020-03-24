@@ -201,45 +201,45 @@
 %% Timestamp and duration are in microseconds
 
 -record(mg_storage_get_start, {
-    namespace :: mg:ns(),
+    name :: list(),
     timestamp :: pos_integer()
 }).
 
 -record(mg_storage_get_finish, {
-    namespace :: mg:ns(),
+    name :: list(),
     timestamp :: pos_integer(),
     duration :: non_neg_integer()
 }).
 
 -record(mg_storage_put_start, {
-    namespace :: mg:ns(),
+    name :: list(),
     timestamp :: pos_integer()
 }).
 
 -record(mg_storage_put_finish, {
-    namespace :: mg:ns(),
+    name :: list(),
     timestamp :: pos_integer(),
     duration :: non_neg_integer()
 }).
 
 -record(mg_storage_search_start, {
-    namespace :: mg:ns(),
+    name :: list(),
     timestamp :: pos_integer()
 }).
 
 -record(mg_storage_search_finish, {
-    namespace :: mg:ns(),
+    name :: list(),
     timestamp :: pos_integer(),
     duration :: non_neg_integer()
 }).
 
 -record(mg_storage_delete_start, {
-    namespace :: mg:ns(),
+    name :: list(),
     timestamp :: pos_integer()
 }).
 
 -record(mg_storage_delete_finish, {
-    namespace :: mg:ns(),
+    name :: list(),
     timestamp :: pos_integer(),
     duration :: non_neg_integer()
 }).
