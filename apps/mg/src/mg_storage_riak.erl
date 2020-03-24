@@ -64,7 +64,6 @@
 % -type bucket() :: binary().
 -type options() :: #{
     name            := mg_storage:name(),
-    namespace       := mg:ns(),
     host            := inet:ip_address() | inet:hostname() | binary(),
     port            := inet:port_number(),
     bucket          := bucket(),
