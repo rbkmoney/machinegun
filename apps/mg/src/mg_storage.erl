@@ -70,7 +70,7 @@
 %%
 %% API
 %%
--type name        () :: term().
+-type name        () :: {mg:ns(), module(), atom()}.
 
 -type opaque      () :: null | true | false | number() | binary() | [opaque()] | #{opaque() => opaque()}.
 -type key         () :: binary().
@@ -99,7 +99,6 @@
 
 -type storage_options() :: #{
     name := name(),
-    namespace := mg:ns(),
     pulse := mg_pulse:handler(),
     sidecar => mg_utils:mod_opts(),
     atom() => any()
@@ -246,49 +245,49 @@ sidecar_child_spec(Options, ChildID) ->
 %%
 
 -spec emit_beat_start(mg_storage:request(), storage_options(), timestamp()) -> ok.
-emit_beat_start({get, _}, #{pulse := Handler, namespace := NS}, StartTimestamp) ->
+emit_beat_start({get, _}, #{pulse := Handler, name := Name}, StartTimestamp) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_get_start{
-        namespace = NS,
+        name = tuple_to_list(Name),
         timestamp = StartTimestamp
     });
-emit_beat_start({put, _, _, _, _}, #{pulse := Handler, namespace := NS}, StartTimestamp) ->
+emit_beat_start({put, _, _, _, _}, #{pulse := Handler, name := Name}, StartTimestamp) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_put_start{
-        namespace = NS,
+        name = tuple_to_list(Name),
         timestamp = StartTimestamp
     });
-emit_beat_start({search, _}, #{pulse := Handler, namespace := NS}, StartTimestamp) ->
+emit_beat_start({search, _}, #{pulse := Handler, name := Name}, StartTimestamp) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_search_start{
-        namespace = NS,
+        name = tuple_to_list(Name),
         timestamp = StartTimestamp
     });
-emit_beat_start({delete, _, _}, #{pulse := Handler, namespace := NS}, StartTimestamp) ->
+emit_beat_start({delete, _, _}, #{pulse := Handler, name := Name}, StartTimestamp) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_delete_start{
-        namespace = NS,
+        name = tuple_to_list(Name),
         timestamp = StartTimestamp
     }).
 
 -spec emit_beat_finish(mg_storage:request(), storage_options(), timestamp(), duration()) -> ok.
-emit_beat_finish({get, _}, #{pulse := Handler, namespace := NS}, FinishTimestamp, Duration) ->
+emit_beat_finish({get, _}, #{pulse := Handler, name := Name}, FinishTimestamp, Duration) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_get_finish{
-        namespace = NS,
+        name = tuple_to_list(Name),
         timestamp = FinishTimestamp,
         duration  = Duration
     });
-emit_beat_finish({put, _, _, _, _}, #{pulse := Handler, namespace := NS}, FinishTimestamp, Duration) ->
+emit_beat_finish({put, _, _, _, _}, #{pulse := Handler, name := Name}, FinishTimestamp, Duration) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_put_finish{
-        namespace = NS,
+        name = tuple_to_list(Name),
         timestamp = FinishTimestamp,
         duration  = Duration
     });
-emit_beat_finish({search, _}, #{pulse := Handler, namespace := NS}, FinishTimestamp, Duration) ->
+emit_beat_finish({search, _}, #{pulse := Handler, name := Name}, FinishTimestamp, Duration) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_search_finish{
-        namespace = NS,
+        name = tuple_to_list(Name),
         timestamp = FinishTimestamp,
         duration  = Duration
     });
-emit_beat_finish({delete, _, _}, #{pulse := Handler, namespace := NS}, FinishTimestamp, Duration) ->
+emit_beat_finish({delete, _, _}, #{pulse := Handler, name := Name}, FinishTimestamp, Duration) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_delete_finish{
-        namespace = NS,
+        name = tuple_to_list(Name),
         timestamp = FinishTimestamp,
         duration  = Duration
     }).
