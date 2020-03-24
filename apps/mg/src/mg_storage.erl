@@ -120,9 +120,9 @@
     | search_result()
     | ok.
 
-%% Timestamp and duration are in microseconds
+%% Timestamp and duration are in native units
 -type duration() :: non_neg_integer().
--type timestamp() :: non_neg_integer().
+-type timestamp() :: pos_integer().
 
 -callback child_spec(storage_options(), atom()) ->
     supervisor:child_spec() | undefined.
@@ -187,12 +187,12 @@ delete(Options, Key, Context) ->
     response().
 do_request(Options, Request) ->
     {_Handler, StorageOptions} = mg_utils:separate_mod_opts(Options, #{}),
-    StartTimestamp = erlang:system_time(microsecond),
-    emit_beat_start(Request, StorageOptions, StartTimestamp),
+    StartTimestamp = erlang:system_time(),
+    ok = emit_beat_start(Request, StorageOptions, StartTimestamp),
     Result = mg_utils:apply_mod_opts(Options, do_request, [Request]),
-    FinishTimestamp = erlang:system_time(microsecond),
+    FinishTimestamp = erlang:system_time(),
     Duration = FinishTimestamp - StartTimestamp,
-    emit_beat_finish(Request, StorageOptions, FinishTimestamp, Duration),
+    ok = emit_beat_finish(Request, StorageOptions, FinishTimestamp, Duration),
     Result.
 
 %%
