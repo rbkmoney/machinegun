@@ -156,7 +156,7 @@ create_metric(#mg_storage_get_start{namespace = NS, caller = Caller, type = Type
     ];
 create_metric(#mg_storage_get_finish{namespace = NS, caller = Caller, type = Type, duration = Duration}) ->
     [
-        create_inc([mg, storage, NS, Caller, Type, get, finish])
+        create_inc([mg, storage, NS, Caller, Type, get, finish]),
         create_bin_inc([mg, storage, NS, Caller, Type, get, duration], duration, Duration)
     ];
 create_metric(#mg_storage_put_start{namespace = NS, caller = Caller, type = Type}) ->
@@ -165,7 +165,7 @@ create_metric(#mg_storage_put_start{namespace = NS, caller = Caller, type = Type
     ];
 create_metric(#mg_storage_put_finish{namespace = NS, caller = Caller, type = Type, duration = Duration}) ->
     [
-        create_inc([mg, storage, NS, Caller, Type, put, finish])
+        create_inc([mg, storage, NS, Caller, Type, put, finish]),
         create_bin_inc([mg, storage, NS, Caller, Type, put, duration], duration, Duration)
     ];
 create_metric(#mg_storage_search_start{namespace = NS, caller = Caller, type = Type}) ->
@@ -174,7 +174,7 @@ create_metric(#mg_storage_search_start{namespace = NS, caller = Caller, type = T
     ];
 create_metric(#mg_storage_search_finish{namespace = NS, caller = Caller, type = Type, duration = Duration}) ->
     [
-        create_inc([mg, storage, NS, Caller, Type, search, finish])
+        create_inc([mg, storage, NS, Caller, Type, search, finish]),
         create_bin_inc([mg, storage, NS, Caller, Type, search, duration], duration, Duration)
     ];
 create_metric(#mg_storage_delete_start{namespace = NS, caller = Caller, type = Type}) ->
@@ -183,7 +183,7 @@ create_metric(#mg_storage_delete_start{namespace = NS, caller = Caller, type = T
     ];
 create_metric(#mg_storage_delete_finish{namespace = NS, caller = Caller, type = Type, duration = Duration}) ->
     [
-        create_inc([mg, storage, NS, Caller, Type, delete, finish])
+        create_inc([mg, storage, NS, Caller, Type, delete, finish]),
         create_bin_inc([mg, storage, NS, Caller, Type, delete, duration], duration, Duration)
     ];
 % Unknown
