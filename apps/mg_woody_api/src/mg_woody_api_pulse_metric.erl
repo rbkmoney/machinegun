@@ -151,41 +151,41 @@ create_metric(#mg_worker_start_attempt{namespace = NS, msg_queue_len = QLen, msg
     ];
 % Storage operations
 % TODO: it is currently assumed that the name of a storage follows a specific format
-create_metric(#mg_storage_get_start{name = {NS, Caller, Type}}) ->
+create_metric(#mg_storage_get_start{name = {NS, _Caller, Type}}) ->
     [
-        create_inc([mg, storage, NS, Caller, Type, get, start])
+        create_inc([mg, storage, NS, Type, get, start])
     ];
-create_metric(#mg_storage_get_finish{name = {NS, Caller, Type}, duration = Duration}) ->
+create_metric(#mg_storage_get_finish{name = {NS, _Caller, Type}, duration = Duration}) ->
     [
-        create_inc([mg, storage, NS, Caller, Type, get, finish]),
-        create_bin_inc([mg, storage, NS, Caller, Type, get, duration], duration, Duration)
+        create_inc([mg, storage, NS, Type, get, finish]),
+        create_bin_inc([mg, storage, NS, Type, get, duration], duration, Duration)
     ];
-create_metric(#mg_storage_put_start{name = {NS, Caller, Type}}) ->
+create_metric(#mg_storage_put_start{name = {NS, _Caller, Type}}) ->
     [
-        create_inc([mg, storage, NS, Caller, Type, put, start])
+        create_inc([mg, storage, NS, Type, put, start])
     ];
-create_metric(#mg_storage_put_finish{name = {NS, Caller, Type}, duration = Duration}) ->
+create_metric(#mg_storage_put_finish{name = {NS, _Caller, Type}, duration = Duration}) ->
     [
-        create_inc([mg, storage, NS, Caller, Type, put, finish]),
-        create_bin_inc([mg, storage, NS, Caller, Type, put, duration], duration, Duration)
+        create_inc([mg, storage, NS, Type, put, finish]),
+        create_bin_inc([mg, storage, NS, Type, put, duration], duration, Duration)
     ];
-create_metric(#mg_storage_search_start{name = {NS, Caller, Type}}) ->
+create_metric(#mg_storage_search_start{name = {NS, _Caller, Type}}) ->
     [
-        create_inc([mg, storage, NS, Caller, Type, search, start])
+        create_inc([mg, storage, NS, Type, search, start])
     ];
-create_metric(#mg_storage_search_finish{name = {NS, Caller, Type}, duration = Duration}) ->
+create_metric(#mg_storage_search_finish{name = {NS, _Caller, Type}, duration = Duration}) ->
     [
-        create_inc([mg, storage, NS, Caller, Type, search, finish]),
-        create_bin_inc([mg, storage, NS, Caller, Type, search, duration], duration, Duration)
+        create_inc([mg, storage, NS, Type, search, finish]),
+        create_bin_inc([mg, storage, NS, Type, search, duration], duration, Duration)
     ];
-create_metric(#mg_storage_delete_start{name = {NS, Caller, Type}}) ->
+create_metric(#mg_storage_delete_start{name = {NS, _Caller, Type}}) ->
     [
-        create_inc([mg, storage, NS, Caller, Type, delete, start])
+        create_inc([mg, storage, NS, Type, delete, start])
     ];
-create_metric(#mg_storage_delete_finish{name = {NS, Caller, Type}, duration = Duration}) ->
+create_metric(#mg_storage_delete_finish{name = {NS, _Caller, Type}, duration = Duration}) ->
     [
-        create_inc([mg, storage, NS, Caller, Type, delete, finish]),
-        create_bin_inc([mg, storage, NS, Caller, Type, delete, duration], duration, Duration)
+        create_inc([mg, storage, NS, Type, delete, finish]),
+        create_bin_inc([mg, storage, NS, Type, delete, duration], duration, Duration)
     ];
 % Unknown
 create_metric(_Beat) ->
