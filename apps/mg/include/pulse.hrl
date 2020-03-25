@@ -201,45 +201,45 @@
 %% Timestamp and duration are in native units
 
 -record(mg_storage_get_start, {
-    name :: storage:name(),
+    name :: mg_storage:name(),
     timestamp :: pos_integer()
 }).
 
 -record(mg_storage_get_finish, {
-    name :: storage:name(),
+    name :: mg_storage:name(),
     timestamp :: pos_integer(),
     duration :: non_neg_integer()
 }).
 
 -record(mg_storage_put_start, {
-    name :: storage:name(),
+    name :: mg_storage:name(),
     timestamp :: pos_integer()
 }).
 
 -record(mg_storage_put_finish, {
-    name :: storage:name(),
+    name :: mg_storage:name(),
     timestamp :: pos_integer(),
     duration :: non_neg_integer()
 }).
 
 -record(mg_storage_search_start, {
-    name :: storage:name(),
+    name :: mg_storage:name(),
     timestamp :: pos_integer()
 }).
 
 -record(mg_storage_search_finish, {
-    name :: storage:name(),
+    name :: mg_storage:name(),
     timestamp :: pos_integer(),
     duration :: non_neg_integer()
 }).
 
 -record(mg_storage_delete_start, {
-    name :: storage:name(),
+    name :: mg_storage:name(),
     timestamp :: pos_integer()
 }).
 
 -record(mg_storage_delete_finish, {
-    name :: storage:name(),
+    name :: mg_storage:name(),
     timestamp :: pos_integer(),
     duration :: non_neg_integer()
 }).
