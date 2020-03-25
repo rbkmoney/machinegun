@@ -201,45 +201,61 @@
 %% Timestamp and duration are in native units
 
 -record(mg_storage_get_start, {
-    name :: list(),
+    namespace :: mg:ns(),
+    caller :: module(),
+    type :: atom(),
     timestamp :: pos_integer()
 }).
 
 -record(mg_storage_get_finish, {
-    name :: list(),
+    namespace :: mg:ns(),
+    caller :: module(),
+    type :: atom(),
     timestamp :: pos_integer(),
     duration :: non_neg_integer()
 }).
 
 -record(mg_storage_put_start, {
-    name :: list(),
+    namespace :: mg:ns(),
+    caller :: module(),
+    type :: atom(),
     timestamp :: pos_integer()
 }).
 
 -record(mg_storage_put_finish, {
-    name :: list(),
+    namespace :: mg:ns(),
+    caller :: module(),
+    type :: atom(),
     timestamp :: pos_integer(),
     duration :: non_neg_integer()
 }).
 
 -record(mg_storage_search_start, {
-    name :: list(),
+    namespace :: mg:ns(),
+    caller :: module(),
+    type :: atom(),
     timestamp :: pos_integer()
 }).
 
 -record(mg_storage_search_finish, {
-    name :: list(),
+    namespace :: mg:ns(),
+    caller :: module(),
+    type :: atom(),
     timestamp :: pos_integer(),
     duration :: non_neg_integer()
 }).
 
 -record(mg_storage_delete_start, {
-    name :: list(),
+    namespace :: mg:ns(),
+    caller :: module(),
+    type :: atom(),
     timestamp :: pos_integer()
 }).
 
 -record(mg_storage_delete_finish, {
-    name :: list(),
+    namespace :: mg:ns(),
+    caller :: module(),
+    type :: atom(),
     timestamp :: pos_integer(),
     duration :: non_neg_integer()
 }).
