@@ -70,7 +70,7 @@
 %%
 %% API
 %%
--type name        () :: {mg:ns(), module(), atom()}.
+-type name        () :: term(). % usually {mg:ns(), module(), atom()}.
 
 -type opaque      () :: null | true | false | number() | binary() | [opaque()] | #{opaque() => opaque()}.
 -type key         () :: binary().
@@ -244,50 +244,67 @@ sidecar_child_spec(Options, ChildID) ->
 %% logging
 %%
 
+% TODO: it is currently assumed that the name of a storage follows a specific format
 -spec emit_beat_start(mg_storage:request(), storage_options(), timestamp()) -> ok.
-emit_beat_start({get, _}, #{pulse := Handler, name := Name}, StartTimestamp) ->
+emit_beat_start({get, _}, #{pulse := Handler, name := {NS, Caller, Type}}, StartTimestamp) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_get_start{
-        name = tuple_to_list(Name),
+        namespace = NS,
+        caller = Caller,
+        type = Type,
         timestamp = StartTimestamp
     });
-emit_beat_start({put, _, _, _, _}, #{pulse := Handler, name := Name}, StartTimestamp) ->
+emit_beat_start({put, _, _, _, _}, #{pulse := Handler, name := {NS, Caller, Type}}, StartTimestamp) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_put_start{
-        name = tuple_to_list(Name),
+        namespace = NS,
+        caller = Caller,
+        type = Type,
         timestamp = StartTimestamp
     });
-emit_beat_start({search, _}, #{pulse := Handler, name := Name}, StartTimestamp) ->
+emit_beat_start({search, _}, #{pulse := Handler, name := {NS, Caller, Type}}, StartTimestamp) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_search_start{
-        name = tuple_to_list(Name),
+        namespace = NS,
+        caller = Caller,
+        type = Type,
         timestamp = StartTimestamp
     });
-emit_beat_start({delete, _, _}, #{pulse := Handler, name := Name}, StartTimestamp) ->
+emit_beat_start({delete, _, _}, #{pulse := Handler, name := {NS, Caller, Type}}, StartTimestamp) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_delete_start{
-        name = tuple_to_list(Name),
+        namespace = NS,
+        caller = Caller,
+        type = Type,
         timestamp = StartTimestamp
     }).
 
 -spec emit_beat_finish(mg_storage:request(), storage_options(), timestamp(), duration()) -> ok.
-emit_beat_finish({get, _}, #{pulse := Handler, name := Name}, FinishTimestamp, Duration) ->
+emit_beat_finish({get, _}, #{pulse := Handler, name := {NS, Caller, Type}}, FinishTimestamp, Duration) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_get_finish{
-        name = tuple_to_list(Name),
+        namespace = NS,
+        caller = Caller,
+        type = Type,
         timestamp = FinishTimestamp,
         duration  = Duration
     });
-emit_beat_finish({put, _, _, _, _}, #{pulse := Handler, name := Name}, FinishTimestamp, Duration) ->
+emit_beat_finish({put, _, _, _, _}, #{pulse := Handler, name := {NS, Caller, Type}}, FinishTimestamp, Duration) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_put_finish{
-        name = tuple_to_list(Name),
+        namespace = NS,
+        caller = Caller,
+        type = Type,
         timestamp = FinishTimestamp,
         duration  = Duration
     });
-emit_beat_finish({search, _}, #{pulse := Handler, name := Name}, FinishTimestamp, Duration) ->
+emit_beat_finish({search, _}, #{pulse := Handler, name := {NS, Caller, Type}}, FinishTimestamp, Duration) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_search_finish{
-        name = tuple_to_list(Name),
+        namespace = NS,
+        caller = Caller,
+        type = Type,
         timestamp = FinishTimestamp,
         duration  = Duration
     });
-emit_beat_finish({delete, _, _}, #{pulse := Handler, name := Name}, FinishTimestamp, Duration) ->
+emit_beat_finish({delete, _, _}, #{pulse := Handler, name := {NS, Caller, Type}}, FinishTimestamp, Duration) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_delete_finish{
-        name = tuple_to_list(Name),
+        namespace = NS,
+        caller = Caller,
+        type = Type,
         timestamp = FinishTimestamp,
         duration  = Duration
     }).
