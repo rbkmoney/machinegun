@@ -70,7 +70,7 @@
 %%
 %% API
 %%
--type name        () :: term(). % usually {mg:ns(), module(), atom()}.
+-type name        () :: term().
 
 -type opaque      () :: null | true | false | number() | binary() | [opaque()] | #{opaque() => opaque()}.
 -type key         () :: binary().
@@ -244,7 +244,6 @@ sidecar_child_spec(Options, ChildID) ->
 %% logging
 %%
 
-% TODO: it is currently assumed that the name of a storage follows a specific format
 -spec emit_beat_start(mg_storage:request(), storage_options(), timestamp()) -> ok.
 emit_beat_start({get, _}, #{pulse := Handler, name := Name}, StartTimestamp) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_get_start{
