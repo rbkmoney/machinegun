@@ -95,9 +95,9 @@ init_per_suite(C) ->
     % dbg:tpl({mg_woody_api, '_', '_'}, x),
     Apps = mg_ct_helper:start_applications([gproc]),
     % Запускаем memory storage, который сможет "пережить" рестарты mg
-    {ok, StoragePid} = mg_storage_memory:start_link(#{name => {?NS, ?MODULE, storage}}),
+    {ok, StoragePid} = mg_storage_memory:start_link(#{name => ?MODULE}),
     true = erlang:unlink(StoragePid),
-    [{suite_apps, Apps}, {storage_name, {?NS, ?MODULE, storage}} | C].
+    [{suite_apps, Apps}, {storage_name, ?MODULE} | C].
 
 -spec end_per_suite(config()) ->
     ok.
