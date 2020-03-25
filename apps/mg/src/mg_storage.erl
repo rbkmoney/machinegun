@@ -79,7 +79,6 @@
 -type context     () :: term().
 -type continuation() :: term(). % undefined означает, что данные кончились
 
-
 %% типизация получилась отвратная, но лучше не вышло :-\
 -type index_name       () :: {binary | integer, binary()}.
 -type index_value      () :: binary() | integer().
