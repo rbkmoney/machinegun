@@ -260,7 +260,7 @@ emit_beat_start({delete, _, _}, #{pulse := Handler, name := Name}) ->
         name = Name
     }).
 
--spec emit_beat_finish(mg_storage:request(), storage_options(), timestamp(), duration()) -> ok.
+-spec emit_beat_finish(mg_storage:request(), storage_options(), duration()) -> ok.
 emit_beat_finish({get, _}, #{pulse := Handler, name := Name}, Duration) ->
     ok = mg_pulse:handle_beat(Handler, #mg_storage_get_finish{
         name = Name,
