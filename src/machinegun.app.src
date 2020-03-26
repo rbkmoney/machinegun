@@ -21,10 +21,12 @@
     {applications, [
         kernel,
         stdlib,
-        mg_woody_api
+        genlib,
+        machinegun_woody_api
     ]},
     {env, []},
     {modules, []},
+    {mod, {machinegun, []}},
     {maintainers, [
         "Andrey Mayorov <a.mayorov@rbkmoney.com>"
     ]},

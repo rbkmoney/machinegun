@@ -23,7 +23,7 @@ stop() ->
     {ok, pid()}.
 start(_StartType, _StartArgs) ->
     Config = genlib_app:env(?MODULE),
-    ChildSpecs = mg_woody_api:child_specs(Config),
+    ChildSpecs = machinegun_woody_api:child_specs(Config),
     mg_utils_supervisor_wrapper:start_link(
         {local, ?MODULE},
         #{strategy => rest_for_one},

@@ -58,7 +58,7 @@ sys_config(YamlConfig) ->
         {snowflake   , snowflake   (YamlConfig)},
         {brod        , brod        (YamlConfig)},
         {hackney     , hackney     (YamlConfig)},
-        {mg_woody_api, mg_woody_api(YamlConfig)}
+        {machinegun_woody_api, mg_woody_api(YamlConfig)}
     ].
 
 os_mon(_YamlConfig) ->
@@ -167,7 +167,7 @@ consul_client(Name, YamlConfig) ->
                 pool =>
                     ?C:conf([consul, pool             ], YamlConfig, Name),
                 max_connections =>
-                    ?C:conf([consul, max_connections  ], YamlConfig, 8),
+                    ?C:conf([consul, max_connections  ], YamlConfig, undefined),
                 max_response_size =>
                     ?C:conf([consul, max_response_size], YamlConfig, undefined),
                 connect_timeout =>
