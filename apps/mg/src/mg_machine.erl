@@ -138,12 +138,15 @@
 -type schedulers_opt() :: #{scheduler_type() => scheduler_opt()}.
 -type suicide_probability() :: float() | integer() | undefined. % [0, 1]
 
+%% FIXME: some of these are listed as optional (=>)
+%%        whereas later in the code they are rigidly matched (:=)
+%%        fixed for namespace and pulse
 -type options() :: #{
-    namespace                => mg:ns(),
+    namespace                := mg:ns(),
+    pulse                    := mg_pulse:handler(),
     storage                  => storage_options(),
     processor                => mg_utils:mod_opts(),
     worker                   => mg_workers_manager:options(),
-    pulse                    => mg_pulse:handler(),
     retries                  => retry_opt(),
     schedulers               => schedulers_opt(),
     suicide_probability      => suicide_probability(),
@@ -1162,9 +1165,9 @@ manager_options(Options = #{namespace := NS, worker := ManagerOptions, pulse := 
 
 -spec storage_options(options()) ->
     mg_storage:options().
-storage_options(#{namespace := NS, storage := StorageOptions}) ->
+storage_options(#{namespace := NS, storage := StorageOptions, pulse := Handler}) ->
     {Mod, Options} = mg_utils:separate_mod_opts(StorageOptions, #{}),
-    {Mod, Options#{name => {NS, ?MODULE, machines}}}.
+    {Mod, Options#{name => {NS, ?MODULE, machines}, pulse => Handler}}.
 
 -spec scheduler_child_spec(scheduler_type(), options()) ->
     supervisor:child_spec() | undefined.

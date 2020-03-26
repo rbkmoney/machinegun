@@ -24,6 +24,7 @@
 %%%  - сделать работу с пачками через функтор и контекст
 %%%
 -module(mg_storage).
+-include_lib("mg/include/pulse.hrl").
 
 %% API
 -export_type([name        /0]).
@@ -97,6 +98,7 @@
 
 -type storage_options() :: #{
     name := name(),
+    pulse := mg_pulse:handler(),
     sidecar => mg_utils:mod_opts(),
     atom() => any()
 }.
@@ -116,6 +118,9 @@
     | {context(), value()} | undefined
     | search_result()
     | ok.
+
+%% Timestamp and duration are in native units
+-type duration() :: non_neg_integer().
 
 -callback child_spec(storage_options(), atom()) ->
     supervisor:child_spec() | undefined.
@@ -179,7 +184,14 @@ delete(Options, Key, Context) ->
 -spec do_request(options(), request()) ->
     response().
 do_request(Options, Request) ->
-    mg_utils:apply_mod_opts(Options, do_request, [Request]).
+    {_Handler, StorageOptions} = mg_utils:separate_mod_opts(Options, #{}),
+    StartTimestamp = erlang:monotonic_time(),
+    ok = emit_beat_start(Request, StorageOptions),
+    Result = mg_utils:apply_mod_opts(Options, do_request, [Request]),
+    FinishTimestamp = erlang:monotonic_time(),
+    Duration = FinishTimestamp - StartTimestamp,
+    ok = emit_beat_finish(Request, StorageOptions, Duration),
+    Result.
 
 %%
 %% Internal API
@@ -225,3 +237,47 @@ sidecar_child_spec(Options, ChildID) ->
         error ->
             undefined
     end.
+
+%%
+%% logging
+%%
+
+-spec emit_beat_start(mg_storage:request(), storage_options()) -> ok.
+emit_beat_start({get, _}, #{pulse := Handler, name := Name}) ->
+    ok = mg_pulse:handle_beat(Handler, #mg_storage_get_start{
+        name = Name
+    });
+emit_beat_start({put, _, _, _, _}, #{pulse := Handler, name := Name}) ->
+    ok = mg_pulse:handle_beat(Handler, #mg_storage_put_start{
+        name = Name
+    });
+emit_beat_start({search, _}, #{pulse := Handler, name := Name}) ->
+    ok = mg_pulse:handle_beat(Handler, #mg_storage_search_start{
+        name = Name
+    });
+emit_beat_start({delete, _, _}, #{pulse := Handler, name := Name}) ->
+    ok = mg_pulse:handle_beat(Handler, #mg_storage_delete_start{
+        name = Name
+    }).
+
+-spec emit_beat_finish(mg_storage:request(), storage_options(), duration()) -> ok.
+emit_beat_finish({get, _}, #{pulse := Handler, name := Name}, Duration) ->
+    ok = mg_pulse:handle_beat(Handler, #mg_storage_get_finish{
+        name = Name,
+        duration  = Duration
+    });
+emit_beat_finish({put, _, _, _, _}, #{pulse := Handler, name := Name}, Duration) ->
+    ok = mg_pulse:handle_beat(Handler, #mg_storage_put_finish{
+        name = Name,
+        duration  = Duration
+    });
+emit_beat_finish({search, _}, #{pulse := Handler, name := Name}, Duration) ->
+    ok = mg_pulse:handle_beat(Handler, #mg_storage_search_finish{
+        name = Name,
+        duration  = Duration
+    });
+emit_beat_finish({delete, _, _}, #{pulse := Handler, name := Name}, Duration) ->
+    ok = mg_pulse:handle_beat(Handler, #mg_storage_delete_finish{
+        name = Name,
+        duration  = Duration
+    }).
