@@ -198,7 +198,7 @@
 }).
 
 %% Storage operations
-%% Timestamp and duration are in native units
+%% Duration is in native units
 
 -record(mg_storage_get_start, {
     name :: mg_storage:name()
