@@ -16,7 +16,7 @@
 %%%
 
 
--define(C, mg_woody_api_configurator).
+-define(C, machinegun_configurator).
 
 %%
 %% main
@@ -98,7 +98,7 @@ consuela(YamlConfig) ->
                 shutdown  => ?C:time_interval(?C:conf([shutdown_timeout], PresenceConfig, "5s"), 'ms'),
                 session_opts => #{
                     interval => ?C:time_interval(?C:conf([check_interval], PresenceConfig, "5s"), 'sec'),
-                    pulse    => mg_consuela_pulse_adapter:pulse(presence_session, mg_woody_api_pulse)
+                    pulse    => mg_core_consuela_pulse_adapter:pulse(presence_session, machinegun_pulse)
                 }
             }}
         ] end),
@@ -119,17 +119,17 @@ consuela(YamlConfig) ->
                 shutdown  => ?C:time_interval(?C:conf([shutdown_timeout], RegConfig, "5s"), 'ms'),
                 keeper    => maps:merge(
                     #{
-                    pulse => mg_consuela_pulse_adapter:pulse(session_keeper, mg_woody_api_pulse)
+                    pulse => mg_core_consuela_pulse_adapter:pulse(session_keeper, machinegun_pulse)
                 },
                     conf_with([session_renewal_interval], RegConfig, #{}, fun (V) -> #{
                         interval => ?C:time_interval(V, 'sec')
                     } end)
                 ),
                 reaper    => #{
-                    pulse => mg_consuela_pulse_adapter:pulse(zombie_reaper, mg_woody_api_pulse)
+                    pulse => mg_core_consuela_pulse_adapter:pulse(zombie_reaper, machinegun_pulse)
                 },
                 registry  => #{
-                    pulse => mg_consuela_pulse_adapter:pulse(registry_server, mg_woody_api_pulse)
+                    pulse => mg_core_consuela_pulse_adapter:pulse(registry_server, machinegun_pulse)
                 }
             }}
         ] end),
@@ -143,7 +143,7 @@ consuela(YamlConfig) ->
                         init => ?C:time_interval(?C:conf([interval, init], DiscoveryConfig,  "5s"), 'ms'),
                         idle => ?C:time_interval(?C:conf([interval, idle], DiscoveryConfig, "10m"), 'ms')
                     },
-                    pulse => mg_consuela_pulse_adapter:pulse(discovery_server, mg_woody_api_pulse)
+                    pulse => mg_core_consuela_pulse_adapter:pulse(discovery_server, machinegun_pulse)
                 }
             }}
         ] end)
@@ -177,7 +177,7 @@ consul_client(Name, YamlConfig) ->
                 ssl_options =>
                     ?C:proplist(?C:conf([consul, ssl_options      ], YamlConfig, undefined))
             }),
-            pulse => mg_consuela_pulse_adapter:pulse(client, mg_woody_api_pulse)
+            pulse => mg_core_consuela_pulse_adapter:pulse(client, machinegun_pulse)
         })
     }.
 
@@ -350,7 +350,7 @@ wait_value(Fun, Timeout, Interval, Key) ->
 storage(NS, YamlConfig) ->
     case ?C:conf([storage, type], YamlConfig) of
         "memory" ->
-            mg_storage_memory;
+            mg_core_storage_memory;
         "riak" ->
             {mg_storage_riak, #{
                 host   => ?C:utf_bin(?C:conf([storage, host], YamlConfig)),
@@ -478,7 +478,7 @@ event_sink({Name, ESYamlConfig}) ->
     event_sink(?C:atom(?C:conf([type], ESYamlConfig)), Name, ESYamlConfig).
 
 event_sink(machine, Name, ESYamlConfig) ->
-    {mg_events_sink_machine, #{
+    {mg_core_events_sink_machine, #{
         name       => ?C:atom(Name),
         machine_id => ?C:utf_bin(?C:conf([machine_id], ESYamlConfig))
     }};
@@ -495,7 +495,7 @@ procreg(YamlConfig) ->
         [consuela],
         YamlConfig,
         mg_procreg_gproc,
-        {mg_procreg_consuela, #{pulse => mg_woody_api_pulse}}
+        {mg_procreg_consuela, #{pulse => machinegun_pulse}}
     ).
 
 %%
