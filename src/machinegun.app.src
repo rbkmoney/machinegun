@@ -22,6 +22,8 @@
         kernel,
         stdlib,
         genlib,
+        how_are_you,
+        yamerl,
         machinegun_woody_api
     ]},
     {env, []},
