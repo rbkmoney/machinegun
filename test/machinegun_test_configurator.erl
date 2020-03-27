@@ -1,4 +1,4 @@
--module(mg_test_configurator).
+-module(machinegun_test_configurator).
 
 -export([construct_child_specs/1]).
 

@@ -14,7 +14,7 @@
 %%% limitations under the License.
 %%%
 
--module(mg_test_processor).
+-module(machinegun_test_processor).
 
 -export([start/3]).
 -export([start_link/3]).

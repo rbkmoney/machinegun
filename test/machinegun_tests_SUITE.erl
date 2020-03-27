@@ -17,7 +17,7 @@
 %%%
 %%% TODO сделать нормальный тест автомата, как вариант, через пропер
 %%%
--module(mg_tests_SUITE).
+-module(machinegun_tests_SUITE).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("stdlib/include/assert.hrl").
@@ -127,12 +127,12 @@ init_per_group(_, C) ->
 init_per_group(C) ->
     %% TODO сделать нормальную генерацию урлов
     Config = mg_woody_api_config(C),
-    % Config = mg_test_configurator:construct_child_specs(Config0),
-    Apps = mg_ct_helper:start_applications([
+    % Config = machinegun_test_configurator:construct_child_specs(Config0),
+    Apps = machinegun_ct_helper:start_applications([
         brod,
         {machinegun, maps:to_list(Config)}
     ]),
-    {ok, ProcessorPid} = mg_test_processor:start(
+    {ok, ProcessorPid} = machinegun_test_processor:start(
         {0, 0, 0, 0}, 8023,
         genlib_map:compact(#{
             processor  => {
@@ -176,7 +176,7 @@ default_signal_handler({Args, _Machine}) ->
          timeout ->
              {{null(), [content(<<"handle_timer_body">>)]}, #{timer => undefined, tag => undefined}};
         _ ->
-            mg_test_processor:default_result(signal, Args)
+            machinegun_test_processor:default_result(signal, Args)
     end.
 
 -spec default_call_handler(mg_events_machine:call_args()) ->
@@ -280,7 +280,7 @@ mg_woody_api_config(C) ->
     ok.
 end_per_group(_, C) ->
     ok = proc_lib:stop(?config(processor_pid, C)),
-    mg_ct_helper:stop_applications(?config(apps, C)).
+    machinegun_ct_helper:stop_applications(?config(apps, C)).
 
 %%
 %% base group tests
@@ -288,12 +288,12 @@ end_per_group(_, C) ->
 -spec namespace_not_found(config()) -> _.
 namespace_not_found(C) ->
     Opts = maps:update(ns, <<"incorrect_NS">>, automaton_options(C)),
-    #mg_stateproc_NamespaceNotFound{} = (catch mg_automaton_client:start(Opts, ?ID, ?Tag)).
+    #mg_stateproc_NamespaceNotFound{} = (catch machinegun_automaton_client:start(Opts, ?ID, ?Tag)).
 
 -spec machine_start_empty_id(config()) -> _.
 machine_start_empty_id(C) ->
     {'EXIT', {{woody_error, _}, _}} = % создание машины с невалидным ID не обрабатывается по протоколу
-        (catch mg_automaton_client:start(automaton_options(C), ?EMPTY_ID, ?Tag)),
+        (catch machinegun_automaton_client:start(automaton_options(C), ?EMPTY_ID, ?Tag)),
     ok.
 
 -spec machine_start(config()) -> _.
@@ -302,47 +302,47 @@ machine_start(C) ->
 
 -spec machine_already_exists(config()) -> _.
 machine_already_exists(C) ->
-    #mg_stateproc_MachineAlreadyExists{} = (catch mg_automaton_client:start(automaton_options(C), ?ID, ?Tag)).
+    #mg_stateproc_MachineAlreadyExists{} = (catch machinegun_automaton_client:start(automaton_options(C), ?ID, ?Tag)).
 
 -spec machine_id_not_found(config()) -> _.
 machine_id_not_found(C) ->
      _ = code:load_file(mg_core_storage_memory),
     IncorrectID = <<"incorrect_ID">>,
     #mg_stateproc_MachineNotFound{} =
-        (catch mg_automaton_client:call(automaton_options(C), {id, IncorrectID}, <<"nop">>)).
+        (catch machinegun_automaton_client:call(automaton_options(C), {id, IncorrectID}, <<"nop">>)).
 
 -spec machine_empty_id_not_found(config()) -> _.
 machine_empty_id_not_found(C) ->
     #mg_stateproc_MachineNotFound{} =
-        (catch mg_automaton_client:call(automaton_options(C), {id, ?EMPTY_ID}, <<"nop">>)).
+        (catch machinegun_automaton_client:call(automaton_options(C), {id, ?EMPTY_ID}, <<"nop">>)).
 
 -spec machine_call_by_id(config()) -> _.
 machine_call_by_id(C) ->
-    <<"nop">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"nop">>).
+    <<"nop">> = machinegun_automaton_client:call(automaton_options(C), {id, ?ID}, <<"nop">>).
 
 -spec machine_set_tag(config()) -> _.
 machine_set_tag(C) ->
-    <<"tag">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"tag">>).
+    <<"tag">> = machinegun_automaton_client:call(automaton_options(C), {id, ?ID}, <<"tag">>).
 
 -spec machine_tag_not_found(config()) -> _.
 machine_tag_not_found(C) ->
     IncorrectTag = <<"incorrect_Tag">>,
     #mg_stateproc_MachineNotFound{} =
-        (catch mg_automaton_client:call(automaton_options(C), {tag, IncorrectTag}, <<"nop">>)).
+        (catch machinegun_automaton_client:call(automaton_options(C), {tag, IncorrectTag}, <<"nop">>)).
 
 -spec machine_call_by_tag(config()) -> _.
 machine_call_by_tag(C) ->
-    <<"nop">> = mg_automaton_client:call(automaton_options(C), ?Ref, <<"nop">>).
+    <<"nop">> = machinegun_automaton_client:call(automaton_options(C), ?Ref, <<"nop">>).
 
 -spec machine_remove(config()) -> _.
 machine_remove(C) ->
-    ok = mg_automaton_client:remove(automaton_options(C), ?ID).
+    ok = machinegun_automaton_client:remove(automaton_options(C), ?ID).
 
 -spec machine_remove_by_action(config()) -> _.
 machine_remove_by_action(C) ->
-    <<"nop">> = mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"nop">>),
+    <<"nop">> = machinegun_automaton_client:call(automaton_options(C), {id, ?ID}, <<"nop">>),
     <<"remove">> = try
-        mg_automaton_client:call(automaton_options(C), {id, ?ID}, <<"remove">>)
+        machinegun_automaton_client:call(automaton_options(C), {id, ?ID}, <<"remove">>)
     catch
         throw:#mg_stateproc_MachineNotFound{} ->
             % The request had been retried
@@ -360,7 +360,7 @@ start_machine(C, ID) ->
 -spec start_machine(config(), machinegun_core:id(), mg_event_machine:args()) ->
     ok.
 start_machine(C, ID, Args) ->
-    case catch mg_automaton_client:start(automaton_options(C), ID, Args) of
+    case catch machinegun_automaton_client:start(automaton_options(C), ID, Args) of
         ok ->
             ok;
         #mg_stateproc_MachineAlreadyExists{} ->

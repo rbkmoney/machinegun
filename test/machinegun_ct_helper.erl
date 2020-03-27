@@ -14,7 +14,7 @@
 %%% limitations under the License.
 %%%
 
--module(mg_ct_helper).
+-module(machinegun_ct_helper).
 
 -define(CLIENT, mg_kafka_client).
 -define(BROKERS, [{"kafka1", 9092}, {"kafka2", 9092}, {"kafka3", 9092}]).

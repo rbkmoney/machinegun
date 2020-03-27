@@ -14,7 +14,7 @@
 %%% limitations under the License.
 %%%
 
--module(mg_automaton_client).
+-module(machinegun_automaton_client).
 
 %% API
 -export_type([options/0]).
