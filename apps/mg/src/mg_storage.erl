@@ -49,12 +49,17 @@
 
 -export_type([request /0]).
 -export_type([response/0]).
+-export_type([batch   /0]).
 
 -export([child_spec/2]).
 -export([put       /5]).
 -export([get       /2]).
 -export([search    /2]).
 -export([delete    /3]).
+
+-export([new_batch/0]).
+-export([add_batch_request/2]).
+-export([run_batch/2]).
 
 -export([do_request/2]).
 
@@ -95,14 +100,20 @@
     [{index_value(), key()}] |
     [key()].
 
-
 -type storage_options() :: #{
     name := name(),
     pulse := mg_pulse:handler(),
     sidecar => mg_utils:mod_opts(),
+    batching => batching_options(),
     atom() => any()
 }.
 -type options() :: mg_utils:mod_opts(storage_options()).
+
+-type batching_options() :: #{
+    % How many storage requests may be served concurrently at most?
+    % If unset concurrency is unlimited.
+    concurrency_limit => pos_integer()
+}.
 
 %%
 
@@ -112,6 +123,8 @@
     | {search, index_query()}
     | {delete, key(), context()}
 .
+
+-opaque batch() :: [request()].
 
 -type response() ::
       context()
@@ -155,20 +168,14 @@ child_spec(Options, ChildID) ->
 
 -spec put(options(), key(), context() | undefined, value(), [index_update()]) ->
     context().
-put(_Options, Key, _Context, _Value, _Indexes) when byte_size(Key) < ?KEY_SIZE_LOWER_BOUND ->
-    throw({logic, {invalid_key, {too_small, Key}}});
-put(_Options, Key, _Context, _Value, _Indexes) when byte_size(Key) > ?KEY_SIZE_UPPER_BOUND ->
-    throw({logic, {invalid_key, {too_big, Key}}});
 put(Options, Key, Context, Value, Indexes) ->
+    _ = validate_key(Key),
     do_request(Options, {put, Key, Context, Value, Indexes}).
 
 -spec get(options(), key()) ->
     {context(), value()} | undefined.
-get(_Options, Key) when byte_size(Key) < ?KEY_SIZE_LOWER_BOUND ->
-    throw({logic, {invalid_key, {too_small, Key}}});
-get(_Options, Key) when byte_size(Key) > ?KEY_SIZE_UPPER_BOUND ->
-    throw({logic, {invalid_key, {too_big, Key}}});
 get(Options, Key) ->
+    _ = validate_key(Key),
     do_request(Options, {get, Key}).
 
 -spec search(options(), index_query()) ->
@@ -179,7 +186,52 @@ search(Options, Query) ->
 -spec delete(options(), key(), context()) ->
     ok.
 delete(Options, Key, Context) ->
+    _ = validate_key(Key),
     do_request(Options, {delete, Key, Context}).
+
+-spec new_batch() ->
+    batch().
+new_batch() ->
+    [].
+
+-spec add_batch_request(request(), batch()) ->
+    batch().
+add_batch_request(Request = {get, Key}, Batch) ->
+    _ = validate_key(Key),
+    [Request | Batch];
+add_batch_request(Request = {put, Key, _Context, _Value, _Indices}, Batch) ->
+    _ = validate_key(Key),
+    [Request | Batch];
+add_batch_request(Request = {delete, Key, _Context}, Batch) ->
+    _ = validate_key(Key),
+    [Request | Batch];
+add_batch_request(Request = {search, _}, Batch) ->
+    [Request | Batch].
+
+-spec run_batch(options(), batch()) ->
+    [{request(), response()}].
+run_batch(Options, Batch) ->
+    {_Handler, StorageOptions} = mg_utils:separate_mod_opts(Options, #{}),
+    genlib_pmap:map(
+        fun (Request) ->
+            {Request, do_request(Options, Request)}
+        end,
+        lists:reverse(Batch),
+        construct_pmap_options(StorageOptions)
+    ).
+
+-spec construct_pmap_options(storage_options()) ->
+    #{atom() => _}.
+construct_pmap_options(Options) ->
+    Batching = maps:get(batching, Options, #{}),
+    maps:fold(
+        fun
+            (concurrency_limit, N, Opts) when is_integer(N), N > 0 ->
+                Opts#{proc_limit => N}
+        end,
+        #{},
+        Batching
+    ).
 
 -spec do_request(options(), request()) ->
     response().
@@ -192,6 +244,15 @@ do_request(Options, Request) ->
     Duration = FinishTimestamp - StartTimestamp,
     ok = emit_beat_finish(Request, StorageOptions, Duration),
     Result.
+
+-spec validate_key(key()) ->
+    _ | no_return().
+validate_key(Key) when byte_size(Key) < ?KEY_SIZE_LOWER_BOUND ->
+    throw({logic, {invalid_key, {too_small, Key}}});
+validate_key(Key) when byte_size(Key) > ?KEY_SIZE_UPPER_BOUND ->
+    throw({logic, {invalid_key, {too_big, Key}}});
+validate_key(_Key) ->
+    ok.
 
 %%
 %% Internal API
