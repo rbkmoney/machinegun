@@ -16,7 +16,7 @@
 %%%
 
 
--define(C, machinegun_configurator).
+-define(C, machinegun_release_configurator).
 
 %%
 %% main

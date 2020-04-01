@@ -24,8 +24,8 @@
 -export([handle_beat/2]).
 
 %% internal types
--type log_msg() :: mg_woody_api_log:log_msg().
--type meta() :: mg_woody_api_log:meta().
+-type log_msg() :: machinegun_log:log_msg().
+-type meta() :: machinegun_log:meta().
 -type beat() :: machinegun_pulse:beat().
 
 %%

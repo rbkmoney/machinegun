@@ -1,389 +1,278 @@
-%%%
-%%% Copyright 2017 RBKmoney
-%%%
-%%% Licensed under the Apache License, Version 2.0 (the "License");
-%%% you may not use this file except in compliance with the License.
-%%% You may obtain a copy of the License at
-%%%
-%%%     http://www.apache.org/licenses/LICENSE-2.0
-%%%
-%%% Unless required by applicable law or agreed to in writing, software
-%%% distributed under the License is distributed on an "AS IS" BASIS,
-%%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-%%% See the License for the specific language governing permissions and
-%%% limitations under the License.
-%%%
-
 -module(machinegun_configurator).
--include_lib("kernel/include/file.hrl").
 
--export([parse_yaml_config/1]).
--export([write_files      /1]).
--export([write_file       /1]).
--export([print_sys_config /1]).
--export([print_vm_args    /1]).
--export([print_erl_inetrc /1]).
+-export([construct_child_specs/1]).
 
--export([guess_host_address/1]).
--export([hostname/0]).
+-type modernizer() :: #{
+    current_format_version := mg_core_events:format_version(),
+    handler                := mg_woody_api_modernizer:options()
+}.
 
--export([filename         /1]).
--export([file             /2]).
--export([log_level        /1]).
--export([mem_words        /1]).
--export([mem_bytes        /1]).
--export([time_interval    /1]).
--export([time_interval    /2]).
--export([proplist         /1]).
--export([ip               /1]).
--export([utf_bin          /1]).
--export([atom             /1]).
--export([conf             /3]).
--export([conf             /2]).
--export([probability      /1]).
--export([contents         /1]).
+-type events_machines() :: #{
+    processor                  := processor(),
+    modernizer                 => modernizer(),
+    worker                     => mg_core_workers_manager:options(), % all but `worker_options.worker` option
+    storage                    := mg_core_machine:storage_options(),
+    event_sinks                => [mg_core_events_sink:handler()],
+    retries                    := mg_core_machine:retry_opt(),
+    schedulers                 := mg_core_machine:schedulers_opt(),
+    default_processing_timeout := timeout(),
+    suicide_probability        => mg_core_machine:suicide_probability(),
+    event_stash_size           := non_neg_integer()
+}.
+
+-type event_sink_ns() :: #{
+    default_processing_timeout := timeout(),
+    storage                    => mg_core_storage:options(),
+    worker                     => mg_core_worker:options()
+}.
+
+-type namespaces() :: #{mg_core:ns() => events_machines()}.
+
+-type config() :: #{
+    woody_server := machinegun_woody_api:woody_server(),
+    event_sink_ns := event_sink_ns(),
+    namespaces := namespaces(),
+    quotas => [mg_core_quota_worker:options()],
+    health_check => erl_health:check()
+}.
+
+-type processor() :: mg_woody_api_processor:options().
+
+-spec construct_child_specs(config()) -> _.
+
+construct_child_specs(#{
+    woody_server  := WoodyServer,
+    event_sink_ns := EventSinkNS,
+    namespaces    := Namespaces
+} = Config) ->
+    Quotas       = maps:get(quotas, Config, []),
+    HealthChecks = maps:get(health_check, Config, #{}),
+
+    QuotasChSpec        = quotas_child_specs(Quotas, quota),
+    EventSinkChSpec     = event_sink_ns_child_spec(EventSinkNS, event_sink),
+    EventMachinesChSpec = events_machines_child_specs(Namespaces, EventSinkNS),
+    WoodyServerChSpec   = machinegun_woody_api:child_spec(
+        woody_server,
+        #{
+            woody_server => WoodyServer,
+            health_check => HealthChecks,
+            automaton    => api_automaton_options (Namespaces, EventSinkNS),
+            event_sink   => api_event_sink_options(Namespaces, EventSinkNS),
+            pulse        => mg_woody_api_test_pulse
+        }
+    ),
+
+    lists:flatten([
+        EventSinkChSpec,
+        WoodyServerChSpec,
+        QuotasChSpec,
+        EventMachinesChSpec
+    ]).
 
 %%
 
--type yaml_config() :: _TODO. % hello to librares without an explicit typing 😡
--type yaml_config_path() :: [atom()].
+-spec quotas_child_specs([mg_core_quota_worker:options()], atom()) ->
+    [supervisor:child_spec()].
+quotas_child_specs(Quotas, ChildID) ->
+    [
+        mg_core_quota_worker:child_spec(Options, {ChildID, maps:get(name, Options)})
+        || Options <- Quotas
+    ].
 
--type vm_args() :: [{atom(), binary()}].
--type sys_config() :: [{atom, term()}].
--type erl_inetrc() :: [{atom, term()}].
+-spec events_machines_child_specs(namespaces(), event_sink_ns()) ->
+    [supervisor:child_spec()].
+events_machines_child_specs(NSs, EventSinkNS) ->
+    [
+        mg_core_events_machine:child_spec(events_machine_options(NS, NSs, EventSinkNS), binary_to_atom(NS, utf8))
+        || NS <- maps:keys(NSs)
+    ].
 
--type filename() :: file:filename().
--type mem_words() :: non_neg_integer().
--type mem_bytes() :: non_neg_integer().
--type maybe(T) :: undefined | T.
+-spec events_machine_options(mg_core:ns(), namespaces(), event_sink_ns()) ->
+    mg_core_events_machine:options().
+events_machine_options(NS, NSs, EventSinkNS) ->
+    NSConfigs = maps:get(NS, NSs),
+    #{processor := ProcessorConfig, storage := Storage} = NSConfigs,
+    EventSinks = [
+        event_sink_options(SinkConfig, EventSinkNS)
+        || SinkConfig <- maps:get(event_sinks, NSConfigs, [])
+    ],
+    EventsStorage = add_storage_metrics(NS, events, sub_storage_options(<<"events">>, Storage)),
+    #{
+        namespace                  => NS,
+        processor                  => processor(ProcessorConfig),
+        tagging                    => tags_options(NS, NSConfigs),
+        machines                   => machine_options(NS, NSConfigs),
+        events_storage             => EventsStorage,
+        event_sinks                => EventSinks,
+        pulse                      => pulse(),
+        default_processing_timeout => maps:get(default_processing_timeout, NSConfigs),
+        event_stash_size           => maps:get(event_stash_size, NSConfigs, 0)
+    }.
 
--type time_interval_unit() :: 'week' | 'day' | 'hour' | 'min' | 'sec' | 'ms' | 'mu'.
--type time_interval() :: {non_neg_integer(), time_interval_unit()}.
+-spec machine_options(mg_core:ns(), events_machines()) ->
+    mg_core_machine:options().
+machine_options(NS, Config) ->
+    #{storage := Storage} = Config,
+    Options = maps:with(
+        [
+            retries,
+            timer_processing_timeout
+        ],
+        Config
+    ),
+    MachinesStorage = add_storage_metrics(NS, machines, sub_storage_options(<<"machines">>, Storage)),
+    Options#{
+        namespace           => NS,
+        storage             => MachinesStorage,
+        worker              => worker_manager_options(Config),
+        schedulers          => maps:get(schedulers, Config, #{}),
+        pulse               => pulse(),
+        % TODO сделать аналогично в event_sink'е и тэгах
+        suicide_probability => maps:get(suicide_probability, Config, undefined)
+    }.
 
--spec parse_yaml_config(filename()) ->
-    yaml_config().
-parse_yaml_config(Filename) ->
-    {ok, _} = application:ensure_all_started(yamerl),
-    [Config] = yamerl_constr:file(Filename),
-    Config.
-
--type file_contents() ::
-    {filename(), iolist()} |
-    {filename(), iolist(), _Mode :: non_neg_integer()}.
-
--spec write_files([file_contents()]) ->
-    ok.
-write_files(Files) ->
-    ok = lists:foreach(fun write_file/1, Files).
-
--spec write_file(file_contents()) ->
-    ok.
-write_file({Name, Data}) ->
-    ok = file:write_file(Name, Data);
-write_file({Name, Data, Mode}) ->
-    % Turn write permission on temporarily
-    _ = file:change_mode(Name, Mode bor 8#00200),
-    % Truncate it
-    ok = file:write_file(Name, <<>>),
-    ok = file:change_mode(Name, Mode bor 8#00200),
-    % Write contents
-    ok = file:write_file(Name, Data),
-    % Drop write permission (if `Mode` doesn't specify it)
-    ok = file:change_mode(Name, Mode).
-
--spec print_sys_config(sys_config()) ->
-    iolist().
-print_sys_config(SysConfig) ->
-    [io_lib:print(SysConfig), $., $\n].
-
--spec print_vm_args(vm_args()) ->
-    iolist().
-print_vm_args(VMArgs) ->
-    lists:foldr(
-        fun({Arg, Value}, Acc) ->
-            [[erlang:atom_to_binary(Arg, utf8), $\s, Value, $\n]|Acc]
+-spec api_automaton_options(namespaces(), event_sink_ns()) ->
+    mg_woody_api_automaton:options().
+api_automaton_options(NSs, EventSinkNS) ->
+    maps:fold(
+        fun(NS, ConfigNS, Options) ->
+            Options#{NS => maps:merge(
+                #{
+                    machine => events_machine_options(NS, NSs, EventSinkNS)
+                },
+                modernizer_options(maps:get(modernizer, ConfigNS, undefined))
+            )}
         end,
-        [],
-        VMArgs
+        #{},
+        NSs
     ).
 
--spec print_erl_inetrc(erl_inetrc()) ->
-    iolist().
-print_erl_inetrc(ERLInetrc) ->
-    [[io_lib:print(E), $., $\n] || E <- ERLInetrc].
 
--spec filename(maybe(string())) ->
-    maybe(filename()).
-filename(Filename) when is_list(Filename) ->
-    Filename;
-filename(Filename) ->
-    erlang:throw({bad_file_name, Filename}).
+-spec event_sink_options(mg_core_events_sink:handler(), event_sink_ns()) ->
+    mg_core_events_sink:handler().
+event_sink_options({mg_core_events_sink_machine, EventSinkConfig}, EvSinks) ->
+    EventSinkNS = event_sink_namespace_options(EvSinks),
+    {mg_core_events_sink_machine, maps:merge(EventSinkNS, EventSinkConfig)};
+event_sink_options({mg_core_events_sink_kafka, EventSinkConfig}, _Config) ->
+    {mg_core_events_sink_kafka, EventSinkConfig#{
+        pulse            => pulse(),
+        encoder          => fun mg_woody_api_event_sink:serialize/3
+    }}.
 
--spec file(maybe(string()), _AtMostMode :: non_neg_integer()) ->
-    filename().
-file(Filename, AtMostMode) ->
-    _ = filename(Filename),
-    case file:read_file_info(Filename) of
-        {ok, #file_info{type = regular, mode = Mode}} ->
-            case (Mode band 8#777) bor AtMostMode of
-                AtMostMode ->
-                    Filename;
-                _ ->
-                    erlang:throw({'bad file mode', Filename, io_lib:format("~.8.0B", [Mode])})
-            end;
-        {ok, #file_info{type = Type}} ->
-            erlang:throw({'bad file type', Filename, Type});
-        {error, Reason} ->
-            erlang:throw({'error accessing file', Filename, Reason})
-    end.
+-spec event_sink_ns_child_spec(event_sink_ns(), atom()) ->
+    supervisor:child_spec().
+event_sink_ns_child_spec(EventSinkNS, ChildID) ->
+    mg_core_events_sink_machine:child_spec(event_sink_namespace_options(EventSinkNS), ChildID).
 
--spec guess_host_address(inet:address_family()) ->
-    inet:ip_address().
-guess_host_address(AddressFamilyPreference) ->
-    {ok, Ifaces0} = inet:getifaddrs(),
-    Ifaces1 = filter_running_ifaces(Ifaces0),
-    IfaceAddrs0 = gather_iface_addrs(Ifaces1, AddressFamilyPreference),
-    [{_Name, Addr} | _] = sort_iface_addrs(IfaceAddrs0),
-    Addr.
+-spec api_event_sink_options(namespaces(), event_sink_ns()) ->
+    mg_woody_api_event_sink:options().
+api_event_sink_options(NSs, EventSinkNS) ->
+    EventSinkMachines  = collect_event_sink_machines(NSs),
+    {EventSinkMachines, event_sink_namespace_options(EventSinkNS)}.
 
--type iface_name() :: string().
--type iface()      :: {iface_name(), proplists:proplist()}.
+-spec collect_event_sink_machines(namespaces()) ->
+    [mg_core:id()].
+collect_event_sink_machines(NSs) ->
+    NSConfigs = maps:values(NSs),
+    EventSinks = ordsets:from_list([
+        maps:get(machine_id, SinkConfig)
+        || NSConfig <- NSConfigs, {mg_core_events_sink_machine, SinkConfig} <- maps:get(event_sinks, NSConfig, [])
+    ]),
+    ordsets:to_list(EventSinks).
 
--spec filter_running_ifaces([iface()]) ->
-    [iface()].
-filter_running_ifaces(Ifaces) ->
-    lists:filter(
-        fun ({_, Ps}) -> is_iface_running(proplists:get_value(flags, Ps)) end,
-        Ifaces
+-spec event_sink_namespace_options(event_sink_ns()) ->
+    mg_core_events_sink_machine:ns_options().
+event_sink_namespace_options(#{storage := Storage} = EventSinkNS) ->
+    NS = <<"_event_sinks">>,
+    MachinesStorage = add_storage_metrics(NS, machines, sub_storage_options(<<"machines">>, Storage)),
+    EventsStorage   = add_storage_metrics(NS, events, sub_storage_options(<<"events">>, Storage)),
+    EventSinkNS#{
+        namespace        => NS,
+        pulse            => pulse(),
+        storage          => MachinesStorage,
+        events_storage   => EventsStorage,
+        worker           => worker_manager_options(EventSinkNS)
+    }.
+
+-spec worker_manager_options(map()) ->
+    mg_core_workers_manager:options().
+worker_manager_options(Config) ->
+    maps:merge(
+        #{
+            registry => mg_core_procreg_gproc,
+            sidecar  => machinegun_hay
+        },
+        maps:get(worker, Config, #{})
     ).
 
--spec is_iface_running([up | running | atom()]) ->
-    boolean().
-is_iface_running(Flags) ->
-    [] == [up, running] -- Flags.
+-spec tags_options(mg_core:ns(), events_machines()) ->
+    mg_core_machine_tags:options().
+tags_options(NS, #{retries := Retries, storage := Storage} = Config) ->
+    TagsNS = mg_core_utils:concatenate_namespaces(NS, <<"tags">>),
+    % по логике тут должен быть sub namespace, но его по историческим причинам нет
+    TagsStorage = add_storage_metrics(TagsNS, tags, Storage),
+    #{
+        namespace => TagsNS,
+        storage   => TagsStorage,
+        worker    => worker_manager_options(Config),
+        pulse     => pulse(),
+        retries   => Retries
+    }.
 
--spec gather_iface_addrs([iface()], inet:address_family()) ->
-    [{iface_name(), inet:ip_address()}].
-gather_iface_addrs(Ifaces, Pref) ->
-    lists:filtermap(
-        fun ({Name, Ps}) -> choose_iface_address(Name, proplists:get_all_values(addr, Ps), Pref) end,
-        Ifaces
-    ).
+-spec processor(processor()) ->
+    mg_core_utils:mod_opts().
+processor(Processor) ->
+    {mg_woody_api_processor, Processor#{event_handler => {mg_woody_api_event_handler, pulse()}}}.
 
--spec choose_iface_address(iface_name(), [inet:ip_address()], inet:address_family()) ->
-    false | {true, {iface_name(), inet:ip_address()}}.
-choose_iface_address(Name, [Addr = {_, _, _, _} | _], inet) ->
-    {true, {Name, Addr}};
-choose_iface_address(Name, [Addr = {_, _, _, _, _, _, _, _} | _], inet6) ->
-    {true, {Name, Addr}};
-choose_iface_address(Name, [_ | Rest], Pref) ->
-    choose_iface_address(Name, Rest, Pref);
-choose_iface_address(_, [], _) ->
-    false.
+-spec sub_storage_options(mg_core:ns(), mg_core_machine:storage_options()) ->
+    mg_core_machine:storage_options().
+sub_storage_options(SubNS, Storage0) ->
+    Storage1 = mg_core_utils:separate_mod_opts(Storage0, #{}),
+    Storage2 = add_bucket_postfix(SubNS, Storage1),
+    Storage2.
 
--spec sort_iface_addrs([{iface_name(), inet:ip_address()}]) ->
-    [{iface_name(), inet:ip_address()}].
-sort_iface_addrs(IfaceAddrs) ->
-    lists:sort(fun ({N1, _}, {N2, _}) -> get_iface_prio(N1) =< get_iface_prio(N2) end, IfaceAddrs).
+-spec add_bucket_postfix(mg_core:ns(), mg_core_storage:options()) ->
+    mg_core_storage:options().
+add_bucket_postfix(_, {mg_core_storage_memory, _} = Storage) ->
+    Storage;
+add_bucket_postfix(SubNS, {mg_core_storage_riak, #{bucket := Bucket} = Options}) ->
+    {mg_core_storage_riak, Options#{bucket := mg_core_utils:concatenate_namespaces(Bucket, SubNS)}}.
 
--spec get_iface_prio(iface_name()) ->
-    integer().
-get_iface_prio("eth" ++ _) -> 1;
-get_iface_prio("en"  ++ _) -> 1;
-get_iface_prio("wl"  ++ _) -> 2;
-get_iface_prio("tun" ++ _) -> 3;
-get_iface_prio("lo"  ++ _) -> 4;
-get_iface_prio(_)          -> 100.
+-spec pulse() ->
+    mg_core_pulse:handler().
+pulse() ->
+    machinegun_pulse.
 
+-spec modernizer_options(modernizer() | undefined) ->
+    #{modernizer => mg_core_events_modernizer:options()}.
+modernizer_options(#{current_format_version := CurrentFormatVersion, handler := WoodyClient}) ->
+    #{modernizer => #{
+        current_format_version => CurrentFormatVersion,
+        handler => {mg_woody_api_modernizer, WoodyClient#{event_handler => {mg_woody_api_event_handler, pulse()}}}
+    }};
+modernizer_options(undefined) ->
+    #{}.
 
--spec hostname() ->
-    inet:hostname().
-hostname() ->
-    {ok, Name} = inet:gethostname(),
-    Name.
+-spec add_storage_metrics(mg_core:ns(), _type, mg_core_machine:storage_options()) ->
+    mg_core_machine:storage_options().
+add_storage_metrics(NS, Type, Storage0) ->
+    Storage1 = mg_core_utils:separate_mod_opts(Storage0, #{}),
+    do_add_storage_metrics(NS, Type, Storage1).
 
--spec
-log_level(string()  ) -> atom().
-log_level("critical") -> critical;
-log_level("error"   ) -> error;
-log_level("warning" ) -> warning;
-log_level("info"    ) -> info;
-log_level("debug"   ) -> debug;
-log_level("trace"   ) -> trace;
-log_level(BadLevel  ) -> erlang:throw({bad_log_level, BadLevel}).
-
-
--spec mem_words(maybe(string())) ->
-    maybe(mem_words()).
-mem_words(undefined) ->
-    undefined;
-mem_words(MemStr) ->
-    mem_bytes(MemStr) div erlang:system_info(wordsize).
-
-
--spec mem_bytes(maybe(string())) ->
-    maybe(mem_bytes()).
-mem_bytes(undefined) ->
-    undefined;
-mem_bytes(MemStr) ->
-    Error = {'bad memory amount', MemStr},
-    case string:to_upper(lists:reverse(string:strip(MemStr))) of
-        "P" ++ RevTail -> pow2x0(5) * rev_str_int(RevTail, Error);
-        "T" ++ RevTail -> pow2x0(4) * rev_str_int(RevTail, Error);
-        "G" ++ RevTail -> pow2x0(3) * rev_str_int(RevTail, Error);
-        "M" ++ RevTail -> pow2x0(2) * rev_str_int(RevTail, Error);
-        "K" ++ RevTail -> pow2x0(1) * rev_str_int(RevTail, Error);
-        "B" ++ RevTail -> pow2x0(0) * rev_str_int(RevTail, Error);
-        _              -> erlang:throw(Error)
-    end.
-
--spec rev_str_int(string(), Error::term()) ->
-    integer().
-rev_str_int(RevIntStr, Error) ->
-    IntStr = lists:reverse(RevIntStr),
-    try
-        list_to_integer(IntStr)
-    catch error:badarg ->
-        erlang:throw(Error)
-    end.
-
--spec pow2x0(integer()) ->
-    integer().
-pow2x0(X) ->
-    1 bsl (X * 10).
-
-
--spec time_interval(maybe(string())) ->
-    maybe(time_interval()).
-time_interval(undefined) ->
-    undefined;
-time_interval(TimeStr) ->
-    parse_time_interval(TimeStr).
-
--spec time_interval(maybe(string()), time_interval_unit()) ->
-    maybe(timeout()).
-time_interval(undefined, _) ->
-    undefined;
-time_interval("infinity", _) ->
-    infinity;
-time_interval(TimeStr, Unit) ->
-    time_interval_in(parse_time_interval(TimeStr), Unit).
-
--spec parse_time_interval(string()) ->
-    time_interval().
-parse_time_interval(TimeStr) ->
-    Error = {'bad time interval', TimeStr},
-    case string:to_upper(lists:reverse(string:strip(TimeStr))) of
-        "W"  ++ RevTail -> {rev_str_int(RevTail, Error), 'week'};
-        "D"  ++ RevTail -> {rev_str_int(RevTail, Error), 'day' };
-        "H"  ++ RevTail -> {rev_str_int(RevTail, Error), 'hour'};
-        "M"  ++ RevTail -> {rev_str_int(RevTail, Error), 'min' };
-        "SM" ++ RevTail -> {rev_str_int(RevTail, Error), 'ms'  };
-        "UM" ++ RevTail -> {rev_str_int(RevTail, Error), 'mu'  };
-        "S"  ++ RevTail -> {rev_str_int(RevTail, Error), 'sec' };
-        _               -> erlang:throw(Error)
-    end.
-
--spec time_interval_in(time_interval(), time_interval_unit()) ->
-    non_neg_integer().
-time_interval_in({Amount, UnitFrom}, UnitTo) ->
-    time_interval_in_(Amount, time_interval_unit_to_int(UnitFrom), time_interval_unit_to_int(UnitTo)).
-
--spec time_interval_in_(non_neg_integer(), non_neg_integer(), non_neg_integer()) ->
-    non_neg_integer().
-time_interval_in_(Amount, UnitFrom, UnitTo) when UnitFrom =:= UnitTo ->
-    Amount;
-time_interval_in_(Amount, UnitFrom, UnitTo) when UnitFrom < UnitTo ->
-    time_interval_in_(Amount div time_interval_mul(UnitFrom + 1), UnitFrom + 1, UnitTo);
-time_interval_in_(Amount, UnitFrom, UnitTo) when UnitFrom > UnitTo ->
-    time_interval_in_(Amount * time_interval_mul(UnitFrom), UnitFrom - 1, UnitTo).
-
--spec time_interval_unit_to_int(time_interval_unit()) ->
-    non_neg_integer().
-time_interval_unit_to_int('week') -> 6;
-time_interval_unit_to_int('day' ) -> 5;
-time_interval_unit_to_int('hour') -> 4;
-time_interval_unit_to_int('min' ) -> 3;
-time_interval_unit_to_int('sec' ) -> 2;
-time_interval_unit_to_int('ms'  ) -> 1;
-time_interval_unit_to_int('mu'  ) -> 0.
-
--spec time_interval_mul(non_neg_integer()) ->
-    non_neg_integer().
-time_interval_mul(6) -> 7;
-time_interval_mul(5) -> 24;
-time_interval_mul(4) -> 60;
-time_interval_mul(3) -> 60;
-time_interval_mul(2) -> 1000;
-time_interval_mul(1) -> 1000.
-
--spec proplist(yaml_config() | undefined) ->
-    proplists:proplist() | undefined.
-proplist(undefined) ->
-    undefined;
-proplist(Config) ->
-    [{erlang:list_to_existing_atom(Key), Value} || {Key, Value} <- Config].
-
--spec ip(string()) ->
-    inet:ip_address().
-ip(Host) ->
-    mg_core_utils:throw_if_error(inet:parse_address(Host)).
-
--spec utf_bin(string()) ->
-    binary().
-utf_bin(IDStr) ->
-    unicode:characters_to_binary(IDStr, utf8).
-
--spec atom(string()) ->
-    atom().
-atom(AtomStr) ->
-    erlang:binary_to_atom(utf_bin(AtomStr), utf8).
-
--spec conf(yaml_config_path(), yaml_config(), _) ->
-    _.
-conf(Path, Config, Default) ->
-    conf_({default, Default}, Path, Config).
-
--spec conf(yaml_config_path(), yaml_config()) ->
-    _.
-conf(Path, Config) ->
-    conf_({throw, Path}, Path, Config).
-
--spec conf_({throw, yaml_config_path()} | {default, _}, yaml_config_path(), yaml_config()) ->
-    _.
-conf_(_, [], Value) ->
-    Value;
-conf_(Throw, Key, Config) when is_atom(Key) andalso is_list(Config) ->
-    case lists:keyfind(erlang:atom_to_list(Key), 1, Config) of
-        false      -> conf_maybe_default(Throw);
-        {_, Value} -> Value
-    end;
-conf_(Throw, [Key|Path], Config) when is_list(Path) andalso is_list(Config) ->
-    case lists:keyfind(erlang:atom_to_list(Key), 1, Config) of
-        false      -> conf_maybe_default(Throw);
-        {_, Value} -> conf_(Throw, Path, Value)
-    end.
-
--spec conf_maybe_default({throw, yaml_config_path()} | {default, _}) ->
-    _ | no_return().
-conf_maybe_default({throw, Path}) ->
-    erlang:throw({'config element not found', Path});
-conf_maybe_default({default, Default}) ->
-    Default.
-
--spec probability(term()) ->
-    float() | integer()| no_return().
-probability(Prob) when is_number(Prob) andalso 0 =< Prob andalso Prob =< 1 ->
-    Prob;
-probability(Prob) ->
-    throw({'bad probability', Prob}).
-
--spec contents(filename()) ->
-    binary().
-contents(Filename) ->
-    case file:read_file(Filename) of
-        {ok, Contents} ->
-            Contents;
-        {error, Reason} ->
-            erlang:throw({'could not read file contents', Filename, Reason})
-    end.
+-spec do_add_storage_metrics(mg_core:ns(), atom(), mg_core_machine:storage_options()) ->
+    mg_core_machine:storage_options().
+do_add_storage_metrics(_NS, _Type, {mg_core_storage_memory, _} = Storage) ->
+    Storage;
+do_add_storage_metrics(NS, Type, {mg_core_storage_riak, Options}) ->
+    PoolOptions = maps:get(pool_options, Options, #{}),
+    NewOptions = Options#{
+        sidecar => {machinegun_riak_metric, #{
+            namespace => NS,
+            type => Type
+        }},
+        pool_options => PoolOptions#{
+            metrics_mod => machinegun_riak_metric,
+            metrics_api => exometer
+        }
+    },
+    {mg_core_storage_riak, NewOptions}.

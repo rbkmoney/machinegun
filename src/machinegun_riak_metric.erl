@@ -55,7 +55,7 @@
 -type metric_key() :: how_are_you:metric_key().
 -type metric_value() :: how_are_you:metric_value().
 -type metrics() :: [metric()].
--type bin_type() :: mg_woody_api_metric_utils:bin_type().
+-type bin_type() :: machinegun_metric_utils:bin_type().
 
 -type metric_type() :: counter | histogram | history | meter.
 
@@ -125,17 +125,17 @@ gauge(Key, Value) ->
 -spec push(metrics()) ->
     ok.
 push(Metrics) ->
-    mg_woody_api_metric_utils:push(Metrics).
+    machinegun_metric_utils:push(Metrics).
 
 -spec create_inc(metric_key(), non_neg_integer()) ->
     metric().
 create_inc(Key, Number) ->
-    mg_woody_api_metric_utils:create_inc(Key, Number).
+    machinegun_metric_utils:create_inc(Key, Number).
 
 -spec create_bin_inc(metric_key(), bin_type(), number()) ->
     metric().
 create_bin_inc(KeyPrefix, BinType, Value) ->
-    mg_woody_api_metric_utils:create_bin_inc(KeyPrefix, BinType, Value).
+    machinegun_metric_utils:create_bin_inc(KeyPrefix, BinType, Value).
 
 %% see https://github.com/seth/pooler/blob/9c28fb479f9329e2a1644565a632bc222780f1b7/src/pooler.erl#L877
 %% for key formay details
