@@ -48,7 +48,7 @@
        {ref,"7baadf60d064d0d96133cc9877a3aab138e2dd42"}},
   1},
  {<<"machinegun_woody_api">>,
-  {git,"https://github.com/rbkmoney/mg_woody_api",
+  {git,"https://github.com/rbkmoney/machinegun_woody_api",
        {ref,"c5e4a9d5036fb5cb55031e35efdbba618e22da55"}},
   0},
  {<<"metrics">>,{pkg,<<"metrics">>,<<"1.0.1">>},2},
