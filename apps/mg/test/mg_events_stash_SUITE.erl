@@ -98,11 +98,13 @@ stash_enlarge_test(_C) ->
     ok = start(Options0, MachineID, [1, 2]),
     ok = call(Options0, MachineID, {emit, [3, 4]}),
     ?assertEqual([1, 2, 3, 4], get_history(Options0, MachineID)),
+    ?assertEqual([4, 3, 2, 1], get_history(Options0, MachineID, {undefined, undefined, backward})),
     ok = stop_automaton(Pid0),
     Options1 = Options0#{event_stash_size => 5},
     Pid1 = start_automaton(Options1),
     ok = call(Options1, MachineID, {emit, [5, 6]}),
     ?assertEqual([1, 2, 3, 4, 5, 6], get_history(Options1, MachineID)),
+    ?assertEqual([6, 5, 4, 3, 2, 1], get_history(Options1, MachineID, {undefined, undefined, backward})),
     ok = stop_automaton(Pid1).
 
 -spec stash_shrink_test(config()) ->
@@ -125,11 +127,13 @@ stash_shrink_test(_C) ->
     ok = start(Options0, MachineID, [1, 2]),
     ok = call(Options0, MachineID, {emit, [3, 4, 5]}),
     ?assertEqual([1, 2, 3, 4, 5], get_history(Options0, MachineID)),
+    ?assertEqual([5, 4, 3, 2, 1], get_history(Options0, MachineID, {undefined, undefined, backward})),
     ok = stop_automaton(Pid0),
     Options1 = Options0#{event_stash_size => 3},
     Pid1 = start_automaton(Options1),
     ok = call(Options1, MachineID, {emit, [6, 7]}),
     ?assertEqual([1, 2, 3, 4, 5, 6, 7], get_history(Options1, MachineID)),
+    ?assertEqual([7, 6, 5, 4, 3, 2, 1], get_history(Options1, MachineID, {undefined, undefined, backward})),
     ok = stop_automaton(Pid1).
 
 %% Processor handlers
@@ -283,7 +287,11 @@ call(Options, MachineID, Args) ->
 -spec get_history(options(), mg:id()) ->
     ok.
 get_history(Options, MachineID) ->
-    HRange = {undefined, undefined, forward},
+    get_history(Options, MachineID, {undefined, undefined, forward}).
+
+-spec get_history(options(), mg:id(), mg_events:history_range()) ->
+    ok.
+get_history(Options, MachineID, HRange) ->
     MgOptions = events_machine_options(Options),
     Machine = mg_events_machine:get_machine(MgOptions, {id, MachineID}, HRange),
     {_AuxState, History} = decode_machine(Machine),

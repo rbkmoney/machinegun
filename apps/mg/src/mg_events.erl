@@ -31,7 +31,13 @@
 -export_type([format_version/0]).
 
 %% events ranges intersection
--export([get_event_ids/2]).
+-export([cull_range/2]).
+
+%% computations over ranges
+-export([dissect_range/2]).
+-export([intersect_range/2]).
+-export([fold_range/3]).
+-export([enumerate_range/1]).
 
 %% events generation
 -export([generate_events_with_range/2]).
@@ -98,41 +104,109 @@
 %%
 %% events ranges intersection
 %%
--spec get_event_ids(events_range(), history_range()) ->
-    [id()].
-get_event_ids(undefined, _) ->
-    [];
-get_event_ids(R0, {Ef, N, Direction}) ->
-    R1 = intersect_range(R0, Ef, Direction),
-    R2 = limit_range(R1, N, Direction),
-    enumerate_range(R2, Direction).
+-spec cull_range(events_range(), history_range()) ->
+    events_range().
+cull_range(R0, {Ef, N, Direction}) ->
+    R1 = orient_range(R0, Direction),
+    R2 = chop_range(R1, Ef),
+    R3 = limit_range(R2, N),
+    R3.
 
--spec intersect_range({id(), id()}, undefined | id(), direction()) ->
-    {id(), id()}.
-intersect_range(R, undefined, _) ->
+-spec orient_range(events_range(), direction()) ->
+    events_range().
+orient_range({A, B}, forward) when A > B ->
+    {B, A};
+orient_range({A, B}, backward) when B > A ->
+    {B, A};
+orient_range(R, _) ->
+    R.
+
+-spec chop_range(events_range(), _From :: id() | undefined) ->
+    events_range().
+chop_range(R0, Ef) when is_integer(Ef) ->
+    {_, R1} = dissect_range(R0, Ef),
+    R1;
+chop_range(R0, undefined) ->
+    R0.
+
+-spec align_range(events_range(), _Pivot :: events_range()) ->
+    events_range().
+align_range(R, Rp) ->
+    case sign(R) * sign(Rp) of
+        -1 -> reverse_range(R);
+        _S -> R
+    end.
+
+-spec reverse_range(events_range()) ->
+    events_range().
+reverse_range({A, B}) ->
+    {B, A};
+reverse_range(undefined) ->
+    undefined.
+
+-spec dissect_range(events_range(), id()) ->
+    {events_range(), events_range()}.
+dissect_range({A, B} = R, C) when A =< B ->
+    if
+        C < A         -> {undefined, R};
+        B < C         -> {R, undefined};
+        A =< C, C < B -> {{A, C}, {C + 1, B}};
+        A =< C        -> {{A, C}, undefined}
+    end;
+dissect_range({B, A} = R, C) when B > A ->
+    {R1, R2} = dissect_range(reverse_range(R), C - 1),
+    {reverse_range(R2), reverse_range(R1)};
+dissect_range(undefined, _) ->
+    {undefined, undefined}.
+
+-spec intersect_range(_Range :: events_range(), _With :: events_range()) ->
+    {_LeftDiff :: events_range(), _Intersection :: events_range(), _RightDiff :: events_range()}.
+intersect_range(R0, With0) ->
+    With = {WA, WB} = align_range(With0, R0),
+    {LeftDiff, R1} = mg_events:dissect_range(R0, WA - sign(With)), % to NOT include WA itself
+    {Intersection, RightDiff} = mg_events:dissect_range(R1, WB),
+    {LeftDiff, Intersection, RightDiff}.
+
+-spec limit_range(events_range(), undefined | non_neg_integer()) ->
+    events_range().
+limit_range(R, undefined) ->
     R;
-intersect_range({A, B}, Ef, forward) ->
-    {erlang:max(A, Ef + 1), B};
-intersect_range({A, B}, Ef, backward) ->
-    {A, erlang:min(B, Ef - 1)}.
+limit_range({A, B}, N) when A =< B, N > 0 ->
+    {A, erlang:min(B, A + N - 1)};
+limit_range({B, A}, N) when B > A, N > 0 ->
+    {B, erlang:max(A, B - N + 1)};
+limit_range(_, _) ->
+    undefined.
 
--spec limit_range({id(), id()}, undefined | non_neg_integer(), direction()) ->
-    {id(), id()}.
-limit_range(R, undefined, _) ->
-    R;
-limit_range({A, B}, N, forward) ->
-    {A, min(A + N - 1, B)};
-limit_range({A, B}, N, backward) ->
-    {max(B - N + 1, A), B}.
-
--spec enumerate_range({id(), id()}, direction()) ->
+-spec enumerate_range(events_range()) ->
     [id()].
-enumerate_range({A, B}, _) when A > B ->
-    [];
-enumerate_range({A, B}, forward) ->
-    lists:seq(A, B, 1);
-enumerate_range({A, B}, backward) ->
-    lists:seq(B, A, -1).
+enumerate_range({A, B} = R) ->
+    lists:seq(A, B, sign(R));
+enumerate_range(undefined) ->
+    [].
+
+-spec fold_range(fun((id(), Acc) -> Acc), Acc, events_range()) ->
+    Acc.
+fold_range(F, Acc, {A, B} = R) ->
+    fold_range(F, Acc, A, B, sign(R));
+fold_range(_, Acc, undefined) ->
+    Acc.
+
+-spec fold_range(fun((id(), Acc) -> Acc), Acc, id(), id(), -1..1) ->
+    Acc.
+fold_range(F, Acc, A, A, _) ->
+    F(A, Acc);
+fold_range(F, Acc, A, B, S) ->
+    fold_range(F, F(A, Acc), A + S, B, S).
+
+-spec sign(events_range()) ->
+    -1..1.
+sign({A, B}) when A =< B ->
+    1;
+sign({B, A}) when B > A ->
+    -1;
+sign(undefined) ->
+    0.
 
 %%
 %% events generation

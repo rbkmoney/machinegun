@@ -106,15 +106,18 @@ add_events(#{machine_id := EventSinkID} = Options, SourceNS, SourceMachineID, Ev
     [event()].
 get_history(Options, EventSinkID, HistoryRange) ->
     #{events_range := EventsRange} = get_state(Options, EventSinkID),
-    EventsKeys = get_events_keys(EventSinkID, EventsRange, HistoryRange),
     StorageOptions = events_storage_options(Options),
-    Kvs = genlib_pmap:map(
-        fun(Key) ->
-            {_Context, Value} = mg_storage:get(StorageOptions, Key),
-            {Key, Value}
+    Batch = mg_events:fold_range(
+        fun (EventID, Batch) ->
+            Key = mg_events:add_machine_id(EventSinkID, mg_events:event_id_to_key(EventID)),
+            mg_storage:add_batch_request({get, Key}, Batch)
         end,
-        EventsKeys
+        mg_storage:new_batch(),
+        mg_events:cull_range(EventsRange, HistoryRange)
     ),
+    Kvs = [{Key, Value} ||
+        {{get, Key}, {_Context, Value}} <- mg_storage:run_batch(StorageOptions, Batch)
+    ],
     kvs_to_sink_events(EventSinkID, Kvs).
 
 -spec repair(ns_options(), mg:id(), mg:request_context(), mg_deadline:deadline()) ->
@@ -177,15 +180,6 @@ store_event(Options, EventSinkID, SinkEvent) ->
     _ = mg_storage:put(events_storage_options(Options), Key,
             undefined, Value, []),
     ok.
-
--spec get_events_keys(mg:id(), mg_events:events_range(), mg_events:history_range()) ->
-    [mg_storage:key()].
-get_events_keys(EventSinkID, EventsRange, HistoryRange) ->
-    [
-        mg_events:add_machine_id(EventSinkID, mg_events:event_id_to_key(EventID))
-        ||
-        EventID <- mg_events:get_event_ids(EventsRange, HistoryRange)
-    ].
 
 -spec get_state(ns_options(), mg:id()) ->
     state().

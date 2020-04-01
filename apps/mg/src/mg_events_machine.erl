@@ -588,67 +588,82 @@ machine(Options = #{namespace := Namespace}, ID, State, ExtraEvents, HRange) ->
         aux_state    := AuxState,
         timer        := Timer
     } = State,
-    RangeGetters = [RG ||
-        RG = {Range, _Getter} <- [
-            {compute_events_range(Events)      , extra_event_getter(Events)},
-            {compute_events_range(ExtraEvents) , extra_event_getter(ExtraEvents)},
-            {EventsRange                       , storage_event_getter(Options, ID)}
+    Sources = [RS ||
+        RS = {Range, _Sweeper} <- [
+            {compute_events_range(Events)      , event_list_sweeper(Events)},
+            {compute_events_range(ExtraEvents) , event_list_sweeper(ExtraEvents)},
+            {EventsRange                       , storage_event_sweeper(Options, ID)}
         ],
         Range /= undefined
     ],
     #{
         ns            => Namespace,
         id            => ID,
-        history       => get_events(RangeGetters, EventsRange, HRange),
+        history       => get_events(Sources, EventsRange, HRange),
         history_range => HRange,
         aux_state     => AuxState,
         timer         => Timer
     }.
 
--type event_getter() :: fun((mg_events:id()) -> mg_events:event()).
--type range_getter() :: {mg_events:events_range(), event_getter()}.
+-type event_sweeper() :: fun((mg_events:events_range()) -> [mg_events:event()]).
+-type event_sources() :: [{mg_events:events_range(), event_sweeper()}, ...].
 
--spec get_events([range_getter(), ...], mg_events:events_range(), mg_events:history_range()) ->
+-spec get_events(event_sources(), mg_events:events_range(), mg_events:history_range()) ->
     [mg_events:event()].
-get_events(RangeGetters, EventsRange, HRange) ->
-    EventIDs = mg_events:get_event_ids(EventsRange, HRange),
-    genlib_pmap:map(
-        fun (EventID) ->
-            Getter = find_event_getter(RangeGetters, EventID),
-            Getter(EventID)
-        end,
-        EventIDs
-    ).
+get_events(Sources, EventsRange, HRange) ->
+    lists:flatten(sweep_events(Sources, mg_events:cull_range(EventsRange, HRange))).
 
--spec find_event_getter([range_getter(), ...], mg_events:id()) ->
-    event_getter().
-find_event_getter([{{First, Last}, Getter} | _], EventID) when First =< EventID, EventID =< Last ->
-    Getter;
-find_event_getter([_ | [_ | _] = Rest], EventID) ->
-    find_event_getter(Rest, EventID);
-find_event_getter([{_, Getter}], _) ->
-    % сознательно игнорируем последний range
-    Getter.
+-spec sweep_events(event_sources(), mg_events:events_range()) ->
+    [mg_events:event() | [mg_events:event()]].
+sweep_events([{SweepRange, Sweeper} | Sources], EvRange) when EvRange /= undefined ->
+    case mg_events:intersect_range(EvRange, SweepRange) of
+        {undefined, Range, undefined} ->
+            Sweeper(Range);
+        {undefined, Range, RR} ->
+            [Sweeper(Range) | sweep_events(Sources, RR)];
+        {RL, Range, undefined} ->
+            [sweep_events(Sources, RL) | Sweeper(Range)];
+        {RL, Range, RR} ->
+            [sweep_events(Sources, RL), Sweeper(Range) | sweep_events(Sources, RR)]
+    end;
+sweep_events(_Sources, undefined) ->
+    [];
+sweep_events([], _EvRange) ->
+    [].
 
--spec storage_event_getter(options(), mg:id()) ->
-    event_getter().
-storage_event_getter(Options, ID) ->
+-spec storage_event_sweeper(options(), mg:id()) ->
+    event_sweeper().
+storage_event_sweeper(Options, ID) ->
     StorageOptions = events_storage_options(Options),
-    fun (EventID) ->
-        Key = mg_events:add_machine_id(ID, mg_events:event_id_to_key(EventID)),
-        {_Context, Value} = mg_storage:get(StorageOptions, Key),
-        kv_to_event(ID, {Key, Value})
+    fun (Range) ->
+        Batch = mg_events:fold_range(
+            fun (EventID, Acc) ->
+                Key = mg_events:add_machine_id(ID, mg_events:event_id_to_key(EventID)),
+                mg_storage:add_batch_request({get, Key}, Acc)
+            end,
+            mg_storage:new_batch(),
+            Range
+        ),
+        [kv_to_event(ID, {Key, Value}) ||
+            {{get, Key}, {_Context, Value}} <- mg_storage:run_batch(StorageOptions, Batch)
+        ]
     end.
 
--spec extra_event_getter([mg_events:event()]) ->
-    event_getter().
-extra_event_getter(Events) ->
-    fun (EventID) ->
-        erlang:hd(lists:dropwhile(
-            fun (#{id := ID}) -> ID /= EventID end,
-            Events
-        ))
+-spec event_list_sweeper([mg_events:event()]) ->
+    event_sweeper().
+event_list_sweeper(Events) ->
+    fun (Range) ->
+        sweep_event_list(Range, Events)
     end.
+
+-spec sweep_event_list(mg_events:events_range(), [mg_events:event()]) ->
+    [mg_events:event()].
+sweep_event_list({A, B}, Events = [#{id := First} | _]) when A =< B ->
+    lists:sublist(Events, A - First + 1, B - A + 1);
+sweep_event_list({B, A}, Events = [_ | _]) when B > A ->
+    lists:reverse(sweep_event_list({A, B}, Events));
+sweep_event_list(_, []) ->
+    [].
 
 -spec try_apply_delayed_actions(state()) ->
     {state(), [mg_events:event()]} | undefined.
