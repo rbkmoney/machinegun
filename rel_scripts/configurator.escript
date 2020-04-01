@@ -352,7 +352,7 @@ storage(NS, YamlConfig) ->
         "memory" ->
             mg_core_storage_memory;
         "riak" ->
-            {mg_storage_riak, #{
+            {mg_core_storage_riak, #{
                 host   => ?C:utf_bin(?C:conf([storage, host], YamlConfig)),
                 port   =>            ?C:conf([storage, port], YamlConfig),
                 bucket => NS,
@@ -483,7 +483,7 @@ event_sink(machine, Name, ESYamlConfig) ->
         machine_id => ?C:utf_bin(?C:conf([machine_id], ESYamlConfig))
     }};
 event_sink(kafka, Name, ESYamlConfig) ->
-    {mg_events_sink_kafka, #{
+    {mg_core_events_sink_kafka, #{
         name       => ?C:atom(Name),
         client     => ?C:atom(?C:conf([client], ESYamlConfig)),
         topic      => ?C:utf_bin(?C:conf([topic], ESYamlConfig))
@@ -494,8 +494,8 @@ procreg(YamlConfig) ->
     conf_with(
         [consuela],
         YamlConfig,
-        mg_procreg_gproc,
-        {mg_procreg_consuela, #{pulse => machinegun_pulse}}
+        mg_core_procreg_gproc,
+        {mg_core_procreg_consuela, #{pulse => machinegun_pulse}}
     ).
 
 %%
