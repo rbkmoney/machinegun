@@ -265,12 +265,12 @@ do_add_storage_metrics(_NS, _Type, {mg_core_storage_memory, _} = Storage) ->
 do_add_storage_metrics(NS, Type, {mg_core_storage_riak, Options}) ->
     PoolOptions = maps:get(pool_options, Options, #{}),
     NewOptions = Options#{
-        sidecar => {mg_woody_api_riak_metric, #{
+        sidecar => {machinegun_riak_metric, #{
             namespace => NS,
             type => Type
         }},
         pool_options => PoolOptions#{
-            metrics_mod => mg_woody_api_riak_metric,
+            metrics_mod => machinegun_riak_metric,
             metrics_api => exometer
         }
     },
