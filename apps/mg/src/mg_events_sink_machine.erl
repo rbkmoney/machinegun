@@ -107,13 +107,13 @@ add_events(#{machine_id := EventSinkID} = Options, SourceNS, SourceMachineID, Ev
 get_history(Options, EventSinkID, HistoryRange) ->
     #{events_range := EventsRange} = get_state(Options, EventSinkID),
     StorageOptions = events_storage_options(Options),
-    Batch = mg_events:fold_range(
+    Batch = mg_dirange:fold(
         fun (EventID, Batch) ->
             Key = mg_events:add_machine_id(EventSinkID, mg_events:event_id_to_key(EventID)),
             mg_storage:add_batch_request({get, Key}, Batch)
         end,
         mg_storage:new_batch(),
-        mg_events:cull_range(EventsRange, HistoryRange)
+        mg_events:intersect_range(EventsRange, HistoryRange)
     ),
     Kvs = [{Key, Value} ||
         {{get, Key}, {_Context, Value}} <- mg_storage:run_batch(StorageOptions, Batch)

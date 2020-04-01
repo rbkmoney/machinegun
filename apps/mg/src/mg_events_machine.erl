@@ -611,12 +611,25 @@ machine(Options = #{namespace := Namespace}, ID, State, ExtraEvents, HRange) ->
 -spec get_events(event_sources(), mg_events:events_range(), mg_events:history_range()) ->
     [mg_events:event()].
 get_events(Sources, EventsRange, HRange) ->
-    lists:flatten(sweep_events(Sources, mg_events:cull_range(EventsRange, HRange))).
+    lists:flatten(sweep_events(Sources, mg_events:intersect_range(EventsRange, HRange))).
 
 -spec sweep_events(event_sources(), mg_events:events_range()) ->
     [mg_events:event() | [mg_events:event()]].
 sweep_events([{SweepRange, Sweeper} | Sources], EvRange) when EvRange /= undefined ->
-    case mg_events:intersect_range(EvRange, SweepRange) of
+    % NOTE
+    % We find out which part of `EvRange` is covered by current source (which is `Range`)
+    % and which parts are covered by other sources. In the most complex case there are three
+    % parts. For example:
+    % ```
+    % EvRange    = {1, 42}
+    % SweepRange = {35, 40}
+    % intersect(EvRange, SweepRange) = {
+    %     { 1, 34} = RL,
+    %     {35, 40} = Range,
+    %     {41, 42} = RR
+    % }
+    % ```
+    case mg_dirange:intersect(EvRange, SweepRange) of
         {undefined, Range, undefined} ->
             Sweeper(Range);
         {undefined, Range, RR} ->
@@ -636,7 +649,7 @@ sweep_events([], _EvRange) ->
 storage_event_sweeper(Options, ID) ->
     StorageOptions = events_storage_options(Options),
     fun (Range) ->
-        Batch = mg_events:fold_range(
+        Batch = mg_dirange:fold(
             fun (EventID, Acc) ->
                 Key = mg_events:add_machine_id(ID, mg_events:event_id_to_key(EventID)),
                 mg_storage:add_batch_request({get, Key}, Acc)
