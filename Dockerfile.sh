@@ -16,7 +16,7 @@
 #
 cat <<EOF
 FROM $BASE_IMAGE
-MAINTAINER Petr Kozorezov <p.kozorezov@rbkmoney.com>
+LABEL maintainer="Andrey Mayorov <a.mayorov@rbkmoney.com>"
 COPY ./_build/prod/rel/machinegun /opt/machinegun
 WORKDIR /opt/machinegun
 ENTRYPOINT ./bin/entrypoint.sh
