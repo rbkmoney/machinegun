@@ -58,7 +58,7 @@ construct_child_specs(#{
             health_check => HealthChecks,
             automaton    => api_automaton_options (Namespaces, EventSinkNS),
             event_sink   => api_event_sink_options(Namespaces, EventSinkNS),
-            pulse        => mg_woody_api_test_pulse
+            pulse        => pulse()
         }
     ),
 
