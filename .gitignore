@@ -4,12 +4,13 @@ log
 erl_crash.dump
 .tags*
 *.sublime-workspace
+.vscode/
 .DS_Store
-*~
 \#*
 .\#*
 .tags*
 Dockerfile
+.dockerignore
 docker-compose.yml
 rebar3.crashdump
 config/sys.config
