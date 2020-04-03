@@ -666,17 +666,8 @@ storage_event_sweeper(Options, ID) ->
     event_sweeper().
 event_list_sweeper(Events) ->
     fun (Range) ->
-        sweep_event_list(Range, Events)
+        mg_events:slice_events(Events, Range)
     end.
-
--spec sweep_event_list(mg_events:events_range(), [mg_events:event()]) ->
-    [mg_events:event()].
-sweep_event_list({A, B}, Events = [#{id := First} | _]) when A =< B ->
-    lists:sublist(Events, A - First + 1, B - A + 1);
-sweep_event_list({B, A}, Events = [_ | _]) when B > A ->
-    lists:reverse(sweep_event_list({A, B}, Events));
-sweep_event_list(_, []) ->
-    [].
 
 -spec try_apply_delayed_actions(state()) ->
     {state(), [mg_events:event()]} | undefined.
@@ -730,7 +721,7 @@ add_delayed_action(new_events_range, Range, DelayedActions) ->
 compute_events_range([]) ->
     undefined;
 compute_events_range([#{id := ID} | _] = Events) ->
-    {ID, ID + erlang:length(Events) - 1}.
+    mg_dirange:forward(ID, ID + erlang:length(Events) - 1).
 
 %%
 %% packer to opaque
