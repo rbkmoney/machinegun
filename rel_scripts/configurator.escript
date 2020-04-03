@@ -16,7 +16,7 @@
 %%%
 
 
--define(C, machinegun_release_configurator).
+-define(C, machinegun_configuration_utils).
 
 %%
 %% main
@@ -48,16 +48,16 @@ main([YamlConfigFilename, ConfigsPath]) ->
 %%
 sys_config(YamlConfig) ->
     [
-        {os_mon      , os_mon      (YamlConfig)},
+        {os_mon              , os_mon      (YamlConfig)},
         {kernel, [
-            {logger_level, logger_level(YamlConfig)},
-            {logger      , logger      (YamlConfig)}
+            {logger_level    , logger_level(YamlConfig)},
+            {logger          , logger      (YamlConfig)}
         ]},
-        {consuela    , consuela    (YamlConfig)},
-        {how_are_you , how_are_you (YamlConfig)},
-        {snowflake   , snowflake   (YamlConfig)},
-        {brod        , brod        (YamlConfig)},
-        {hackney     , hackney     (YamlConfig)},
+        {consuela            , consuela    (YamlConfig)},
+        {how_are_you         , how_are_you (YamlConfig)},
+        {snowflake           , snowflake   (YamlConfig)},
+        {brod                , brod        (YamlConfig)},
+        {hackney             , hackney     (YamlConfig)},
         {machinegun_woody_api, mg_woody_api(YamlConfig)}
     ].
 

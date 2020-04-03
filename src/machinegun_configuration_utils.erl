@@ -14,7 +14,7 @@
 %%% limitations under the License.
 %%%
 
--module(machinegun_release_configurator).
+-module(machinegun_configuration_utils).
 -include_lib("kernel/include/file.hrl").
 
 -export([parse_yaml_config/1]).
