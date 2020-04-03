@@ -66,8 +66,7 @@ init_per_suite(C) ->
         {how_are_you, [
             {metrics_publishers, []},
             {metrics_handlers, []}
-        ]},
-        machinegun_woody_api
+        ]}
     ]),
 
     [
