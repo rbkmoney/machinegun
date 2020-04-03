@@ -58,7 +58,7 @@ sys_config(YamlConfig) ->
         {snowflake           , snowflake   (YamlConfig)},
         {brod                , brod        (YamlConfig)},
         {hackney             , hackney     (YamlConfig)},
-        {machinegun_woody_api, mg_woody_api(YamlConfig)}
+        {machinegun          , machinegun  (YamlConfig)}
     ].
 
 os_mon(_YamlConfig) ->
@@ -254,7 +254,7 @@ hackney(_YamlConfig) ->
         {mod_metrics, woody_client_metrics}
     ].
 
-mg_woody_api(YamlConfig) ->
+machinegun(YamlConfig) ->
     [
         {woody_server   , woody_server   (YamlConfig)},
         {health_check   , health_check   (YamlConfig)},
