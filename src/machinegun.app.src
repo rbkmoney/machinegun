@@ -24,6 +24,7 @@
         genlib,
         how_are_you,
         yamerl,
+        machinegun_core,
         machinegun_woody_api
     ]},
     {env, []},
