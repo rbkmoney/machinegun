@@ -589,10 +589,10 @@ machine(Options = #{namespace := Namespace}, ID, State, ExtraEvents, HRange) ->
         timer        := Timer
     } = State,
     Sources = [RS ||
-        RS = {Range, _Sweeper} <- [
-            {compute_events_range(Events)      , event_list_sweeper(Events)},
-            {compute_events_range(ExtraEvents) , event_list_sweeper(ExtraEvents)},
-            {EventsRange                       , storage_event_sweeper(Options, ID)}
+        RS = {Range, _Getter} <- [
+            {compute_events_range(Events)      , event_list_getter(Events)},
+            {compute_events_range(ExtraEvents) , event_list_getter(ExtraEvents)},
+            {EventsRange                       , storage_event_getter(Options, ID)}
         ],
         Range /= undefined
     ],
@@ -605,48 +605,48 @@ machine(Options = #{namespace := Namespace}, ID, State, ExtraEvents, HRange) ->
         timer         => Timer
     }.
 
--type event_sweeper() :: fun((mg_events:events_range()) -> [mg_events:event()]).
--type event_sources() :: [{mg_events:events_range(), event_sweeper()}, ...].
+-type event_getter() :: fun((mg_events:events_range()) -> [mg_events:event()]).
+-type event_sources() :: [{mg_events:events_range(), event_getter()}, ...].
 
 -spec get_events(event_sources(), mg_events:events_range(), mg_events:history_range()) ->
     [mg_events:event()].
 get_events(Sources, EventsRange, HRange) ->
-    lists:flatten(sweep_events(Sources, mg_events:intersect_range(EventsRange, HRange))).
+    lists:flatten(gather_events(Sources, mg_events:intersect_range(EventsRange, HRange))).
 
--spec sweep_events(event_sources(), mg_events:events_range()) ->
+-spec gather_events(event_sources(), mg_events:events_range()) ->
     [mg_events:event() | [mg_events:event()]].
-sweep_events([{SweepRange, Sweeper} | Sources], EvRange) when EvRange /= undefined ->
+gather_events([{AvailRange, Getter} | Sources], EvRange) when EvRange /= undefined ->
     % NOTE
     % We find out which part of `EvRange` is covered by current source (which is `Range`)
     % and which parts are covered by other sources. In the most complex case there are three
     % parts. For example:
     % ```
     % EvRange    = {1, 42}
-    % SweepRange = {35, 40}
-    % intersect(EvRange, SweepRange) = {
+    % AvailRange = {35, 40}
+    % intersect(EvRange, AvailRange) = {
     %     { 1, 34} = RL,
     %     {35, 40} = Range,
     %     {41, 42} = RR
     % }
     % ```
-    case mg_dirange:intersect(EvRange, SweepRange) of
+    case mg_dirange:intersect(EvRange, AvailRange) of
         {undefined, Range, undefined} ->
-            Sweeper(Range);
+            Getter(Range);
         {undefined, Range, RR} ->
-            [Sweeper(Range) | sweep_events(Sources, RR)];
+            [Getter(Range) | gather_events(Sources, RR)];
         {RL, Range, undefined} ->
-            [sweep_events(Sources, RL) | Sweeper(Range)];
+            [gather_events(Sources, RL) | Getter(Range)];
         {RL, Range, RR} ->
-            [sweep_events(Sources, RL), Sweeper(Range) | sweep_events(Sources, RR)]
+            [gather_events(Sources, RL), Getter(Range) | gather_events(Sources, RR)]
     end;
-sweep_events(_Sources, undefined) ->
+gather_events(_Sources, undefined) ->
     [];
-sweep_events([], _EvRange) ->
+gather_events([], _EvRange) ->
     [].
 
--spec storage_event_sweeper(options(), mg:id()) ->
-    event_sweeper().
-storage_event_sweeper(Options, ID) ->
+-spec storage_event_getter(options(), mg:id()) ->
+    event_getter().
+storage_event_getter(Options, ID) ->
     StorageOptions = events_storage_options(Options),
     fun (Range) ->
         Batch = mg_dirange:fold(
@@ -662,9 +662,9 @@ storage_event_sweeper(Options, ID) ->
         ]
     end.
 
--spec event_list_sweeper([mg_events:event()]) ->
-    event_sweeper().
-event_list_sweeper(Events) ->
+-spec event_list_getter([mg_events:event()]) ->
+    event_getter().
+event_list_getter(Events) ->
     fun (Range) ->
         mg_events:slice_events(Events, Range)
     end.
