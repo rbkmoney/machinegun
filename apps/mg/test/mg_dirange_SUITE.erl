@@ -27,6 +27,7 @@
 -export([direction_test/1]).
 -export([size_test/1]).
 -export([limit_test/1]).
+-export([conjoin_test/1]).
 -export([dissect_test/1]).
 -export([intersect_test/1]).
 -export([enumerate_test/1]).
@@ -49,6 +50,7 @@ all() ->
         size_test,
         limit_test,
         dissect_test,
+        conjoin_test,
         intersect_test,
         enumerate_test,
         fold_test,
@@ -139,11 +141,21 @@ dissect_test(_) ->
         end)
     )).
 
+-spec conjoin_test(config()) ->
+    _.
+conjoin_test(_) ->
+    ?assertEqual(fw(1, 10), mg_dirange:conjoin(fw(1, 10), undefined)),
+    ?assertEqual(fw(1, 10), mg_dirange:conjoin(undefined, fw(1, 10))),
+    ?assertEqual(bw(10, 1), mg_dirange:conjoin(bw(10, 10), bw(9, 1))),
+    ?assertError(badarg, mg_dirange:conjoin(bw(10, 10), fw(1, 9))),
+    ?assertError(badarg, mg_dirange:conjoin(bw(10, 9), bw(9, 1))).
+
 -spec intersect_test(config()) ->
     _.
 intersect_test(_) ->
     ?assertEqual({undefined, undefined, undefined}, mg_dirange:intersect(undefined, fw(1, 10))),
     ?assertEqual({bw(10, 7), bw(6, 5), bw(4, 1)}, mg_dirange:intersect(bw(10, 1), fw(5, 6))),
+    ?assertError(badarg, mg_dirange:intersect(fw(1, 10), undefined)),
     ?assert(check_property(
         % Range intersects with itself with no left/right differences
         ?FORALL(R, nonempty_range(),

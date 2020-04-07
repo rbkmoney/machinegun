@@ -113,15 +113,15 @@ dissect(R, C) ->
     {reverse(R2), reverse(R1)}.
 
 -spec conjoin(dirange(T), dirange(T)) ->
-    dirange(T) | error.
+    dirange(T).
 conjoin(undefined, R) ->
     R;
 conjoin(R, undefined) ->
     R;
 conjoin({A1, B1, D}, {A2, B2, D}) when A2 == B1 + D ->
     {A1, B2, D};
-conjoin(_, _) ->
-    error.
+conjoin(R1, R2) ->
+    erlang:error(badarg, [R1, R2]).
 
 -spec intersect(_Range :: dirange(T), _With :: nonempty_dirange(T)) ->
     {
@@ -129,8 +129,8 @@ conjoin(_, _) ->
         _Intersection :: dirange(T), % intersection between `Range` and `With`
         _RightDiff :: dirange(T)     % part of `Range` to the «right» of `With`
     }.
-intersect(_R, undefined) ->
-    error(badarg);
+intersect(R0, undefined) ->
+    erlang:error(badarg, [R0, undefined]);
 intersect(R0, With) ->
     D0 = direction(R0),
     {WA, WB} = bounds(align(With, R0)),
