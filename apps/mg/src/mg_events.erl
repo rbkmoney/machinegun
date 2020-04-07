@@ -140,7 +140,7 @@ slice_events(Events = [#{id := First} | _], Range) ->
         undefined ->
             []
     end;
-slice_events(_, []) ->
+slice_events([], _) ->
     [].
 
 %%
