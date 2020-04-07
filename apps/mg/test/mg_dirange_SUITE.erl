@@ -67,9 +67,9 @@ end_per_suite(_) ->
 -spec direction_test(config()) ->
     _.
 direction_test(_) ->
-    ?assertEqual(+1, mg_dirange:direction({1, 10})),
-    ?assertEqual(-1, mg_dirange:direction({10, 1})),
-    ?assertEqual(-1, mg_dirange:direction(mg_dirange:backward(42, 42))),
+    ?assertEqual(+1, mg_dirange:direction(fw(1, 10))),
+    ?assertEqual(-1, mg_dirange:direction(bw(10, 1))),
+    ?assertEqual(-1, mg_dirange:direction(bw(42, 42))),
     ?assertEqual(0, mg_dirange:direction(undefined)),
     ?assert(check_property(
         % Reversal changes direction
@@ -81,9 +81,9 @@ direction_test(_) ->
 -spec size_test(config()) ->
     _.
 size_test(_) ->
-    ?assertEqual(10, mg_dirange:size({1, 10})),
-    ?assertEqual(10, mg_dirange:size({10, 1})),
-    ?assertEqual(10, mg_dirange:size({-10, -1})),
+    ?assertEqual(10, mg_dirange:size(fw(1, 10))),
+    ?assertEqual(10, mg_dirange:size(bw(10, 1))),
+    ?assertEqual(10, mg_dirange:size(fw(-10, -1))),
     ?assert(check_property(
         % Size is non-negative for every range
         ?FORALL(R, range(), mg_dirange:size(R) >= 0)
@@ -106,11 +106,15 @@ limit_test(_) ->
 -spec dissect_test(config()) ->
     _.
 dissect_test(_) ->
+    % TODO
+    % Technically this matching is opaque type violation. To be a good guy with
+    % dialyzer we probably should match on some exported representation. Still,
+    % fine for now I guess.
     ?assertEqual({undefined, undefined}, mg_dirange:dissect(undefined, 42)),
-    ?assertEqual({{1, 10}, undefined}, mg_dirange:dissect({1, 10}, 42)),
-    ?assertEqual({undefined, {10, 1}}, mg_dirange:dissect({10, 1}, 42)),
-    ?assertEqual({{10, 1}, undefined}, mg_dirange:dissect({10, 1}, 1)),
-    ?assertEqual({{10, 2}, {1, 1, -1}}, mg_dirange:dissect({10, 1}, 2)),
+    ?assertEqual({fw(1, 10), undefined}, mg_dirange:dissect(fw(1, 10), 42)),
+    ?assertEqual({undefined, bw(10, 1)}, mg_dirange:dissect(bw(10, 1), 42)),
+    ?assertEqual({bw(10, 1), undefined}, mg_dirange:dissect(bw(10, 1), 1)),
+    ?assertEqual({bw(10, 2), bw(1, 1)}, mg_dirange:dissect(bw(10, 1), 2)),
     ?assert(check_property(
         % Dissection does not change direction
         ?FORALL({R, At}, {range(), integer()}, begin
@@ -136,8 +140,8 @@ dissect_test(_) ->
 -spec intersect_test(config()) ->
     _.
 intersect_test(_) ->
-    ?assertEqual({undefined, undefined, undefined}, mg_dirange:intersect(undefined, {1, 10})),
-    ?assertEqual({{10, 7}, {6, 5}, {4, 1}}, mg_dirange:intersect({10, 1}, {5, 6})),
+    ?assertEqual({undefined, undefined, undefined}, mg_dirange:intersect(undefined, fw(1, 10))),
+    ?assertEqual({bw(10, 7), bw(6, 5), bw(4, 1)}, mg_dirange:intersect(bw(10, 1), fw(5, 6))),
     ?assert(check_property(
         % Range intersects with itself with no left/right differences
         ?FORALL(R, nonempty_range(),
@@ -182,8 +186,8 @@ intersect_test(_) ->
 -spec enumerate_test(config()) ->
     _.
 enumerate_test(_) ->
-    ?assertEqual([1, 2, 3, 4, 5], mg_dirange:enumerate({1, 5})),
-    ?assertEqual([5, 4, 3, 2, 1], mg_dirange:enumerate({5, 1})),
+    ?assertEqual([1, 2, 3, 4, 5], mg_dirange:enumerate(fw(1, 5))),
+    ?assertEqual([5, 4, 3, 2, 1], mg_dirange:enumerate(bw(5, 1))),
     ?assert(check_property(
         % Enumeration preserves range size
         ?FORALL(R, range(),
@@ -230,12 +234,21 @@ range() ->
 -spec nonempty_range() ->
     proper_types:raw_type().
 nonempty_range() ->
-    ?LET({A, B}, {integer(), integer()}, oneof([
-        mg_dirange:forward(A, B),
-        mg_dirange:backward(A, B)
-    ])).
+    ?LET({A, B}, {integer(), integer()}, oneof([fw(A, B), bw(A, B)])).
 
 -spec check_property(proper:test()) ->
     boolean().
 check_property(Property) ->
     proper:quickcheck(Property, [{numtests, 1000}, nocolors]).
+
+%%
+
+-spec fw(T, T) ->
+    mg_dirange:nonempty_dirange(T).
+fw(A, B) ->
+    mg_dirange:forward(A, B).
+
+-spec bw(T, T) ->
+    mg_dirange:nonempty_dirange(T).
+bw(A, B) ->
+    mg_dirange:backward(A, B).

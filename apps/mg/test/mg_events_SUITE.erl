@@ -47,26 +47,28 @@ all() ->
 -spec range_direction_test(config()) ->
     _.
 range_direction_test(_C) ->
-    EventsRange = {1, 100},
+    EventsRange = mg_dirange:forward(1, 100),
     [4, 3, 2   ] = get_event_ids(EventsRange, {5, 3, backward}),
     [5, 6, 7, 8] = get_event_ids(EventsRange, {4, 4, forward }).
 
 -spec range_no_intersection_test(config()) ->
     _.
 range_no_intersection_test(_C) ->
-    [] = get_event_ids({5, 10}, {11, 1, forward }),
-    [] = get_event_ids({5, 10}, {4 , 1, backward}).
+    EventsRange = mg_dirange:forward(5, 10),
+    [] = get_event_ids(EventsRange, {11, 1, forward }),
+    [] = get_event_ids(EventsRange, {4 , 1, backward}).
 
 -spec range_partial_intersection_test(config()) ->
     _.
 range_partial_intersection_test(_C) ->
-    [5 , 6] = get_event_ids({5, 10}, {1 , 2, forward }),
-    [10, 9] = get_event_ids({5, 10}, {11, 2, backward}).
+    EventsRange = mg_dirange:forward(5, 10),
+    [5 , 6] = get_event_ids(EventsRange, {1 , 2, forward }),
+    [10, 9] = get_event_ids(EventsRange, {11, 2, backward}).
 
 -spec range_border_test(config()) ->
     _.
 range_border_test(_C) ->
-    EventsRange = {1, 8},
+    EventsRange = mg_dirange:forward(1, 8),
     [1, 2   ] = get_event_ids(EventsRange, {undefined, 2, forward }),
     [8, 7   ] = get_event_ids(EventsRange, {undefined, 2, backward}),
     [6, 7, 8] = get_event_ids(EventsRange, {5        , 5, forward }).
@@ -74,7 +76,7 @@ range_border_test(_C) ->
 -spec range_missing_params_test(config()) ->
     ok.
 range_missing_params_test(_C) ->
-    EventsRange = {1, 8},
+    EventsRange = mg_dirange:forward(1, 8),
     [1, 2, 3] = get_event_ids(EventsRange, {undefined, 3, forward}),
     [7, 8   ] = get_event_ids(EventsRange, {6, undefined, forward}).
 

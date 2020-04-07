@@ -110,9 +110,9 @@ intersect_range(R0, {Ef, N, Direction}) ->
 -spec orient_range(events_range(), direction()) ->
     events_range().
 orient_range(R, forward) ->
-    mg_dirange:align(R, {0, 1});
+    mg_dirange:align(R, mg_dirange:forward(1, 1));
 orient_range(R, backward) ->
-    mg_dirange:align(R, {1, 0}).
+    mg_dirange:align(R, mg_dirange:backward(1, 1)).
 
 -spec chop_range(events_range(), _From :: id() | undefined) ->
     events_range().
