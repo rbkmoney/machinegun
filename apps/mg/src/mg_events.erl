@@ -183,12 +183,11 @@ get_next_event_id(N) ->
 
 -spec update_events_range(events_range(), id() | undefined) ->
     events_range().
-update_events_range(undefined, undefined) ->
-    undefined;
-update_events_range(undefined, NewLastEventID) ->
-    mg_dirange:forward(get_next_event_id(undefined), NewLastEventID);
+update_events_range(Range, undefined) ->
+    Range;
 update_events_range(Range, NewLastEventID) ->
-    mg_dirange:forward(mg_dirange:from(Range), NewLastEventID).
+    FirstEventID = genlib:define(mg_dirange:from(Range), get_next_event_id(undefined)),
+    mg_dirange:forward(FirstEventID, NewLastEventID).
 
 %%
 %% packer to opaque
@@ -197,18 +196,13 @@ update_events_range(Range, NewLastEventID) ->
 % TODO version
 -spec events_range_to_opaque(events_range()) ->
     mg_storage:opaque().
-events_range_to_opaque(undefined) ->
-    null;
 events_range_to_opaque(Range) ->
-    {First, Last} = mg_dirange:bounds(Range),
-    [First, Last].
+    mg_dirange:to_opaque(Range).
 
 -spec opaque_to_events_range(mg_storage:opaque()) ->
     events_range().
-opaque_to_events_range(null) ->
-    undefined;
-opaque_to_events_range([First, Last]) ->
-    mg_dirange:forward(First, Last).
+opaque_to_events_range(Opaque) ->
+    mg_dirange:from_opaque(Opaque).
 
 %% event
 -spec event_id_to_key(id()) ->

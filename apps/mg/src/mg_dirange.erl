@@ -22,6 +22,9 @@
 -export([forward/2]).
 -export([backward/2]).
 
+-export([to_opaque/1]).
+-export([from_opaque/1]).
+
 -export([align/2]).
 -export([reverse/1]).
 -export([dissect/2]).
@@ -59,6 +62,24 @@ backward(A, B) when A >= B ->
     {A, B, -1};
 backward(A, B) when A < B ->
     {B, A, -1}.
+
+-spec to_opaque(dirange(_)) ->
+    mg_storage:opaque().
+to_opaque(undefined) ->
+    null;
+to_opaque({A, B, +1}) ->
+    [A, B];
+to_opaque({A, B, D = -1}) ->
+    [A, B, D].
+
+-spec from_opaque(mg_storage:opaque()) ->
+    dirange(_).
+from_opaque(null) ->
+    undefined;
+from_opaque([A, B]) ->
+    {A, B, +1};
+from_opaque([A, B, D]) ->
+    {A, B, D}.
 
 %%
 

@@ -31,6 +31,7 @@
 -export([intersect_test/1]).
 -export([enumerate_test/1]).
 -export([fold_test/1]).
+-export([storage_test/1]).
 
 %% tests
 
@@ -50,7 +51,8 @@ all() ->
         dissect_test,
         intersect_test,
         enumerate_test,
-        fold_test
+        fold_test,
+        storage_test
     ].
 
 -spec init_per_suite(config()) ->
@@ -220,6 +222,16 @@ fold_test(_) ->
         % Folding with right accumulation is indistinguishable from enumeration
         ?FORALL(R, range(),
             equals(mg_dirange:enumerate(R), mg_dirange:fold(fun (E, L) -> L ++ [E] end, [], R))
+        )
+    )).
+
+-spec storage_test(config()) ->
+    _.
+storage_test(_) ->
+    ?assert(check_property(
+        % Restoring stored representation preserves original range
+        ?FORALL(R, range(),
+            equals(R, mg_dirange:from_opaque(mg_dirange:to_opaque(R)))
         )
     )).
 
