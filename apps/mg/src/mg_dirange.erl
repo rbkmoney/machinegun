@@ -17,8 +17,8 @@
 -module(mg_dirange).
 
 -export_type([dirange/1]).
--export_type([nonempty_dirange/1]).
 
+-export([empty/0]).
 -export([forward/2]).
 -export([backward/2]).
 
@@ -41,23 +41,28 @@
 -export([to/1]).
 
 %% Directed range over integers
--type dirange(_T) :: nonempty_dirange(_T) | undefined.
+-opaque dirange(_T) :: nonempty_dirange(_T) | undefined.
 -type direction() :: -1 | +1.
--opaque nonempty_dirange(_T) ::
+-type nonempty_dirange(_T) ::
     % Non-empty, unambiguously oriented directed range [from..to].
     {_T :: integer(), _T :: integer(), direction()}.
 
 %%
 
+-spec empty() ->
+    dirange(_).
+empty() ->
+    undefined.
+
 -spec forward(_T :: integer(), _T :: integer()) ->
-    nonempty_dirange(_T).
+    dirange(_T).
 forward(A, B) when A =< B ->
     {A, B, +1};
 forward(A, B) when A > B ->
     {B, A, +1}.
 
 -spec backward(_T :: integer(), _T :: integer()) ->
-    nonempty_dirange(_T).
+    dirange(_T).
 backward(A, B) when A >= B ->
     {A, B, -1};
 backward(A, B) when A < B ->
@@ -123,7 +128,7 @@ conjoin({A1, B1, D}, {A2, B2, D}) when A2 == B1 + D ->
 conjoin(R1, R2) ->
     erlang:error(badarg, [R1, R2]).
 
--spec intersect(_Range :: dirange(T), _With :: nonempty_dirange(T)) ->
+-spec intersect(_Range :: dirange(T), _With :: dirange(T)) ->
     {
         _LeftDiff :: dirange(T),     % part of `Range` to the «left» of `With`
         _Intersection :: dirange(T), % intersection between `Range` and `With`

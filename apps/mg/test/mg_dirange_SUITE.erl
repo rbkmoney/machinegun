@@ -111,13 +111,13 @@ limit_test(_) ->
     _.
 dissect_test(_) ->
     % TODO
-    % Technically this matching is opaque type violation. To be a good guy with
+    % Technically this matching is opaqueness violation. To be a good guy with
     % dialyzer we probably should match on some exported representation. Still,
     % fine for now I guess.
-    ?assertEqual({undefined, undefined}, mg_dirange:dissect(undefined, 42)),
-    ?assertEqual({fw(1, 10), undefined}, mg_dirange:dissect(fw(1, 10), 42)),
-    ?assertEqual({undefined, bw(10, 1)}, mg_dirange:dissect(bw(10, 1), 42)),
-    ?assertEqual({bw(10, 1), undefined}, mg_dirange:dissect(bw(10, 1), 1)),
+    ?assertEqual({empty(), empty()}, mg_dirange:dissect(empty(), 42)),
+    ?assertEqual({fw(1, 10), empty()}, mg_dirange:dissect(fw(1, 10), 42)),
+    ?assertEqual({empty(), bw(10, 1)}, mg_dirange:dissect(bw(10, 1), 42)),
+    ?assertEqual({bw(10, 1), empty()}, mg_dirange:dissect(bw(10, 1), 1)),
     ?assertEqual({bw(10, 2), bw(1, 1)}, mg_dirange:dissect(bw(10, 1), 2)),
     ?assert(check_property(
         % Dissection does not change direction
@@ -144,8 +144,8 @@ dissect_test(_) ->
 -spec conjoin_test(config()) ->
     _.
 conjoin_test(_) ->
-    ?assertEqual(fw(1, 10), mg_dirange:conjoin(fw(1, 10), undefined)),
-    ?assertEqual(fw(1, 10), mg_dirange:conjoin(undefined, fw(1, 10))),
+    ?assertEqual(fw(1, 10), mg_dirange:conjoin(fw(1, 10), empty())),
+    ?assertEqual(fw(1, 10), mg_dirange:conjoin(empty(), fw(1, 10))),
     ?assertEqual(bw(10, 1), mg_dirange:conjoin(bw(10, 10), bw(9, 1))),
     ?assertError(badarg, mg_dirange:conjoin(bw(10, 10), fw(1, 9))),
     ?assertError(badarg, mg_dirange:conjoin(bw(10, 9), bw(9, 1))).
@@ -153,19 +153,19 @@ conjoin_test(_) ->
 -spec intersect_test(config()) ->
     _.
 intersect_test(_) ->
-    ?assertEqual({undefined, undefined, undefined}, mg_dirange:intersect(undefined, fw(1, 10))),
+    ?assertEqual({empty(), empty(), empty()}, mg_dirange:intersect(empty(), fw(1, 10))),
     ?assertEqual({bw(10, 7), bw(6, 5), bw(4, 1)}, mg_dirange:intersect(bw(10, 1), fw(5, 6))),
-    ?assertError(badarg, mg_dirange:intersect(fw(1, 10), undefined)),
+    ?assertError(badarg, mg_dirange:intersect(fw(1, 10), empty())),
     ?assert(check_property(
         % Range intersects with itself with no left/right differences
         ?FORALL(R, nonempty_range(),
-            equals({undefined, R, undefined}, mg_dirange:intersect(R, R))
+            equals({empty(), R, empty()}, mg_dirange:intersect(R, R))
         )
     )),
     ?assert(check_property(
         % Range intersects with reversal of itself with no left/right differences
         ?FORALL(R, nonempty_range(),
-            equals({undefined, R, undefined}, mg_dirange:intersect(R, mg_dirange:reverse(R)))
+            equals({empty(), R, empty()}, mg_dirange:intersect(R, mg_dirange:reverse(R)))
         )
     )),
     ?assert(check_property(
@@ -174,10 +174,10 @@ intersect_test(_) ->
             {LD, _, RD} = mg_dirange:intersect(R, With),
             conjunction([
                 {strictly_left_diff,
-                    equals({LD, undefined, undefined}, mg_dirange:intersect(LD, With))
+                    equals({LD, empty(), empty()}, mg_dirange:intersect(LD, With))
                 },
                 {strictly_right_diff,
-                    equals({undefined, undefined, RD}, mg_dirange:intersect(RD, With))
+                    equals({empty(), empty(), RD}, mg_dirange:intersect(RD, With))
                 }
             ])
         end)
@@ -252,7 +252,7 @@ storage_test(_) ->
 range() ->
     frequency([
         {9, nonempty_range()},
-        {1, undefined}
+        {1, empty()}
     ]).
 
 -spec nonempty_range() ->
@@ -268,11 +268,16 @@ check_property(Property) ->
 %%
 
 -spec fw(T, T) ->
-    mg_dirange:nonempty_dirange(T).
+    mg_dirange:dirange(T).
 fw(A, B) ->
     mg_dirange:forward(A, B).
 
 -spec bw(T, T) ->
-    mg_dirange:nonempty_dirange(T).
+    mg_dirange:dirange(T).
 bw(A, B) ->
     mg_dirange:backward(A, B).
+
+-spec empty() ->
+    mg_dirange:dirange(_).
+empty() ->
+    mg_dirange:empty().

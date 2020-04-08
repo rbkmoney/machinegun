@@ -615,7 +615,7 @@ get_events(Sources, EventsRange, HRange) ->
 
 -spec gather_events(event_sources(), mg_events:events_range()) ->
     [mg_events:event() | [mg_events:event()]].
-gather_events([{AvailRange, Getter} | Sources], EvRange) when EvRange /= undefined ->
+gather_events([{AvailRange, Getter} | Sources], EvRange) ->
     % NOTE
     % We find out which part of `EvRange` is covered by current source (which is `Range`)
     % and which parts are covered by other sources. In the most complex case there are three
@@ -629,20 +629,28 @@ gather_events([{AvailRange, Getter} | Sources], EvRange) when EvRange /= undefin
     %     {41, 42} = RR
     % }
     % ```
-    case mg_dirange:intersect(EvRange, AvailRange) of
-        {undefined, Range, undefined} ->
-            Getter(Range);
-        {undefined, Range, RR} ->
-            [Getter(Range) | gather_events(Sources, RR)];
-        {RL, Range, undefined} ->
-            [gather_events(Sources, RL) | Getter(Range)];
-        {RL, Range, RR} ->
-            [gather_events(Sources, RL), Getter(Range) | gather_events(Sources, RR)]
+    {RL, Range, RR} = mg_dirange:intersect(EvRange, AvailRange),
+    Events1 = case mg_dirange:size(RR) of
+        0 -> [];
+        _ -> gather_events(Sources, RR)
+    end,
+    Events2 = case mg_dirange:size(Range) of
+        0 -> Events1;
+        _ -> concat_events(Getter(Range), Events1)
+    end,
+    case mg_dirange:size(RL) of
+        0 -> Events2;
+        _ -> concat_events(gather_events(Sources, RL), Events2)
     end;
-gather_events(_Sources, undefined) ->
-    [];
 gather_events([], _EvRange) ->
     [].
+
+-spec concat_events([mg_events:event()], [mg_events:event()]) ->
+    [mg_events:event() | [mg_events:event()]].
+concat_events(Events, []) ->
+    Events;
+concat_events(Events, Acc) ->
+    [Events | Acc].
 
 -spec storage_event_getter(options(), mg:id()) ->
     event_getter().
