@@ -48,7 +48,10 @@
 -type yaml_config() :: _TODO. % hello to librares without an explicit typing 😡
 -type yaml_config_path() :: [atom()].
 
--type vm_args() :: [{atom(), binary()}].
+-type vm_args() :: [{vm_flag_name(), vm_flag_value()} | vm_flag_name()].
+-type vm_flag_name() :: atom() | binary().
+-type vm_flag_value() :: atom() | binary() | integer().
+
 -type sys_config() :: [{atom, term()}].
 -type erl_inetrc() :: [{atom, term()}].
 
@@ -99,11 +102,13 @@ print_sys_config(SysConfig) ->
 -spec print_vm_args(vm_args()) ->
     iolist().
 print_vm_args(VMArgs) ->
-    lists:foldr(
-        fun({Arg, Value}, Acc) ->
-            [[erlang:atom_to_binary(Arg, utf8), $\s, Value, $\n]|Acc]
+    lists:map(
+        fun
+            ({Arg, Value}) ->
+                [genlib:to_binary(Arg), $\s, genlib:to_binary(Value), $\n];
+            (Arg) when not is_tuple(Arg) ->
+                [genlib:to_binary(Arg), $\n]
         end,
-        [],
         VMArgs
     ).
 
