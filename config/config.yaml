@@ -79,6 +79,9 @@ logging:
     flush_qlen: 2000
     json_log: log.json
     level: info
+    formatter:
+        max_length: 1000
+        max_printable_string_length: 80
 metrics:
     publisher:
         statsd:

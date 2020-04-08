@@ -126,7 +126,7 @@ init_per_group(_, C) ->
     config().
 init_per_group(C) ->
     %% TODO сделать нормальную генерацию урлов
-    Config = mg_woody_api_config(C),
+    Config = machinegun_config(C),
     Apps = machinegun_ct_helper:start_applications([
         brod,
         {machinegun, Config}
@@ -218,9 +218,9 @@ null() ->
 content(Body) ->
     {#{format_version => 42}, Body}.
 
--spec mg_woody_api_config(config()) ->
+-spec machinegun_config(config()) ->
     list().
-mg_woody_api_config(C) ->
+machinegun_config(C) ->
     Scheduler = #{
         scan_interval => #{continue => 500, completed => 15000},
         task_quota    => <<"scheduler_tasks_total">>
@@ -272,7 +272,8 @@ mg_woody_api_config(C) ->
         {event_sink_ns, #{
             storage => mg_core_storage_memory,
             default_processing_timeout => 5000
-        }}
+        }},
+        {pulse, machinegun_pulse}
     ].
 
 -spec end_per_group(group_name(), config()) ->

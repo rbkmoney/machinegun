@@ -28,14 +28,15 @@
 -type beat() :: machinegun_pulse:beat().
 -type impact_tag() :: atom().
 -type bin_type() :: machinegun_metric_utils:bin_type().
+-type options() :: machinegun_pulse:options().
 
 %%
 %% mg_pulse handler
 %%
 
--spec handle_beat(undefined, beat()) ->
+-spec handle_beat(options(), beat()) ->
     ok.
-handle_beat(undefined, Beat) ->
+handle_beat(_Options, Beat) ->
     ok = push(create_metric(Beat)).
 
 %% Internals

@@ -30,13 +30,18 @@
     | #woody_event{}
     | #woody_request_handle_error{}.
 
+-type options() :: #{
+    woody_event_handler_options => woody_event_handler:options()
+}.
+
 -export_type([beat/0]).
+-export_type([options/0]).
 
 %%
 %% mg_pulse handler
 %%
 
--spec handle_beat(undefined, beat()) ->
+-spec handle_beat(options(), beat()) ->
     ok.
 handle_beat(Options, Beat) ->
     ok = machinegun_pulse_log:handle_beat(Options, Beat),
