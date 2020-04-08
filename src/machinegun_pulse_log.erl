@@ -24,18 +24,19 @@
 -export([handle_beat/2]).
 
 %% internal types
--type log_msg() :: machinegun_log:log_msg().
 -type meta() :: machinegun_log:meta().
 -type beat() :: machinegun_pulse:beat().
+-type log_msg() :: machinegun_log:log_msg().
+-type options() :: machinegun_pulse:options().
 
 %%
 %% mg_pulse handler
 %%
 
--spec handle_beat(undefined, beat()) ->
+-spec handle_beat(options(), beat()) ->
     ok.
-handle_beat(undefined, Beat) ->
-    ok = machinegun_log:log(format_beat(Beat)).
+handle_beat(Options, Beat) ->
+    ok = machinegun_log:log(format_beat(Beat, Options)).
 
 %% Internals
 
@@ -49,9 +50,9 @@ handle_beat(undefined, Beat) ->
     ])]
 ).
 
--spec format_beat(beat()) ->
+-spec format_beat(beat(), options()) ->
     log_msg() | undefined.
-format_beat(#woody_request_handle_error{exception = {_, Reason, _}} = Beat) ->
+format_beat(#woody_request_handle_error{exception = {_, Reason, _}} = Beat, _Options) ->
     Context = ?beat_to_meta(woody_request_handle_error, Beat),
     LogLevel = case Reason of
         {logic, _Details} ->
@@ -61,33 +62,36 @@ format_beat(#woody_request_handle_error{exception = {_, Reason, _}} = Beat) ->
             warning
     end,
     {LogLevel, {"request handling failed ~p", [Reason]}, Context};
-format_beat(#woody_event{event = Event, rpc_id = RPCID, event_meta = EventMeta}) ->
+format_beat(#woody_event{event = Event, rpc_id = RPCID, event_meta = EventMeta}, Options) ->
     WoodyMetaFields = [event, service, function, type, metadata, url, deadline, role, execution_duration_ms],
-    {Level, Msg, WoodyMeta} = woody_event_handler:format_event_and_meta(Event, EventMeta, RPCID, WoodyMetaFields),
+    WoodyOptions = maps:get(woody_event_handler_options, Options, #{}),
+    {Level, Msg, WoodyMeta} = woody_event_handler:format_event_and_meta(
+        Event, EventMeta, RPCID, WoodyMetaFields, WoodyOptions
+    ),
     Meta = lists:flatten([extract_woody_meta(WoodyMeta), extract_meta(rpc_id, RPCID)]),
     {Level, Msg, Meta};
-format_beat(#mg_core_scheduler_task_error{scheduler_name = Name, exception = {_, Reason, _}} = Beat) ->
+format_beat(#mg_core_scheduler_task_error{scheduler_name = Name, exception = {_, Reason, _}} = Beat, _Options) ->
     Context = ?beat_to_meta(mg_core_scheduler_task_error, Beat),
     {warning, {"scheduler task ~p failed ~p", [Name, Reason]}, Context};
-format_beat(#mg_core_scheduler_task_add_error{scheduler_name = Name, exception = {_, Reason, _}} = Beat) ->
+format_beat(#mg_core_scheduler_task_add_error{scheduler_name = Name, exception = {_, Reason, _}} = Beat, _Options) ->
     Context = ?beat_to_meta(mg_core_scheduler_task_add_error, Beat),
     {warning, {"scheduler task ~p add failed ~p", [Name, Reason]}, Context};
-format_beat(#mg_core_scheduler_search_error{scheduler_name = Name, exception = {_, Reason, _}} = Beat) ->
+format_beat(#mg_core_scheduler_search_error{scheduler_name = Name, exception = {_, Reason, _}} = Beat, _Options) ->
     Context = ?beat_to_meta(mg_core_scheduler_search_error, Beat),
     {warning, {"scheduler search ~p failed ~p", [Name, Reason]}, Context};
-format_beat(#mg_core_machine_process_transient_error{exception = {_, Reason, _}} = Beat) ->
+format_beat(#mg_core_machine_process_transient_error{exception = {_, Reason, _}} = Beat, _Options) ->
     Context = ?beat_to_meta(mg_core_machine_process_transient_error, Beat),
     {warning, {"transient error ~p", [Reason]}, Context};
-format_beat(#mg_core_machine_lifecycle_failed{exception = {_, Reason, _}} = Beat) ->
+format_beat(#mg_core_machine_lifecycle_failed{exception = {_, Reason, _}} = Beat, _Options) ->
     Context = ?beat_to_meta(mg_core_machine_lifecycle_failed, Beat),
     {error, {"machine failed ~p", [Reason]}, Context};
-format_beat(#mg_core_machine_lifecycle_loading_error{exception = {_, Reason, _}} = Beat) ->
+format_beat(#mg_core_machine_lifecycle_loading_error{exception = {_, Reason, _}} = Beat, _Options) ->
     Context = ?beat_to_meta(mg_core_machine_lifecycle_loading_error, Beat),
     {error, {"loading failed ~p", [Reason]}, Context};
-format_beat(#mg_core_machine_lifecycle_committed_suicide{} = Beat) ->
+format_beat(#mg_core_machine_lifecycle_committed_suicide{} = Beat, _Options) ->
     Context = ?beat_to_meta(mg_core_machine_lifecycle_committed_suicide, Beat),
     {info, {"machine has committed suicide", []}, Context};
-format_beat(#mg_core_machine_lifecycle_transient_error{context = Ctx, exception = {_, Reason, _}} = Beat) ->
+format_beat(#mg_core_machine_lifecycle_transient_error{context = Ctx, exception = {_, Reason, _}} = Beat, _Options) ->
     Context = ?beat_to_meta(mg_core_machine_lifecycle_transient_error, Beat),
     case Beat#mg_core_machine_lifecycle_transient_error.retry_action of
         {wait, Timeout, _} ->
@@ -95,18 +99,18 @@ format_beat(#mg_core_machine_lifecycle_transient_error{context = Ctx, exception 
         finish ->
             {warning, {"transient error ~p during ~p, retires exhausted", [Ctx, Reason]}, Context}
     end;
-format_beat(#mg_core_timer_lifecycle_rescheduled{target_timestamp = TS, attempt = Attempt} = Beat) ->
+format_beat(#mg_core_timer_lifecycle_rescheduled{target_timestamp = TS, attempt = Attempt} = Beat, _Options) ->
     Context = ?beat_to_meta(mg_core_timer_lifecycle_rescheduled, Beat),
     {info, {"machine rescheduled to ~s, attempt ~p", [format_timestamp(TS), Attempt]}, Context};
-format_beat(#mg_core_timer_lifecycle_rescheduling_error{exception = {_, Reason, _}} = Beat) ->
+format_beat(#mg_core_timer_lifecycle_rescheduling_error{exception = {_, Reason, _}} = Beat, _Options) ->
     Context = ?beat_to_meta(mg_core_timer_lifecycle_rescheduling_error, Beat),
     {info, {"machine rescheduling failed ~p", [Reason]}, Context};
 
-format_beat({consuela, Beat = {Producer, _}}) ->
+format_beat({consuela, Beat = {Producer, _}}, _Options) ->
     {Level, Format, Context} = format_consuela_beat(Beat),
     {Level, Format, add_meta({consuela_producer, Producer}, Context)};
 
-format_beat({squad, {Producer, Beat, Extra}}) ->
+format_beat({squad, {Producer, Beat, Extra}}, _Options) ->
     case format_squad_beat(Beat) of
         {Level, Format, Context} ->
             MetaExtra = [extract_meta(Name, Value) || {Name, Value} <- Extra],
@@ -117,7 +121,7 @@ format_beat({squad, {Producer, Beat, Extra}}) ->
             undefined
     end;
 
-format_beat(_Beat) ->
+format_beat(_Beat, _Options) ->
     undefined.
 
 %% consuela

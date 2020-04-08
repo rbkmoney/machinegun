@@ -83,7 +83,7 @@ init_per_group(with_gproc, C) ->
 init_per_group(with_consuela, C) ->
     [{registry, {mg_core_procreg_consuela, #{}}} | C];
 init_per_group(base, C) ->
-    Config = mg_woody_api_config(C),
+    Config = machinegun_config(C),
     Apps = machinegun_ct_helper:start_applications([
         {how_are_you, [
             {metrics_publishers, [machinegun_test_hay_publisher]},
@@ -124,9 +124,9 @@ end_per_group(base, C) ->
 end_per_group(_, C) ->
     C.
 
--spec mg_woody_api_config(config()) ->
+-spec machinegun_config(config()) ->
     list().
-mg_woody_api_config(C) ->
+machinegun_config(C) ->
     [
         {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, limits => #{}}},
         {namespaces, #{
@@ -155,7 +155,8 @@ mg_woody_api_config(C) ->
             storage => mg_core_storage_memory,
             registry => registry(C),
             default_processing_timeout => 5000
-        }}
+        }},
+        {pulse, machinegun_pulse}
     ].
 
 -spec registry(config()) ->

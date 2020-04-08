@@ -85,7 +85,9 @@ logger(YamlConfig) ->
                 drop_mode_qlen => ?C:conf([logging, drop_mode_qlen], YamlConfig, 1000),
                 flush_qlen     => ?C:conf([logging, flush_qlen],     YamlConfig, 2000)
             },
-            formatter => {logger_logstash_formatter, #{}}
+            formatter => {logger_logstash_formatter, #{
+                chars_limit => ?C:conf([logging, formatter, max_length], YamlConfig, 1000)
+            }}
         }}
     ].
 
@@ -98,7 +100,7 @@ consuela(YamlConfig) ->
                 shutdown  => ?C:time_interval(?C:conf([shutdown_timeout], PresenceConfig, "5s"), 'ms'),
                 session_opts => #{
                     interval => ?C:time_interval(?C:conf([check_interval], PresenceConfig, "5s"), 'sec'),
-                    pulse    => mg_core_consuela_pulse_adapter:pulse(presence_session, machinegun_pulse)
+                    pulse    => mg_core_consuela_pulse_adapter:pulse(presence_session, pulse(YamlConfig))
                 }
             }}
         ] end),
@@ -119,17 +121,17 @@ consuela(YamlConfig) ->
                 shutdown  => ?C:time_interval(?C:conf([shutdown_timeout], RegConfig, "5s"), 'ms'),
                 keeper    => maps:merge(
                     #{
-                    pulse => mg_core_consuela_pulse_adapter:pulse(session_keeper, machinegun_pulse)
+                    pulse => mg_core_consuela_pulse_adapter:pulse(session_keeper, pulse(YamlConfig))
                 },
                     conf_with([session_renewal_interval], RegConfig, #{}, fun (V) -> #{
                         interval => ?C:time_interval(V, 'sec')
                     } end)
                 ),
                 reaper    => #{
-                    pulse => mg_core_consuela_pulse_adapter:pulse(zombie_reaper, machinegun_pulse)
+                    pulse => mg_core_consuela_pulse_adapter:pulse(zombie_reaper, pulse(YamlConfig))
                 },
                 registry  => #{
-                    pulse => mg_core_consuela_pulse_adapter:pulse(registry_server, machinegun_pulse)
+                    pulse => mg_core_consuela_pulse_adapter:pulse(registry_server, pulse(YamlConfig))
                 }
             }}
         ] end),
@@ -143,7 +145,7 @@ consuela(YamlConfig) ->
                         init => ?C:time_interval(?C:conf([interval, init], DiscoveryConfig,  "5s"), 'ms'),
                         idle => ?C:time_interval(?C:conf([interval, idle], DiscoveryConfig, "10m"), 'ms')
                     },
-                    pulse => mg_core_consuela_pulse_adapter:pulse(discovery_server, machinegun_pulse)
+                    pulse => mg_core_consuela_pulse_adapter:pulse(discovery_server, pulse(YamlConfig))
                 }
             }}
         ] end)
@@ -177,7 +179,7 @@ consul_client(Name, YamlConfig) ->
                 ssl_options =>
                     ?C:proplist(?C:conf([consul, ssl_options      ], YamlConfig, undefined))
             }),
-            pulse => mg_core_consuela_pulse_adapter:pulse(client, machinegun_pulse)
+            pulse => mg_core_consuela_pulse_adapter:pulse(client, pulse(YamlConfig))
         })
     }.
 
@@ -202,7 +204,19 @@ hay_statsd_publisher(YamlConfig) ->
     ] end).
 
 snowflake(YamlConfig) ->
-    [{machine_id, ?C:conf([snowflake_machine_id], YamlConfig, 0)}].
+    [{machine_id, ?C:conf([snowflake_machine_id], YamlConfig, hostname_hash)}].
+
+pulse(YamlConfig) ->
+    MaxLength = ?C:conf([logging, formatter, max_length], YamlConfig, 1000),
+    MaxPrintable = ?C:conf([logging, formatter, max_printable_string_length], YamlConfig, 1000),
+    {machinegun_pulse, #{
+        woody_event_handler_options => #{
+            formatter_opts => #{
+                max_length => MaxLength,
+                max_printable_string_length => MaxPrintable
+            }
+        }
+    }}.
 
 brod(YamlConfig) ->
     Clients = ?C:conf([kafka], YamlConfig, []),
@@ -260,7 +274,8 @@ machinegun(YamlConfig) ->
         {health_check   , health_check   (YamlConfig)},
         {quotas         , quotas         (YamlConfig)},
         {namespaces     , namespaces     (YamlConfig)},
-        {event_sink_ns  , event_sink_ns  (YamlConfig)}
+        {event_sink_ns  , event_sink_ns  (YamlConfig)},
+        {pulse          , pulse          (YamlConfig)}
     ].
 
 woody_server(YamlConfig) ->
@@ -495,7 +510,7 @@ procreg(YamlConfig) ->
         [consuela],
         YamlConfig,
         mg_core_procreg_gproc,
-        {mg_core_procreg_consuela, #{pulse => machinegun_pulse}}
+        {mg_core_procreg_consuela, #{pulse => pulse(YamlConfig)}}
     ).
 
 %%
