@@ -33,9 +33,6 @@ erlang:
     secret_cookie_file: "config/cookie"
     ipv6: false
     disable_dns_cache: false
-    flags:
-        - +c: true
-        - +C: single_time_warp
 
 # API server options.
 woody_server:

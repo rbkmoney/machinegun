@@ -102,11 +102,15 @@ print_sys_config(SysConfig) ->
 -spec print_vm_args(vm_args()) ->
     iolist().
 print_vm_args(VMArgs) ->
-    KVFlags = [{genlib:to_binary(Arg), genlib:to_binary(Value)} || {Arg, Value} <- VMArgs],
-    UniqKVFlags = maps:to_list(maps:from_list(KVFlags)),
-    KVFlagsText = [[Arg, $\s, Value, $\n] || {Arg, Value} <- UniqKVFlags],
-    FlagsText = [[genlib:to_binary(P), $\n] || P <- VMArgs, not is_tuple(P)],
-    [KVFlagsText | FlagsText].
+    lists:map(
+        fun
+            ({Arg, Value}) ->
+                [genlib:to_binary(Arg), $\s, genlib:to_binary(Value), $\n];
+            (Arg) when not is_tuple(Arg) ->
+                [genlib:to_binary(Arg), $\n]
+        end,
+        VMArgs
+    ).
 
 -spec print_erl_inetrc(erl_inetrc()) ->
     iolist().

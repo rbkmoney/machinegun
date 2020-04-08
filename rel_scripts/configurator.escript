@@ -517,30 +517,16 @@ procreg(YamlConfig) ->
 %% vm.args
 %%
 vm_args(YamlConfig, ERLInetrcFilename) ->
-    DefaultFlags = [
+    Flags = [
+        node_name(YamlConfig),
+        {'-kernel', <<"inetrc '\"", (?C:utf_bin(ERLInetrcFilename))/binary, "\"'">>},
         {'+c', true},
         {'+C', single_time_warp}
     ],
-    ConfigRawFlags = erlang_flags(YamlConfig),
     ProtoFlags = conf_if([erlang, ipv6], YamlConfig, [
         {'-proto_dist', inet6_tcp}
     ]),
-    ConfigFlags = [
-        node_name(YamlConfig),
-        {'-kernel'   , <<"inetrc '\"", (?C:utf_bin(ERLInetrcFilename))/binary, "\"'">>}
-    ],
-    DefaultFlags ++ ConfigRawFlags ++ ConfigFlags ++ ProtoFlags.
-
-erlang_flags(YamlConfig) ->
-    lists:map(
-        fun
-            ([Pair]) when is_tuple(Pair) ->
-                Pair;
-            (Flag) when is_list(Flag) ->
-                erlang:list_to_binary(Flag)
-        end,
-        ?C:conf([erlang, flags], YamlConfig, [])
-    ).
+    Flags ++ ProtoFlags.
 
 cookie(YamlConfig) ->
     ?C:contents(?C:filename(?C:conf([erlang, secret_cookie_file], YamlConfig))).
