@@ -367,6 +367,7 @@ storage(NS, YamlConfig) ->
         "memory" ->
             mg_core_storage_memory;
         "riak" ->
+            PoolSize = ?C:conf([storage, pool, size], YamlConfig, 100),
             {mg_core_storage_riak, #{
                 host   => ?C:utf_bin(?C:conf([storage, host], YamlConfig)),
                 port   =>            ?C:conf([storage, port], YamlConfig),
@@ -378,10 +379,13 @@ storage(NS, YamlConfig) ->
                     % if the riak is unavailable. The `pooler` synchronously creates `init_count`
                     % connections at the start.
                     init_count          => 0,
-                    max_count           => ?C:conf([storage, pool, size], YamlConfig, 100),
+                    max_count           => PoolSize,
                     idle_timeout        => timer:seconds(60),
                     cull_interval       => timer:seconds(10),
                     queue_max           => ?C:conf([storage, pool, queue_max], YamlConfig, 1000)
+                },
+                batching => #{
+                    concurrency_limit   => ?C:conf([storage, batch_concurrency_limit], YamlConfig, PoolSize)
                 }
             }}
     end.
