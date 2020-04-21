@@ -143,4 +143,4 @@ duration_bin_metric_test(_C) ->
 -spec test_beat(mg_woody_api_pulse:beat()) ->
     ok.
 test_beat(Beat) ->
-    machinegun_pulse_metric:handle_beat(#{}, Beat).
+    machinegun_pulse_metric:handle_beat(undefined, Beat).
