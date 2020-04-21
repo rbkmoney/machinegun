@@ -477,4 +477,4 @@ extract_woody_meta(Meta) ->
 -spec format_timestamp(genlib_time:ts()) ->
     binary().
 format_timestamp(TS) ->
-    genlib_format:format_timestamp_iso8601(TS).
+    genlib_rfc3339:format(TS, second).
