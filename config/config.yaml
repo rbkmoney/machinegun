@@ -130,6 +130,7 @@ storage:
 #        queue_max: 1000
 #     connect_timeout: 5S
 #     request_timeout: 10S
+#     index_query_timeout: 10S
 #     batch_concurrency_limit: 50
 
 ## kafka settings example

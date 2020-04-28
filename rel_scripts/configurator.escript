@@ -374,6 +374,7 @@ storage(NS, YamlConfig) ->
                 bucket => NS,
                 connect_timeout => ?C:time_interval(?C:conf([storage, connect_timeout  ], YamlConfig, "5S" ), ms),
                 request_timeout => ?C:time_interval(?C:conf([storage, request_timeout  ], YamlConfig, "10S"), ms),
+                index_query_timeout => ?C:time_interval(?C:conf([storage, index_query_timeout], YamlConfig, "10S"), ms),
                 pool_options => #{
                     % If `init_count` is greater than zero, then the service will not start
                     % if the riak is unavailable. The `pooler` synchronously creates `init_count`
