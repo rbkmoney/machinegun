@@ -374,6 +374,7 @@ storage(NS, YamlConfig) ->
                 bucket => NS,
                 connect_timeout => ?C:time_interval(?C:conf([storage, connect_timeout  ], YamlConfig, "5S" ), ms),
                 request_timeout => ?C:time_interval(?C:conf([storage, request_timeout  ], YamlConfig, "10S"), ms),
+                index_query_timeout => ?C:time_interval(?C:conf([storage, index_query_timeout], YamlConfig, "10S"), ms),
                 pool_options => #{
                     % If `init_count` is greater than zero, then the service will not start
                     % if the riak is unavailable. The `pooler` synchronously creates `init_count`
@@ -470,15 +471,15 @@ scheduler(Share, Config) ->
 timer_scheduler(Share, Config) ->
     (scheduler(Share, Config))#{
         capacity       => ?C:conf([capacity], Config, 1000),
-        min_scan_delay => 1000,
+        min_scan_delay => timeout(min_scan_delay, Config, "1s", ms),
         target_cutoff  => timeout(scan_interval, Config, "60s", sec)
     }.
 
 overseer_scheduler(Share, Config) ->
     (scheduler(Share, Config))#{
         capacity       => ?C:conf([capacity], Config, 1000),
-        min_scan_delay => 1000,
-        rescan_delay   => 10 * 60 * 1000
+        min_scan_delay => timeout(min_scan_delay, Config, "1s", ms),
+        rescan_delay   => timeout(scan_interval, Config, "10m", ms)
     }.
 
 timeout(Name, Config, Default, Unit) ->
