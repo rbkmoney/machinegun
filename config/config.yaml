@@ -109,9 +109,10 @@ namespaces:
             pool_size: 50
             http_keep_alive_timeout: 10s
         timers:
-            scan_interval: 30s
+            scan_interval: 1m
             scan_limit: 1000
             capacity: 500
+            min_scan_delay: 10s
         overseer: disabled
         # maximum number of events that will be stored inside of machine state
         # must be non negative integer, default is 0

@@ -471,15 +471,15 @@ scheduler(Share, Config) ->
 timer_scheduler(Share, Config) ->
     (scheduler(Share, Config))#{
         capacity       => ?C:conf([capacity], Config, 1000),
-        min_scan_delay => 1000,
+        min_scan_delay => timeout(min_scan_delay, Config, "1s", ms),
         target_cutoff  => timeout(scan_interval, Config, "60s", sec)
     }.
 
 overseer_scheduler(Share, Config) ->
     (scheduler(Share, Config))#{
         capacity       => ?C:conf([capacity], Config, 1000),
-        min_scan_delay => 1000,
-        rescan_delay   => 10 * 60 * 1000
+        min_scan_delay => timeout(min_scan_delay, Config, "1s", ms),
+        rescan_delay   => timeout(scan_interval, Config, "10m", ms)
     }.
 
 timeout(Name, Config, Default, Unit) ->
