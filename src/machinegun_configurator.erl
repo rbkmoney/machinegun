@@ -52,10 +52,10 @@ construct_child_specs(#{
     Quotas       = maps:get(quotas, Config, []),
     HealthChecks = maps:get(health_check, Config, #{}),
 
-    QuotasChSpec        = quotas_child_specs(Quotas, quota),
-    EventSinkChSpec     = event_sink_ns_child_spec(EventSinkNS, event_sink, Pulse),
-    EventMachinesChSpec = events_machines_child_specs(Namespaces, EventSinkNS, Pulse),
-    WoodyServerChSpec   = machinegun_woody_api:child_spec(
+    QuotasChildSpec        = quotas_child_specs(Quotas, quota),
+    EventSinkChildSpec     = event_sink_ns_child_spec(EventSinkNS, event_sink, Pulse),
+    EventMachinesChildSpec = events_machines_child_specs(Namespaces, EventSinkNS, Pulse),
+    WoodyServerChildSpec   = machinegun_woody_api:child_spec(
         woody_server,
         #{
             woody_server => WoodyServer,
@@ -67,10 +67,10 @@ construct_child_specs(#{
     ),
 
     lists:flatten([
-        EventSinkChSpec,
-        WoodyServerChSpec,
-        QuotasChSpec,
-        EventMachinesChSpec
+        QuotasChildSpec,
+        EventSinkChildSpec,
+        EventMachinesChildSpec,
+        WoodyServerChildSpec
     ]).
 
 %%
