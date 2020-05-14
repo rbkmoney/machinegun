@@ -295,8 +295,7 @@ woody_server(YamlConfig) ->
             logger          => logger
         },
         limits   => genlib_map:compact(#{
-            max_heap_size       => ?C:mem_words(?C:conf([limits, process_heap], YamlConfig, undefined)),
-            total_mem_threshold => absolute_memory_limit(YamlConfig)
+            max_heap_size   => ?C:mem_words(?C:conf([limits, process_heap], YamlConfig, undefined))
         })
     }.
 
@@ -339,28 +338,6 @@ relative_memory_limit(YamlConfig, Default, Fun) ->
     conf_with([limits, memory], YamlConfig, Default, fun (MemoryConfig) ->
         Fun({?C:conf([type], MemoryConfig, "total"), percent(?C:conf([value], MemoryConfig))})
     end).
-
-absolute_memory_limit(YamlConfig) ->
-    {ok, _} = application:ensure_all_started(cg_mon),
-    {ok, _} = application:ensure_all_started(os_mon),
-    relative_memory_limit(YamlConfig, undefined, fun({Type, RelativeLimit}) ->
-        CGMemLimit = wait_value(fun() -> memory_amount(Type) end, 1000, 10, memory_limit),
-        RelativeLimit * CGMemLimit div 100
-    end).
-
-memory_amount("cgroups") -> cg_mem_sup:limit();
-memory_amount("total"  ) -> proplists:get_value(total_memory, memsup:get_system_memory_data()).
-
-wait_value(_, 0, _, Key) ->
-    exit({failed_fetch, Key});
-wait_value(Fun, Timeout, Interval, Key) ->
-    case Fun() of
-        undefined ->
-            timer:sleep(Interval),
-            wait_value(Fun, erlang:max(0, Timeout - Interval), Interval, Key);
-        Value ->
-            Value
-    end.
 
 storage(NS, YamlConfig) ->
     case ?C:conf([storage, type], YamlConfig) of
