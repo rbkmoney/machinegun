@@ -517,8 +517,22 @@ service_name(YamlConfig) ->
     ?C:utf_bin(?C:conf([service_name], YamlConfig, "machinegun")).
 
 node_name(YamlConfig) ->
-    Name = ?C:conf([dist_node_name], YamlConfig, default_node_name(YamlConfig)),
+    Name = case ?C:conf([dist_node_name], YamlConfig, default_node_name(YamlConfig)) of
+        C = [{_, _} | _] ->
+            make_node_name(C, YamlConfig);
+        S when is_list(S) ->
+            S
+    end,
     {node_name_type(Name), ?C:utf_bin(Name)}.
+
+make_node_name(C, YamlConfig) ->
+    NamePart = ?C:conf([namepart], C, default_name_part(YamlConfig)),
+    HostPart = case ?C:conf([hostpart], C) of
+        "hostname" -> ?C:hostname();
+        "fqdn"     -> ?C:fqdn();
+        "ip"       -> guess_host_addr(YamlConfig)
+    end,
+    NamePart ++ "@" ++ HostPart.
 
 node_name_type(Name) ->
     case string:split(Name, "@") of
@@ -538,7 +552,10 @@ host_name_type(Name) ->
     end.
 
 default_node_name(YamlConfig) ->
-    ?C:conf([service_name], YamlConfig, "machinegun") ++ "@" ++ guess_host_addr(YamlConfig).
+    default_name_part(YamlConfig) ++ "@" ++ ?C:hostname().
+
+default_name_part(YamlConfig) ->
+    ?C:conf([service_name], YamlConfig, "machinegun").
 
 guess_host_addr(YamlConfig) ->
     inet:ntoa(?C:guess_host_address(address_family_preference(YamlConfig))).
