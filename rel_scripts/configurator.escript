@@ -98,6 +98,7 @@ consuela(YamlConfig) ->
                 name      => service_presence_name(YamlConfig),
                 consul    => consul_client(mg_consuela_presence, YamlConfig),
                 shutdown  => ?C:time_interval(?C:conf([shutdown_timeout], PresenceConfig, "5s"), 'ms'),
+                service_tags => tags([tags], PresenceConfig, []),
                 session_opts => #{
                     interval => ?C:time_interval(?C:conf([check_interval], PresenceConfig, "5s"), 'sec'),
                     pulse    => mg_core_consuela_pulse_adapter:pulse(presence_session, pulse(YamlConfig))
@@ -138,7 +139,7 @@ consuela(YamlConfig) ->
         conf_with([consuela, discovery], YamlConfig, [], fun (DiscoveryConfig) -> [
             {discovery, #{
                 name      => service_presence_name(YamlConfig),
-                tags      => [?C:utf_bin(T) || T <- ?C:conf([tags], DiscoveryConfig, [])],
+                tags      => tags([tags], DiscoveryConfig, tags([consuela, presence, tags], YamlConfig, [])),
                 consul    => consul_client(mg_consuela_discovery, YamlConfig),
                 opts      => #{
                     interval => #{
@@ -150,6 +151,9 @@ consuela(YamlConfig) ->
             }}
         ] end)
     ]).
+
+tags(Path, Config, Defaults) ->
+    [?C:utf_bin(T) || T <- ?C:conf(Path, Config, Defaults)].
 
 service_presence_name(YamlConfig) ->
     erlang:iolist_to_binary([service_name(YamlConfig), "-consuela"]).

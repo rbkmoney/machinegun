@@ -57,13 +57,13 @@ woody_server:
 consuela:
     presence:
         check_interval: 5s
+        tags:
+            - production
     registry:
         nodename: mhost1
         session_ttl: 30s
         session_renewal_interval: 10s
-    discovery:
-        tags:
-            - production
+    discovery: {}
 
 # Consul client settings.
 # Required when distributed machine registry is enabled.
