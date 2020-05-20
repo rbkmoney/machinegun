@@ -26,6 +26,7 @@
 
 -export([guess_host_address/1]).
 -export([hostname/0]).
+-export([fqdn/0]).
 
 -export([filename         /1]).
 -export([file             /2]).
@@ -206,6 +207,17 @@ get_iface_prio(_)          -> 100.
 hostname() ->
     {ok, Name} = inet:gethostname(),
     Name.
+
+-spec fqdn() ->
+    inet:hostname().
+fqdn() ->
+    Hostname = hostname(),
+    case net_adm:localhost() of
+        Hostname ->
+            error({cant_determine_fqdn, Hostname});
+        FQDN ->
+            FQDN
+    end.
 
 -spec
 log_level(string()  ) -> atom().

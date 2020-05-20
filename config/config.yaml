@@ -21,8 +21,19 @@ service_name: machinegun
 
 # Name of the node for Erlang distribution.
 #
-# Defaults to: '{service_name}@{primary_netif_ip}'.
-# dist_node_name: machinegun@10.0.0.42
+# Defaults to: '{service_name}@{hostname}'.
+# Examples:
+# * with short node name:
+#     dist_node_name: machinegun
+# * with fixed ip for host part:
+#     dist_node_name: machinegun@10.0.0.42
+# * for `machinegun@{primary_netif_ip}`, with latter determined at start time:
+#     dist_node_name:
+#       hostpart: ip
+# * for `blarg@{fqdn}`, if latter available at start time:
+#     dist_node_name:
+#       namepart: blarg
+#       hostpart: fqdn
 
 # Erlang VM options.
 erlang:
@@ -46,13 +57,13 @@ woody_server:
 consuela:
     presence:
         check_interval: 5s
+        tags:
+            - production
     registry:
         nodename: mhost1
         session_ttl: 30s
         session_renewal_interval: 10s
-    discovery:
-        tags:
-            - production
+    discovery: {}
 
 # Consul client settings.
 # Required when distributed machine registry is enabled.

@@ -98,6 +98,7 @@ consuela(YamlConfig) ->
                 name      => service_presence_name(YamlConfig),
                 consul    => consul_client(mg_consuela_presence, YamlConfig),
                 shutdown  => ?C:time_interval(?C:conf([shutdown_timeout], PresenceConfig, "5s"), 'ms'),
+                service_tags => tags([tags], PresenceConfig, []),
                 session_opts => #{
                     interval => ?C:time_interval(?C:conf([check_interval], PresenceConfig, "5s"), 'sec'),
                     pulse    => mg_core_consuela_pulse_adapter:pulse(presence_session, pulse(YamlConfig))
@@ -138,7 +139,7 @@ consuela(YamlConfig) ->
         conf_with([consuela, discovery], YamlConfig, [], fun (DiscoveryConfig) -> [
             {discovery, #{
                 name      => service_presence_name(YamlConfig),
-                tags      => [?C:utf_bin(T) || T <- ?C:conf([tags], DiscoveryConfig, [])],
+                tags      => tags([tags], DiscoveryConfig, tags([consuela, presence, tags], YamlConfig, [])),
                 consul    => consul_client(mg_consuela_discovery, YamlConfig),
                 opts      => #{
                     interval => #{
@@ -150,6 +151,9 @@ consuela(YamlConfig) ->
             }}
         ] end)
     ]).
+
+tags(Path, Config, Defaults) ->
+    [?C:utf_bin(T) || T <- ?C:conf(Path, Config, Defaults)].
 
 service_presence_name(YamlConfig) ->
     erlang:iolist_to_binary([service_name(YamlConfig), "-consuela"]).
@@ -517,8 +521,22 @@ service_name(YamlConfig) ->
     ?C:utf_bin(?C:conf([service_name], YamlConfig, "machinegun")).
 
 node_name(YamlConfig) ->
-    Name = ?C:conf([dist_node_name], YamlConfig, default_node_name(YamlConfig)),
+    Name = case ?C:conf([dist_node_name], YamlConfig, default_node_name(YamlConfig)) of
+        C = [{_, _} | _] ->
+            make_node_name(C, YamlConfig);
+        S when is_list(S) ->
+            S
+    end,
     {node_name_type(Name), ?C:utf_bin(Name)}.
+
+make_node_name(C, YamlConfig) ->
+    NamePart = ?C:conf([namepart], C, default_name_part(YamlConfig)),
+    HostPart = case ?C:conf([hostpart], C) of
+        "hostname" -> ?C:hostname();
+        "fqdn"     -> ?C:fqdn();
+        "ip"       -> guess_host_addr(YamlConfig)
+    end,
+    NamePart ++ "@" ++ HostPart.
 
 node_name_type(Name) ->
     case string:split(Name, "@") of
@@ -538,7 +556,10 @@ host_name_type(Name) ->
     end.
 
 default_node_name(YamlConfig) ->
-    ?C:conf([service_name], YamlConfig, "machinegun") ++ "@" ++ guess_host_addr(YamlConfig).
+    default_name_part(YamlConfig) ++ "@" ++ ?C:hostname().
+
+default_name_part(YamlConfig) ->
+    ?C:conf([service_name], YamlConfig, "machinegun").
 
 guess_host_addr(YamlConfig) ->
     inet:ntoa(?C:guess_host_address(address_family_preference(YamlConfig))).
