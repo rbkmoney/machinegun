@@ -94,7 +94,7 @@ distclean:
 	rm -rfv _build _builds _cache _steps _temp
 
 # CALL_W_CONTAINER
-test: submodules
+test: submodules test_configurator
 	$(REBAR) ct
 
 dev_test: xref lint test
