@@ -208,7 +208,10 @@ hay_statsd_publisher(YamlConfig) ->
     ] end).
 
 snowflake(YamlConfig) ->
-    [{machine_id, ?C:conf([snowflake_machine_id], YamlConfig, hostname_hash)}].
+    [
+        {machine_id, ?C:conf([snowflake_machine_id], YamlConfig, hostname_hash)},
+        {max_backward_clock_moving, 1000}
+    ].
 
 pulse(YamlConfig) ->
     MaxLength = ?C:conf([logging, formatter, max_length], YamlConfig, 1000),
