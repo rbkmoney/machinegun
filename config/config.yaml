@@ -128,6 +128,12 @@ namespaces:
         # maximum number of events that will be stored inside of machine state
         # must be non negative integer, default is 0
         event_stash_size: 5
+        modernizer:
+            current_format_version: 1
+            handler:
+                url: http://localhost:8022/modernizer
+                pool_size: 50
+                http_keep_alive_timeout: 10s
 snowflake_machine_id: 1
 # memory storage backend
 storage:

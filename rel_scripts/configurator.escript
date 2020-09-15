@@ -390,60 +390,84 @@ namespace({NameStr, NSYamlConfig}, YamlConfig) ->
     Timeout = fun(TimeoutName, Default) ->
         timeout(TimeoutName, NSYamlConfig, Default, ms)
     end,
-    {Name, #{
-        storage   => storage(Name, YamlConfig),
-        processor => #{
-            url            => ?C:utf_bin(?C:conf([processor, url], NSYamlConfig)),
+    {Name, maps:merge(
+        #{
+            storage   => storage(Name, YamlConfig),
+            processor => #{
+                url            => ?C:utf_bin(?C:conf([processor, url], NSYamlConfig)),
+                transport_opts => #{
+                    pool => erlang:list_to_atom(NameStr),
+                    timeout => ?C:time_interval(?C:conf([processor, http_keep_alive_timeout], NSYamlConfig, "4S"), 'ms'),
+                    max_connections => ?C:conf([processor, pool_size], NSYamlConfig, 50)
+                },
+                resolver_opts => #{
+                    ip_picker => random
+                }
+            },
+            worker => #{
+                registry          => procreg(YamlConfig),
+                worker_options    => #{
+                    hibernate_timeout => Timeout(hibernate_timeout,  "5S"),
+                    unload_timeout    => Timeout(unload_timeout   , "60S")
+                }
+            },
+            default_processing_timeout => Timeout(default_processing_timeout, "30S"),
+            timer_processing_timeout => Timeout(timer_processing_timeout, "60S"),
+            reschedule_timeout => Timeout(reschedule_timeout, "60S"),
+            retries => #{
+                storage      => {exponential, infinity, 2, 10, 60 * 1000},
+                %% max_total_timeout not supported for timers yet, see mg_retry:new_strategy/2 comments
+                %% actual timers sheduling resolution is one second
+                timers       => {exponential, 100, 2, 1000, 30 * 60 * 1000},
+                processor    => {exponential, {max_total_timeout, 24 * 60 * 60 * 1000}, 2, 10, 60 * 1000},
+                continuation => {exponential, infinity, 2, 10, 60 * 1000}
+            },
+            schedulers => maps:merge(
+                case ?C:conf([timers], NSYamlConfig, []) of
+                    "disabled" ->
+                        #{};
+                    TimersConfig ->
+                        #{
+                            timers         => timer_scheduler(2, TimersConfig),
+                            timers_retries => timer_scheduler(1, TimersConfig)
+                        }
+                end,
+                case ?C:conf([overseer], NSYamlConfig, []) of
+                    "disabled" ->
+                        #{};
+                    OverseerConfig ->
+                        #{
+                            overseer => overseer_scheduler(0, OverseerConfig)
+                        }
+                end
+            ),
+            event_sinks => [event_sink(ES) || ES <- ?C:conf([event_sinks], NSYamlConfig, [])],
+            suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0)),
+            event_stash_size => ?C:conf([event_stash_size], NSYamlConfig, 0)
+        },
+        conf_with([modernizer], NSYamlConfig, #{}, fun (ModernizerYamlConfig) -> #{
+            modernizer => modernizer(NameStr, ModernizerYamlConfig)
+        } end)
+    )}.
+
+modernizer(NameStr, ModernizerYamlConfig) ->
+    #{
+        current_format_version => ?C:conf([current_format_version], ModernizerYamlConfig),
+        handler => #{
+            url            => ?C:utf_bin(?C:conf([handler, url], ModernizerYamlConfig)),
             transport_opts => #{
-                pool => erlang:list_to_atom(NameStr),
-                timeout => ?C:time_interval(?C:conf([processor, http_keep_alive_timeout], NSYamlConfig, "4S"), 'ms'),
-                max_connections => ?C:conf([processor, pool_size], NSYamlConfig, 50)
+                pool =>
+                    erlang:list_to_atom(NameStr),
+                timeout =>
+                    ?C:time_interval(?C:conf([handler, http_keep_alive_timeout], ModernizerYamlConfig, "4S"), 'ms'),
+                max_connections =>
+                    ?C:conf([handler, pool_size], ModernizerYamlConfig, 50)
             },
             resolver_opts => #{
                 ip_picker => random
             }
-        },
-        worker => #{
-            registry          => procreg(YamlConfig),
-            worker_options    => #{
-                hibernate_timeout => Timeout(hibernate_timeout,  "5S"),
-                unload_timeout    => Timeout(unload_timeout   , "60S")
-            }
-        },
-        default_processing_timeout => Timeout(default_processing_timeout, "30S"),
-        timer_processing_timeout => Timeout(timer_processing_timeout, "60S"),
-        reschedule_timeout => Timeout(reschedule_timeout, "60S"),
-        retries => #{
-            storage      => {exponential, infinity, 2, 10, 60 * 1000},
-            %% max_total_timeout not supported for timers yet, see mg_retry:new_strategy/2 comments
-            %% actual timers sheduling resolution is one second
-            timers       => {exponential, 100, 2, 1000, 30 * 60 * 1000},
-            processor    => {exponential, {max_total_timeout, 24 * 60 * 60 * 1000}, 2, 10, 60 * 1000},
-            continuation => {exponential, infinity, 2, 10, 60 * 1000}
-        },
-        schedulers => maps:merge(
-            case ?C:conf([timers], NSYamlConfig, []) of
-                "disabled" ->
-                    #{};
-                TimersConfig ->
-                    #{
-                        timers         => timer_scheduler(2, TimersConfig),
-                        timers_retries => timer_scheduler(1, TimersConfig)
-                    }
-            end,
-            case ?C:conf([overseer], NSYamlConfig, []) of
-                "disabled" ->
-                    #{};
-                OverseerConfig ->
-                    #{
-                        overseer => overseer_scheduler(0, OverseerConfig)
-                    }
-            end
-        ),
-        event_sinks => [event_sink(ES) || ES <- ?C:conf([event_sinks], NSYamlConfig, [])],
-        suicide_probability => ?C:probability(?C:conf([suicide_probability], NSYamlConfig, 0)),
-        event_stash_size => ?C:conf([event_stash_size], NSYamlConfig, 0)
-    }}.
+        }
+    }.
 
 scheduler(Share, Config) ->
     #{
