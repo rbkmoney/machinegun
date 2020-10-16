@@ -74,17 +74,21 @@ logger(YamlConfig) ->
     Root = ?C:filename(?C:conf([logging, root], YamlConfig, "/var/log/machinegun")),
     LogfileName = ?C:filename (?C:conf([logging, json_log], YamlConfig, "log.json")),
     FullLogname = filename:join(Root, LogfileName),
+    OutType = ?C:conf([logging, out_type], YamlConfig,  file),
+    Out =
+        case OutType of
+            file -> #{type => file, file => FullLogname};
+            stdout -> #{type => standard_io}
+        end,
     [
         {handler, default, logger_std_h, #{
             level => debug,
-            config => #{
-                type => file,
-                file => FullLogname,
+            config => maps:merge(Out, #{
                 burst_limit_enable => ?C:conf([logging, burst_limit_enable], YamlConfig,  true),
                 sync_mode_qlen => ?C:conf([logging, sync_mode_qlen], YamlConfig,  100),
                 drop_mode_qlen => ?C:conf([logging, drop_mode_qlen], YamlConfig, 1000),
                 flush_qlen     => ?C:conf([logging, flush_qlen],     YamlConfig, 2000)
-            },
+            }),
             formatter => {logger_logstash_formatter, #{
                 chars_limit => ?C:conf([logging, formatter, max_length], YamlConfig, 1000)
             }}
