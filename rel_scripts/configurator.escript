@@ -74,11 +74,11 @@ logger(YamlConfig) ->
     Root = ?C:filename(?C:conf([logging, root], YamlConfig, "/var/log/machinegun")),
     LogfileName = ?C:filename (?C:conf([logging, json_log], YamlConfig, "log.json")),
     FullLogname = filename:join(Root, LogfileName),
-    OutType = ?C:conf([logging, out_type], YamlConfig,  file),
+    OutType = ?C:conf([logging, out_type], YamlConfig,  "file"),
     Out =
         case OutType of
-            file -> #{type => file, file => FullLogname};
-            stdout -> #{type => standard_io}
+            "file" -> #{type => file, file => FullLogname};
+            "stdout" -> #{type => standard_io}
         end,
     [
         {handler, default, logger_std_h, #{
