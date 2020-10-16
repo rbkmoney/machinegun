@@ -83,14 +83,12 @@ logger(YamlConfig) ->
     [
         {handler, default, logger_std_h, #{
             level => debug,
-            config => #{
-                type => file,
-                file => FullLogname,
+            config => maps:merge(Out, #{
                 burst_limit_enable => ?C:conf([logging, burst_limit_enable], YamlConfig,  true),
                 sync_mode_qlen => ?C:conf([logging, sync_mode_qlen], YamlConfig,  100),
                 drop_mode_qlen => ?C:conf([logging, drop_mode_qlen], YamlConfig, 1000),
                 flush_qlen     => ?C:conf([logging, flush_qlen],     YamlConfig, 2000)
-            },
+            }),
             formatter => {logger_logstash_formatter, #{
                 chars_limit => ?C:conf([logging, formatter, max_length], YamlConfig, 1000)
             }}
