@@ -14,7 +14,7 @@
 %%% limitations under the License.
 %%%
 
--module(machinegun_pulse_metric).
+-module(machinegun_pulse_hay).
 
 -include_lib("machinegun_core/include/pulse.hrl").
 -include_lib("machinegun_woody_api/include/pulse.hrl").
@@ -27,7 +27,7 @@
 -type metric_key() :: how_are_you:metric_key().
 -type beat() :: machinegun_pulse:beat().
 -type impact_tag() :: atom().
--type bin_type() :: machinegun_metric_utils:bin_type().
+-type bin_type() :: machinegun_hay_utils:bin_type().
 -type options() :: machinegun_pulse:options().
 
 %%
@@ -217,29 +217,29 @@ calc_queue_usage(Len, Limit) ->
 -spec push(metrics()) ->
     ok.
 push(Metrics) ->
-    machinegun_metric_utils:push(Metrics).
+    machinegun_hay_utils:push(Metrics).
 
 -spec create_inc(metric_key()) ->
     metric().
 create_inc(Key) ->
-    machinegun_metric_utils:create_inc(Key).
+    machinegun_hay_utils:create_inc(Key).
 
 -spec create_inc(metric_key(), non_neg_integer()) ->
     metric().
 create_inc(Key, Number) ->
-    machinegun_metric_utils:create_inc(Key, Number).
+    machinegun_hay_utils:create_inc(Key, Number).
 
 -spec create_gauge(metric_key(), non_neg_integer()) ->
     metric().
 create_gauge(Key, Number) ->
-    machinegun_metric_utils:create_gauge(Key, Number).
+    machinegun_hay_utils:create_gauge(Key, Number).
 
 -spec create_delay_inc(metric_key(), number() | undefined) ->
     [metric()].
 create_delay_inc(KeyPrefix, Number) ->
-    machinegun_metric_utils:create_delay_inc(KeyPrefix, Number).
+    machinegun_hay_utils:create_delay_inc(KeyPrefix, Number).
 
 -spec create_bin_inc(metric_key(), bin_type(), number()) ->
     metric().
 create_bin_inc(KeyPrefix, BinType, Value) ->
-    machinegun_metric_utils:create_bin_inc(KeyPrefix, BinType, Value).
+    machinegun_hay_utils:create_bin_inc(KeyPrefix, BinType, Value).

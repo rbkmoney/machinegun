@@ -14,7 +14,7 @@
 %%% limitations under the License.
 %%%
 
--module(machinegun_metric_utils).
+-module(machinegun_hay_utils).
 
 -export([push/1]).
 -export([create_inc/1]).

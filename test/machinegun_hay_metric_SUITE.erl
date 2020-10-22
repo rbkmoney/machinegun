@@ -14,7 +14,7 @@
 %%% limitations under the License.
 %%%
 
--module(machinegun_metric_SUITE).
+-module(machinegun_hay_metric_SUITE).
 -include_lib("common_test/include/ct.hrl").
 -include_lib("stdlib/include/assert.hrl").
 -include_lib("machinegun_core/include/pulse.hrl").
@@ -143,4 +143,4 @@ duration_bin_metric_test(_C) ->
 -spec test_beat(mg_woody_api_pulse:beat()) ->
     ok.
 test_beat(Beat) ->
-    machinegun_pulse_metric:handle_beat(undefined, Beat).
+    machinegun_pulse_hay:handle_beat(undefined, Beat).
