@@ -1,5 +1,6 @@
 {"1.1.0",
-[{<<"bear">>,{pkg,<<"bear">>,<<"0.8.7">>},2},
+[{<<"accept">>,{pkg,<<"accept">>,<<"0.3.5">>},2},
+ {<<"bear">>,{pkg,<<"bear">>,<<"0.8.7">>},2},
  {<<"brod">>,{pkg,<<"brod">>,<<"3.7.5">>},1},
  {<<"cache">>,{pkg,<<"cache">>,<<"2.2.0">>},2},
  {<<"certifi">>,{pkg,<<"certifi">>,<<"2.5.1">>},3},
@@ -66,6 +67,9 @@
   {git,"https://github.com/seth/pooler",
        {ref,"9c28fb479f9329e2a1644565a632bc222780f1b7"}},
   1},
+ {<<"prometheus">>,{pkg,<<"prometheus">>,<<"4.6.0">>},0},
+ {<<"prometheus_cowboy">>,{pkg,<<"prometheus_cowboy">>,<<"0.1.8">>},0},
+ {<<"prometheus_httpd">>,{pkg,<<"prometheus_httpd">>,<<"2.1.11">>},1},
  {<<"ranch">>,{pkg,<<"ranch">>,<<"1.7.1">>},2},
  {<<"recon">>,{pkg,<<"recon">>,<<"2.3.2">>},0},
  {<<"riak_pb">>,
@@ -98,6 +102,7 @@
   0}]}.
 [
 {pkg_hash,[
+ {<<"accept">>, <<"B33B127ABCA7CC948BBE6CAA4C263369ABF1347CFA9D8E699C6D214660F10CD1">>},
  {<<"bear">>, <<"16264309AE5D005D03718A5C82641FCC259C9E8F09ADEB6FD79CA4271168656F">>},
  {<<"brod">>, <<"57FA18ABCDAB9F152D0120C568F6C789CAB08716426320BD4152AFB9943AFC82">>},
  {<<"cache">>, <<"3C11DBF4CD8FCD5787C95A5FB2A04038E3729CFCA0386016EEA8C953AB48A5AB">>},
@@ -113,6 +118,9 @@
  {<<"metrics">>, <<"25F094DEA2CDA98213CECC3AEFF09E940299D950904393B2A29D191C346A8486">>},
  {<<"mimerl">>, <<"67E2D3F571088D5CFD3E550C383094B47159F3EEE8FFA08E64106CDF5E981BE3">>},
  {<<"parse_trans">>, <<"09765507A3C7590A784615CFD421D101AEC25098D50B89D7AA1D66646BC571C1">>},
+ {<<"prometheus">>, <<"20510F381DB1CCAB818B4CF2FAC5FA6AB5CC91BC364A154399901C001465F46F">>},
+ {<<"prometheus_cowboy">>, <<"CFCE0BC7B668C5096639084FCD873826E6220EA714BF60A716F5BD080EF2A99C">>},
+ {<<"prometheus_httpd">>, <<"F616ED9B85B536B195D94104063025A91F904A4CFC20255363F49A197D96C896">>},
  {<<"ranch">>, <<"6B1FAB51B49196860B733A49C07604465A47BDB78AA10C1C16A3D199F7F8C881">>},
  {<<"recon">>, <<"4444C879BE323B1B133EEC5241CB84BD3821EA194C740D75617E106BE4744318">>},
  {<<"snappyer">>, <<"6D739C534CD2339633127A2B40279BE71F149E5842C5363A4D88E66EFB7C1FEC">>},

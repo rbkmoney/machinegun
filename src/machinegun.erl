@@ -23,6 +23,7 @@ stop() ->
     {ok, pid()}.
 start(_StartType, _StartArgs) ->
     Config = maps:from_list(genlib_app:env(?MODULE)),
+    ok = setup_metrics(),
     ChildSpecs = machinegun_configurator:construct_child_specs(Config),
     mg_core_utils_supervisor_wrapper:start_link(
         {local, ?MODULE},
@@ -34,3 +35,10 @@ start(_StartType, _StartArgs) ->
     ok.
 stop(_State) ->
     ok.
+
+%% Internals
+
+-spec setup_metrics() ->
+    ok.
+setup_metrics() ->
+    ok = machinegun_pulse_prometheus:setup().

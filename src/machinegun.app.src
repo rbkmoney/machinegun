@@ -24,6 +24,8 @@
         genlib,
         how_are_you,
         yamerl,
+        prometheus,
+        prometheus_cowboy,
         machinegun_core,
         machinegun_woody_api
     ]},
