@@ -55,7 +55,7 @@ sys_config(YamlConfig) ->
         ]},
         {consuela            , consuela    (YamlConfig)},
         {how_are_you         , how_are_you (YamlConfig)},
-        {prometheus          , prometheus (YamlConfig)},
+        {prometheus          , prometheus  (YamlConfig)},
         {snowflake           , snowflake   (YamlConfig)},
         {brod                , brod        (YamlConfig)},
         {hackney             , hackney     (YamlConfig)},
