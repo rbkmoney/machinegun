@@ -150,11 +150,11 @@ setup() ->
         {help, "Total number of Machinegun worker actions."}
     ]),
     true = prometheus_histogram:declare([
-        {name, mg_worker_action_queue_lenght},
+        {name, mg_worker_action_queue_length},
         {registry, registry()},
         {labels, [namespace, action]},
-        {buckets, queue_lenght_buckets()},
-        {help, "Machinegun worker queue lenght."}
+        {buckets, queue_length_buckets()},
+        {help, "Machinegun worker queue length."}
     ]),
     true = prometheus_histogram:declare([
         {name, mg_worker_action_queue_usage},
@@ -267,7 +267,7 @@ dispatch_metrics(#mg_core_worker_call_attempt{namespace = NS}) ->
 dispatch_metrics(#mg_core_worker_start_attempt{namespace = NS, msg_queue_len = QLen, msg_queue_limit = QLimit}) ->
     QUsage = calc_queue_usage(QLen, QLimit),
     ok = inc(mg_worker_actions_total, [NS, start_attempt]),
-    ok = observe(mg_worker_action_queue_lenght, [NS, start_attempt], QLen),
+    ok = observe(mg_worker_action_queue_length, [NS, start_attempt], QLen),
     ok = observe(mg_worker_action_queue_usage, [NS, start_attempt], QUsage);
 % Storage operations
 % TODO: it is currently assumed that the name of a storage follows a specific format
@@ -391,9 +391,9 @@ ts_offset_buckets() ->
         5 * 365 * 24 * 60 * 60
     ].
 
--spec queue_lenght_buckets() ->
+-spec queue_length_buckets() ->
     [number()].
-queue_lenght_buckets() ->
+queue_length_buckets() ->
     [
         1,
         5,
