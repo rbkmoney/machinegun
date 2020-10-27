@@ -284,8 +284,8 @@ dispatch_metrics(#mg_core_storage_put_finish{name = {NS, _Caller, Type}, duratio
 dispatch_metrics(#mg_core_storage_search_start{name = {NS, _Caller, Type}}) ->
     ok = inc(mg_storage_operation_changes_total, [NS, Type, search, start]);
 dispatch_metrics(#mg_core_storage_search_finish{name = {NS, _Caller, Type}, duration = Duration}) ->
-    ok = inc(mg_storage_operation_changes_total, [NS, Type, put, finish]),
-    ok = observe(mg_storage_operation_duration_seconds, [NS, Type, put], decode_duration(Duration));
+    ok = inc(mg_storage_operation_changes_total, [NS, Type, search, finish]),
+    ok = observe(mg_storage_operation_duration_seconds, [NS, Type, search], decode_duration(Duration));
 dispatch_metrics(#mg_core_storage_delete_start{name = {NS, _Caller, Type}}) ->
     ok = inc(mg_storage_operation_changes_total, [NS, Type, delete, start]);
 dispatch_metrics(#mg_core_storage_delete_finish{name = {NS, _Caller, Type}, duration = Duration}) ->
