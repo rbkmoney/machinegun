@@ -139,7 +139,6 @@ setup() ->
         {name, mg_scheduler_task_quota_usage},
         {registry, registry()},
         {labels, [namespace, name, status]},
-        {buckets, duration_buckets()},
         {help, "Machinegun scheduler task quota usage."}
     ]),
     % Workers management
