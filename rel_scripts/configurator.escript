@@ -55,6 +55,7 @@ sys_config(YamlConfig) ->
         ]},
         {consuela            , consuela    (YamlConfig)},
         {how_are_you         , how_are_you (YamlConfig)},
+        {prometheus          , prometheus  (YamlConfig)},
         {snowflake           , snowflake   (YamlConfig)},
         {brod                , brod        (YamlConfig)},
         {hackney             , hackney     (YamlConfig)},
@@ -199,6 +200,11 @@ how_are_you(YamlConfig) ->
             hay_vm_handler,
             hay_cgroup_handler
         ]}
+    ].
+
+prometheus(_YamlConfig) ->
+    [
+        {collectors, [default]}
     ].
 
 hay_statsd_publisher(YamlConfig) ->

@@ -45,4 +45,5 @@
     ok.
 handle_beat(Options, Beat) ->
     ok = machinegun_pulse_log:handle_beat(Options, Beat),
-    ok = machinegun_pulse_metric:handle_beat(Options, Beat).
+    ok = machinegun_pulse_hay:handle_beat(Options, Beat),
+    ok = machinegun_pulse_prometheus:handle_beat(Options, Beat).

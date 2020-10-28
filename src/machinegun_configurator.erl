@@ -58,11 +58,11 @@ construct_child_specs(#{
     WoodyServerChildSpec   = machinegun_woody_api:child_spec(
         woody_server,
         #{
+            pulse => Pulse,
+            automaton => api_automaton_options (Namespaces, EventSinkNS, Pulse),
+            event_sink => api_event_sink_options(Namespaces, EventSinkNS, Pulse),
             woody_server => WoodyServer,
-            health_check => HealthChecks,
-            automaton    => api_automaton_options (Namespaces, EventSinkNS, Pulse),
-            event_sink   => api_event_sink_options(Namespaces, EventSinkNS, Pulse),
-            pulse        => Pulse
+            additional_routes => [get_health_route(HealthChecks), get_prometheus_route()]
         }
     ),
 
@@ -74,6 +74,16 @@ construct_child_specs(#{
     ]).
 
 %%
+
+-spec get_health_route(erl_health:check()) -> {iodata(), module(), _Opts :: any()}.
+get_health_route(Check0) ->
+    EvHandler = {erl_health_event_handler, []},
+    Check = maps:map(fun (_, V = {_, _, _}) -> #{runner => V, event_handler => EvHandler} end, Check0),
+    erl_health_handle:get_route(Check).
+
+-spec get_prometheus_route() -> {iodata(), module(), _Opts :: any()}.
+get_prometheus_route() ->
+    {"/metrics/[:registry]", prometheus_cowboy2_handler, []}.
 
 -spec quotas_child_specs([mg_core_quota_worker:options()], atom()) ->
     [supervisor:child_spec()].
