@@ -24,6 +24,7 @@
         genlib,
         how_are_you,
         yamerl,
+        erl_health,
         prometheus,
         prometheus_cowboy,
         machinegun_core,
