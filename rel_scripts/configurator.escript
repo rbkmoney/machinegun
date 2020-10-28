@@ -202,7 +202,7 @@ how_are_you(YamlConfig) ->
         ]}
     ].
 
-prometheus(YamlConfig) ->
+prometheus(_YamlConfig) ->
     [
         {collectors, [default]}
     ].
