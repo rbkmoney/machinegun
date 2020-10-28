@@ -352,12 +352,12 @@ machine_remove_by_action(C) ->
 %%
 %% utils
 %%
--spec start_machine(config(), machinegun_core:id()) ->
+-spec start_machine(config(), mg_core:id()) ->
     ok.
 start_machine(C, ID) ->
     start_machine(C, ID, ID).
 
--spec start_machine(config(), machinegun_core:id(), mg_event_machine:args()) ->
+-spec start_machine(config(), mg_core:id(), mg_event_machine:args()) ->
     ok.
 start_machine(C, ID, Args) ->
     case catch machinegun_automaton_client:start(automaton_options(C), ID, Args) of
