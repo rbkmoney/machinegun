@@ -356,17 +356,20 @@ try_decode_pool_name(PoolName) ->
 -spec inc(prometheus_metric:name(), [term()], number()) ->
     ok.
 inc(Name, Labels, Value) ->
-    prometheus_counter:inc(registry(), Name, Labels, Value).
+    _ = prometheus_counter:inc(registry(), Name, Labels, Value),
+    ok.
 
 -spec set(prometheus_metric:name(), [term()], number()) ->
     ok.
 set(Name, Labels, Value) ->
-    prometheus_gauge:set(registry(), Name, Labels, Value).
+    _ = prometheus_gauge:set(registry(), Name, Labels, Value),
+    ok.
 
 -spec observe(prometheus_metric:name(), [term()], number()) ->
     ok.
 observe(Name, Labels, Value) ->
-    prometheus_histogram:observe(registry(), Name, Labels, Value).
+    _ = prometheus_histogram:observe(registry(), Name, Labels, Value),
+    ok.
 
 -spec registry() ->
     prometheus_registry:registry().
