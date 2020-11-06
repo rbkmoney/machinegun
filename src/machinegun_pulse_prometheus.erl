@@ -297,22 +297,26 @@ dispatch_metrics(_Beat) ->
 -spec inc(metric_name(), [metric_label_value()]) ->
     ok.
 inc(Name, Labels) ->
-    prometheus_counter:inc(registry(), Name, Labels, 1).
+    _ = prometheus_counter:inc(registry(), Name, Labels, 1),
+    ok.
 
 -spec inc(metric_name(), [metric_label_value()], number()) ->
     ok.
 inc(Name, Labels, Value) ->
-    prometheus_counter:inc(registry(), Name, Labels, Value).
+    _ = prometheus_counter:inc(registry(), Name, Labels, Value),
+    ok.
 
 -spec set(metric_name(), [metric_label_value()], number()) ->
     ok.
 set(Name, Labels, Value) ->
-    prometheus_gauge:set(registry(), Name, Labels, Value).
+    _ = prometheus_gauge:set(registry(), Name, Labels, Value),
+    ok.
 
 -spec observe(metric_name(), [metric_label_value()], number()) ->
     ok.
 observe(Name, Labels, Value) ->
-    prometheus_histogram:observe(registry(), Name, Labels, Value).
+    _ = prometheus_histogram:observe(registry(), Name, Labels, Value),
+    ok.
 
 -spec registry() ->
     prometheus_registry:registry().
