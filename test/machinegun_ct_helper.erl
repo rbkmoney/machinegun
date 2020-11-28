@@ -38,15 +38,11 @@
 -type option() ::
     kafka_client_name.
 
--spec config(option()) ->
-    _.
-
+-spec config(option()) -> _.
 config(kafka_client_name) ->
     ?CLIENT.
 
--spec start_application(appname() | {appname(), [{atom(), _Value}]}) ->
-    _Deps :: [appname()].
-
+-spec start_application(appname() | {appname(), [{atom(), _Value}]}) -> _Deps :: [appname()].
 start_application(consuela) ->
     genlib_app:start_application_with(consuela, [
         {registry, #{
@@ -68,23 +64,17 @@ start_application({AppName, Env}) ->
 start_application(AppName) ->
     genlib_app:start_application(AppName).
 
--spec start_applications([appname()]) ->
-    _Deps :: appname().
-
+-spec start_applications([appname()]) -> _Deps :: appname().
 start_applications(Apps) ->
-    lists:foldl(fun (App, Deps) -> Deps ++ start_application(App) end, [], Apps).
+    lists:foldl(fun(App, Deps) -> Deps ++ start_application(App) end, [], Apps).
 
--spec stop_applications([appname()]) ->
-    ok.
-
+-spec stop_applications([appname()]) -> ok.
 stop_applications(AppNames) ->
     lists:foreach(fun application:stop/1, lists:reverse(AppNames)).
 
 %%
 
--spec assert_wait_expected(any(), function(), mg_retry:strategy()) ->
-    ok.
-
+-spec assert_wait_expected(any(), function(), mg_retry:strategy()) -> ok.
 assert_wait_expected(Expected, Fun, Strategy) when is_function(Fun, 0) ->
     case Fun() of
         Expected ->
@@ -99,25 +89,22 @@ assert_wait_expected(Expected, Fun, Strategy) when is_function(Fun, 0) ->
             end
     end.
 
--spec build_storage(mg_core:ns(), mg_core_utils:mod_opts()) ->
-    mg_core_utils:mod_opts().
+-spec build_storage(mg_core:ns(), mg_core_utils:mod_opts()) -> mg_core_utils:mod_opts().
 build_storage(NS, Module) when is_atom(Module) ->
     build_storage(NS, {Module, #{}});
 build_storage(NS, {Module, Options}) ->
     {Module, Options#{name => erlang:binary_to_atom(NS, utf8)}}.
 
--spec stop_wait_all([pid()], _Reason, timeout()) ->
-    ok.
+-spec stop_wait_all([pid()], _Reason, timeout()) -> ok.
 stop_wait_all(Pids, Reason, Timeout) ->
     FlagWas = erlang:process_flag(trap_exit, true),
     TRef = erlang:start_timer(Timeout, self(), stop_timeout),
-    ok = lists:foreach(fun (Pid) -> erlang:exit(Pid, Reason) end, Pids),
+    ok = lists:foreach(fun(Pid) -> erlang:exit(Pid, Reason) end, Pids),
     ok = await_stop(Pids, Reason, TRef),
     _ = erlang:process_flag(trap_exit, FlagWas),
     ok.
 
--spec await_stop(pid(), _Reason, reference()) ->
-    ok | timeout.
+-spec await_stop(pid(), _Reason, reference()) -> ok | timeout.
 await_stop([Pid | Rest], Reason, TRef) ->
     receive
         {'EXIT', Pid, Reason} ->
@@ -129,8 +116,7 @@ await_stop([], _Reason, TRef) ->
     _ = erlang:cancel_timer(TRef),
     receive
         {timeout, TRef, _} -> ok
-    after 0 ->
-        ok
+    after 0 -> ok
     end.
 
 %%
@@ -141,9 +127,7 @@ await_stop([], _Reason, TRef) ->
     (consuela_client:beat(), {client, category()}) -> ok;
     (consuela_session_keeper:beat(), {keeper, category()}) -> ok;
     (consuela_zombie_reaper:beat(), {reaper, category()}) -> ok;
-    (consuela_registry:beat(), {registry, category()}) -> ok
-.
-
+    (consuela_registry:beat(), {registry, category()}) -> ok.
 handle_beat(Beat, {Producer, Category}) ->
     ct:pal(Category, "[~p] ~p", [Producer, Beat]);
 handle_beat(_Beat, _) ->

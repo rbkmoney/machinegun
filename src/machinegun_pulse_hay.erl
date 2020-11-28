@@ -34,8 +34,7 @@
 %% mg_pulse handler
 %%
 
--spec handle_beat(options(), beat()) ->
-    ok.
+-spec handle_beat(options(), beat()) -> ok.
 handle_beat(_Options, Beat) ->
     ok = push(create_metric(Beat)).
 
@@ -43,8 +42,7 @@ handle_beat(_Options, Beat) ->
 
 %% Metrics handling
 
--spec create_metric(beat()) ->
-    metrics().
+-spec create_metric(beat()) -> metrics().
 % Machine lifecycle
 create_metric(#mg_core_machine_lifecycle_loaded{namespace = NS}) ->
     [create_inc([mg, machine, lifecycle, NS, loaded])];
@@ -102,10 +100,11 @@ create_metric(#mg_core_scheduler_search_success{
     delay = DelayMs,
     duration = Duration
 }) ->
-    create_delay_inc([mg, scheduler, NS, Name, scan, delay], DelayMs) ++ [
-        create_inc([mg, scheduler, NS, Name, scan, success]),
-        create_bin_inc([mg, scheduler, NS, Name, scan, duration], duration, Duration)
-    ];
+    create_delay_inc([mg, scheduler, NS, Name, scan, delay], DelayMs) ++
+        [
+            create_inc([mg, scheduler, NS, Name, scan, success]),
+            create_bin_inc([mg, scheduler, NS, Name, scan, duration], duration, Duration)
+        ];
 create_metric(#mg_core_scheduler_search_error{scheduler_name = Name, namespace = NS}) ->
     [create_inc([mg, scheduler, NS, Name, scan, error])];
 create_metric(#mg_core_scheduler_task_error{scheduler_name = Name, namespace = NS}) ->
@@ -194,8 +193,7 @@ create_metric(_Beat) ->
 
 %% Utils
 
--spec decode_impact(mg_core_machine:processor_impact()) ->
-    impact_tag().
+-spec decode_impact(mg_core_machine:processor_impact()) -> impact_tag().
 decode_impact({init, _Args}) ->
     init;
 decode_impact({repair, _Args}) ->
@@ -207,39 +205,32 @@ decode_impact(timeout) ->
 decode_impact(continuation) ->
     continuation.
 
--spec calc_queue_usage(non_neg_integer(), mg_core_workers_manager:queue_limit()) ->
-    float().
+-spec calc_queue_usage(non_neg_integer(), mg_core_workers_manager:queue_limit()) -> float().
 calc_queue_usage(Len, 0) ->
     erlang:float(Len);
 calc_queue_usage(Len, Limit) ->
     Len / Limit.
 
--spec push(metrics()) ->
-    ok.
+-spec push(metrics()) -> ok.
 push(Metrics) ->
     machinegun_hay_utils:push(Metrics).
 
--spec create_inc(metric_key()) ->
-    metric().
+-spec create_inc(metric_key()) -> metric().
 create_inc(Key) ->
     machinegun_hay_utils:create_inc(Key).
 
--spec create_inc(metric_key(), non_neg_integer()) ->
-    metric().
+-spec create_inc(metric_key(), non_neg_integer()) -> metric().
 create_inc(Key, Number) ->
     machinegun_hay_utils:create_inc(Key, Number).
 
--spec create_gauge(metric_key(), non_neg_integer()) ->
-    metric().
+-spec create_gauge(metric_key(), non_neg_integer()) -> metric().
 create_gauge(Key, Number) ->
     machinegun_hay_utils:create_gauge(Key, Number).
 
--spec create_delay_inc(metric_key(), number() | undefined) ->
-    [metric()].
+-spec create_delay_inc(metric_key(), number() | undefined) -> [metric()].
 create_delay_inc(KeyPrefix, Number) ->
     machinegun_hay_utils:create_delay_inc(KeyPrefix, Number).
 
--spec create_bin_inc(metric_key(), bin_type(), number()) ->
-    metric().
+-spec create_bin_inc(metric_key(), bin_type(), number()) -> metric().
 create_bin_inc(KeyPrefix, BinType, Value) ->
     machinegun_hay_utils:create_bin_inc(KeyPrefix, BinType, Value).

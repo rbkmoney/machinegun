@@ -15,6 +15,7 @@
 %%%
 
 -module(machinegun_hay).
+
 -behaviour(hay_metrics_handler).
 
 -export([child_spec/3]).
@@ -39,6 +40,7 @@
     namespace :: mg_core:ns(),
     registry :: mg_core_procreg:options()
 }).
+
 -type state() :: #state{}.
 -type worker() :: {mg_core:ns(), mg_core:id(), pid()}.
 -type metric() :: how_are_you:metric().
@@ -48,8 +50,7 @@
 
 %% API
 
--spec child_spec(options() | undefined, mg_core_workers_manager:options(), _ChildID) ->
-    supervisor:child_spec().
+-spec child_spec(options() | undefined, mg_core_workers_manager:options(), _ChildID) -> supervisor:child_spec().
 child_spec(Options, ManagerOptions, ChildID) ->
     HandlerOptions = {genlib:define(Options, #{}), ManagerOptions},
     hay_metrics_handler:child_spec({?MODULE, HandlerOptions}, ChildID).
@@ -74,21 +75,19 @@ gather_metrics(#state{namespace = NS, registry = Procreg}) ->
 
 %% Internals
 
--spec workers_stats(metric_key(), [worker()]) ->
-    metrics().
+-spec workers_stats(metric_key(), [worker()]) -> metrics().
 workers_stats(KeyPrefix, Workers) ->
     Metrics = [gauge([KeyPrefix, number], erlang:length(Workers))],
     WorkersStats = lists:foldl(fun extract_worker_stats/2, #{}, Workers),
     maps:fold(
-        fun (Info, Values, Acc) ->
+        fun(Info, Values, Acc) ->
             stat_metrics([KeyPrefix, Info], Values, Acc)
         end,
         Metrics,
         WorkersStats
     ).
 
--spec extract_worker_stats(worker(), Acc) ->
-    Acc when Acc :: #{atom() => [number()]}.
+-spec extract_worker_stats(worker(), Acc) -> Acc when Acc :: #{atom() => [number()]}.
 extract_worker_stats({_NS, _ID, Pid}, Acc) ->
     case erlang:process_info(Pid, interest_worker_info()) of
         undefined ->
@@ -100,13 +99,12 @@ extract_worker_stats({_NS, _ID, Pid}, Acc) ->
 -spec append_list([{K, V}], #{K => [V]}) -> #{K => [V]}.
 append_list(L, Acc) ->
     lists:foldl(
-        fun ({K, V}, A) -> maps:update_with(K, fun (Vs) -> [V | Vs] end, [V], A) end,
+        fun({K, V}, A) -> maps:update_with(K, fun(Vs) -> [V | Vs] end, [V], A) end,
         Acc,
         L
     ).
 
--spec interest_worker_info() ->
-    [atom()].
+-spec interest_worker_info() -> [atom()].
 interest_worker_info() ->
     [
         memory,
@@ -125,7 +123,7 @@ stat_metrics(KeyPrefix, Values, Acc) ->
     ],
     Statistics = bear:get_statistics_subset(Values, BearKeys),
     lists:foldl(
-        fun (S, Acc1) -> bear_metric(KeyPrefix, S, Acc1) end,
+        fun(S, Acc1) -> bear_metric(KeyPrefix, S, Acc1) end,
         Acc,
         Statistics
     ).
@@ -140,12 +138,10 @@ bear_metric(KeyPrefix, {percentile, Percentiles}, Acc) ->
 bear_metric(KeyPrefix, {StatKey, StatValue}, Acc) ->
     [gauge([KeyPrefix, StatKey], StatValue) | Acc].
 
--spec bear_percentile_metric(metric_key(), {integer(), number()}) ->
-    metric().
+-spec bear_percentile_metric(metric_key(), {integer(), number()}) -> metric().
 bear_percentile_metric(KeyPrefix, {Percentile, Value}) ->
     gauge([KeyPrefix, <<"p", (erlang:integer_to_binary(Percentile))/binary>>], Value).
 
--spec gauge(metric_key(), metric_value()) ->
-    metric().
+-spec gauge(metric_key(), metric_value()) -> metric().
 gauge(Key, Value) ->
     how_are_you:metric_construct(gauge, Key, Value).

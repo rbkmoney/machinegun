@@ -15,16 +15,17 @@
 %%%
 
 -module(machinegun_hay_handler_SUITE).
+
 -include_lib("common_test/include/ct.hrl").
 -include_lib("stdlib/include/assert.hrl").
 
 %% tests descriptions
--export([all             /0]).
--export([groups          /0]).
--export([init_per_suite  /1]).
--export([end_per_suite   /1]).
--export([init_per_group  /2]).
--export([end_per_group   /2]).
+-export([all/0]).
+-export([groups/0]).
+-export([init_per_suite/1]).
+-export([end_per_suite/1]).
+-export([init_per_group/2]).
+-export([end_per_group/2]).
 
 -export([no_workers_test/1]).
 -export([exist_workers_test/1]).
@@ -36,19 +37,17 @@
 %% tests descriptions
 %%
 -type group_name() :: atom().
--type test_name () :: atom().
--type config    () :: [{atom(), _}].
+-type test_name() :: atom().
+-type config() :: [{atom(), _}].
 
--spec all() ->
-    [test_name() | {group, group_name()}].
+-spec all() -> [test_name() | {group, group_name()}].
 all() ->
     [
         {group, with_gproc},
         {group, with_consuela}
     ].
 
--spec groups() ->
-    [{group_name(), list(_), [test_name() | {group, group_name()}]}].
+-spec groups() -> [{group_name(), list(_), [test_name() | {group, group_name()}]}].
 groups() ->
     [
         {with_gproc, [], [{group, base}]},
@@ -62,8 +61,7 @@ groups() ->
 %%
 %% starting/stopping
 %%
--spec init_per_suite(config()) ->
-    config().
+-spec init_per_suite(config()) -> config().
 init_per_suite(C) ->
     Apps = machinegun_ct_helper:start_applications([
         gproc,
@@ -71,13 +69,11 @@ init_per_suite(C) ->
     ]),
     [{suite_apps, Apps} | C].
 
--spec end_per_suite(config()) ->
-    ok.
+-spec end_per_suite(config()) -> ok.
 end_per_suite(C) ->
     machinegun_ct_helper:stop_applications(?config(suite_apps, C)).
 
--spec init_per_group(group_name(), config()) ->
-    config().
+-spec init_per_group(group_name(), config()) -> config().
 init_per_group(with_gproc, C) ->
     [{registry, mg_core_procreg_gproc} | C];
 init_per_group(with_consuela, C) ->
@@ -94,59 +90,58 @@ init_per_group(base, C) ->
         {machinegun, Config}
     ]),
     {ok, ProcessorPid} = machinegun_test_processor:start(
-        {0, 0, 0, 0}, 8023,
+        {0, 0, 0, 0},
+        8023,
         genlib_map:compact(#{
-            processor  => {"/processor", #{
-                signal => fun default_signal_handler/1,
-                call   => fun default_call_handler/1
-            }}
+            processor =>
+                {"/processor", #{
+                    signal => fun default_signal_handler/1,
+                    call => fun default_call_handler/1
+                }}
         })
     ),
 
     [
-        {apps              , Apps                   },
-        {automaton_options , #{
-            url            => "http://localhost:8022",
-            ns             => ?NS,
+        {apps, Apps},
+        {automaton_options, #{
+            url => "http://localhost:8022",
+            ns => ?NS,
             retry_strategy => undefined
         }},
         {event_sink_options, "http://localhost:8022"},
-        {processor_pid     , ProcessorPid           }
-    |
-        C
+        {processor_pid, ProcessorPid}
+        | C
     ].
 
--spec end_per_group(group_name(), config()) ->
-    _.
+-spec end_per_group(group_name(), config()) -> _.
 end_per_group(base, C) ->
     ok = proc_lib:stop(?config(processor_pid, C)),
     machinegun_ct_helper:stop_applications(?config(apps, C));
 end_per_group(_, C) ->
     C.
 
--spec machinegun_config(config()) ->
-    list().
+-spec machinegun_config(config()) -> list().
 machinegun_config(C) ->
     [
-        {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, limits => #{}}},
+        {woody_server, #{ip => {0, 0, 0, 0, 0, 0, 0, 0}, port => 8022, limits => #{}}},
         {namespaces, #{
             ?NS => #{
-                storage    => mg_core_storage_memory,
-                processor  => #{
-                    url            => <<"http://localhost:8023/processor">>,
+                storage => mg_core_storage_memory,
+                processor => #{
+                    url => <<"http://localhost:8023/processor">>,
                     transport_opts => #{pool => ns, max_connections => 100}
                 },
-                worker     => #{
+                worker => #{
                     registry => registry(C),
-                    sidecar  => {machinegun_hay, #{interval => 100}}
+                    sidecar => {machinegun_hay, #{interval => 100}}
                 },
                 default_processing_timeout => 5000,
                 schedulers => #{
                     timers => #{}
                 },
                 retries => #{
-                    storage   => {exponential, {max_total_timeout, 1000}, 1, 10},
-                    timers    => {exponential, {max_total_timeout, 1000}, 1, 10}
+                    storage => {exponential, {max_total_timeout, 1000}, 1, 10},
+                    timers => {exponential, {max_total_timeout, 1000}, 1, 10}
                 },
                 event_stash_size => 5
             }
@@ -159,8 +154,7 @@ machinegun_config(C) ->
         {pulse, machinegun_pulse}
     ].
 
--spec registry(config()) ->
-    mg_core_procreg:options().
+-spec registry(config()) -> mg_core_procreg:options().
 registry(C) ->
     ?config(registry, C).
 
@@ -204,7 +198,6 @@ content(Body) ->
 
 %% Metrics utils
 
--spec get_metric(how_are_you:metric_key()) ->
-    how_are_you:metric_value() | undefined.
+-spec get_metric(how_are_you:metric_key()) -> how_are_you:metric_value() | undefined.
 get_metric(Key) ->
     machinegun_test_hay_publisher:lookup(Key).

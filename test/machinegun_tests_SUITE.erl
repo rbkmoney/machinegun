@@ -24,26 +24,26 @@
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 %% tests descriptions
--export([all             /0]).
--export([groups          /0]).
--export([init_per_suite  /1]).
--export([end_per_suite   /1]).
--export([init_per_group  /2]).
--export([end_per_group   /2]).
+-export([all/0]).
+-export([groups/0]).
+-export([init_per_suite/1]).
+-export([end_per_suite/1]).
+-export([init_per_group/2]).
+-export([end_per_group/2]).
 
 %% base group tests
--export([namespace_not_found        /1]).
--export([machine_start_empty_id     /1]).
--export([machine_start              /1]).
--export([machine_already_exists     /1]).
--export([machine_call_by_id         /1]).
--export([machine_id_not_found       /1]).
--export([machine_empty_id_not_found /1]).
--export([machine_set_tag            /1]).
--export([machine_call_by_tag        /1]).
--export([machine_tag_not_found      /1]).
--export([machine_remove             /1]).
--export([machine_remove_by_action   /1]).
+-export([namespace_not_found/1]).
+-export([machine_start_empty_id/1]).
+-export([machine_start/1]).
+-export([machine_already_exists/1]).
+-export([machine_call_by_id/1]).
+-export([machine_id_not_found/1]).
+-export([machine_empty_id_not_found/1]).
+-export([machine_set_tag/1]).
+-export([machine_call_by_tag/1]).
+-export([machine_tag_not_found/1]).
+-export([machine_remove/1]).
+-export([machine_remove_by_action/1]).
 
 %%
 
@@ -60,19 +60,16 @@
 %% tests descriptions
 %%
 -type group_name() :: atom().
--type test_name () :: atom().
--type config    () :: [{atom(), _}].
+-type test_name() :: atom().
+-type config() :: [{atom(), _}].
 
-
--spec all() ->
-    [test_name() | {group, group_name()}].
+-spec all() -> [test_name() | {group, group_name()}].
 all() ->
     [
         {group, base}
     ].
 
--spec groups() ->
-    [{group_name(), list(_), [test_name()]}].
+-spec groups() -> [{group_name(), list(_), [test_name()]}].
 groups() ->
     [
         {base, [sequence], [
@@ -98,20 +95,17 @@ groups() ->
 %%
 %% starting/stopping
 %%
--spec init_per_suite(config()) ->
-    config().
+-spec init_per_suite(config()) -> config().
 init_per_suite(C) ->
     % dbg:tracer(), dbg:p(all, c),
     % dbg:tpl({mg_machine, retry_strategy, '_'}, x),
     C.
 
--spec end_per_suite(config()) ->
-    ok.
+-spec end_per_suite(config()) -> ok.
 end_per_suite(_C) ->
     ok.
 
--spec init_per_group(group_name(), config()) ->
-    config().
+-spec init_per_group(group_name(), config()) -> config().
 init_per_group(mwc, C) ->
     init_per_group([{storage, mg_core_storage_memory} | C]);
 init_per_group(history, C) ->
@@ -122,8 +116,7 @@ init_per_group(_, C) ->
     % истории машины, из-за чего реальная вероятность зафейлить операцию равна (1 - (1 - p) ^ n).
     init_per_group([{storage, {mg_core_storage_memory, #{random_transient_fail => 0.01}}} | C]).
 
--spec init_per_group(config()) ->
-    config().
+-spec init_per_group(config()) -> config().
 init_per_group(C) ->
     %% TODO сделать нормальную генерацию урлов
     Config = machinegun_config(C),
@@ -132,12 +125,14 @@ init_per_group(C) ->
         {machinegun, Config}
     ]),
     {ok, ProcessorPid} = machinegun_test_processor:start(
-        {0, 0, 0, 0}, 8023,
+        {0, 0, 0, 0},
+        8023,
         genlib_map:compact(#{
-            processor  => {
-                "/processor", #{
+            processor => {
+                "/processor",
+                #{
                     signal => fun default_signal_handler/1,
-                    call   => fun default_call_handler/1,
+                    call => fun default_call_handler/1,
                     repair => fun default_repair_handler/1
                 }
             }
@@ -145,23 +140,21 @@ init_per_group(C) ->
     ),
 
     [
-        {apps              , Apps                  },
-        {automaton_options , #{
-            url            => "http://localhost:8022",
-            ns             => ?NS,
+        {apps, Apps},
+        {automaton_options, #{
+            url => "http://localhost:8022",
+            ns => ?NS,
             retry_strategy => genlib_retry:linear(3, 1)
         }},
-        {event_sink_options, "http://localhost:8022"          },
-        {processor_pid     , ProcessorPid                     }
-    |
-        C
+        {event_sink_options, "http://localhost:8022"},
+        {processor_pid, ProcessorPid}
+        | C
     ].
 
--spec default_signal_handler(mg_events_machine:signal_args()) ->
-    mg_events_machine:signal_result().
+-spec default_signal_handler(mg_events_machine:signal_args()) -> mg_events_machine:signal_result().
 default_signal_handler({Args, _Machine}) ->
     case Args of
-        {init, <<"fail" >>} ->
+        {init, <<"fail">>} ->
             erlang:error(fail);
         {init, <<"timeout">>} ->
             timer:sleep(infinity);
@@ -172,34 +165,40 @@ default_signal_handler({Args, _Machine}) ->
             };
         {repair, <<"error">>} ->
             erlang:error(error);
-         timeout ->
-             {{null(), [content(<<"handle_timer_body">>)]}, #{timer => undefined, tag => undefined}};
+        timeout ->
+            {{null(), [content(<<"handle_timer_body">>)]}, #{timer => undefined, tag => undefined}};
         _ ->
             machinegun_test_processor:default_result(signal, Args)
     end.
 
--spec default_call_handler(mg_events_machine:call_args()) ->
-    mg_events_machine:call_result().
+-spec default_call_handler(mg_events_machine:call_args()) -> mg_events_machine:call_result().
 default_call_handler({Args, #{history := History}}) ->
     Evs = [N || #{body := {_Metadata, N}} <- History],
     SetTimer = {set_timer, {timeout, 1}, {undefined, undefined, forward}, 30},
     case Args of
-        [<<"event">>, I]  ->
+        [<<"event">>, I] ->
             case lists:member(I, Evs) of
                 false -> {I, {null(), [content(I)]}, #{}};
-                true  -> {I, {null(), []}, #{}}
+                true -> {I, {null(), []}, #{}}
             end;
-        <<"tag"  >>       -> {Args, {null(), [content(<<"tag_body"  >>)]}, #{tag => Args}};
-        <<"nop"  >>       -> {Args, {null(), [                ]}, #{}};
-        <<"set_timer"  >> -> {Args, {null(), [content(<<"timer_body">>)]}, #{timer => SetTimer   }};
-        <<"unset_timer">> -> {Args, {null(), [content(<<"timer_body">>)]}, #{timer => unset_timer}};
-        <<"fail"  >>      -> erlang:error(fail);
-        <<"sleep">>       -> timer:sleep(?DEADLINE_TIMEOUT * 2), {Args, {null(), [content(<<"sleep">>)]}, #{}};
-        <<"remove">>      -> {Args, {null(), [content(<<"removed">>)]}, #{remove => remove}}
+        <<"tag">> ->
+            {Args, {null(), [content(<<"tag_body">>)]}, #{tag => Args}};
+        <<"nop">> ->
+            {Args, {null(), []}, #{}};
+        <<"set_timer">> ->
+            {Args, {null(), [content(<<"timer_body">>)]}, #{timer => SetTimer}};
+        <<"unset_timer">> ->
+            {Args, {null(), [content(<<"timer_body">>)]}, #{timer => unset_timer}};
+        <<"fail">> ->
+            erlang:error(fail);
+        <<"sleep">> ->
+            timer:sleep(?DEADLINE_TIMEOUT * 2),
+            {Args, {null(), [content(<<"sleep">>)]}, #{}};
+        <<"remove">> ->
+            {Args, {null(), [content(<<"removed">>)]}, #{remove => remove}}
     end.
 
--spec default_repair_handler(mg_events_machine:repair_args()) ->
-    mg_events_machine:repair_result().
+-spec default_repair_handler(mg_events_machine:repair_args()) -> mg_events_machine:repair_result().
 default_repair_handler({Args, _Machine}) ->
     case Args of
         <<"error">> ->
@@ -218,38 +217,37 @@ null() ->
 content(Body) ->
     {#{format_version => 42}, Body}.
 
--spec machinegun_config(config()) ->
-    list().
+-spec machinegun_config(config()) -> list().
 machinegun_config(C) ->
     Scheduler = #{
         scan_interval => #{continue => 500, completed => 15000},
-        task_quota    => <<"scheduler_tasks_total">>
+        task_quota => <<"scheduler_tasks_total">>
     },
     [
-        {woody_server, #{ip => {0,0,0,0,0,0,0,0}, port => 8022, limits => #{}}},
+        {woody_server, #{ip => {0, 0, 0, 0, 0, 0, 0, 0}, port => 8022, limits => #{}}},
         {quotas, [
             #{
                 name => <<"scheduler_tasks_total">>,
-                limit => #{ value => 10 },
+                limit => #{value => 10},
                 update_interval => 100
             }
         ]},
         {namespaces, #{
             ?NS => #{
-                storage    =>  ?config(storage, C),
-                processor  => #{
-                    url            => <<"http://localhost:8023/processor">>,
+                storage => ?config(storage, C),
+                processor => #{
+                    url => <<"http://localhost:8023/processor">>,
                     transport_opts => #{pool => ns, max_connections => 100}
                 },
                 default_processing_timeout => 5000,
                 schedulers => #{
-                    timers         => Scheduler,
+                    timers => Scheduler,
                     timers_retries => Scheduler,
-                    overseer       => Scheduler
+                    overseer => Scheduler
                 },
                 retries => #{
-                    storage   => {exponential, infinity, 1, 10},
-                    timers    => {exponential, infinity, 1, 10}
+                    storage => {exponential, infinity, 1, 10},
+                    timers => {exponential, infinity, 1, 10}
                 },
                 % сейчас существуют проблемы, которые не дают включить на постоянной основе эту опцию
                 % (а очень хочется, чтобы проверять работоспособность идемпотентных ретраев)
@@ -276,8 +274,7 @@ machinegun_config(C) ->
         {pulse, machinegun_pulse}
     ].
 
--spec end_per_group(group_name(), config()) ->
-    ok.
+-spec end_per_group(group_name(), config()) -> ok.
 end_per_group(_, C) ->
     ok = proc_lib:stop(?config(processor_pid, C)),
     machinegun_ct_helper:stop_applications(?config(apps, C)).
@@ -292,7 +289,8 @@ namespace_not_found(C) ->
 
 -spec machine_start_empty_id(config()) -> _.
 machine_start_empty_id(C) ->
-    {'EXIT', {{woody_error, _}, _}} = % создание машины с невалидным ID не обрабатывается по протоколу
+    % создание машины с невалидным ID не обрабатывается по протоколу
+    {'EXIT', {{woody_error, _}, _}} =
         (catch machinegun_automaton_client:start(automaton_options(C), ?EMPTY_ID, ?Tag)),
     ok.
 
@@ -306,7 +304,7 @@ machine_already_exists(C) ->
 
 -spec machine_id_not_found(config()) -> _.
 machine_id_not_found(C) ->
-     _ = code:load_file(mg_core_storage_memory),
+    _ = code:load_file(mg_core_storage_memory),
     IncorrectID = <<"incorrect_ID">>,
     #mg_stateproc_MachineNotFound{} =
         (catch machinegun_automaton_client:call(automaton_options(C), {id, IncorrectID}, <<"nop">>)).
@@ -341,24 +339,23 @@ machine_remove(C) ->
 -spec machine_remove_by_action(config()) -> _.
 machine_remove_by_action(C) ->
     <<"nop">> = machinegun_automaton_client:call(automaton_options(C), {id, ?ID}, <<"nop">>),
-    <<"remove">> = try
-        machinegun_automaton_client:call(automaton_options(C), {id, ?ID}, <<"remove">>)
-    catch
-        throw:#mg_stateproc_MachineNotFound{} ->
-            % The request had been retried
-            <<"remove">>
-    end.
+    <<"remove">> =
+        try
+            machinegun_automaton_client:call(automaton_options(C), {id, ?ID}, <<"remove">>)
+        catch
+            throw:#mg_stateproc_MachineNotFound{} ->
+                % The request had been retried
+                <<"remove">>
+        end.
 
 %%
 %% utils
 %%
--spec start_machine(config(), mg_core:id()) ->
-    ok.
+-spec start_machine(config(), mg_core:id()) -> ok.
 start_machine(C, ID) ->
     start_machine(C, ID, ID).
 
--spec start_machine(config(), mg_core:id(), mg_event_machine:args()) ->
-    ok.
+-spec start_machine(config(), mg_core:id(), mg_event_machine:args()) -> ok.
 start_machine(C, ID, Args) ->
     case catch machinegun_automaton_client:start(automaton_options(C), ID, Args) of
         ok ->

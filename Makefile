@@ -47,6 +47,8 @@ CALL_ANYWHERE := \
 	clean \
 	distclean \
 	test_configurator \
+	format \
+	check_format
 
 
 CALL_W_CONTAINER := $(CALL_ANYWHERE) test dev_test test_configurator
@@ -76,6 +78,12 @@ xref: submodules
 
 lint:
 	elvis rock
+
+check_format:
+	$(REBAR) fmt -c
+
+format:
+	$(REBAR) fmt -w
 
 dialyze:
 	$(REBAR) dialyzer

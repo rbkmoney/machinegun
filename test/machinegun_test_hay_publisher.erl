@@ -15,6 +15,7 @@
 %%%
 
 -module(machinegun_test_hay_publisher).
+
 -behaviour(hay_metrics_publisher).
 
 %% hay_metrics_publisher callbacks
@@ -40,10 +41,12 @@
     interval :: timeout(),
     ets :: ets:tid() | atom()
 }).
+
 -record(metric, {
     key :: how_are_you:metric_key(),
     value :: how_are_you:metric_value()
 }).
+
 -type state() :: #state{}.
 
 %% API
@@ -59,8 +62,7 @@ init(Options) ->
 get_interval(#state{interval = Interval}) ->
     Interval.
 
--spec publish_metrics(hay_metrics_publisher:metric_fold(), state()) ->
-    {ok, state()} | {error, Reason :: term()}.
+-spec publish_metrics(hay_metrics_publisher:metric_fold(), state()) -> {ok, state()} | {error, Reason :: term()}.
 publish_metrics(Fold, #state{ets = Ets} = State) ->
     true = Fold(
         fun(M, _) ->
@@ -70,8 +72,7 @@ publish_metrics(Fold, #state{ets = Ets} = State) ->
     ),
     {ok, State}.
 
--spec lookup(how_are_you:metric_key()) ->
-    how_are_you:metric_value() | undefined.
+-spec lookup(how_are_you:metric_key()) -> how_are_you:metric_value() | undefined.
 lookup(Key) ->
     % Convert key to hay internal format
     EKey = hay_metrics:key(how_are_you:metric_construct(gauge, Key, 0)),

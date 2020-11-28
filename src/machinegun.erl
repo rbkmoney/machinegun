@@ -2,25 +2,23 @@
 
 %% API
 -export([start/0]).
--export([stop /0]).
+-export([stop/0]).
 
 %% application callbacks
 -behaviour(application).
--export([start/2]).
--export([stop /1]).
 
--spec start() ->
-    {ok, _}.
+-export([start/2]).
+-export([stop/1]).
+
+-spec start() -> {ok, _}.
 start() ->
     application:ensure_all_started(?MODULE).
 
--spec stop() ->
-    ok.
+-spec stop() -> ok.
 stop() ->
     application:stop(?MODULE).
 
--spec start(_, _) ->
-    {ok, pid()}.
+-spec start(_, _) -> {ok, pid()}.
 start(_StartType, _StartArgs) ->
     Config = maps:from_list(genlib_app:env(?MODULE)),
     ok = setup_metrics(),
@@ -31,15 +29,13 @@ start(_StartType, _StartArgs) ->
         ChildSpecs
     ).
 
--spec stop(any()) ->
-    ok.
+-spec stop(any()) -> ok.
 stop(_State) ->
     ok.
 
 %% Internals
 
--spec setup_metrics() ->
-    ok.
+-spec setup_metrics() -> ok.
 setup_metrics() ->
     ok = machinegun_riak_metric:setup(),
     ok = machinegun_pulse_prometheus:setup().
