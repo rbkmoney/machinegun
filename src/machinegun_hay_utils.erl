@@ -41,39 +41,33 @@
 
 %% API
 
--spec push(metrics()) ->
-    ok.
+-spec push(metrics()) -> ok.
 push([]) ->
     ok;
 push([M | Metrics]) ->
     ok = how_are_you:metric_push(M),
     push(Metrics).
 
--spec create_inc(metric_key()) ->
-    metric().
+-spec create_inc(metric_key()) -> metric().
 create_inc(Key) ->
     create_inc(Key, 1).
 
--spec create_inc(metric_key(), non_neg_integer()) ->
-    metric().
+-spec create_inc(metric_key(), non_neg_integer()) -> metric().
 create_inc(Key, Number) ->
     how_are_you:metric_construct(counter, Key, Number).
 
--spec create_gauge(metric_key(), non_neg_integer()) ->
-    metric().
+-spec create_gauge(metric_key(), non_neg_integer()) -> metric().
 create_gauge(Key, Number) ->
     how_are_you:metric_construct(gauge, Key, Number).
 
--spec create_delay_inc(metric_key(), number() | undefined) ->
-    [metric()].
+-spec create_delay_inc(metric_key(), number() | undefined) -> [metric()].
 create_delay_inc(_KeyPrefix, undefined) ->
     [];
 create_delay_inc(Key, DelayMS) ->
     Delay = erlang:convert_time_unit(DelayMS, millisecond, native),
     [create_bin_inc(Key, duration, Delay)].
 
--spec create_bin_inc(metric_key(), bin_type(), number()) ->
-    metric().
+-spec create_bin_inc(metric_key(), bin_type(), number()) -> metric().
 create_bin_inc(KeyPrefix, BinType, Value) ->
     Prepared = prepare_bin_value(BinType, Value),
     Bins = build_bins(BinType),
@@ -82,8 +76,7 @@ create_bin_inc(KeyPrefix, BinType, Value) ->
 
 %% Internals
 
--spec prepare_bin_value(bin_type(), number()) ->
-    number().
+-spec prepare_bin_value(bin_type(), number()) -> number().
 prepare_bin_value(duration, Duration) ->
     erlang:convert_time_unit(Duration, native, microsecond);
 prepare_bin_value(offset, Timestamp) ->
@@ -93,8 +86,7 @@ prepare_bin_value(queue_length, Length) ->
 prepare_bin_value(fraction, Fraction) ->
     erlang:max(Fraction, 0.0).
 
--spec build_bin_key(Bins :: [bin()], Value :: number()) ->
-    metric_key().
+-spec build_bin_key(Bins :: [bin()], Value :: number()) -> metric_key().
 build_bin_key([{HeadValue, HeadName} | _Bins], Value) when HeadValue > Value ->
     <<"less_than_", HeadName/binary>>;
 build_bin_key([{LastValue, LastName}], Value) when LastValue =< Value ->
@@ -106,8 +98,7 @@ build_bin_key([{LeftValue, LeftName}, {RightValue, RightName} | _Bins], Value) w
 build_bin_key([{HeadValue, _HeadName} | Bins], Value) when HeadValue =< Value ->
     build_bin_key(Bins, Value).
 
--spec build_bins(bin_type()) ->
-    [bin()].
+-spec build_bins(bin_type()) -> [bin()].
 build_bins(duration) ->
     [
         {1000, <<"1ms">>},
@@ -145,7 +136,7 @@ build_bins(offset) ->
         {10 * 60, <<"10m">>},
         {60 * 60, <<"1h">>},
         {24 * 60 * 60, <<"1d">>},
-        {7  * 24 * 60 * 60, <<"7d">>},
+        {7 * 24 * 60 * 60, <<"7d">>},
         {30 * 24 * 60 * 60, <<"30d">>},
         {365 * 24 * 60 * 60, <<"1y">>},
         {5 * 365 * 24 * 60 * 60, <<"5y">>}

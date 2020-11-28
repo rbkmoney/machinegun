@@ -15,6 +15,7 @@
 %%%
 
 -module(machinegun_riak_metric).
+
 -behaviour(gen_server).
 
 %% API
@@ -43,6 +44,7 @@
     type := storage_type(),
     interval => timeout()
 }.
+
 -export_type([options/0]).
 
 %% Internal types
@@ -69,8 +71,7 @@
 
 %% API
 
--spec child_spec(options(), storage(), term()) ->
-    supervisor:child_spec().
+-spec child_spec(options(), storage(), term()) -> supervisor:child_spec().
 child_spec(Options, Storage, ChildID) ->
     #{
         id => ChildID,
@@ -84,8 +85,7 @@ start_link(Options) ->
     gen_server:start_link(?MODULE, Options, []).
 
 %% Sets all metrics up. Call this when the app starts.
--spec setup() ->
-    ok.
+-spec setup() -> ok.
 setup() ->
     % Pool utilization metrics
     true = prometheus_gauge:declare([
@@ -197,7 +197,6 @@ handle_info(timeout, State0) ->
     State = restart_timer(State0),
     ok = process_metrics(State),
     {noreply, State};
-
 handle_info(_Msg, State) ->
     {noreply, State}.
 
@@ -211,8 +210,7 @@ code_change(_OldVsn, _State, _Extra) ->
 
 %% pooler callbacks
 
--spec update_or_create([binary()], number(), pooler_metric_type(), []) ->
-    ok.
+-spec update_or_create([binary()], number(), pooler_metric_type(), []) -> ok.
 update_or_create(Key, Value, counter, []) ->
     {ok, {NS, Type, MetricName}} = decode_key(Key),
     ok = hay_metrics:push(create_hay_inc(rebuild_hay_key(NS, Type, MetricName), Value)),
@@ -230,11 +228,9 @@ update_or_create(Key, Value, Type, []) ->
 
 %% internal
 
-
 -spec restart_timer(state()) -> state().
 restart_timer(State = #state{timer = undefined}) ->
     start_timer(State);
-
 restart_timer(State = #state{timer = TimerRef}) ->
     _ = erlang:cancel_timer(TimerRef),
     start_timer(State#state{timer = undefined}).
@@ -263,15 +259,13 @@ gather_metrics(#state{storage = Storage} = State) ->
             []
     end.
 
--spec push_hay_metrics(state(), pooler_metrics()) ->
-    ok.
+-spec push_hay_metrics(state(), pooler_metrics()) -> ok.
 push_hay_metrics(#state{namespace = NS, storage_type = Type}, Metrics) ->
     KeyPrefix = [mg, storage, NS, Type, pool],
     HayMetrics = [how_are_you:metric_construct(gauge, [KeyPrefix, Key], Value) || {Key, Value} <- Metrics],
     machinegun_hay_utils:push(HayMetrics).
 
--spec push_prometheus_metrics(state(), pooler_metrics()) ->
-    ok.
+-spec push_prometheus_metrics(state(), pooler_metrics()) -> ok.
 push_prometheus_metrics(#state{namespace = NS, storage_type = Type}, Metrics) ->
     lists:foreach(
         fun({Key, Value}) ->
@@ -316,31 +310,26 @@ dispatch_prometheus_metric(NS, Type, <<"killed_in_use_count">>, Value) ->
 dispatch_prometheus_metric(_NS, _Type, _Other, _Value) ->
     ok.
 
--spec create_hay_inc(how_are_you:metric_key(), non_neg_integer()) ->
-    how_are_you:metric().
+-spec create_hay_inc(how_are_you:metric_key(), non_neg_integer()) -> how_are_you:metric().
 create_hay_inc(Key, Number) ->
     machinegun_hay_utils:create_inc(Key, Number).
 
--spec create_hay_bin_inc(how_are_you:metric_key(), bin_type(), number()) ->
-    how_are_you:metric().
+-spec create_hay_bin_inc(how_are_you:metric_key(), bin_type(), number()) -> how_are_you:metric().
 create_hay_bin_inc(KeyPrefix, BinType, Value) ->
     machinegun_hay_utils:create_bin_inc(KeyPrefix, BinType, Value).
 
 %% see https://github.com/seth/pooler/blob/9c28fb479f9329e2a1644565a632bc222780f1b7/src/pooler.erl#L877
 %% for key format details
--spec decode_key([binary()]) ->
-    {ok, {mg_core:ns(), storage_type(), binary()}}.
+-spec decode_key([binary()]) -> {ok, {mg_core:ns(), storage_type(), binary()}}.
 decode_key([<<"pooler">>, PoolName, MetricName]) ->
     {ok, {NS, Type}} = try_decode_pool_name(PoolName),
     {ok, {NS, Type, MetricName}}.
 
--spec rebuild_hay_key(mg_core:ns(), storage_type(), binary()) ->
-    how_are_you:metric_key().
+-spec rebuild_hay_key(mg_core:ns(), storage_type(), binary()) -> how_are_you:metric_key().
 rebuild_hay_key(NS, Type, MetricName) ->
     [mg, storage, NS, Type, pool, MetricName].
 
--spec try_decode_pool_name(binary()) ->
-    {ok, {mg_core:ns(), storage_type()}} | {error, _Details}.
+-spec try_decode_pool_name(binary()) -> {ok, {mg_core:ns(), storage_type()}} | {error, _Details}.
 try_decode_pool_name(PoolName) ->
     %% TODO: Try to pass options through `pooler` metric mod option instead of pool name parsing
     try erlang:binary_to_term(base64:decode(PoolName), [safe]) of
@@ -353,31 +342,26 @@ try_decode_pool_name(PoolName) ->
             {error, {not_bert, Error, PoolName}}
     end.
 
--spec inc(prometheus_metric:name(), [term()], number()) ->
-    ok.
+-spec inc(prometheus_metric:name(), [term()], number()) -> ok.
 inc(Name, Labels, Value) ->
     _ = prometheus_counter:inc(registry(), Name, Labels, Value),
     ok.
 
--spec set(prometheus_metric:name(), [term()], number()) ->
-    ok.
+-spec set(prometheus_metric:name(), [term()], number()) -> ok.
 set(Name, Labels, Value) ->
     _ = prometheus_gauge:set(registry(), Name, Labels, Value),
     ok.
 
--spec observe(prometheus_metric:name(), [term()], number()) ->
-    ok.
+-spec observe(prometheus_metric:name(), [term()], number()) -> ok.
 observe(Name, Labels, Value) ->
     _ = prometheus_histogram:observe(registry(), Name, Labels, Value),
     ok.
 
--spec registry() ->
-    prometheus_registry:registry().
+-spec registry() -> prometheus_registry:registry().
 registry() ->
     default.
 
--spec size_buckets() ->
-    [number()].
+-spec size_buckets() -> [number()].
 size_buckets() ->
     [
         1,

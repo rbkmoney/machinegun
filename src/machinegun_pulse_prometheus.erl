@@ -32,8 +32,7 @@
 %% mg_pulse handler
 %%
 
--spec handle_beat(options(), beat()) ->
-    ok.
+-spec handle_beat(options(), beat()) -> ok.
 handle_beat(_Options, Beat) ->
     ok = dispatch_metrics(Beat).
 
@@ -42,8 +41,7 @@ handle_beat(_Options, Beat) ->
 %%
 
 %% Sets all metrics up. Call this when the app starts.
--spec setup() ->
-    ok.
+-spec setup() -> ok.
 setup() ->
     % Machine lifecycle
     true = prometheus_counter:declare([
@@ -180,8 +178,7 @@ setup() ->
 
 %% Internals
 
--spec dispatch_metrics(beat()) ->
-    ok.
+-spec dispatch_metrics(beat()) -> ok.
 % Machine lifecycle
 dispatch_metrics(#mg_core_machine_lifecycle_loaded{namespace = NS}) ->
     ok = inc(mg_machine_lifecycle_changes_total, [NS, loaded]);
@@ -294,37 +291,31 @@ dispatch_metrics(#mg_core_storage_delete_finish{name = {NS, _Caller, Type}, dura
 dispatch_metrics(_Beat) ->
     ok.
 
--spec inc(metric_name(), [metric_label_value()]) ->
-    ok.
+-spec inc(metric_name(), [metric_label_value()]) -> ok.
 inc(Name, Labels) ->
     _ = prometheus_counter:inc(registry(), Name, Labels, 1),
     ok.
 
--spec inc(metric_name(), [metric_label_value()], number()) ->
-    ok.
+-spec inc(metric_name(), [metric_label_value()], number()) -> ok.
 inc(Name, Labels, Value) ->
     _ = prometheus_counter:inc(registry(), Name, Labels, Value),
     ok.
 
--spec set(metric_name(), [metric_label_value()], number()) ->
-    ok.
+-spec set(metric_name(), [metric_label_value()], number()) -> ok.
 set(Name, Labels, Value) ->
     _ = prometheus_gauge:set(registry(), Name, Labels, Value),
     ok.
 
--spec observe(metric_name(), [metric_label_value()], number()) ->
-    ok.
+-spec observe(metric_name(), [metric_label_value()], number()) -> ok.
 observe(Name, Labels, Value) ->
     _ = prometheus_histogram:observe(registry(), Name, Labels, Value),
     ok.
 
--spec registry() ->
-    prometheus_registry:registry().
+-spec registry() -> prometheus_registry:registry().
 registry() ->
     default.
 
--spec decode_impact(mg_core_machine:processor_impact()) ->
-    atom().
+-spec decode_impact(mg_core_machine:processor_impact()) -> atom().
 decode_impact({init, _Args}) ->
     init;
 decode_impact({repair, _Args}) ->
@@ -336,30 +327,25 @@ decode_impact(timeout) ->
 decode_impact(continuation) ->
     continuation.
 
--spec decode_duration(number()) ->
-    number().
+-spec decode_duration(number()) -> number().
 decode_duration(Duration) ->
     erlang:convert_time_unit(Duration, native, microsecond) / 1000000.
 
--spec decode_ts_offset(number()) ->
-    number().
+-spec decode_ts_offset(number()) -> number().
 decode_ts_offset(Timestamp) ->
     erlang:max(genlib_time:unow() - Timestamp, 0).
 
--spec decode_delay(number()) ->
-    number().
+-spec decode_delay(number()) -> number().
 decode_delay(DelayMs) ->
     DelayMs / 1000.
 
--spec calc_queue_usage(non_neg_integer(), mg_core_workers_manager:queue_limit()) ->
-    float().
+-spec calc_queue_usage(non_neg_integer(), mg_core_workers_manager:queue_limit()) -> float().
 calc_queue_usage(Len, 0) ->
     erlang:float(Len);
 calc_queue_usage(Len, Limit) ->
     Len / Limit.
 
--spec duration_buckets() ->
-    [number()].
+-spec duration_buckets() -> [number()].
 duration_buckets() ->
     [
         0.001,
@@ -377,8 +363,7 @@ duration_buckets() ->
         300 * 1000
     ].
 
--spec ts_offset_buckets() ->
-    [number()].
+-spec ts_offset_buckets() -> [number()].
 ts_offset_buckets() ->
     [
         0,
@@ -388,14 +373,13 @@ ts_offset_buckets() ->
         10 * 60,
         60 * 60,
         24 * 60 * 60,
-        7  * 24 * 60 * 60,
+        7 * 24 * 60 * 60,
         30 * 24 * 60 * 60,
         365 * 24 * 60 * 60,
         5 * 365 * 24 * 60 * 60
     ].
 
--spec queue_length_buckets() ->
-    [number()].
+-spec queue_length_buckets() -> [number()].
 queue_length_buckets() ->
     [
         1,
@@ -410,8 +394,7 @@ queue_length_buckets() ->
         10000
     ].
 
--spec fraction_buckets() ->
-    [number()].
+-spec fraction_buckets() -> [number()].
 fraction_buckets() ->
     [
         0.1,

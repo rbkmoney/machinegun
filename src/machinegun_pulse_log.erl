@@ -21,6 +21,7 @@
 
 %% mg_pulse handler
 -behaviour(mg_core_pulse).
+
 -export([handle_beat/2]).
 
 %% internal types
@@ -33,40 +34,44 @@
 %% mg_pulse handler
 %%
 
--spec handle_beat(options(), beat()) ->
-    ok.
+-spec handle_beat(options(), beat()) -> ok.
 handle_beat(Options, Beat) ->
     ok = machinegun_log:log(format_beat(Beat, Options)).
 
 %% Internals
 
--define(beat_to_meta(RecordName, Record),
-    [{mg_pulse_event_id, RecordName} | lists:foldl(fun add_meta/2, [], [
-        extract_meta(FieldName, Value) ||
-        {FieldName, Value} <- lists:zip(
-            record_info(fields, RecordName),
-            erlang:tl(erlang:tuple_to_list(Record))
-        )
-    ])]
-).
+-define(beat_to_meta(RecordName, Record), [
+    {mg_pulse_event_id, RecordName}
+    | lists:foldl(fun add_meta/2, [], [
+        extract_meta(FieldName, Value)
+        || {FieldName, Value} <- lists:zip(
+               record_info(fields, RecordName),
+               erlang:tl(erlang:tuple_to_list(Record))
+           )
+    ])
+]).
 
--spec format_beat(beat(), options()) ->
-    log_msg() | undefined.
+-spec format_beat(beat(), options()) -> log_msg() | undefined.
 format_beat(#woody_request_handle_error{exception = {_, Reason, _}} = Beat, _Options) ->
     Context = ?beat_to_meta(woody_request_handle_error, Beat),
-    LogLevel = case Reason of
-        {logic, _Details} ->
-            % бизнес ошибки это не warning
-            info;
-        _OtherReason ->
-            warning
-    end,
+    LogLevel =
+        case Reason of
+            {logic, _Details} ->
+                % бизнес ошибки это не warning
+                info;
+            _OtherReason ->
+                warning
+        end,
     {LogLevel, {"request handling failed ~p", [Reason]}, Context};
 format_beat(#woody_event{event = Event, rpc_id = RPCID, event_meta = EventMeta}, Options) ->
     WoodyMetaFields = [event, service, function, type, metadata, url, deadline, role, execution_duration_ms],
     WoodyOptions = maps:get(woody_event_handler_options, Options, #{}),
     {Level, Msg, WoodyMeta} = woody_event_handler:format_event_and_meta(
-        Event, EventMeta, RPCID, WoodyMetaFields, WoodyOptions
+        Event,
+        EventMeta,
+        RPCID,
+        WoodyMetaFields,
+        WoodyOptions
     ),
     Meta = lists:flatten([extract_woody_meta(WoodyMeta), extract_meta(rpc_id, RPCID)]),
     {Level, Msg, Meta};
@@ -105,11 +110,9 @@ format_beat(#mg_core_timer_lifecycle_rescheduled{target_timestamp = TS, attempt 
 format_beat(#mg_core_timer_lifecycle_rescheduling_error{exception = {_, Reason, _}} = Beat, _Options) ->
     Context = ?beat_to_meta(mg_core_timer_lifecycle_rescheduling_error, Beat),
     {info, {"machine rescheduling failed ~p", [Reason]}, Context};
-
 format_beat({consuela, Beat = {Producer, _}}, _Options) ->
     {Level, Format, Context} = format_consuela_beat(Beat),
     {Level, Format, add_meta({consuela_producer, Producer}, Context)};
-
 format_beat({squad, {Producer, Beat, Extra}}, _Options) ->
     case format_squad_beat(Beat) of
         {Level, Format, Context} ->
@@ -120,14 +123,11 @@ format_beat({squad, {Producer, Beat, Extra}}, _Options) ->
         undefined ->
             undefined
     end;
-
 format_beat(_Beat, _Options) ->
     undefined.
 
 %% consuela
--spec format_consuela_beat(mg_core_consuela_pulse_adapter:beat()) ->
-    log_msg() | undefined.
-
+-spec format_consuela_beat(mg_core_consuela_pulse_adapter:beat()) -> log_msg() | undefined.
 %% consul client
 format_consuela_beat({client, {request, Request = {Method, Url, _Headers, Body}}}) ->
     _ = erlang:put({?MODULE, consuela_request}, Request),
@@ -136,10 +136,11 @@ format_consuela_beat({client, {request, Request = {Method, Url, _Headers, Body}}
     ]};
 format_consuela_beat({client, {result, Response = {ok, Status, _Headers, _Body}}}) ->
     {Method, Url, _, Body} = erlang:get({?MODULE, consuela_request}),
-    Level = case Status of
-        S when S < 500 -> debug;
-        _              -> warning
-    end,
+    Level =
+        case Status of
+            S when S < 500 -> debug;
+            _ -> warning
+        end,
     {Level, {"consul response: ~p for: ~s ~s ~p", [Response, Method, Url, Body]}, [
         {mg_pulse_event_id, consuela_client_response},
         {status, Status}
@@ -150,7 +151,6 @@ format_consuela_beat({client, {result, Error = {error, Reason}}}) ->
         {mg_pulse_event_id, consuela_client_request_failed},
         {error, [{reason, genlib:print(Reason, 500)}]}
     ]};
-
 %% registry
 format_consuela_beat({registry_server, {{register, {Name, Pid}}, Status}}) ->
     case Status of
@@ -173,10 +173,11 @@ format_consuela_beat({registry_server, {{register, {Name, Pid}}, Status}}) ->
             ]}
     end;
 format_consuela_beat({registry_server, {{unregister, Reg}, Status}}) ->
-    {Name, Pid} = case Reg of
-        {_, N, P} -> {N, P};
-        {N, P}    -> {N, P}
-    end,
+    {Name, Pid} =
+        case Reg of
+            {_, N, P} -> {N, P};
+            {N, P} -> {N, P}
+        end,
     case Status of
         started ->
             {debug, {"unregistering ~p known as ~p ...", [Pid, Name]}, [
@@ -196,7 +197,6 @@ format_consuela_beat({registry_server, {{unregister, Reg}, Status}}) ->
                 {error, [{reason, genlib:print(Reason, 500)}]}
             ]}
     end;
-
 %% session keeper
 format_consuela_beat({session_keeper, {session, {renewal, Status}}}) ->
     case Status of
@@ -217,26 +217,25 @@ format_consuela_beat({session_keeper, {session, expired}}) ->
     {error, {"session expired", []}, [{mg_pulse_event_id, consuela_session_expired}]};
 format_consuela_beat({session_keeper, {session, destroyed}}) ->
     {info, {"session destroyed", []}, [{mg_pulse_event_id, consuela_session_destroyed}]};
-
 %% zombie reaper
 format_consuela_beat({zombie_reaper, {{zombie, {Rid, Name, Pid}}, Status}}) ->
-    {Level, Format, Context} = case Status of
-        enqueued ->
-            {debug, {"enqueued zombie registration ~p as ~p", [Pid, Name]}, [
-                {mg_pulse_event_id, consuela_zombie_enqueued}
-            ]};
-        {reaping, succeeded} ->
-            {debug, {"reaped zombie registration ~p as ~p", [Pid, Name]}, [
-                {mg_pulse_event_id, consuela_zombie_reaped}
-            ]};
-        {reaping, {failed, Reason}} ->
-            {warning, {"reaped zombie registration ~p as ~p failed", [Pid, Name]}, [
-                {mg_pulse_event_id, consuela_zombie_failed},
-                {error, [{reason, genlib:print(Reason, 500)}]}
-            ]}
-    end,
+    {Level, Format, Context} =
+        case Status of
+            enqueued ->
+                {debug, {"enqueued zombie registration ~p as ~p", [Pid, Name]}, [
+                    {mg_pulse_event_id, consuela_zombie_enqueued}
+                ]};
+            {reaping, succeeded} ->
+                {debug, {"reaped zombie registration ~p as ~p", [Pid, Name]}, [
+                    {mg_pulse_event_id, consuela_zombie_reaped}
+                ]};
+            {reaping, {failed, Reason}} ->
+                {warning, {"reaped zombie registration ~p as ~p failed", [Pid, Name]}, [
+                    {mg_pulse_event_id, consuela_zombie_failed},
+                    {error, [{reason, genlib:print(Reason, 500)}]}
+                ]}
+        end,
     {Level, Format, [{registration_id, Rid} | Context]};
-
 %% discovery
 format_consuela_beat({discovery_server, {discovery, Status}}) ->
     case Status of
@@ -276,16 +275,16 @@ format_consuela_beat({discovery_server, {{node, Node}, Status}}) ->
                 {mg_pulse_event_id, consuela_distnode_online}
             ]};
         {down, Reason} ->
-            Level = case Reason of
-                shutdown -> info;
-                _        -> warning
-            end,
+            Level =
+                case Reason of
+                    shutdown -> info;
+                    _ -> warning
+                end,
             {Level, {"~p gone offline", [Node]}, [
                 {mg_pulse_event_id, consuela_distnode_offline},
                 {error, [{reason, genlib:print(Reason, 500)}]}
             ]}
     end;
-
 %% presence
 format_consuela_beat({presence_session, {{presence, Name}, Status}}) ->
     case Status of
@@ -298,7 +297,6 @@ format_consuela_beat({presence_session, {{presence, Name}, Status}}) ->
                 {mg_pulse_event_id, consuela_presence_session_stopped}
             ]}
     end;
-
 %% kinda generic beats
 format_consuela_beat({_Producer, {{deadline_call, Deadline, Call}, Status}}) ->
     TimeLeft = Deadline - erlang:monotonic_time(millisecond),
@@ -339,17 +337,22 @@ format_consuela_beat({_Producer, {{monitor, MRef}, Status}}) ->
             {debug, {"monitor ~p fired", [MRef]}, [{mg_pulse_event_id, consuela_monitor_fired}]}
     end;
 format_consuela_beat({_Producer, {unexpected, Unexpected = {Type, _}}}) ->
-    format_unexpected_beat(Unexpected, add_event_id(case Type of
-        {call, _} -> consuela_unexpected_call;
-        cast      -> consuela_unexpected_cast;
-        info      -> consuela_unexpected_info
-    end, []));
+    format_unexpected_beat(
+        Unexpected,
+        add_event_id(
+            case Type of
+                {call, _} -> consuela_unexpected_call;
+                cast -> consuela_unexpected_cast;
+                info -> consuela_unexpected_info
+            end,
+            []
+        )
+    );
 format_consuela_beat({_Producer, Beat}) ->
     {warning, {"unknown or mishandled consuela beat: ~p", [Beat]}, []}.
 
 %% squad
--spec format_squad_beat(mg_core_gen_squad_pulse:beat()) ->
-    log_msg() | undefined.
+-spec format_squad_beat(mg_core_gen_squad_pulse:beat()) -> log_msg() | undefined.
 format_squad_beat({rank, {changed, Rank}}) ->
     {info, {"rank changed to: ~p", [Rank]}, [
         {mg_pulse_event_id, squad_rank_changed},
@@ -387,16 +390,22 @@ format_squad_beat({{monitor, MRef}, Status}) ->
             {debug, {"monitor ~p on ~p fired: ~p", [MRef, Pid, Reason]}, Meta}
     end;
 format_squad_beat({unexpected, Unexpected = {Type, _}}) ->
-    format_unexpected_beat(Unexpected, add_event_id(case Type of
-        {call, _} -> squad_unexpected_call;
-        cast      -> squad_unexpected_cast;
-        info      -> squad_unexpected_info
-    end, []));
+    format_unexpected_beat(
+        Unexpected,
+        add_event_id(
+            case Type of
+                {call, _} -> squad_unexpected_call;
+                cast -> squad_unexpected_cast;
+                info -> squad_unexpected_info
+            end,
+            []
+        )
+    );
 format_squad_beat(Beat) ->
     {warning, {"unknown or mishandled squad beat: ~p", [Beat]}, []}.
 
--spec format_unexpected_beat(Beat, meta()) ->
-    log_msg() when Beat :: {{call, _From} | cast | info, _Message}.
+-spec format_unexpected_beat(Beat, meta()) -> log_msg() when
+    Beat :: {{call, _From} | cast | info, _Message}.
 format_unexpected_beat({Type, Message}, Meta) ->
     case Type of
         {call, From} ->
@@ -407,13 +416,11 @@ format_unexpected_beat({Type, Message}, Meta) ->
             {warning, {"received unexpected info: ~p", [Message]}, Meta}
     end.
 
--spec add_event_id(atom(), meta()) ->
-    meta().
+-spec add_event_id(atom(), meta()) -> meta().
 add_event_id(EventID, Meta) ->
     add_meta({mg_pulse_event_id, EventID}, Meta).
 
--spec add_meta(meta() | {atom(), any()}, meta()) ->
-    meta().
+-spec add_meta(meta() | {atom(), any()}, meta()) -> meta().
 add_meta(Meta, MetaAcc) when is_list(Meta), is_list(MetaAcc) ->
     Meta ++ MetaAcc;
 add_meta(Meta, MetaAcc) when is_list(MetaAcc) ->
@@ -421,8 +428,7 @@ add_meta(Meta, MetaAcc) when is_list(MetaAcc) ->
 add_meta(Meta, MetaAcc) ->
     add_meta(Meta, [MetaAcc]).
 
--spec extract_meta(atom(), any()) ->
-    [meta()] | meta().
+-spec extract_meta(atom(), any()) -> [meta()] | meta().
 extract_meta(_Name, undefined) ->
     [];
 extract_meta(request_context, null) ->
@@ -459,14 +465,13 @@ extract_meta(namespace, NS) ->
     {machine_ns, NS};
 extract_meta(squad_member, Member) ->
     {squad_member, [
-        {age          , maps:get(age, Member, 0)},
-        {last_contact , maps:get(last_contact, Member, 0)}
+        {age, maps:get(age, Member, 0)},
+        {last_contact, maps:get(last_contact, Member, 0)}
     ]};
 extract_meta(Name, Value) ->
     {Name, Value}.
 
--spec extract_woody_meta(woody_event_handler:event_meta()) ->
-    meta().
+-spec extract_woody_meta(woody_event_handler:event_meta()) -> meta().
 extract_woody_meta(#{role := server} = Meta) ->
     [{'rpc.server', Meta}];
 extract_woody_meta(#{role := client} = Meta) ->
@@ -474,7 +479,6 @@ extract_woody_meta(#{role := client} = Meta) ->
 extract_woody_meta(Meta) ->
     [{rpc, Meta}].
 
--spec format_timestamp(genlib_time:ts()) ->
-    binary().
+-spec format_timestamp(genlib_time:ts()) -> binary().
 format_timestamp(TS) ->
     genlib_rfc3339:format(TS, second).
