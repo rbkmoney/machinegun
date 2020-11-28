@@ -25,26 +25,24 @@
 -type meta() :: [{atom(), any()}].
 
 -export_type([log_msg/0]).
--export_type([msg    /0]).
--export_type([meta   /0]).
+-export_type([msg/0]).
+-export_type([meta/0]).
 
 %% internal types
--type expanded_msg() :: {Format::string(), Args::list()}.
+-type expanded_msg() :: {Format :: string(), Args :: list()}.
 
 %%
 %% logging API
 %%
--spec log(undefined | log_msg()) ->
-    ok.
+-spec log(undefined | log_msg()) -> ok.
 log(undefined) ->
     ok;
 log({Level, Msg, Meta}) ->
     {MsgFormat, MsgArgs} = expand_msg(Msg),
     ok = logger:log(Level, MsgFormat, MsgArgs, maps:from_list(Meta)).
 
--spec expand_msg(msg()) ->
-    expanded_msg().
-expand_msg(Msg={_, _}) ->
+-spec expand_msg(msg()) -> expanded_msg().
+expand_msg(Msg = {_, _}) ->
     Msg;
 expand_msg(Str) ->
     {Str, []}.

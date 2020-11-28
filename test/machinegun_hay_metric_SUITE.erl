@@ -15,17 +15,18 @@
 %%%
 
 -module(machinegun_hay_metric_SUITE).
+
 -include_lib("common_test/include/ct.hrl").
 -include_lib("stdlib/include/assert.hrl").
 -include_lib("machinegun_core/include/pulse.hrl").
 
 %% tests descriptions
--export([all             /0]).
--export([groups          /0]).
--export([init_per_suite  /1]).
--export([end_per_suite   /1]).
--export([init_per_group  /2]).
--export([end_per_group   /2]).
+-export([all/0]).
+-export([groups/0]).
+-export([init_per_suite/1]).
+-export([end_per_suite/1]).
+-export([init_per_group/2]).
+-export([end_per_group/2]).
 
 -export([offset_bin_metric_test/1]).
 -export([fraction_and_queue_bin_metric_test/1]).
@@ -38,11 +39,10 @@
 %% tests descriptions
 %%
 -type group_name() :: atom().
--type test_name () :: atom().
--type config    () :: [{atom(), _}].
+-type test_name() :: atom().
+-type config() :: [{atom(), _}].
 
--spec all() ->
-    [test_name() | {group, group_name()}].
+-spec all() -> [test_name() | {group, group_name()}].
 all() ->
     [
         offset_bin_metric_test,
@@ -50,16 +50,14 @@ all() ->
         duration_bin_metric_test
     ].
 
--spec groups() ->
-    [{group_name(), list(_), test_name()}].
+-spec groups() -> [{group_name(), list(_), test_name()}].
 groups() ->
     [].
 
 %%
 %% starting/stopping
 %%
--spec init_per_suite(config()) ->
-    config().
+-spec init_per_suite(config()) -> config().
 init_per_suite(C) ->
     Apps = machinegun_ct_helper:start_applications([
         gproc,
@@ -70,34 +68,29 @@ init_per_suite(C) ->
     ]),
 
     [
-        {apps              , Apps                             },
-        {automaton_options , #{
-            url            => "http://localhost:8022",
-            ns             => ?NS,
+        {apps, Apps},
+        {automaton_options, #{
+            url => "http://localhost:8022",
+            ns => ?NS,
             retry_strategy => undefined
         }},
-        {event_sink_options, "http://localhost:8022"          }
-    |
-        C
+        {event_sink_options, "http://localhost:8022"}
+        | C
     ].
 
--spec end_per_suite(config()) ->
-    ok.
+-spec end_per_suite(config()) -> ok.
 end_per_suite(C) ->
     ok = application:set_env(how_are_you, metrics_publishers, []),
     ok = application:set_env(how_are_you, metrics_handlers, []),
     machinegun_ct_helper:stop_applications(?config(apps, C)).
 
--spec init_per_group(group_name(), config()) ->
-    config().
+-spec init_per_group(group_name(), config()) -> config().
 init_per_group(_, C) ->
     C.
 
--spec end_per_group(group_name(), config()) ->
-    ok.
+-spec end_per_group(group_name(), config()) -> ok.
 end_per_group(_, _C) ->
     ok.
-
 
 %% Tests
 
@@ -140,7 +133,6 @@ duration_bin_metric_test(_C) ->
 
 %% Metrics utils
 
--spec test_beat(mg_woody_api_pulse:beat()) ->
-    ok.
+-spec test_beat(mg_woody_api_pulse:beat()) -> ok.
 test_beat(Beat) ->
     machinegun_pulse_hay:handle_beat(undefined, Beat).

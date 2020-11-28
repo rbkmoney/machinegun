@@ -22,36 +22,36 @@
 
 %% processor handlers
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
+
 -behaviour(woody_server_thrift_handler).
+
 -export([handle_function/4]).
 
 -export_type([processor_functions/0]).
 -export_type([modernizer_function/0]).
 
--type processor_signal_function() ::
-    fun((mg_events_machine:signal_args()) -> mg_events_machine:signal_result()).
+-type processor_signal_function() :: fun((mg_events_machine:signal_args()) -> mg_events_machine:signal_result()).
 
--type processor_call_function() ::
-    fun((mg_events_machine:call_args()) -> mg_events_machine:call_result()).
+-type processor_call_function() :: fun((mg_events_machine:call_args()) -> mg_events_machine:call_result()).
 
--type processor_repair_function() ::
-    fun((mg_events_machine:repair_args()) -> mg_events_machine:repair_result()).
+-type processor_repair_function() :: fun((mg_events_machine:repair_args()) -> mg_events_machine:repair_result()).
 
 -type processor_functions() :: #{
     signal => processor_signal_function(),
-    call   => processor_call_function(),
+    call => processor_call_function(),
     repair => processor_repair_function()
 }.
 
--type modernizer_function() ::
-    fun((mg_events_modernizer:machine_event()) -> mg_events_modernizer:modernized_event_body()).
+-type modernizer_function() :: fun(
+    (mg_events_modernizer:machine_event()) -> mg_events_modernizer:modernized_event_body()
+).
 
 -type modernizer_functions() :: #{
     modernize => modernizer_function()
 }.
 
 -type options() :: #{
-    processor  => {string(), processor_functions()},
+    processor => {string(), processor_functions()},
     modernizer => {string(), modernizer_functions()}
 }.
 
@@ -62,8 +62,7 @@
 %%
 %% API
 %%
--spec start(host_address(), integer(), options()) ->
-    mg_core_utils:gen_start_ret().
+-spec start(host_address(), integer(), options()) -> mg_core_utils:gen_start_ret().
 start(Host, Port, Options) ->
     case start_link(Host, Port, Options) of
         {ok, ProcessorPid} ->
@@ -73,26 +72,27 @@ start(Host, Port, Options) ->
             ErrorOrIgnore
     end.
 
--spec start_link(host_address(), integer(), options()) ->
-    mg_core_utils:gen_start_ret().
+-spec start_link(host_address(), integer(), options()) -> mg_core_utils:gen_start_ret().
 start_link(Host, Port, Options) ->
     Flags = #{strategy => one_for_all},
     ChildsSpecs = [
         woody_server:child_spec(
             ?MODULE,
             #{
-                ip            => Host,
-                port          => Port,
+                ip => Host,
+                port => Port,
                 event_handler => {mg_woody_api_event_handler, machinegun_pulse},
-                handlers      => maps:values(maps:map(
-                    fun
-                        (processor, {Path, Functions}) ->
-                            {Path, {{mg_proto_state_processing_thrift, 'Processor'}, {?MODULE, Functions}}};
-                        (modernizer, {Path, Functions}) ->
-                            {Path, {{mg_proto_state_processing_thrift, 'Modernizer'}, {?MODULE, Functions}}}
-                    end,
-                    Options
-                ))
+                handlers => maps:values(
+                    maps:map(
+                        fun
+                            (processor, {Path, Functions}) ->
+                                {Path, {{mg_proto_state_processing_thrift, 'Processor'}, {?MODULE, Functions}}};
+                            (modernizer, {Path, Functions}) ->
+                                {Path, {{mg_proto_state_processing_thrift, 'Modernizer'}, {?MODULE, Functions}}}
+                        end,
+                        Options
+                    )
+                )
             }
         )
     ],
@@ -101,8 +101,7 @@ start_link(Host, Port, Options) ->
 %%
 %% processor handlers
 %%
--spec handle_function(woody:func(), woody:args(), woody_context:ctx(), functions()) ->
-    {ok, _Result} | no_return().
+-spec handle_function(woody:func(), woody:args(), woody_context:ctx(), functions()) -> {ok, _Result} | no_return().
 handle_function('ProcessSignal', [Args], _WoodyContext, Functions) ->
     UnpackedArgs = mg_woody_api_packer:unpack(signal_args, Args),
     Result = invoke_function(signal, Functions, UnpackedArgs),
@@ -115,7 +114,6 @@ handle_function('ProcessRepair', [Args], _WoodyContext, Functions) ->
     UnpackedArgs = mg_woody_api_packer:unpack(repair_args, Args),
     Result = invoke_function(repair, Functions, UnpackedArgs),
     {ok, mg_woody_api_packer:pack(repair_result, Result)};
-
 handle_function('ModernizeEvent', [Args], _WoodyContext, Functions) ->
     MachineEvent = mg_woody_api_packer:unpack(machine_event, Args),
     Result = invoke_function(modernize, Functions, MachineEvent),
@@ -124,10 +122,11 @@ handle_function('ModernizeEvent', [Args], _WoodyContext, Functions) ->
 %%
 %% helpers
 %%
--spec invoke_function(signal,    functions(), term()) -> mg_events_machine:signal_result()
-                   ; (call,      functions(), term()) -> mg_events_machine:call_result()
-                   ; (repair,    functions(), term()) -> mg_events_machine:repair_result()
-                   ; (modernize, functions(), term()) -> mg_events_modernizer:modernized_event_body().
+-spec invoke_function
+    (signal, functions(), term()) -> mg_events_machine:signal_result();
+    (call, functions(), term()) -> mg_events_machine:call_result();
+    (repair, functions(), term()) -> mg_events_machine:repair_result();
+    (modernize, functions(), term()) -> mg_events_modernizer:modernized_event_body().
 invoke_function(Type, Functions, Args) ->
     case maps:find(Type, Functions) of
         {ok, Fun} ->
@@ -136,10 +135,11 @@ invoke_function(Type, Functions, Args) ->
             default_result(Type, Args)
     end.
 
--spec default_result(signal    , term()) -> mg_events_machine:signal_result()
-                  ; (call      , term()) -> mg_events_machine:call_result()
-                  ; (repair    , term()) -> mg_events_machine:repair_result()
-                  ; (modernize , term()) -> mg_events_modernizer:modernized_event_body().
+-spec default_result
+    (signal, term()) -> mg_events_machine:signal_result();
+    (call, term()) -> mg_events_machine:call_result();
+    (repair, term()) -> mg_events_machine:repair_result();
+    (modernize, term()) -> mg_events_modernizer:modernized_event_body().
 default_result(signal, _Args) ->
     {{default_content(), []}, #{timer => undefined, tag => undefined}};
 default_result(call, _Args) ->

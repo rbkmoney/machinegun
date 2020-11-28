@@ -18,19 +18,20 @@
 
 %% API
 -export_type([options/0]).
--export([start        /3]).
--export([start        /4]).
--export([repair       /3]).
--export([repair       /4]).
+
+-export([start/3]).
+-export([start/4]).
+-export([repair/3]).
+-export([repair/4]).
 -export([simple_repair/2]).
 -export([simple_repair/3]).
--export([remove       /2]).
--export([remove       /3]).
--export([call         /3]).
--export([call         /4]).
--export([get_machine  /3]).
--export([get_machine  /4]).
--export([modernize    /3]).
+-export([remove/2]).
+-export([remove/3]).
+-export([call/3]).
+-export([call/4]).
+-export([get_machine/3]).
+-export([get_machine/4]).
+-export([modernize/3]).
 
 %% уменьшаем писанину
 -import(mg_woody_api_packer, [pack/2, unpack/2]).
@@ -39,8 +40,8 @@
 %% API
 %%
 -type options() :: #{
-    url := URL::string(),
-    ns  := mg_core:ns(),
+    url := URL :: string(),
+    ns := mg_core:ns(),
     retry_strategy => genlib_retry:strategy(),
     transport_opts => woody_client_thrift_http_transport:options()
 }.
@@ -78,8 +79,7 @@ remove(Options, ID) ->
 remove(#{ns := NS} = Options, ID, Deadline) ->
     ok = call_service(Options, 'Remove', [pack(ns, NS), pack(id, ID)], Deadline).
 
--spec call(options(), mg_events_machine:ref(), mg_storage:opaque()) ->
-    mg_events_machine:call_resp().
+-spec call(options(), mg_events_machine:ref(), mg_storage:opaque()) -> mg_events_machine:call_resp().
 call(Options, Ref, Args) ->
     call(Options, Ref, Args, undefined).
 
@@ -91,8 +91,7 @@ call(#{ns := NS} = Options, Ref, Args, Deadline) ->
         call_service(Options, 'Call', [machine_desc(NS, Ref), pack(args, Args)], Deadline)
     ).
 
--spec get_machine(options(), mg_events_machine:ref(), mg_events:history_range()) ->
-    mg_events_machine:machine().
+-spec get_machine(options(), mg_events_machine:ref(), mg_events:history_range()) -> mg_events_machine:machine().
 get_machine(Options, Ref, Range) ->
     get_machine(Options, Ref, Range, undefined).
 
@@ -104,26 +103,22 @@ get_machine(#{ns := NS} = Options, Ref, Range, Deadline) ->
         call_service(Options, 'GetMachine', [machine_desc(NS, Ref, Range)], Deadline)
     ).
 
--spec modernize(options(), mg_events_machine:ref(), mg_events:history_range()) ->
-    ok.
+-spec modernize(options(), mg_events_machine:ref(), mg_events:history_range()) -> ok.
 modernize(#{ns := NS} = Options, Ref, Range) ->
     ok = call_service(Options, 'Modernize', [machine_desc(NS, Ref, Range)], undefined).
 
 %%
 %% local
 %%
--spec machine_desc(mg_core:ns(), mg_events_machine:ref()) ->
-    _.
+-spec machine_desc(mg_core:ns(), mg_events_machine:ref()) -> _.
 machine_desc(NS, Ref) ->
     machine_desc(NS, Ref, {undefined, undefined, forward}).
 
--spec machine_desc(mg_core:ns(), mg_events_machine:ref(), mg_events:history_range()) ->
-    _.
+-spec machine_desc(mg_core:ns(), mg_events_machine:ref(), mg_events:history_range()) -> _.
 machine_desc(NS, Ref, HRange) ->
     pack(machine_descriptor, {NS, Ref, HRange}).
 
--spec call_service(options(), atom(), [_Arg], mg_deadline:deadline()) ->
-    any().
+-spec call_service(options(), atom(), [_Arg], mg_deadline:deadline()) -> any().
 call_service(#{retry_strategy := Strategy} = Options, Function, Args, Deadline) ->
     try woody_call(Options, Function, Args, Deadline) of
         {ok, R} ->
@@ -131,8 +126,8 @@ call_service(#{retry_strategy := Strategy} = Options, Function, Args, Deadline) 
         {exception, Exception} ->
             erlang:throw(Exception)
     catch
-        error:{woody_error, {_Source, Class, _Details}} = Error
-        when Class =:= resource_unavailable orelse Class =:= result_unknown
+        error:{woody_error, {_Source, Class, _Details}} = Error when
+            Class =:= resource_unavailable orelse Class =:= result_unknown
         ->
             case genlib_retry:next_step(Strategy) of
                 {wait, Timeout, NewStrategy} ->
@@ -145,17 +140,16 @@ call_service(#{retry_strategy := Strategy} = Options, Function, Args, Deadline) 
 call_service(Options, Function, Args, Deadline) ->
     call_service(Options#{retry_strategy => finish}, Function, Args, Deadline).
 
--spec woody_call(options(), atom(), [_Arg], mg_deadline:deadline()) ->
-    any().
+-spec woody_call(options(), atom(), [_Arg], mg_deadline:deadline()) -> any().
 woody_call(#{url := BaseURL} = Options, Function, Args, Deadline) ->
     TransportOptions = maps:get(transport_opts, Options, #{}),
     Context = mg_woody_api_utils:set_deadline(Deadline, woody_context:new()),
     woody_client:call(
-            {{mg_proto_state_processing_thrift, 'Automaton'}, Function, Args},
-            #{
-                url            => BaseURL ++ "/v1/automaton",
-                event_handler  => {mg_woody_api_event_handler, machinegun_pulse},
-                transport_opts => TransportOptions
-            },
-            Context
+        {{mg_proto_state_processing_thrift, 'Automaton'}, Function, Args},
+        #{
+            url => BaseURL ++ "/v1/automaton",
+            event_handler => {mg_woody_api_event_handler, machinegun_pulse},
+            transport_opts => TransportOptions
+        },
+        Context
     ).

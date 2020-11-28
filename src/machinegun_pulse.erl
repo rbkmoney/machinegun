@@ -20,11 +20,12 @@
 
 %% mg_pulse handler
 -behaviour(mg_core_pulse).
+
 -export([handle_beat/2]).
 
 %% pulse types
 -type beat() ::
-      mg_core_pulse:beat()
+    mg_core_pulse:beat()
     | mg_core_consuela_pulse_adapter:beat()
     | mg_core_queue_scanner:beat()
     | #woody_event{}
@@ -41,8 +42,7 @@
 %% mg_pulse handler
 %%
 
--spec handle_beat(options(), beat()) ->
-    ok.
+-spec handle_beat(options(), beat()) -> ok.
 handle_beat(Options, Beat) ->
     ok = machinegun_pulse_log:handle_beat(Options, Beat),
     ok = machinegun_pulse_hay:handle_beat(Options, Beat),
