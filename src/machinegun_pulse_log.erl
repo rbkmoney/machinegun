@@ -404,8 +404,7 @@ format_squad_beat({unexpected, Unexpected = {Type, _}}) ->
 format_squad_beat(Beat) ->
     {warning, {"unknown or mishandled squad beat: ~p", [Beat]}, []}.
 
--spec format_unexpected_beat(Beat, meta()) -> log_msg() when
-    Beat :: {{call, _From} | cast | info, _Message}.
+-spec format_unexpected_beat(Beat, meta()) -> log_msg() when Beat :: {{call, _From} | cast | info, _Message}.
 format_unexpected_beat({Type, Message}, Meta) ->
     case Type of
         {call, From} ->

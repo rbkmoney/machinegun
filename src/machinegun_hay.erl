@@ -87,8 +87,7 @@ workers_stats(KeyPrefix, Workers) ->
         WorkersStats
     ).
 
--spec extract_worker_stats(worker(), Acc) -> Acc when
-    Acc :: #{atom() => [number()]}.
+-spec extract_worker_stats(worker(), Acc) -> Acc when Acc :: #{atom() => [number()]}.
 extract_worker_stats({_NS, _ID, Pid}, Acc) ->
     case erlang:process_info(Pid, interest_worker_info()) of
         undefined ->
