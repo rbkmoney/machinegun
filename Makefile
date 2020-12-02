@@ -42,8 +42,6 @@ CALL_ANYWHERE := \
 	xref \
 	lint \
 	dialyze \
-	start \
-	devrel \
 	release \
 	clean \
 	distclean \
@@ -88,9 +86,6 @@ format:
 
 dialyze:
 	$(REBAR) dialyzer
-
-devrel: submodules
-	$(REBAR) release
 
 release:
 	$(REBAR) as prod release
