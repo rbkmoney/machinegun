@@ -1,5 +1,5 @@
 #
-# Copyright 2017 RBKmoney
+# Copyright 2020 RBKmoney
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,10 +29,11 @@ SERVICE_IMAGE_PUSH_TAG ?= $(SERVICE_IMAGE_TAG)
 
 # Base image for the service
 BASE_IMAGE_NAME := service-erlang
-BASE_IMAGE_TAG := da0ab769f01b650b389d18fc85e7418e727cbe96
+BASE_IMAGE_TAG := 54a794b4875ad79f90dba0a7708190b3b37d584f
 
 # Build image tag to be used
-BUILD_IMAGE_TAG := 60f328adf39a2deb539e41d4a46c511956a8a9fe
+BUILD_IMAGE_NAME := build-erlang
+BUILD_IMAGE_TAG := 12beabfb5b6968c7566fa3d872ad1b3e8d612f46
 
 CALL_ANYWHERE := \
 	all \
@@ -41,12 +42,12 @@ CALL_ANYWHERE := \
 	xref \
 	lint \
 	dialyze \
-	start \
-	devrel \
 	release \
 	clean \
 	distclean \
 	test_configurator \
+	format \
+	check_format
 
 
 CALL_W_CONTAINER := $(CALL_ANYWHERE) test dev_test test_configurator
@@ -77,11 +78,14 @@ xref: submodules
 lint:
 	elvis rock
 
+check_format:
+	$(REBAR) fmt -c
+
+format:
+	$(REBAR) fmt -w
+
 dialyze:
 	$(REBAR) dialyzer
-
-devrel: submodules
-	$(REBAR) release
 
 release:
 	$(REBAR) as prod release
@@ -94,7 +98,7 @@ distclean:
 	rm -rfv _build _builds _cache _steps _temp
 
 # CALL_W_CONTAINER
-test: submodules
+test: submodules test_configurator
 	$(REBAR) ct
 
 dev_test: xref lint test

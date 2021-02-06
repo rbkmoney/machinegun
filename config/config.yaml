@@ -1,5 +1,5 @@
 #
-# Copyright 2017 RBKmoney
+# Copyright 2020 RBKmoney
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,8 +21,19 @@ service_name: machinegun
 
 # Name of the node for Erlang distribution.
 #
-# Defaults to: '{service_name}@{primary_netif_ip}'.
-# dist_node_name: machinegun@10.0.0.42
+# Defaults to: '{service_name}@{hostname}'.
+# Examples:
+# * with short node name:
+#     dist_node_name: machinegun
+# * with fixed ip for host part:
+#     dist_node_name: machinegun@10.0.0.42
+# * for `machinegun@{primary_netif_ip}`, with latter determined at start time:
+#     dist_node_name:
+#       hostpart: ip
+# * for `blarg@{fqdn}`, if latter available at start time:
+#     dist_node_name:
+#       namepart: blarg
+#       hostpart: fqdn
 
 # Erlang VM options.
 erlang:
@@ -43,24 +54,24 @@ woody_server:
 # Distributed machine registry settings.
 # Do not set if you plan to run machinegun in a non-distributed fashion,
 # for example in a development or testing scenarios.
-consuela:
-    presence:
-        check_interval: 5s
-    registry:
-        nodename: mhost1
-        session_ttl: 30s
-        session_renewal_interval: 10s
-    discovery:
-        tags:
-            - production
+# consuela:
+#     presence:
+#         check_interval: 5s
+#         tags:
+#             - production
+#     registry:
+#         nodename: mhost1
+#         session_ttl: 30s
+#         session_renewal_interval: 10s
+#     discovery: {}
 
-# Consul client settings.
-# Required when distributed machine registry is enabled.
-consul:
-    url: http://localhost:8500
-    acl_token_file: config/consul.token
-    connect_timeout: 200ms
-    recv_timeout: 1s
+# # Consul client settings.
+# # Required when distributed machine registry is enabled.
+# consul:
+#     url: http://localhost:8500
+#     acl_token_file: config/consul.token
+#     connect_timeout: 200ms
+#     recv_timeout: 1s
 
 limits:
     process_heap: 2M # heap limit
@@ -79,6 +90,9 @@ logging:
     flush_qlen: 2000
     json_log: log.json
     level: info
+    formatter:
+        max_length: 1000
+        max_printable_string_length: 80
 metrics:
     publisher:
         statsd:
@@ -106,13 +120,20 @@ namespaces:
             pool_size: 50
             http_keep_alive_timeout: 10s
         timers:
-            scan_interval: 30s
+            scan_interval: 1m
             scan_limit: 1000
             capacity: 500
+            min_scan_delay: 10s
         overseer: disabled
         # maximum number of events that will be stored inside of machine state
         # must be non negative integer, default is 0
         event_stash_size: 5
+        modernizer:
+            current_format_version: 1
+            handler:
+                url: http://localhost:8022/modernizer
+                pool_size: 50
+                http_keep_alive_timeout: 10s
 snowflake_machine_id: 1
 # memory storage backend
 storage:
@@ -127,6 +148,8 @@ storage:
 #        queue_max: 1000
 #     connect_timeout: 5S
 #     request_timeout: 10S
+#     index_query_timeout: 10S
+#     batch_concurrency_limit: 50
 
 ## kafka settings example
 kafka:

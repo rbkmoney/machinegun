@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright 2017 RBKmoney
+# Copyright 2020 RBKmoney
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 #
 cat <<EOF
 FROM $BASE_IMAGE
-MAINTAINER Petr Kozorezov <p.kozorezov@rbkmoney.com>
+LABEL maintainer="Andrey Mayorov <a.mayorov@rbkmoney.com>"
 COPY ./_build/prod/rel/machinegun /opt/machinegun
 WORKDIR /opt/machinegun
 ENTRYPOINT ./bin/entrypoint.sh
