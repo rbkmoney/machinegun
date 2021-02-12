@@ -50,7 +50,7 @@
   0},
  {<<"machinegun_woody_api">>,
   {git,"https://github.com/rbkmoney/machinegun_woody_api",
-       {ref,"10b37f6f0272975483164db22f7058d0f89fa82c"}},
+       {ref,"28d6910700f9bb61630b63ff478b54ad11d097e3"}},
   0},
  {<<"metrics">>,{pkg,<<"metrics">>,<<"1.0.1">>},3},
  {<<"mg_proto">>,
