@@ -544,7 +544,16 @@ vm_args(YamlConfig, ERLInetrcFilename) ->
         node_name(YamlConfig),
         {'-kernel', <<"inetrc '\"", (?C:utf_bin(ERLInetrcFilename))/binary, "\"'">>},
         {'+c', true},
-        {'+C', single_time_warp}
+        {'+C', single_time_warp},
+        %% Do not burn CPU circles, go sleep
+        %% early if no pending work in queue.
+        {'+sbwt', 'none'},
+        {'+sbwtdcpu', 'none'},
+        {'+sbwtdio', 'none'},
+        %% Wake up early in case of any new job appeared
+        {'+swt', 'very_low'},
+        {'+swtdcpu', 'very_low'},
+        {'+swtdio', 'very_low'}
     ],
     ProtoFlags = conf_if([erlang, ipv6], YamlConfig, [
         {'-proto_dist', inet6_tcp}
