@@ -44,10 +44,10 @@ handle_beat(Options, Beat) ->
     {mg_pulse_event_id, RecordName}
     | lists:foldl(fun add_meta/2, [], [
         extract_meta(FieldName, Value)
-        || {FieldName, Value} <- lists:zip(
-               record_info(fields, RecordName),
-               erlang:tl(erlang:tuple_to_list(Record))
-           )
+     || {FieldName, Value} <- lists:zip(
+            record_info(fields, RecordName),
+            erlang:tl(erlang:tuple_to_list(Record))
+        )
     ])
 ]).
 

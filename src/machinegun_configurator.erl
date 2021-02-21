@@ -91,14 +91,14 @@ get_prometheus_route() ->
 quotas_child_specs(Quotas, ChildID) ->
     [
         mg_core_quota_worker:child_spec(Options, {ChildID, maps:get(name, Options)})
-        || Options <- Quotas
+     || Options <- Quotas
     ].
 
 -spec events_machines_child_specs(namespaces(), event_sink_ns(), pulse()) -> [supervisor:child_spec()].
 events_machines_child_specs(NSs, EventSinkNS, Pulse) ->
     [
         mg_core_events_machine:child_spec(events_machine_options(NS, NSs, EventSinkNS, Pulse), binary_to_atom(NS, utf8))
-        || NS <- maps:keys(NSs)
+     || NS <- maps:keys(NSs)
     ].
 
 -spec events_machine_options(mg_core:ns(), namespaces(), event_sink_ns(), pulse()) -> mg_core_events_machine:options().
@@ -107,7 +107,7 @@ events_machine_options(NS, NSs, EventSinkNS, Pulse) ->
     #{processor := ProcessorConfig, storage := Storage} = NSConfigs,
     EventSinks = [
         event_sink_options(SinkConfig, EventSinkNS, Pulse)
-        || SinkConfig <- maps:get(event_sinks, NSConfigs, [])
+     || SinkConfig <- maps:get(event_sinks, NSConfigs, [])
     ],
     EventsStorage = add_storage_metrics(NS, events, sub_storage_options(<<"events">>, Storage)),
     #{
@@ -184,7 +184,7 @@ collect_event_sink_machines(NSs) ->
     NSConfigs = maps:values(NSs),
     EventSinks = ordsets:from_list([
         maps:get(machine_id, SinkConfig)
-        || NSConfig <- NSConfigs, {mg_core_events_sink_machine, SinkConfig} <- maps:get(event_sinks, NSConfig, [])
+     || NSConfig <- NSConfigs, {mg_core_events_sink_machine, SinkConfig} <- maps:get(event_sinks, NSConfig, [])
     ]),
     ordsets:to_list(EventSinks).
 
