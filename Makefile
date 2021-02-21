@@ -33,7 +33,7 @@ BASE_IMAGE_TAG := 54a794b4875ad79f90dba0a7708190b3b37d584f
 
 # Build image tag to be used
 BUILD_IMAGE_NAME := build-erlang
-BUILD_IMAGE_TAG := 12beabfb5b6968c7566fa3d872ad1b3e8d612f46
+BUILD_IMAGE_TAG := 1aa9b46b343bcf3bf0d4359ceca1a7ab6d577699
 
 CALL_ANYWHERE := \
 	all \
