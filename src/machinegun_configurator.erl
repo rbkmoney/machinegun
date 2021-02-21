@@ -251,7 +251,7 @@ modernizer_options(#{current_format_version := CurrentFormatVersion, handler := 
 modernizer_options(undefined, _Pulse) ->
     #{}.
 
--spec add_storage_metrics(mg_core:ns(), _type, mg_core_machine:storage_options()) -> mg_core_machine:storage_options().
+-spec add_storage_metrics(mg_core:ns(), _Type, mg_core_machine:storage_options()) -> mg_core_machine:storage_options().
 add_storage_metrics(NS, Type, Storage0) ->
     Storage1 = mg_core_utils:separate_mod_opts(Storage0, #{}),
     do_add_storage_metrics(NS, Type, Storage1).

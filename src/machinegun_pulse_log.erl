@@ -40,7 +40,7 @@ handle_beat(Options, Beat) ->
 
 %% Internals
 
--define(beat_to_meta(RecordName, Record), [
+-define(BEAT_TO_META(RecordName, Record), [
     {mg_pulse_event_id, RecordName}
     | lists:foldl(fun add_meta/2, [], [
         extract_meta(FieldName, Value)
@@ -53,7 +53,7 @@ handle_beat(Options, Beat) ->
 
 -spec format_beat(beat(), options()) -> log_msg() | undefined.
 format_beat(#woody_request_handle_error{exception = {_, Reason, _}} = Beat, _Options) ->
-    Context = ?beat_to_meta(woody_request_handle_error, Beat),
+    Context = ?BEAT_TO_META(woody_request_handle_error, Beat),
     LogLevel =
         case Reason of
             {logic, _Details} ->
@@ -76,28 +76,28 @@ format_beat(#woody_event{event = Event, rpc_id = RPCID, event_meta = EventMeta},
     Meta = lists:flatten([extract_woody_meta(WoodyMeta), extract_meta(rpc_id, RPCID)]),
     {Level, Msg, Meta};
 format_beat(#mg_core_scheduler_task_error{scheduler_name = Name, exception = {_, Reason, _}} = Beat, _Options) ->
-    Context = ?beat_to_meta(mg_core_scheduler_task_error, Beat),
+    Context = ?BEAT_TO_META(mg_core_scheduler_task_error, Beat),
     {warning, {"scheduler task ~p failed ~p", [Name, Reason]}, Context};
 format_beat(#mg_core_scheduler_task_add_error{scheduler_name = Name, exception = {_, Reason, _}} = Beat, _Options) ->
-    Context = ?beat_to_meta(mg_core_scheduler_task_add_error, Beat),
+    Context = ?BEAT_TO_META(mg_core_scheduler_task_add_error, Beat),
     {warning, {"scheduler task ~p add failed ~p", [Name, Reason]}, Context};
 format_beat(#mg_core_scheduler_search_error{scheduler_name = Name, exception = {_, Reason, _}} = Beat, _Options) ->
-    Context = ?beat_to_meta(mg_core_scheduler_search_error, Beat),
+    Context = ?BEAT_TO_META(mg_core_scheduler_search_error, Beat),
     {warning, {"scheduler search ~p failed ~p", [Name, Reason]}, Context};
 format_beat(#mg_core_machine_process_transient_error{exception = {_, Reason, _}} = Beat, _Options) ->
-    Context = ?beat_to_meta(mg_core_machine_process_transient_error, Beat),
+    Context = ?BEAT_TO_META(mg_core_machine_process_transient_error, Beat),
     {warning, {"transient error ~p", [Reason]}, Context};
 format_beat(#mg_core_machine_lifecycle_failed{exception = {_, Reason, _}} = Beat, _Options) ->
-    Context = ?beat_to_meta(mg_core_machine_lifecycle_failed, Beat),
+    Context = ?BEAT_TO_META(mg_core_machine_lifecycle_failed, Beat),
     {error, {"machine failed ~p", [Reason]}, Context};
 format_beat(#mg_core_machine_lifecycle_loading_error{exception = {_, Reason, _}} = Beat, _Options) ->
-    Context = ?beat_to_meta(mg_core_machine_lifecycle_loading_error, Beat),
+    Context = ?BEAT_TO_META(mg_core_machine_lifecycle_loading_error, Beat),
     {error, {"loading failed ~p", [Reason]}, Context};
 format_beat(#mg_core_machine_lifecycle_committed_suicide{} = Beat, _Options) ->
-    Context = ?beat_to_meta(mg_core_machine_lifecycle_committed_suicide, Beat),
+    Context = ?BEAT_TO_META(mg_core_machine_lifecycle_committed_suicide, Beat),
     {info, {"machine has committed suicide", []}, Context};
 format_beat(#mg_core_machine_lifecycle_transient_error{context = Ctx, exception = {_, Reason, _}} = Beat, _Options) ->
-    Context = ?beat_to_meta(mg_core_machine_lifecycle_transient_error, Beat),
+    Context = ?BEAT_TO_META(mg_core_machine_lifecycle_transient_error, Beat),
     case Beat#mg_core_machine_lifecycle_transient_error.retry_action of
         {wait, Timeout, _} ->
             {warning, {"transient error ~p during ~p, retrying in ~p msec", [Ctx, Reason, Timeout]}, Context};
@@ -105,10 +105,10 @@ format_beat(#mg_core_machine_lifecycle_transient_error{context = Ctx, exception 
             {warning, {"transient error ~p during ~p, retires exhausted", [Ctx, Reason]}, Context}
     end;
 format_beat(#mg_core_timer_lifecycle_rescheduled{target_timestamp = TS, attempt = Attempt} = Beat, _Options) ->
-    Context = ?beat_to_meta(mg_core_timer_lifecycle_rescheduled, Beat),
+    Context = ?BEAT_TO_META(mg_core_timer_lifecycle_rescheduled, Beat),
     {info, {"machine rescheduled to ~s, attempt ~p", [format_timestamp(TS), Attempt]}, Context};
 format_beat(#mg_core_timer_lifecycle_rescheduling_error{exception = {_, Reason, _}} = Beat, _Options) ->
-    Context = ?beat_to_meta(mg_core_timer_lifecycle_rescheduling_error, Beat),
+    Context = ?BEAT_TO_META(mg_core_timer_lifecycle_rescheduling_error, Beat),
     {info, {"machine rescheduling failed ~p", [Reason]}, Context};
 format_beat({consuela, Beat = {Producer, _}}, _Options) ->
     {Level, Format, Context} = format_consuela_beat(Beat),
