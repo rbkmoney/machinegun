@@ -271,7 +271,7 @@ machinegun_config(C) ->
             storage => mg_core_storage_memory,
             default_processing_timeout => 5000
         }},
-        {pulse, machinegun_pulse}
+        {pulse, {machinegun_pulse, #{}}}
     ].
 
 -spec end_per_group(group_name(), config()) -> ok.
