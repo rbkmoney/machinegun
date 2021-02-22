@@ -151,7 +151,7 @@ machinegun_config(C) ->
             registry => registry(C),
             default_processing_timeout => 5000
         }},
-        {pulse, machinegun_pulse}
+        {pulse, {machinegun_pulse, #{}}}
     ].
 
 -spec registry(config()) -> mg_core_procreg:options().

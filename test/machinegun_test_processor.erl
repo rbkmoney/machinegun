@@ -81,7 +81,7 @@ start_link(Host, Port, Options) ->
             #{
                 ip => Host,
                 port => Port,
-                event_handler => {mg_woody_api_event_handler, machinegun_pulse},
+                event_handler => {mg_woody_api_event_handler, {machinegun_pulse, #{}}},
                 handlers => maps:values(
                     maps:map(
                         fun
@@ -102,19 +102,19 @@ start_link(Host, Port, Options) ->
 %% processor handlers
 %%
 -spec handle_function(woody:func(), woody:args(), woody_context:ctx(), functions()) -> {ok, _Result} | no_return().
-handle_function('ProcessSignal', [Args], _WoodyContext, Functions) ->
+handle_function('ProcessSignal', {Args}, _WoodyContext, Functions) ->
     UnpackedArgs = mg_woody_api_packer:unpack(signal_args, Args),
     Result = invoke_function(signal, Functions, UnpackedArgs),
     {ok, mg_woody_api_packer:pack(signal_result, Result)};
-handle_function('ProcessCall', [Args], _WoodyContext, Functions) ->
+handle_function('ProcessCall', {Args}, _WoodyContext, Functions) ->
     UnpackedArgs = mg_woody_api_packer:unpack(call_args, Args),
     Result = invoke_function(call, Functions, UnpackedArgs),
     {ok, mg_woody_api_packer:pack(call_result, Result)};
-handle_function('ProcessRepair', [Args], _WoodyContext, Functions) ->
+handle_function('ProcessRepair', {Args}, _WoodyContext, Functions) ->
     UnpackedArgs = mg_woody_api_packer:unpack(repair_args, Args),
     Result = invoke_function(repair, Functions, UnpackedArgs),
     {ok, mg_woody_api_packer:pack(repair_result, Result)};
-handle_function('ModernizeEvent', [Args], _WoodyContext, Functions) ->
+handle_function('ModernizeEvent', {Args}, _WoodyContext, Functions) ->
     MachineEvent = mg_woody_api_packer:unpack(machine_event, Args),
     Result = invoke_function(modernize, Functions, MachineEvent),
     {ok, mg_woody_api_packer:pack(modernize_result, Result)}.

@@ -52,7 +52,7 @@ start(Options, ID, Args) ->
 
 -spec start(options(), mg_core:id(), mg_storage:opaque(), mg_deadline:deadline()) -> ok.
 start(#{ns := NS} = Options, ID, Args, Deadline) ->
-    ok = call_service(Options, 'Start', [pack(ns, NS), pack(id, ID), pack(args, Args)], Deadline).
+    ok = call_service(Options, 'Start', {pack(ns, NS), pack(id, ID), pack(args, Args)}, Deadline).
 
 -spec repair(options(), mg_events_machine:ref(), mg_storage:opaque()) -> ok.
 repair(Options, Ref, Args) ->
@@ -60,7 +60,7 @@ repair(Options, Ref, Args) ->
 
 -spec repair(options(), mg_events_machine:ref(), mg_storage:opaque(), mg_deadline:deadline()) -> ok.
 repair(#{ns := NS} = Options, Ref, Args, Deadline) ->
-    Response = call_service(Options, 'Repair', [machine_desc(NS, Ref), pack(args, Args)], Deadline),
+    Response = call_service(Options, 'Repair', {machine_desc(NS, Ref), pack(args, Args)}, Deadline),
     unpack(repair_response, Response).
 
 -spec simple_repair(options(), mg_events_machine:ref()) -> ok.
@@ -69,7 +69,7 @@ simple_repair(Options, Ref) ->
 
 -spec simple_repair(options(), mg_events_machine:ref(), mg_deadline:deadline()) -> ok.
 simple_repair(#{ns := NS} = Options, Ref, Deadline) ->
-    ok = call_service(Options, 'SimpleRepair', [pack(ns, NS), pack(ref, Ref)], Deadline).
+    ok = call_service(Options, 'SimpleRepair', {pack(ns, NS), pack(ref, Ref)}, Deadline).
 
 -spec remove(options(), mg_core:id()) -> ok.
 remove(Options, ID) ->
@@ -77,7 +77,7 @@ remove(Options, ID) ->
 
 -spec remove(options(), mg_core:id(), mg_deadline:deadline()) -> ok.
 remove(#{ns := NS} = Options, ID, Deadline) ->
-    ok = call_service(Options, 'Remove', [pack(ns, NS), pack(id, ID)], Deadline).
+    ok = call_service(Options, 'Remove', {pack(ns, NS), pack(id, ID)}, Deadline).
 
 -spec call(options(), mg_events_machine:ref(), mg_storage:opaque()) -> mg_events_machine:call_resp().
 call(Options, Ref, Args) ->
@@ -88,7 +88,7 @@ call(Options, Ref, Args) ->
 call(#{ns := NS} = Options, Ref, Args, Deadline) ->
     unpack(
         call_response,
-        call_service(Options, 'Call', [machine_desc(NS, Ref), pack(args, Args)], Deadline)
+        call_service(Options, 'Call', {machine_desc(NS, Ref), pack(args, Args)}, Deadline)
     ).
 
 -spec get_machine(options(), mg_events_machine:ref(), mg_events:history_range()) -> mg_events_machine:machine().
@@ -100,12 +100,12 @@ get_machine(Options, Ref, Range) ->
 get_machine(#{ns := NS} = Options, Ref, Range, Deadline) ->
     unpack(
         machine,
-        call_service(Options, 'GetMachine', [machine_desc(NS, Ref, Range)], Deadline)
+        call_service(Options, 'GetMachine', {machine_desc(NS, Ref, Range)}, Deadline)
     ).
 
 -spec modernize(options(), mg_events_machine:ref(), mg_events:history_range()) -> ok.
 modernize(#{ns := NS} = Options, Ref, Range) ->
-    ok = call_service(Options, 'Modernize', [machine_desc(NS, Ref, Range)], undefined).
+    ok = call_service(Options, 'Modernize', {machine_desc(NS, Ref, Range)}, undefined).
 
 %%
 %% local
@@ -148,7 +148,7 @@ woody_call(#{url := BaseURL} = Options, Function, Args, Deadline) ->
         {{mg_proto_state_processing_thrift, 'Automaton'}, Function, Args},
         #{
             url => BaseURL ++ "/v1/automaton",
-            event_handler => {mg_woody_api_event_handler, machinegun_pulse},
+            event_handler => {mg_woody_api_event_handler, {machinegun_pulse, #{}}},
             transport_opts => TransportOptions
         },
         Context

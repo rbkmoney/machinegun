@@ -102,7 +102,7 @@ offset_bin_metric_test(_C) ->
             namespace = ?NS,
             target_timestamp = genlib_time:unow() + Offset
         })
-        || Offset <- Offsets
+     || Offset <- Offsets
     ].
 
 -spec fraction_and_queue_bin_metric_test(config()) -> _.
@@ -114,7 +114,7 @@ fraction_and_queue_bin_metric_test(_C) ->
             msg_queue_len = Sample,
             msg_queue_limit = 100
         })
-        || Sample <- Samples
+     || Sample <- Samples
     ].
 
 -spec duration_bin_metric_test(config()) -> _.
@@ -126,7 +126,7 @@ duration_bin_metric_test(_C) ->
             duration = Sample,
             processor_impact = {init, []}
         })
-        || Sample <- Samples
+     || Sample <- Samples
     ].
 
 %% Utils
