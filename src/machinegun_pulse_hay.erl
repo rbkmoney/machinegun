@@ -187,6 +187,43 @@ create_metric(#mg_core_storage_delete_finish{name = {NS, _Caller, Type}, duratio
         create_inc([mg, storage, NS, Type, delete, finish]),
         create_bin_inc([mg, storage, NS, Type, delete, duration], duration, Duration)
     ];
+% Riak client operations
+create_metric(#mg_core_riak_client_get_start{name = {NS, _Caller, Type}}) ->
+    [
+        create_inc([mg, riak_client, NS, Type, get, start])
+    ];
+create_metric(#mg_core_riak_client_get_finish{name = {NS, _Caller, Type}, duration = Duration}) ->
+    [
+        create_inc([mg, riak_client, NS, Type, get, finish]),
+        create_bin_inc([mg, riak_client, NS, Type, get, duration], duration, Duration)
+    ];
+create_metric(#mg_core_riak_client_put_start{name = {NS, _Caller, Type}}) ->
+    [
+        create_inc([mg, riak_client, NS, Type, put, start])
+    ];
+create_metric(#mg_core_riak_client_put_finish{name = {NS, _Caller, Type}, duration = Duration}) ->
+    [
+        create_inc([mg, riak_client, NS, Type, put, finish]),
+        create_bin_inc([mg, riak_client, NS, Type, put, duration], duration, Duration)
+    ];
+create_metric(#mg_core_riak_client_search_start{name = {NS, _Caller, Type}}) ->
+    [
+        create_inc([mg, riak_client, NS, Type, search, start])
+    ];
+create_metric(#mg_core_riak_client_search_finish{name = {NS, _Caller, Type}, duration = Duration}) ->
+    [
+        create_inc([mg, riak_client, NS, Type, search, finish]),
+        create_bin_inc([mg, riak_client, NS, Type, search, duration], duration, Duration)
+    ];
+create_metric(#mg_core_riak_client_delete_start{name = {NS, _Caller, Type}}) ->
+    [
+        create_inc([mg, riak_client, NS, Type, delete, start])
+    ];
+create_metric(#mg_core_riak_client_delete_finish{name = {NS, _Caller, Type}, duration = Duration}) ->
+    [
+        create_inc([mg, riak_client, NS, Type, delete, finish]),
+        create_bin_inc([mg, riak_client, NS, Type, delete, duration], duration, Duration)
+    ];
 % Unknown
 create_metric(_Beat) ->
     [].
