@@ -165,7 +165,7 @@ setup() ->
         {name, mg_storage_operation_changes_total},
         {registry, registry()},
         {labels, [namespace, name, operation, change]},
-        {help, "Total number of Machinegun storage opertions."}
+        {help, "Total number of Machinegun storage operations."}
     ]),
     true = prometheus_histogram:declare([
         {name, mg_storage_operation_duration_seconds},
@@ -173,6 +173,20 @@ setup() ->
         {labels, [namespace, name, operation]},
         {buckets, duration_buckets()},
         {help, "Machinegun storage operation duration."}
+    ]),
+    % Riak client operations
+    true = prometheus_counter:declare([
+        {name, mg_riak_client_operation_changes_total},
+        {registry, registry()},
+        {labels, [namespace, name, operation, change]},
+        {help, "Total number of Machinegun riak client operations."}
+    ]),
+    true = prometheus_histogram:declare([
+        {name, mg_riak_client_operation_duration_seconds},
+        {registry, registry()},
+        {labels, [namespace, name, operation]},
+        {buckets, duration_buckets()},
+        {help, "Machinegun riak client operation duration."}
     ]),
     ok.
 
@@ -287,6 +301,27 @@ dispatch_metrics(#mg_core_storage_delete_start{name = {NS, _Caller, Type}}) ->
 dispatch_metrics(#mg_core_storage_delete_finish{name = {NS, _Caller, Type}, duration = Duration}) ->
     ok = inc(mg_storage_operation_changes_total, [NS, Type, delete, finish]),
     ok = observe(mg_storage_operation_duration_seconds, [NS, Type, delete], decode_duration(Duration));
+% Riak client operations
+dispatch_metrics(#mg_core_riak_client_get_start{name = {NS, _Caller, Type}}) ->
+    ok = inc(mg_riak_client_operation_changes_total, [NS, Type, get, start]);
+dispatch_metrics(#mg_core_riak_client_get_finish{name = {NS, _Caller, Type}, duration = Duration}) ->
+    ok = inc(mg_riak_client_operation_changes_total, [NS, Type, get, finish]),
+    ok = observe(mg_riak_client_operation_duration_seconds, [NS, Type, get], decode_duration(Duration));
+dispatch_metrics(#mg_core_riak_client_put_start{name = {NS, _Caller, Type}}) ->
+    ok = inc(mg_riak_client_operation_changes_total, [NS, Type, put, start]);
+dispatch_metrics(#mg_core_riak_client_put_finish{name = {NS, _Caller, Type}, duration = Duration}) ->
+    ok = inc(mg_riak_client_operation_changes_total, [NS, Type, put, finish]),
+    ok = observe(mg_riak_client_operation_duration_seconds, [NS, Type, put], decode_duration(Duration));
+dispatch_metrics(#mg_core_riak_client_search_start{name = {NS, _Caller, Type}}) ->
+    ok = inc(mg_riak_client_operation_changes_total, [NS, Type, search, start]);
+dispatch_metrics(#mg_core_riak_client_search_finish{name = {NS, _Caller, Type}, duration = Duration}) ->
+    ok = inc(mg_riak_client_operation_changes_total, [NS, Type, search, finish]),
+    ok = observe(mg_riak_client_operation_duration_seconds, [NS, Type, search], decode_duration(Duration));
+dispatch_metrics(#mg_core_riak_client_delete_start{name = {NS, _Caller, Type}}) ->
+    ok = inc(mg_riak_client_operation_changes_total, [NS, Type, delete, start]);
+dispatch_metrics(#mg_core_riak_client_delete_finish{name = {NS, _Caller, Type}, duration = Duration}) ->
+    ok = inc(mg_riak_client_operation_changes_total, [NS, Type, delete, finish]),
+    ok = observe(mg_riak_client_operation_duration_seconds, [NS, Type, delete], decode_duration(Duration));
 % Unknown
 dispatch_metrics(_Beat) ->
     ok.

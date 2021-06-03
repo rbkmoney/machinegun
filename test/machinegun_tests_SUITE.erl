@@ -50,8 +50,8 @@
 -define(NS, <<"NS">>).
 -define(ID, <<"ID">>).
 -define(EMPTY_ID, <<"">>).
--define(Tag, <<"tag">>).
--define(Ref, {tag, ?Tag}).
+-define(TAG, <<"tag">>).
+-define(REF, {tag, ?TAG}).
 -define(ES_ID, <<"test_event_sink_2">>).
 
 -define(DEADLINE_TIMEOUT, 1000).
@@ -271,7 +271,7 @@ machinegun_config(C) ->
             storage => mg_core_storage_memory,
             default_processing_timeout => 5000
         }},
-        {pulse, machinegun_pulse}
+        {pulse, {machinegun_pulse, #{}}}
     ].
 
 -spec end_per_group(group_name(), config()) -> ok.
@@ -285,13 +285,13 @@ end_per_group(_, C) ->
 -spec namespace_not_found(config()) -> _.
 namespace_not_found(C) ->
     Opts = maps:update(ns, <<"incorrect_NS">>, automaton_options(C)),
-    #mg_stateproc_NamespaceNotFound{} = (catch machinegun_automaton_client:start(Opts, ?ID, ?Tag)).
+    #mg_stateproc_NamespaceNotFound{} = (catch machinegun_automaton_client:start(Opts, ?ID, ?TAG)).
 
 -spec machine_start_empty_id(config()) -> _.
 machine_start_empty_id(C) ->
     % создание машины с невалидным ID не обрабатывается по протоколу
     {'EXIT', {{woody_error, _}, _}} =
-        (catch machinegun_automaton_client:start(automaton_options(C), ?EMPTY_ID, ?Tag)),
+        (catch machinegun_automaton_client:start(automaton_options(C), ?EMPTY_ID, ?TAG)),
     ok.
 
 -spec machine_start(config()) -> _.
@@ -300,7 +300,7 @@ machine_start(C) ->
 
 -spec machine_already_exists(config()) -> _.
 machine_already_exists(C) ->
-    #mg_stateproc_MachineAlreadyExists{} = (catch machinegun_automaton_client:start(automaton_options(C), ?ID, ?Tag)).
+    #mg_stateproc_MachineAlreadyExists{} = (catch machinegun_automaton_client:start(automaton_options(C), ?ID, ?TAG)).
 
 -spec machine_id_not_found(config()) -> _.
 machine_id_not_found(C) ->
@@ -330,7 +330,7 @@ machine_tag_not_found(C) ->
 
 -spec machine_call_by_tag(config()) -> _.
 machine_call_by_tag(C) ->
-    <<"nop">> = machinegun_automaton_client:call(automaton_options(C), ?Ref, <<"nop">>).
+    <<"nop">> = machinegun_automaton_client:call(automaton_options(C), ?REF, <<"nop">>).
 
 -spec machine_remove(config()) -> _.
 machine_remove(C) ->
