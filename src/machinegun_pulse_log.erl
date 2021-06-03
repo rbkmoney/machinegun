@@ -230,7 +230,7 @@ format_consuela_beat({zombie_reaper, {{zombie, {Rid, Name, Pid}}, Status}}) ->
                     {mg_pulse_event_id, consuela_zombie_reaped}
                 ]};
             {reaping, {failed, Reason}} ->
-                {warning, {"reaped zombie registration ~p as ~p failed", [Pid, Name]}, [
+                {warning, {"reaping zombie registration ~p as ~p failed", [Pid, Name]}, [
                     {mg_pulse_event_id, consuela_zombie_failed},
                     {error, [{reason, genlib:print(Reason, 500)}]}
                 ]}
@@ -377,16 +377,18 @@ format_squad_beat({{timer, TRef}, Status}) ->
             Meta = add_event_id(consuela_timer_started, [{timeout, Timeout}]),
             {debug, {"timer ~p armed to fire ~p after ~p ms", [TRef, Msg, Timeout]}, Meta};
         cancelled ->
-            {debug, {"timer ~p cancelled", [TRef]}, add_event_id(consuela_timer_fired, [])};
+            {debug, {"timer ~p cancelled", [TRef]}, add_event_id(squad_timer_fired, [])};
         {fired, Msg} ->
-            {debug, {"timer ~p fired ~p", [TRef, Msg]}, add_event_id(consuela_timer_reset, [])}
+            {debug, {"timer ~p fired ~p", [TRef, Msg]}, add_event_id(squad_timer_reset, [])}
     end;
 format_squad_beat({{monitor, MRef}, Status}) ->
     case Status of
         {started, Pid} ->
-            {debug, {"monitor ~p set on ~p", [MRef, Pid]}, add_event_id(consuela_monitor_set, [])};
+            {debug, {"monitor ~p set on ~p", [MRef, Pid]}, add_event_id(squad_monitor_set, [])};
+        cancelled ->
+            {debug, {"monitor ~p cancelled", [MRef]}, add_event_id(squad_monitor_cancelled, [])};
         {fired, Pid, Reason} ->
-            Meta = add_event_id(consuela_monitor_fired, []),
+            Meta = add_event_id(squad_monitor_fired, []),
             {debug, {"monitor ~p on ~p fired: ~p", [MRef, Pid, Reason]}, Meta}
     end;
 format_squad_beat({unexpected, Unexpected = {Type, _}}) ->
