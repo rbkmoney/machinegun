@@ -64,15 +64,11 @@ format_beat(#woody_request_handle_error{exception = {_, Reason, _}} = Beat, _Opt
         end,
     {LogLevel, {"request handling failed ~p", [Reason]}, Context};
 format_beat(#woody_event{event = Event, rpc_id = RPCID, event_meta = EventMeta}, Options) ->
-    WoodyMetaFields = [event, service, function, type, metadata, url, deadline, role, execution_duration_ms],
+    Level = woody_event_handler:get_event_severity(Event, EventMeta),
     WoodyOptions = maps:get(woody_event_handler_options, Options, #{}),
-    {Level, Msg, WoodyMeta} = woody_event_handler:format_event_and_meta(
-        Event,
-        EventMeta,
-        RPCID,
-        WoodyMetaFields,
-        WoodyOptions
-    ),
+    Msg = woody_event_handler:format_event(Event, EventMeta, RPCID, WoodyOptions),
+    WoodyMetaFields = [event, service, function, type, metadata, url, deadline, role, execution_duration_ms],
+    WoodyMeta = woody_event_handler:format_meta(Event, EventMeta, WoodyMetaFields),
     Meta = lists:flatten([extract_woody_meta(WoodyMeta), extract_meta(rpc_id, RPCID)]),
     {Level, Msg, Meta};
 format_beat(#mg_core_scheduler_task_error{scheduler_name = Name, exception = {_, Reason, _}} = Beat, _Options) ->
