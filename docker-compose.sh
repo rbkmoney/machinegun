@@ -19,7 +19,6 @@ CONFLUENT_PLATFORM_VERSION="5.1.2"  # with Kafka 2.1.1
 CONSUL_VERSION=1.4.2
 
 cat <<EOF
-# https://hub.docker.com/r/basho/riak-kv/
 version: '2'
 
 services:
@@ -38,30 +37,28 @@ services:
       - kafka3
 
   riakdb:
-    image: dr2.rbkmoney.com/rbkmoney/riak-base:d9dec1c4a69482f5c013bb155f6ccd18cd9d4653
+    &member-node
+    image: dr2.rbkmoney.com/rbkmoney/riak-base:38fbd6239f7d1f7cac45912a7031aea8db010b0c
     environment:
       - CLUSTER_NAME=riakkv
+      - COORDINATOR_NODE=riakdb
     labels:
       - "com.basho.riak.cluster.name=riakkv"
     volumes:
       - ./test_resources/riak_user.conf:/etc/riak/user.conf:ro
       - schemas:/etc/riak/schemas
   member1:
-    &member-node
-    image: dr2.rbkmoney.com/rbkmoney/riak-base:d9dec1c4a69482f5c013bb155f6ccd18cd9d4653
-    labels:
-      - "com.basho.riak.cluster.name=riakkv"
+    <<: *member-node
     links:
       - riakdb
     depends_on:
       - riakdb
-    environment:
-      - CLUSTER_NAME=riakkv
-      - COORDINATOR_NODE=riakdb
-    volumes:
-      - ./test_resources/riak_user.conf:/etc/riak/user.conf:ro
   member2:
     <<: *member-node
+    links:
+      - riakdb
+    depends_on:
+      - riakdb
 
   zookeeper:
     image: confluentinc/cp-zookeeper:${CONFLUENT_PLATFORM_VERSION}
