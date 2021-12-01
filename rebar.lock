@@ -46,7 +46,7 @@
   0},
  {<<"machinegun_core">>,
   {git,"https://github.com/rbkmoney/machinegun_core",
-       {ref,"241334864a6b04ea1be310d475f2abc83e190639"}},
+       {ref,"50e6f43f0e1398420d91c54b4c140268c6bdaa95"}},
   0},
  {<<"machinegun_woody_api">>,
   {git,"https://github.com/rbkmoney/machinegun_woody_api",
